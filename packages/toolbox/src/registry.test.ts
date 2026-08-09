@@ -1,0 +1,270 @@
+import { z } from 'zod';
+import { describe, expect, it } from 'vitest';
+
+import {
+  AgentManifestSchema,
+  CapabilityDescriptorSchema,
+  type AgentManifest,
+  type CapabilityDescriptor,
+} from '@emdo/contracts';
+
+import {
+  FOUNDATIONAL_SKILLS,
+  ToolboxPolicyError,
+  createCapabilityRegistry,
+} from './index.js';
+
+const specialistManifest = AgentManifestSchema.parse({
+  schemaVersion: 1,
+  id: 'scheduler',
+  version: '1.0.0',
+  kind: 'specialist',
+  intents: ['schedule.appointment'],
+  instructionIds: ['scheduler.instructions.v1'],
+  skillIds: ['privacy.v1', 'approvals.v1'],
+  capabilityAllowlist: ['calendar.events.read'],
+  readableDataClasses: ['calendar.events'],
+  modelPolicy: {
+    defaultModel: 'gpt-5.6-luna',
+    complexModel: 'gpt-5.6-terra',
+    escalationReasons: ['failed-output-validation'],
+  },
+  executionBudget: {
+    maxTurns: 8,
+    maxCapabilityCalls: 12,
+    maxParallelCalls: 3,
+    timeoutMs: 60_000,
+    maxInputTokens: 20_000,
+    maxOutputTokens: 4_000,
+  },
+  schemaRefs: {
+    input: { id: 'scheduler.input', version: '1.0.0' },
+    output: { id: 'scheduler.output', version: '1.0.0' },
+  },
+  riskCeiling: 'read',
+  evalSuite: { id: 'scheduler.evals', version: '1.0.0' },
+});
+
+const descriptor = (overrides: Partial<CapabilityDescriptor> = {}) =>
+  CapabilityDescriptorSchema.parse({
+    schemaVersion: 1,
+    id: 'calendar.events.read',
+    version: '1.0.0',
+    capabilityKind: 'read',
+    inputSchema: { id: 'calendar.events-read.input', version: '1.0.0' },
+    outputSchema: { id: 'calendar.events-read.output', version: '1.0.0' },
+    requiredScopes: ['google-calendar.events.read'],
+    requiredDataClasses: ['calendar.events'],
+    riskClass: 'read',
+    timeoutMs: 15_000,
+    freshness: {
+      required: true,
+      maxAgeMs: 60_000,
+      revalidateBeforeExecution: false,
+    },
+    idempotency: {
+      required: false,
+      scope: 'request',
+      ttlMs: 60_000,
+    },
+    approval: { rule: 'none', expiresInSeconds: 0 },
+    audit: {
+      required: true,
+      eventType: 'calendar.external-read',
+      redactFields: [],
+    },
+    executorId: 'calendar.events-read.v1',
+    ...overrides,
+  });
+
+const registration = (capability: CapabilityDescriptor = descriptor()) => ({
+  descriptor: capability,
+  inputSchema: z.strictObject({ query: z.string() }),
+  outputSchema: z.strictObject({ count: z.number().int().nonnegative() }),
+  execute: async () => ({ count: 0 }),
+});
+
+const expectPolicyCode = (operation: () => unknown, code: string) => {
+  try {
+    operation();
+    throw new Error('Expected operation to fail');
+  } catch (error) {
+    expect(error).toBeInstanceOf(ToolboxPolicyError);
+    expect((error as ToolboxPolicyError).code).toBe(code);
+  }
+};
+
+describe('deny-by-default capability registry', () => {
+  it('resolves only capabilities present in a parsed manifest allowlist', () => {
+    const registry = createCapabilityRegistry([registration()]);
+
+    const [resolved] = registry.resolveForAgent({
+      manifest: specialistManifest,
+      requestedCapabilityIds: ['calendar.events.read'],
+    });
+
+    expect(resolved?.descriptor.id).toBe('calendar.events.read');
+    expect(Object.isFrozen(resolved)).toBe(true);
+    expectPolicyCode(
+      () =>
+        registry.resolveForAgent({
+          manifest: specialistManifest,
+          requestedCapabilityIds: ['shopping.offers.read'],
+        }),
+      'unknown-capability',
+    );
+  });
+
+  it('denies duplicates and known capabilities absent from the allowlist', () => {
+    expectPolicyCode(
+      () => createCapabilityRegistry([registration(), registration()]),
+      'duplicate-capability',
+    );
+
+    const extra = descriptor({
+      id: 'calendar.freebusy.read',
+      executorId: 'calendar.freebusy-read.v1',
+    });
+    const registry = createCapabilityRegistry([
+      registration(),
+      registration(extra),
+    ]);
+
+    expectPolicyCode(
+      () =>
+        registry.resolveForAgent({
+          manifest: specialistManifest,
+          requestedCapabilityIds: ['calendar.freebusy.read'],
+        }),
+      'capability-not-allowlisted',
+    );
+  });
+
+  it('limits the manager to delegation capabilities', () => {
+    const manager = AgentManifestSchema.parse({
+      ...specialistManifest,
+      id: 'manager',
+      kind: 'manager',
+      intents: ['delegate.request'],
+      capabilityAllowlist: ['calendar.events.read'],
+      readableDataClasses: ['calendar.events'],
+    });
+    const registry = createCapabilityRegistry([registration()]);
+
+    expectPolicyCode(
+      () =>
+        registry.resolveForAgent({
+          manifest: manager,
+          requestedCapabilityIds: ['calendar.events.read'],
+        }),
+      'manager-capability-denied',
+    );
+  });
+
+  it('enforces risk ceilings and readable data classes', () => {
+    const providerWrite = descriptor({
+      id: 'google-calendar.event.create',
+      capabilityKind: 'provider-write',
+      riskClass: 'provider-write',
+      approval: {
+        rule: 'authenticated-visual-proposal',
+        expiresInSeconds: 600,
+      },
+      executorId: 'google-calendar.event-create.v1',
+    });
+    const riskManifest = AgentManifestSchema.parse({
+      ...specialistManifest,
+      capabilityAllowlist: ['google-calendar.event.create'],
+    });
+    const riskRegistry = createCapabilityRegistry([
+      registration(providerWrite),
+    ]);
+
+    expectPolicyCode(
+      () =>
+        riskRegistry.resolveForAgent({
+          manifest: riskManifest,
+          requestedCapabilityIds: ['google-calendar.event.create'],
+        }),
+      'risk-ceiling-exceeded',
+    );
+
+    const financeRead = descriptor({
+      id: 'finance.transactions.read',
+      requiredDataClasses: ['finance.transactions'],
+      executorId: 'finance.transactions-read.v1',
+    });
+    const dataManifest = AgentManifestSchema.parse({
+      ...specialistManifest,
+      capabilityAllowlist: ['finance.transactions.read'],
+    });
+    const dataRegistry = createCapabilityRegistry([registration(financeRead)]);
+
+    expectPolicyCode(
+      () =>
+        dataRegistry.resolveForAgent({
+          manifest: dataManifest,
+          requestedCapabilityIds: ['finance.transactions.read'],
+        }),
+      'data-class-denied',
+    );
+  });
+
+  it('rejects provider writes that do not require an authenticated visual proposal', () => {
+    const unsafeWrite = descriptor({
+      id: 'google-calendar.event.create',
+      capabilityKind: 'provider-write',
+      riskClass: 'provider-write',
+      approval: { rule: 'none', expiresInSeconds: 0 },
+      executorId: 'google-calendar.event-create.v1',
+    });
+    const manifest = AgentManifestSchema.parse({
+      ...specialistManifest,
+      capabilityAllowlist: ['google-calendar.event.create'],
+      riskCeiling: 'provider-write',
+    });
+    const registry = createCapabilityRegistry([registration(unsafeWrite)]);
+
+    expectPolicyCode(
+      () =>
+        registry.resolveForAgent({
+          manifest,
+          requestedCapabilityIds: ['google-calendar.event.create'],
+        }),
+      'provider-write-approval-required',
+    );
+  });
+
+  it('rejects untrusted evidence or model fields that try to broaden access', () => {
+    const registry = createCapabilityRegistry([registration()]);
+
+    expect(() =>
+      registry.resolveForAgent({
+        manifest: specialistManifest,
+        requestedCapabilityIds: ['calendar.events.read'],
+        evidenceCapabilityIds: ['google-calendar.event.create'],
+      } as unknown as {
+        manifest: AgentManifest;
+        requestedCapabilityIds: string[];
+      }),
+    ).toThrow();
+  });
+
+  it('publishes frozen versioned instruction-only foundational skills', () => {
+    expect(FOUNDATIONAL_SKILLS.map((skill) => skill.id)).toEqual([
+      'privacy.v1',
+      'clarification.v1',
+      'provenance.v1',
+      'toronto-time.v1',
+      'cad-normalization.v1',
+      'safe-errors.v1',
+      'approvals.v1',
+    ]);
+    expect(FOUNDATIONAL_SKILLS.every(Object.isFrozen)).toBe(true);
+    expect(
+      FOUNDATIONAL_SKILLS.every(
+        (skill) => !('execute' in skill) && !('executor' in skill),
+      ),
+    ).toBe(true);
+  });
+});

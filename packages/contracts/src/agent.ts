@@ -1,0 +1,184 @@
+import { z } from 'zod';
+
+import { ActionProposalSchema } from './action.js';
+import {
+  DataClassSchema,
+  IdentifierSchema,
+  IsoDateTimeSchema,
+  JsonValueSchema,
+  RiskClassSchema,
+  SchemaVersionSchema,
+  SemanticVersionSchema,
+  UuidSchema,
+  VersionedSchemaReferenceSchema,
+  deepFreeze,
+  type DeepReadonly,
+} from './capability.js';
+
+export const ModelIdSchema = z.enum(['gpt-5.6-luna', 'gpt-5.6-terra']);
+
+const ModelPolicySchema = z.strictObject({
+  defaultModel: z.literal('gpt-5.6-luna'),
+  complexModel: z.literal('gpt-5.6-terra'),
+  escalationReasons: z
+    .array(
+      z.enum([
+        'dependent-cross-domain',
+        'failed-output-validation',
+        'low-confidence-reconciliation',
+        'luna-unavailable',
+        'complex-reasoning',
+      ]),
+    )
+    .min(1),
+});
+
+const ExecutionBudgetSchema = z.strictObject({
+  maxTurns: z.number().int().positive().max(64),
+  maxCapabilityCalls: z.number().int().nonnegative().max(128),
+  maxParallelCalls: z.number().int().min(1).max(3),
+  timeoutMs: z.number().int().positive().max(600_000),
+  maxInputTokens: z.number().int().positive(),
+  maxOutputTokens: z.number().int().positive(),
+});
+
+const AgentManifestBaseSchema = z
+  .strictObject({
+    schemaVersion: SchemaVersionSchema,
+    id: IdentifierSchema,
+    version: SemanticVersionSchema,
+    kind: z.enum(['manager', 'specialist']),
+    intents: z.array(IdentifierSchema).min(1).max(64),
+    instructionIds: z.array(IdentifierSchema).min(1).max(64),
+    skillIds: z.array(IdentifierSchema).min(1).max(64),
+    capabilityAllowlist: z.array(IdentifierSchema).max(128),
+    readableDataClasses: z.array(DataClassSchema).max(128),
+    modelPolicy: ModelPolicySchema,
+    executionBudget: ExecutionBudgetSchema,
+    schemaRefs: z.strictObject({
+      input: VersionedSchemaReferenceSchema,
+      output: VersionedSchemaReferenceSchema,
+    }),
+    riskCeiling: RiskClassSchema,
+    evalSuite: VersionedSchemaReferenceSchema,
+  })
+  .superRefine((value, context) => {
+    for (const [path, values] of [
+      ['intents', value.intents],
+      ['instructionIds', value.instructionIds],
+      ['skillIds', value.skillIds],
+      ['capabilityAllowlist', value.capabilityAllowlist],
+      ['readableDataClasses', value.readableDataClasses],
+    ] as const) {
+      if (new Set(values).size !== values.length) {
+        context.addIssue({
+          code: 'custom',
+          path: [path],
+          message: `${path} must not contain duplicates`,
+        });
+      }
+    }
+  });
+
+export const AgentManifestSchema =
+  AgentManifestBaseSchema.transform(deepFreeze);
+export type AgentManifest = DeepReadonly<
+  z.input<typeof AgentManifestBaseSchema>
+>;
+
+const EvidenceSchema = z
+  .strictObject({
+    id: IdentifierSchema,
+    source: IdentifierSchema,
+    observedAt: IsoDateTimeSchema,
+    upstreamAt: IsoDateTimeSchema,
+    expiresAt: IsoDateTimeSchema,
+  })
+  .superRefine((value, context) => {
+    const upstreamAt = Date.parse(value.upstreamAt);
+    const observedAt = Date.parse(value.observedAt);
+    const expiresAt = Date.parse(value.expiresAt);
+    if (upstreamAt > observedAt || observedAt > expiresAt) {
+      context.addIssue({
+        code: 'custom',
+        path: ['observedAt'],
+        message: 'Evidence freshness chronology is invalid',
+      });
+    }
+  });
+
+const DerivedValueSchema = z.strictObject({
+  id: IdentifierSchema,
+  value: JsonValueSchema,
+  computation: IdentifierSchema,
+  inputEvidenceIds: z.array(IdentifierSchema).min(1).max(128),
+});
+
+const UsageSchema = z.strictObject({
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  modelCostCadMinor: z.number().int().safe().nonnegative(),
+  capabilityCalls: z.number().int().nonnegative(),
+  durationMs: z.number().int().nonnegative(),
+});
+
+const ModelResolutionSchema = z.strictObject({
+  requestedModel: ModelIdSchema,
+  resolvedModel: ModelIdSchema,
+  reason: z.enum([
+    'default',
+    'complexity',
+    'availability-fallback',
+    'failed-output-validation',
+    'low-confidence-reconciliation',
+  ]),
+});
+
+export const SafeErrorSchema = z.strictObject({
+  code: IdentifierSchema,
+  message: z.string().trim().min(1).max(500),
+  retryable: z.boolean(),
+});
+
+const AgentResultBaseSchema = z
+  .strictObject({
+    schemaVersion: SchemaVersionSchema,
+    runId: UuidSchema,
+    status: z.enum([
+      'completed',
+      'needs-approval',
+      'blocked',
+      'failed',
+      'cancelled',
+    ]),
+    output: JsonValueSchema.optional(),
+    evidence: z.array(EvidenceSchema).max(512),
+    derivedValues: z.array(DerivedValueSchema).max(256),
+    actionProposals: z.array(ActionProposalSchema).max(64),
+    usage: UsageSchema,
+    modelResolution: ModelResolutionSchema,
+    localTraceReference: IdentifierSchema,
+    safeError: SafeErrorSchema.optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.status === 'failed' && value.safeError === undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['safeError'],
+        message: 'Failed agent results require a safe error',
+      });
+    }
+    const evidenceIds = new Set(value.evidence.map((item) => item.id));
+    for (const [index, derived] of value.derivedValues.entries()) {
+      if (derived.inputEvidenceIds.some((id) => !evidenceIds.has(id))) {
+        context.addIssue({
+          code: 'custom',
+          path: ['derivedValues', index, 'inputEvidenceIds'],
+          message: 'Derived value lineage references unknown evidence',
+        });
+      }
+    }
+  });
+
+export const AgentResultSchema = AgentResultBaseSchema.transform(deepFreeze);
+export type AgentResult = DeepReadonly<z.input<typeof AgentResultBaseSchema>>;
