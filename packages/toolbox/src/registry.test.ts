@@ -14,6 +14,7 @@ import {
   ToolboxPolicyError,
   createCapabilityRegistry,
   hashCanonicalJson,
+  type ProviderWriteApprovalBinding,
 } from './index.js';
 
 const specialistManifest = AgentManifestSchema.parse({
@@ -236,18 +237,39 @@ describe('deny-by-default capability registry', () => {
       capabilityAllowlist: ['google-calendar.event.create'],
       riskCeiling: 'provider-write',
     });
+    const userId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f101';
+    const runId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f102';
+    const decisionId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f103';
+    const input = { query: 'create the approved event' };
+    let consumed = false;
+    let consumedBinding: ProviderWriteApprovalBinding | undefined;
     const registry = createCapabilityRegistry(
       [registration(providerWrite)],
       runtimeSchemas,
+      {
+        providerWriteApprovalStore: {
+          consume: async (binding) => {
+            consumedBinding = binding;
+            if (
+              binding.decisionId !== decisionId ||
+              binding.userId !== userId ||
+              binding.runId !== runId ||
+              binding.capabilityId !== 'google-calendar.event.create' ||
+              binding.payloadHash !== hashCanonicalJson(input)
+            ) {
+              return 'mismatch';
+            }
+            if (consumed) return 'consumed';
+            consumed = true;
+            return 'authorized';
+          },
+        },
+      },
     );
     const [resolved] = registry.resolveForAgent({
       manifest,
       requestedCapabilityIds: ['google-calendar.event.create'],
     });
-    const userId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f101';
-    const runId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f102';
-    const decisionId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f103';
-    const input = { query: 'create the approved event' };
     const context = {
       requestId: 'request-1',
       runId,
@@ -261,33 +283,20 @@ describe('deny-by-default capability registry', () => {
       code: 'provider-write-approval-missing',
     });
 
-    let consumed = false;
-    const now = Date.now();
     const approvedContext = {
       ...context,
-      providerWriteApproval: {
-        claims: {
-          proposalId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f104',
-          decisionId,
-          userId,
-          runId,
-          capabilityId: 'google-calendar.event.create',
-          payloadHash: hashCanonicalJson(input),
-          approvedAt: new Date(now - 1_000).toISOString(),
-          expiresAt: new Date(now + 60_000).toISOString(),
-          state: 'approved' as const,
-          authenticatedVisual: true as const,
-        },
-        consume: async (candidateDecisionId: string) => {
-          if (candidateDecisionId !== decisionId || consumed) return false;
-          consumed = true;
-          return true;
-        },
-      },
+      approvalDecisionId: decisionId,
     };
 
     await expect(resolved?.invoke(input, approvedContext)).resolves.toEqual({
       count: 0,
+    });
+    expect(consumedBinding).toMatchObject({
+      decisionId,
+      userId,
+      runId,
+      capabilityId: 'google-calendar.event.create',
+      payloadHash: hashCanonicalJson(input),
     });
     await expect(
       resolved?.invoke(input, approvedContext),

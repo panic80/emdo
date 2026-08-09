@@ -210,45 +210,8 @@ export interface ServerCapabilityContext {
   readonly userId: string;
   readonly agentId: string;
   readonly spaceAccessGrantId: string;
-  readonly providerWriteApproval?: ProviderWriteApprovalContext;
+  readonly approvalDecisionId?: string;
   readonly abortSignal: AbortSignal;
-}
-
-const ProviderWriteApprovalClaimsBaseSchema = z
-  .strictObject({
-    proposalId: UuidSchema,
-    decisionId: UuidSchema,
-    userId: UuidSchema,
-    runId: UuidSchema,
-    capabilityId: IdentifierSchema,
-    payloadHash: Sha256Schema,
-    approvedAt: IsoDateTimeSchema,
-    expiresAt: IsoDateTimeSchema,
-    state: z.literal('approved'),
-    authenticatedVisual: z.literal(true),
-  })
-  .superRefine((value, context) => {
-    const lifetimeMs =
-      Date.parse(value.expiresAt) - Date.parse(value.approvedAt);
-    if (lifetimeMs <= 0 || lifetimeMs > 600_000) {
-      context.addIssue({
-        code: 'custom',
-        path: ['expiresAt'],
-        message: 'Provider-write approval must expire within ten minutes',
-      });
-    }
-  });
-
-export const ProviderWriteApprovalClaimsSchema =
-  ProviderWriteApprovalClaimsBaseSchema.transform(deepFreeze);
-
-export type ProviderWriteApprovalClaims = DeepReadonly<
-  z.input<typeof ProviderWriteApprovalClaimsBaseSchema>
->;
-
-export interface ProviderWriteApprovalContext {
-  readonly claims: ProviderWriteApprovalClaims;
-  consume(decisionId: string): Promise<boolean>;
 }
 
 export type CapabilityExecutor<Input, Output> = (

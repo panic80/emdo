@@ -4,7 +4,7 @@ import {
   AgentManifestSchema,
   CapabilityDescriptorSchema,
   IdentifierSchema,
-  ProviderWriteApprovalClaimsSchema,
+  UuidSchema,
   type AgentManifest,
   type RegisteredCapability,
   type ResolvedCapability,
@@ -27,9 +27,33 @@ export interface CapabilityRegistry {
   }): readonly ResolvedCapability[];
 }
 
+export type ProviderWriteApprovalStatus =
+  'authorized' | 'not-found' | 'mismatch' | 'expired' | 'consumed';
+
+export interface ProviderWriteApprovalBinding {
+  readonly decisionId: string;
+  readonly userId: string;
+  readonly runId: string;
+  readonly capabilityId: string;
+  readonly payloadHash: string;
+  readonly checkedAt: string;
+}
+
+export interface ProviderWriteApprovalStore {
+  /** Atomically verifies persisted visual approval and consumes it for this binding. */
+  consume(
+    binding: ProviderWriteApprovalBinding,
+  ): Promise<ProviderWriteApprovalStatus>;
+}
+
+export interface CapabilityRegistryOptions {
+  readonly providerWriteApprovalStore?: ProviderWriteApprovalStore;
+}
+
 export const createCapabilityRegistry = (
   registrations: readonly RegisteredCapability[],
   runtimeSchemas: RuntimeSchemaRegistry,
+  options: CapabilityRegistryOptions = {},
 ): CapabilityRegistry => {
   const byId = new Map<string, ResolvedCapability>();
 
@@ -52,50 +76,46 @@ export const createCapabilityRegistry = (
       );
 
       if (descriptor.capabilityKind === 'provider-write') {
-        const approval = context.providerWriteApproval;
-        if (approval === undefined) {
+        const approvalStore = options.providerWriteApprovalStore;
+        if (approvalStore === undefined) {
+          throw new ToolboxPolicyError(
+            'provider-write-approval-store-required',
+            'Provider-write execution requires the server approval store',
+          );
+        }
+        const decisionId = UuidSchema.safeParse(context.approvalDecisionId);
+        if (!decisionId.success) {
           throw new ToolboxPolicyError(
             'provider-write-approval-missing',
             'Provider-write execution requires an approved proposal',
           );
         }
 
-        const claimsResult = ProviderWriteApprovalClaimsSchema.safeParse(
-          approval.claims,
-        );
-        if (!claimsResult.success) {
-          throw new ToolboxPolicyError(
-            'provider-write-approval-invalid',
-            'Provider-write approval claims are invalid',
-          );
-        }
-        const claims = claimsResult.data;
-        const bindingIsValid =
-          claims.userId === context.userId &&
-          claims.runId === context.runId &&
-          claims.capabilityId === descriptor.id &&
-          claims.payloadHash === hashCanonicalJson(parsedInput);
-        if (!bindingIsValid) {
-          throw new ToolboxPolicyError(
-            'provider-write-approval-invalid',
-            'Provider-write approval does not match this execution',
-          );
-        }
-        const now = Date.now();
-        if (
-          Date.parse(claims.approvedAt) > now ||
-          Date.parse(claims.expiresAt) < now
-        ) {
-          throw new ToolboxPolicyError(
-            'provider-write-approval-expired',
-            'Provider-write approval is not currently valid',
-          );
-        }
-        if (!(await approval.consume(claims.decisionId))) {
-          throw new ToolboxPolicyError(
-            'provider-write-approval-consumed',
-            'Provider-write approval was already consumed',
-          );
+        const approvalStatus = await approvalStore.consume({
+          decisionId: decisionId.data,
+          userId: context.userId,
+          runId: context.runId,
+          capabilityId: descriptor.id,
+          payloadHash: hashCanonicalJson(parsedInput),
+          checkedAt: new Date().toISOString(),
+        });
+        if (approvalStatus !== 'authorized') {
+          const [code, message] =
+            approvalStatus === 'expired'
+              ? ([
+                  'provider-write-approval-expired',
+                  'Provider-write approval is no longer valid',
+                ] as const)
+              : approvalStatus === 'consumed'
+                ? ([
+                    'provider-write-approval-consumed',
+                    'Provider-write approval was already consumed',
+                  ] as const)
+                : ([
+                    'provider-write-approval-invalid',
+                    'Provider-write approval does not match this execution',
+                  ] as const);
+          throw new ToolboxPolicyError(code, message);
         }
       }
 

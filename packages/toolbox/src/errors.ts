@@ -6,6 +6,7 @@ export type ToolboxPolicyErrorCode =
   | 'risk-ceiling-exceeded'
   | 'data-class-denied'
   | 'provider-write-approval-required'
+  | 'provider-write-approval-store-required'
   | 'provider-write-approval-missing'
   | 'provider-write-approval-invalid'
   | 'provider-write-approval-expired'
