@@ -61,7 +61,14 @@ importers:
 
   packages/db: {}
 
-  packages/domains: {}
+  packages/domains:
+    dependencies:
+      '@emdo/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@emdo/toolbox':
+        specifier: workspace:*
+        version: link:../toolbox
 
   packages/integrations: {}
 
