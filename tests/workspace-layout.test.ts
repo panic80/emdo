@@ -62,6 +62,7 @@ describe('EMDO workspace layout', () => {
     expect(manifest.engines).toMatchObject({ node: '>=24 <26', pnpm: '9.x' });
     expect(manifest.packageManager).toMatch(/^pnpm@9\./);
     expect(manifest.type).toBe('module');
+    expect(manifest.devDependencies['@types/node']).toMatch(/^24\.\d+\.\d+$/);
   });
 
   test('exposes the required root developer commands', () => {
@@ -88,5 +89,29 @@ describe('EMDO workspace layout', () => {
     for (const documentPath of architectureDocuments) {
       expect(existsSync(resolve(root, documentPath))).toBe(true);
     }
+  });
+
+  test('documents privacy scope and approval-class provider mutations', () => {
+    const architectureSecurity = readFileSync(
+      resolve(root, 'docs/architecture/security-boundaries.md'),
+      'utf8',
+    );
+    const security = readFileSync(resolve(root, 'SECURITY.md'), 'utf8');
+
+    for (const document of [architectureSecurity, security]) {
+      expect(document).toContain('Google Calendar writes');
+      expect(document).toContain('visual approval');
+      expect(document).toMatch(
+        /Deterministic reminders,\s+notifications, and\s+retries/,
+      );
+    }
+
+    expect(architectureSecurity).toMatch(
+      /Every record belongs to\s+exactly one server-derived space/,
+    );
+    expect(architectureSecurity).toContain('retains its original owner');
+    expect(architectureSecurity).toMatch(
+      /Household\s+owners cannot read member-private content/,
+    );
   });
 });
