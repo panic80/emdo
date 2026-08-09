@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AgentManifestSchema,
   CapabilityDescriptorSchema,
+  createRuntimeSchemaRegistry,
   type AgentManifest,
   type CapabilityDescriptor,
 } from '@emdo/contracts';
@@ -12,6 +13,7 @@ import {
   FOUNDATIONAL_SKILLS,
   ToolboxPolicyError,
   createCapabilityRegistry,
+  hashCanonicalJson,
 } from './index.js';
 
 const specialistManifest = AgentManifestSchema.parse({
@@ -77,10 +79,23 @@ const descriptor = (overrides: Partial<CapabilityDescriptor> = {}) =>
     ...overrides,
   });
 
+const capabilityInputSchema = z.strictObject({ query: z.string() });
+const capabilityOutputSchema = z.strictObject({
+  count: z.number().int().nonnegative(),
+});
+const runtimeSchemas = createRuntimeSchemaRegistry([
+  {
+    reference: { id: 'calendar.events-read.input', version: '1.0.0' },
+    schema: capabilityInputSchema,
+  },
+  {
+    reference: { id: 'calendar.events-read.output', version: '1.0.0' },
+    schema: capabilityOutputSchema,
+  },
+]);
+
 const registration = (capability: CapabilityDescriptor = descriptor()) => ({
   descriptor: capability,
-  inputSchema: z.strictObject({ query: z.string() }),
-  outputSchema: z.strictObject({ count: z.number().int().nonnegative() }),
   execute: async () => ({ count: 0 }),
 });
 
@@ -96,7 +111,7 @@ const expectPolicyCode = (operation: () => unknown, code: string) => {
 
 describe('deny-by-default capability registry', () => {
   it('resolves only capabilities present in a parsed manifest allowlist', async () => {
-    const registry = createCapabilityRegistry([registration()]);
+    const registry = createCapabilityRegistry([registration()], runtimeSchemas);
 
     const [resolved] = registry.resolveForAgent({
       manifest: specialistManifest,
@@ -106,6 +121,8 @@ describe('deny-by-default capability registry', () => {
     expect(resolved?.descriptor.id).toBe('calendar.events.read');
     expect(Object.isFrozen(resolved)).toBe(true);
     expect(resolved).not.toHaveProperty('execute');
+    expect(resolved).not.toHaveProperty('input');
+    expect(resolved).not.toHaveProperty('output');
     await expect(
       resolved?.invoke(
         { query: 'next week' },
@@ -147,7 +164,10 @@ describe('deny-by-default capability registry', () => {
       ...registration(),
       execute: async () => ({ count: -1 }),
     };
-    const registry = createCapabilityRegistry([unsafeRegistration]);
+    const registry = createCapabilityRegistry(
+      [unsafeRegistration],
+      runtimeSchemas,
+    );
     const [resolved] = registry.resolveForAgent({
       manifest: specialistManifest,
       requestedCapabilityIds: ['calendar.events.read'],
@@ -168,9 +188,121 @@ describe('deny-by-default capability registry', () => {
     ).rejects.toThrow();
   });
 
+  it('captures trusted schema parsers instead of exposing mutable schema instances', async () => {
+    const registry = createCapabilityRegistry([registration()], runtimeSchemas);
+    const [resolved] = registry.resolveForAgent({
+      manifest: specialistManifest,
+      requestedCapabilityIds: ['calendar.events.read'],
+    });
+    const mutableSchema =
+      capabilityInputSchema as typeof capabilityInputSchema & {
+        parse: (value: unknown) => { query: string };
+      };
+    const originalParse = mutableSchema.parse;
+    mutableSchema.parse = () => ({ query: 'forged' });
+
+    try {
+      await expect(
+        resolved?.invoke(
+          { query: 123 },
+          {
+            requestId: 'request-1',
+            runId: 'run-1',
+            userId: 'user-1',
+            agentId: 'scheduler',
+            spaceAccessGrantId: 'space-grant-1',
+            abortSignal: new AbortController().signal,
+          },
+        ),
+      ).rejects.toThrow();
+    } finally {
+      mutableSchema.parse = originalParse;
+    }
+  });
+
+  it('binds provider writes to a fresh single-use visual approval', async () => {
+    const providerWrite = descriptor({
+      id: 'google-calendar.event.create',
+      capabilityKind: 'provider-write',
+      riskClass: 'provider-write',
+      approval: {
+        rule: 'authenticated-visual-proposal',
+        expiresInSeconds: 600,
+      },
+      executorId: 'google-calendar.event-create.v1',
+    });
+    const manifest = AgentManifestSchema.parse({
+      ...specialistManifest,
+      capabilityAllowlist: ['google-calendar.event.create'],
+      riskCeiling: 'provider-write',
+    });
+    const registry = createCapabilityRegistry(
+      [registration(providerWrite)],
+      runtimeSchemas,
+    );
+    const [resolved] = registry.resolveForAgent({
+      manifest,
+      requestedCapabilityIds: ['google-calendar.event.create'],
+    });
+    const userId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f101';
+    const runId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f102';
+    const decisionId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f103';
+    const input = { query: 'create the approved event' };
+    const context = {
+      requestId: 'request-1',
+      runId,
+      userId,
+      agentId: 'scheduler',
+      spaceAccessGrantId: 'space-grant-1',
+      abortSignal: new AbortController().signal,
+    };
+
+    await expect(resolved?.invoke(input, context)).rejects.toMatchObject({
+      code: 'provider-write-approval-missing',
+    });
+
+    let consumed = false;
+    const now = Date.now();
+    const approvedContext = {
+      ...context,
+      providerWriteApproval: {
+        claims: {
+          proposalId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f104',
+          decisionId,
+          userId,
+          runId,
+          capabilityId: 'google-calendar.event.create',
+          payloadHash: hashCanonicalJson(input),
+          approvedAt: new Date(now - 1_000).toISOString(),
+          expiresAt: new Date(now + 60_000).toISOString(),
+          state: 'approved' as const,
+          authenticatedVisual: true as const,
+        },
+        consume: async (candidateDecisionId: string) => {
+          if (candidateDecisionId !== decisionId || consumed) return false;
+          consumed = true;
+          return true;
+        },
+      },
+    };
+
+    await expect(resolved?.invoke(input, approvedContext)).resolves.toEqual({
+      count: 0,
+    });
+    await expect(
+      resolved?.invoke(input, approvedContext),
+    ).rejects.toMatchObject({
+      code: 'provider-write-approval-consumed',
+    });
+  });
+
   it('denies duplicates and known capabilities absent from the allowlist', () => {
     expectPolicyCode(
-      () => createCapabilityRegistry([registration(), registration()]),
+      () =>
+        createCapabilityRegistry(
+          [registration(), registration()],
+          runtimeSchemas,
+        ),
       'duplicate-capability',
     );
 
@@ -178,10 +310,10 @@ describe('deny-by-default capability registry', () => {
       id: 'calendar.freebusy.read',
       executorId: 'calendar.freebusy-read.v1',
     });
-    const registry = createCapabilityRegistry([
-      registration(),
-      registration(extra),
-    ]);
+    const registry = createCapabilityRegistry(
+      [registration(), registration(extra)],
+      runtimeSchemas,
+    );
 
     expectPolicyCode(
       () =>
@@ -202,7 +334,7 @@ describe('deny-by-default capability registry', () => {
       capabilityAllowlist: ['calendar.events.read'],
       readableDataClasses: ['calendar.events'],
     });
-    const registry = createCapabilityRegistry([registration()]);
+    const registry = createCapabilityRegistry([registration()], runtimeSchemas);
 
     expectPolicyCode(
       () =>
@@ -229,9 +361,10 @@ describe('deny-by-default capability registry', () => {
       ...specialistManifest,
       capabilityAllowlist: ['google-calendar.event.create'],
     });
-    const riskRegistry = createCapabilityRegistry([
-      registration(providerWrite),
-    ]);
+    const riskRegistry = createCapabilityRegistry(
+      [registration(providerWrite)],
+      runtimeSchemas,
+    );
 
     expectPolicyCode(
       () =>
@@ -251,7 +384,10 @@ describe('deny-by-default capability registry', () => {
       ...specialistManifest,
       capabilityAllowlist: ['finance.transactions.read'],
     });
-    const dataRegistry = createCapabilityRegistry([registration(financeRead)]);
+    const dataRegistry = createCapabilityRegistry(
+      [registration(financeRead)],
+      runtimeSchemas,
+    );
 
     expectPolicyCode(
       () =>
@@ -276,7 +412,10 @@ describe('deny-by-default capability registry', () => {
       capabilityAllowlist: ['google-calendar.event.create'],
       riskCeiling: 'provider-write',
     });
-    const registry = createCapabilityRegistry([registration(unsafeWrite)]);
+    const registry = createCapabilityRegistry(
+      [registration(unsafeWrite)],
+      runtimeSchemas,
+    );
 
     expectPolicyCode(
       () =>
@@ -289,7 +428,7 @@ describe('deny-by-default capability registry', () => {
   });
 
   it('rejects untrusted evidence or model fields that try to broaden access', () => {
-    const registry = createCapabilityRegistry([registration()]);
+    const registry = createCapabilityRegistry([registration()], runtimeSchemas);
 
     expect(() =>
       registry.resolveForAgent({

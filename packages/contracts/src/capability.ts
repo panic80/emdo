@@ -210,8 +210,45 @@ export interface ServerCapabilityContext {
   readonly userId: string;
   readonly agentId: string;
   readonly spaceAccessGrantId: string;
-  readonly approvedProposalId?: string;
+  readonly providerWriteApproval?: ProviderWriteApprovalContext;
   readonly abortSignal: AbortSignal;
+}
+
+const ProviderWriteApprovalClaimsBaseSchema = z
+  .strictObject({
+    proposalId: UuidSchema,
+    decisionId: UuidSchema,
+    userId: UuidSchema,
+    runId: UuidSchema,
+    capabilityId: IdentifierSchema,
+    payloadHash: Sha256Schema,
+    approvedAt: IsoDateTimeSchema,
+    expiresAt: IsoDateTimeSchema,
+    state: z.literal('approved'),
+    authenticatedVisual: z.literal(true),
+  })
+  .superRefine((value, context) => {
+    const lifetimeMs =
+      Date.parse(value.expiresAt) - Date.parse(value.approvedAt);
+    if (lifetimeMs <= 0 || lifetimeMs > 600_000) {
+      context.addIssue({
+        code: 'custom',
+        path: ['expiresAt'],
+        message: 'Provider-write approval must expire within ten minutes',
+      });
+    }
+  });
+
+export const ProviderWriteApprovalClaimsSchema =
+  ProviderWriteApprovalClaimsBaseSchema.transform(deepFreeze);
+
+export type ProviderWriteApprovalClaims = DeepReadonly<
+  z.input<typeof ProviderWriteApprovalClaimsBaseSchema>
+>;
+
+export interface ProviderWriteApprovalContext {
+  readonly claims: ProviderWriteApprovalClaims;
+  consume(decisionId: string): Promise<boolean>;
 }
 
 export type CapabilityExecutor<Input, Output> = (
@@ -221,8 +258,6 @@ export type CapabilityExecutor<Input, Output> = (
 
 export interface RegisteredCapability<Input = unknown, Output = unknown> {
   readonly descriptor: CapabilityDescriptor;
-  readonly inputSchema: z.ZodType<Input>;
-  readonly outputSchema: z.ZodType<Output>;
   readonly execute: CapabilityExecutor<Input, Output>;
 }
 
@@ -231,9 +266,65 @@ export interface VersionedRuntimeSchema<Output = unknown> {
   readonly schema: z.ZodType<Output>;
 }
 
-export interface ResolvedCapability<Input = unknown, Output = unknown> {
+export interface RuntimeSchemaRegistry {
+  readonly size: number;
+  parse<Output = unknown>(
+    reference: VersionedSchemaReference,
+    value: unknown,
+  ): Output;
+  schema<Output = unknown>(
+    reference: VersionedSchemaReference,
+  ): z.ZodType<Output>;
+}
+
+const schemaKey = (reference: VersionedSchemaReference): string =>
+  `${reference.id}@${reference.version}`;
+
+export const createRuntimeSchemaRegistry = (
+  registrations: readonly VersionedRuntimeSchema[],
+): RuntimeSchemaRegistry => {
+  const parsers = new Map<string, (value: unknown) => unknown>();
+
+  for (const registration of registrations) {
+    const reference = VersionedSchemaReferenceSchema.parse(
+      registration.reference,
+    );
+    const key = schemaKey(reference);
+    if (parsers.has(key)) {
+      throw new Error(`Runtime schema ${key} is already registered`);
+    }
+    const parse = registration.schema.parse.bind(registration.schema);
+    parsers.set(key, parse);
+  }
+
+  const parse = <Output = unknown>(
+    rawReference: VersionedSchemaReference,
+    value: unknown,
+  ): Output => {
+    const reference = VersionedSchemaReferenceSchema.parse(rawReference);
+    const parser = parsers.get(schemaKey(reference));
+    if (parser === undefined) {
+      throw new Error(
+        `Runtime schema ${schemaKey(reference)} is not registered`,
+      );
+    }
+    return parser(value) as Output;
+  };
+
+  const schema: RuntimeSchemaRegistry['schema'] = (rawReference) => {
+    const reference = VersionedSchemaReferenceSchema.parse(rawReference);
+    if (!parsers.has(schemaKey(reference))) {
+      throw new Error(
+        `Runtime schema ${schemaKey(reference)} is not registered`,
+      );
+    }
+    return z.unknown().transform((value) => parse(reference, value));
+  };
+
+  return Object.freeze({ size: parsers.size, parse, schema });
+};
+
+export interface ResolvedCapability<Output = unknown> {
   readonly descriptor: CapabilityDescriptor;
-  readonly input: VersionedRuntimeSchema<Input>;
-  readonly output: VersionedRuntimeSchema<Output>;
   invoke(input: unknown, context: ServerCapabilityContext): Promise<Output>;
 }

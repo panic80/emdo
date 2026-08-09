@@ -13,7 +13,7 @@ import {
   VersionedSchemaReferenceSchema,
   deepFreeze,
   type DeepReadonly,
-  type VersionedRuntimeSchema,
+  type RuntimeSchemaRegistry,
 } from './capability.js';
 
 export const ModelIdSchema = z.enum(['gpt-5.6-luna', 'gpt-5.6-terra']);
@@ -189,6 +189,13 @@ const createAgentResultBaseSchema = <Output>(outputSchema: z.ZodType<Output>) =>
             message: 'Action proposal run must match the agent result run',
           });
         }
+        if (proposal.state !== 'pending') {
+          context.addIssue({
+            code: 'custom',
+            path: ['actionProposals', index, 'state'],
+            message: 'Agent-produced action proposals must be pending',
+          });
+        }
       }
     });
 
@@ -200,18 +207,12 @@ export const AgentResultSchema = createAgentResultSchema(JsonValueSchema);
 
 export const createAgentResultSchemaForManifest = <Output>(
   manifest: AgentManifest,
-  runtimeOutputSchema: VersionedRuntimeSchema<Output>,
+  runtimeSchemas: RuntimeSchemaRegistry,
 ) => {
-  if (
-    manifest.schemaRefs.output.id !== runtimeOutputSchema.reference.id ||
-    manifest.schemaRefs.output.version !== runtimeOutputSchema.reference.version
-  ) {
-    throw new Error(
-      'Runtime output schema reference does not match the manifest',
-    );
-  }
-
-  return createAgentResultSchema(runtimeOutputSchema.schema);
+  const outputSchema = runtimeSchemas.schema<Output>(
+    manifest.schemaRefs.output,
+  );
+  return createAgentResultSchema(outputSchema);
 };
 
 export type AgentResult = DeepReadonly<z.output<typeof AgentResultSchema>>;

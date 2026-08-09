@@ -4,13 +4,15 @@ import {
   AgentManifestSchema,
   CapabilityDescriptorSchema,
   IdentifierSchema,
+  ProviderWriteApprovalClaimsSchema,
   type AgentManifest,
   type RegisteredCapability,
   type ResolvedCapability,
+  type RuntimeSchemaRegistry,
 } from '@emdo/contracts';
 
 import { ToolboxPolicyError } from './errors.js';
-import { assertCapabilityAllowed } from './policy.js';
+import { assertCapabilityAllowed, hashCanonicalJson } from './policy.js';
 
 const ResolutionRequestSchema = z.strictObject({
   manifest: AgentManifestSchema,
@@ -27,6 +29,7 @@ export interface CapabilityRegistry {
 
 export const createCapabilityRegistry = (
   registrations: readonly RegisteredCapability[],
+  runtimeSchemas: RuntimeSchemaRegistry,
 ): CapabilityRegistry => {
   const byId = new Map<string, ResolvedCapability>();
 
@@ -40,25 +43,67 @@ export const createCapabilityRegistry = (
         `Capability ${descriptor.id} is already registered`,
       );
     }
-
-    const input = Object.freeze({
-      reference: descriptor.inputSchema,
-      schema: registration.inputSchema,
-    });
-    const output = Object.freeze({
-      reference: descriptor.outputSchema,
-      schema: registration.outputSchema,
-    });
+    runtimeSchemas.schema(descriptor.inputSchema);
+    runtimeSchemas.schema(descriptor.outputSchema);
     const invoke: ResolvedCapability['invoke'] = async (rawInput, context) => {
-      const parsedInput = registration.inputSchema.parse(rawInput);
+      const parsedInput = runtimeSchemas.parse(
+        descriptor.inputSchema,
+        rawInput,
+      );
+
+      if (descriptor.capabilityKind === 'provider-write') {
+        const approval = context.providerWriteApproval;
+        if (approval === undefined) {
+          throw new ToolboxPolicyError(
+            'provider-write-approval-missing',
+            'Provider-write execution requires an approved proposal',
+          );
+        }
+
+        const claimsResult = ProviderWriteApprovalClaimsSchema.safeParse(
+          approval.claims,
+        );
+        if (!claimsResult.success) {
+          throw new ToolboxPolicyError(
+            'provider-write-approval-invalid',
+            'Provider-write approval claims are invalid',
+          );
+        }
+        const claims = claimsResult.data;
+        const bindingIsValid =
+          claims.userId === context.userId &&
+          claims.runId === context.runId &&
+          claims.capabilityId === descriptor.id &&
+          claims.payloadHash === hashCanonicalJson(parsedInput);
+        if (!bindingIsValid) {
+          throw new ToolboxPolicyError(
+            'provider-write-approval-invalid',
+            'Provider-write approval does not match this execution',
+          );
+        }
+        const now = Date.now();
+        if (
+          Date.parse(claims.approvedAt) > now ||
+          Date.parse(claims.expiresAt) < now
+        ) {
+          throw new ToolboxPolicyError(
+            'provider-write-approval-expired',
+            'Provider-write approval is not currently valid',
+          );
+        }
+        if (!(await approval.consume(claims.decisionId))) {
+          throw new ToolboxPolicyError(
+            'provider-write-approval-consumed',
+            'Provider-write approval was already consumed',
+          );
+        }
+      }
+
       const rawOutput = await registration.execute(parsedInput, context);
-      return registration.outputSchema.parse(rawOutput);
+      return runtimeSchemas.parse(descriptor.outputSchema, rawOutput);
     };
 
-    byId.set(
-      descriptor.id,
-      Object.freeze({ descriptor, input, output, invoke }),
-    );
+    byId.set(descriptor.id, Object.freeze({ descriptor, invoke }));
   }
 
   const resolveForAgent: CapabilityRegistry['resolveForAgent'] = (

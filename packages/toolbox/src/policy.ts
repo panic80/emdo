@@ -1,4 +1,11 @@
-import type { AgentManifest, CapabilityDescriptor } from '@emdo/contracts';
+import { createHash } from 'node:crypto';
+
+import {
+  JsonValueSchema,
+  type AgentManifest,
+  type CapabilityDescriptor,
+  type JsonValue,
+} from '@emdo/contracts';
 
 import { ToolboxPolicyError } from './errors.js';
 
@@ -8,6 +15,32 @@ const RISK_RANK = {
   'local-write': 2,
   'provider-write': 3,
 } as const;
+
+const canonicalJson = (value: JsonValue): string => {
+  if (
+    value === null ||
+    typeof value === 'boolean' ||
+    typeof value === 'number'
+  ) {
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(',')}]`;
+  }
+
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key]!)}`)
+    .join(',')}}`;
+};
+
+export const hashCanonicalJson = (value: unknown): string =>
+  createHash('sha256')
+    .update(canonicalJson(JsonValueSchema.parse(value)))
+    .digest('hex');
 
 export const assertCapabilityAllowed = (
   manifest: AgentManifest,

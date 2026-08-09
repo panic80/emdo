@@ -87,3 +87,22 @@ export const ActionProposalSchema =
 export type ActionProposal = DeepReadonly<
   z.input<typeof ActionProposalBaseSchema>
 >;
+
+const ActionDecisionBaseSchema = z.strictObject({
+  schemaVersion: SchemaVersionSchema,
+  id: UuidSchema,
+  proposalId: UuidSchema,
+  userId: UuidSchema,
+  authenticatedSessionId: UuidSchema,
+  payloadHash: Sha256Schema,
+  decision: z.enum(['approved', 'rejected']),
+  channel: z.literal('authenticated-visual'),
+  decidedAt: IsoDateTimeSchema,
+  idempotencyKey: IdempotencyKeySchema,
+});
+
+export const ActionDecisionSchema =
+  ActionDecisionBaseSchema.transform(deepFreeze);
+export type ActionDecision = DeepReadonly<
+  z.input<typeof ActionDecisionBaseSchema>
+>;

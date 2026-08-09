@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import {
+  ActionDecisionSchema,
   ActionProposalSchema,
   AgentManifestSchema,
   AgentResultSchema,
@@ -11,6 +12,7 @@ import {
   JsonValueSchema,
   SyncOperationSchema,
   createAgentResultSchemaForManifest,
+  createRuntimeSchemaRegistry,
 } from './index.js';
 
 const ids = {
@@ -399,13 +401,22 @@ describe('shared contract schemas', () => {
         runId: ids.request,
       }),
     ).toThrow(/proposal.*run/i);
+    expect(() =>
+      AgentResultSchema.parse({
+        ...result,
+        actionProposals: [{ ...proposal, state: 'approved' }],
+      }),
+    ).toThrow(/must be pending/i);
 
-    const typedResultSchema = createAgentResultSchemaForManifest(
-      AgentManifestSchema.parse(manifest),
+    const typedRuntimeSchemas = createRuntimeSchemaRegistry([
       {
         reference: manifest.schemaRefs.output,
         schema: z.strictObject({ message: z.string().min(1) }),
       },
+    ]);
+    const typedResultSchema = createAgentResultSchemaForManifest(
+      AgentManifestSchema.parse(manifest),
+      typedRuntimeSchemas,
     );
 
     expect(typedResultSchema.parse(result).output).toEqual({
@@ -418,10 +429,30 @@ describe('shared contract schemas', () => {
       }),
     ).toThrow();
     expect(() =>
-      createAgentResultSchemaForManifest(AgentManifestSchema.parse(manifest), {
-        reference: { id: 'other.output', version: '1.0.0' },
-        schema: z.unknown(),
-      }),
-    ).toThrow(/schema reference/i);
+      createAgentResultSchemaForManifest(
+        AgentManifestSchema.parse(manifest),
+        createRuntimeSchemaRegistry([
+          {
+            reference: { id: 'other.output', version: '1.0.0' },
+            schema: z.unknown(),
+          },
+        ]),
+      ),
+    ).toThrow(/not registered/i);
+
+    expect(
+      ActionDecisionSchema.parse({
+        schemaVersion: 1,
+        id: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f009',
+        proposalId: ids.proposal,
+        userId: ids.user,
+        authenticatedSessionId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f010',
+        payloadHash: 'a'.repeat(64),
+        decision: 'approved',
+        channel: 'authenticated-visual',
+        decidedAt: '2026-08-09T16:01:00.000Z',
+        idempotencyKey: 'decision:018f1f5e:calendar-write',
+      }).channel,
+    ).toBe('authenticated-visual');
   });
 });

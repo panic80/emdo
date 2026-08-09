@@ -5,7 +5,11 @@ export type ToolboxPolicyErrorCode =
   | 'manager-capability-denied'
   | 'risk-ceiling-exceeded'
   | 'data-class-denied'
-  | 'provider-write-approval-required';
+  | 'provider-write-approval-required'
+  | 'provider-write-approval-missing'
+  | 'provider-write-approval-invalid'
+  | 'provider-write-approval-expired'
+  | 'provider-write-approval-consumed';
 
 export class ToolboxPolicyError extends Error {
   readonly code: ToolboxPolicyErrorCode;
