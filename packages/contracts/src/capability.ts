@@ -90,6 +90,10 @@ export const VersionedSchemaReferenceSchema = z
   })
   .transform(deepFreeze);
 
+export type VersionedSchemaReference = DeepReadonly<
+  z.input<typeof VersionedSchemaReferenceSchema>
+>;
+
 export const DataClassSchema = IdentifierSchema;
 export const ScopeSchema = IdentifierSchema;
 
@@ -220,4 +224,16 @@ export interface RegisteredCapability<Input = unknown, Output = unknown> {
   readonly inputSchema: z.ZodType<Input>;
   readonly outputSchema: z.ZodType<Output>;
   readonly execute: CapabilityExecutor<Input, Output>;
+}
+
+export interface VersionedRuntimeSchema<Output = unknown> {
+  readonly reference: VersionedSchemaReference;
+  readonly schema: z.ZodType<Output>;
+}
+
+export interface ResolvedCapability<Input = unknown, Output = unknown> {
+  readonly descriptor: CapabilityDescriptor;
+  readonly input: VersionedRuntimeSchema<Input>;
+  readonly output: VersionedRuntimeSchema<Output>;
+  invoke(input: unknown, context: ServerCapabilityContext): Promise<Output>;
 }

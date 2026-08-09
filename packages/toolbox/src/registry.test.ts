@@ -95,7 +95,7 @@ const expectPolicyCode = (operation: () => unknown, code: string) => {
 };
 
 describe('deny-by-default capability registry', () => {
-  it('resolves only capabilities present in a parsed manifest allowlist', () => {
+  it('resolves only capabilities present in a parsed manifest allowlist', async () => {
     const registry = createCapabilityRegistry([registration()]);
 
     const [resolved] = registry.resolveForAgent({
@@ -105,6 +105,33 @@ describe('deny-by-default capability registry', () => {
 
     expect(resolved?.descriptor.id).toBe('calendar.events.read');
     expect(Object.isFrozen(resolved)).toBe(true);
+    expect(resolved).not.toHaveProperty('execute');
+    await expect(
+      resolved?.invoke(
+        { query: 'next week' },
+        {
+          requestId: 'request-1',
+          runId: 'run-1',
+          userId: 'user-1',
+          agentId: 'scheduler',
+          spaceAccessGrantId: 'space-grant-1',
+          abortSignal: new AbortController().signal,
+        },
+      ),
+    ).resolves.toEqual({ count: 0 });
+    await expect(
+      resolved?.invoke(
+        { query: 123 },
+        {
+          requestId: 'request-1',
+          runId: 'run-1',
+          userId: 'user-1',
+          agentId: 'scheduler',
+          spaceAccessGrantId: 'space-grant-1',
+          abortSignal: new AbortController().signal,
+        },
+      ),
+    ).rejects.toThrow();
     expectPolicyCode(
       () =>
         registry.resolveForAgent({
@@ -113,6 +140,32 @@ describe('deny-by-default capability registry', () => {
         }),
       'unknown-capability',
     );
+  });
+
+  it('validates executor output before returning it to an agent', async () => {
+    const unsafeRegistration = {
+      ...registration(),
+      execute: async () => ({ count: -1 }),
+    };
+    const registry = createCapabilityRegistry([unsafeRegistration]);
+    const [resolved] = registry.resolveForAgent({
+      manifest: specialistManifest,
+      requestedCapabilityIds: ['calendar.events.read'],
+    });
+
+    await expect(
+      resolved?.invoke(
+        { query: 'next week' },
+        {
+          requestId: 'request-1',
+          runId: 'run-1',
+          userId: 'user-1',
+          agentId: 'scheduler',
+          spaceAccessGrantId: 'space-grant-1',
+          abortSignal: new AbortController().signal,
+        },
+      ),
+    ).rejects.toThrow();
   });
 
   it('denies duplicates and known capabilities absent from the allowlist', () => {

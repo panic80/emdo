@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import {
   ActionProposalSchema,
@@ -9,6 +10,7 @@ import {
   DataDisclosureGrantSchema,
   JsonValueSchema,
   SyncOperationSchema,
+  createAgentResultSchemaForManifest,
 } from './index.js';
 
 const ids = {
@@ -390,5 +392,36 @@ describe('shared contract schemas', () => {
         },
       }),
     ).toThrow();
+
+    expect(() =>
+      AgentResultSchema.parse({
+        ...result,
+        runId: ids.request,
+      }),
+    ).toThrow(/proposal.*run/i);
+
+    const typedResultSchema = createAgentResultSchemaForManifest(
+      AgentManifestSchema.parse(manifest),
+      {
+        reference: manifest.schemaRefs.output,
+        schema: z.strictObject({ message: z.string().min(1) }),
+      },
+    );
+
+    expect(typedResultSchema.parse(result).output).toEqual({
+      message: 'A proposed time is ready.',
+    });
+    expect(() =>
+      typedResultSchema.parse({
+        ...result,
+        output: { message: 'Ready', capabilityOverride: 'calendar.delete' },
+      }),
+    ).toThrow();
+    expect(() =>
+      createAgentResultSchemaForManifest(AgentManifestSchema.parse(manifest), {
+        reference: { id: 'other.output', version: '1.0.0' },
+        schema: z.unknown(),
+      }),
+    ).toThrow(/schema reference/i);
   });
 });

@@ -6,6 +6,7 @@ import {
   IdentifierSchema,
   type AgentManifest,
   type RegisteredCapability,
+  type ResolvedCapability,
 } from '@emdo/contracts';
 
 import { ToolboxPolicyError } from './errors.js';
@@ -21,13 +22,13 @@ export interface CapabilityRegistry {
   resolveForAgent(request: {
     readonly manifest: AgentManifest;
     readonly requestedCapabilityIds: readonly string[];
-  }): readonly RegisteredCapability[];
+  }): readonly ResolvedCapability[];
 }
 
 export const createCapabilityRegistry = (
   registrations: readonly RegisteredCapability[],
 ): CapabilityRegistry => {
-  const byId = new Map<string, RegisteredCapability>();
+  const byId = new Map<string, ResolvedCapability>();
 
   for (const registration of registrations) {
     const descriptor = CapabilityDescriptorSchema.parse(
@@ -40,14 +41,23 @@ export const createCapabilityRegistry = (
       );
     }
 
+    const input = Object.freeze({
+      reference: descriptor.inputSchema,
+      schema: registration.inputSchema,
+    });
+    const output = Object.freeze({
+      reference: descriptor.outputSchema,
+      schema: registration.outputSchema,
+    });
+    const invoke: ResolvedCapability['invoke'] = async (rawInput, context) => {
+      const parsedInput = registration.inputSchema.parse(rawInput);
+      const rawOutput = await registration.execute(parsedInput, context);
+      return registration.outputSchema.parse(rawOutput);
+    };
+
     byId.set(
       descriptor.id,
-      Object.freeze({
-        descriptor,
-        inputSchema: registration.inputSchema,
-        outputSchema: registration.outputSchema,
-        execute: registration.execute,
-      }),
+      Object.freeze({ descriptor, input, output, invoke }),
     );
   }
 

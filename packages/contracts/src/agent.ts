@@ -13,6 +13,7 @@ import {
   VersionedSchemaReferenceSchema,
   deepFreeze,
   type DeepReadonly,
+  type VersionedRuntimeSchema,
 } from './capability.js';
 
 export const ModelIdSchema = z.enum(['gpt-5.6-luna', 'gpt-5.6-terra']);
@@ -140,45 +141,77 @@ export const SafeErrorSchema = z.strictObject({
   retryable: z.boolean(),
 });
 
-const AgentResultBaseSchema = z
-  .strictObject({
-    schemaVersion: SchemaVersionSchema,
-    runId: UuidSchema,
-    status: z.enum([
-      'completed',
-      'needs-approval',
-      'blocked',
-      'failed',
-      'cancelled',
-    ]),
-    output: JsonValueSchema.optional(),
-    evidence: z.array(EvidenceSchema).max(512),
-    derivedValues: z.array(DerivedValueSchema).max(256),
-    actionProposals: z.array(ActionProposalSchema).max(64),
-    usage: UsageSchema,
-    modelResolution: ModelResolutionSchema,
-    localTraceReference: IdentifierSchema,
-    safeError: SafeErrorSchema.optional(),
-  })
-  .superRefine((value, context) => {
-    if (value.status === 'failed' && value.safeError === undefined) {
-      context.addIssue({
-        code: 'custom',
-        path: ['safeError'],
-        message: 'Failed agent results require a safe error',
-      });
-    }
-    const evidenceIds = new Set(value.evidence.map((item) => item.id));
-    for (const [index, derived] of value.derivedValues.entries()) {
-      if (derived.inputEvidenceIds.some((id) => !evidenceIds.has(id))) {
+const createAgentResultBaseSchema = <Output>(outputSchema: z.ZodType<Output>) =>
+  z
+    .strictObject({
+      schemaVersion: SchemaVersionSchema,
+      runId: UuidSchema,
+      status: z.enum([
+        'completed',
+        'needs-approval',
+        'blocked',
+        'failed',
+        'cancelled',
+      ]),
+      output: outputSchema.optional(),
+      evidence: z.array(EvidenceSchema).max(512),
+      derivedValues: z.array(DerivedValueSchema).max(256),
+      actionProposals: z.array(ActionProposalSchema).max(64),
+      usage: UsageSchema,
+      modelResolution: ModelResolutionSchema,
+      localTraceReference: IdentifierSchema,
+      safeError: SafeErrorSchema.optional(),
+    })
+    .superRefine((value, context) => {
+      if (value.status === 'failed' && value.safeError === undefined) {
         context.addIssue({
           code: 'custom',
-          path: ['derivedValues', index, 'inputEvidenceIds'],
-          message: 'Derived value lineage references unknown evidence',
+          path: ['safeError'],
+          message: 'Failed agent results require a safe error',
         });
       }
-    }
-  });
+      const evidenceIds = new Set(value.evidence.map((item) => item.id));
+      for (const [index, derived] of value.derivedValues.entries()) {
+        if (derived.inputEvidenceIds.some((id) => !evidenceIds.has(id))) {
+          context.addIssue({
+            code: 'custom',
+            path: ['derivedValues', index, 'inputEvidenceIds'],
+            message: 'Derived value lineage references unknown evidence',
+          });
+        }
+      }
 
-export const AgentResultSchema = AgentResultBaseSchema.transform(deepFreeze);
-export type AgentResult = DeepReadonly<z.input<typeof AgentResultBaseSchema>>;
+      for (const [index, proposal] of value.actionProposals.entries()) {
+        if (proposal.runId !== value.runId) {
+          context.addIssue({
+            code: 'custom',
+            path: ['actionProposals', index, 'runId'],
+            message: 'Action proposal run must match the agent result run',
+          });
+        }
+      }
+    });
+
+export const createAgentResultSchema = <Output>(
+  outputSchema: z.ZodType<Output>,
+) => createAgentResultBaseSchema(outputSchema).transform(deepFreeze);
+
+export const AgentResultSchema = createAgentResultSchema(JsonValueSchema);
+
+export const createAgentResultSchemaForManifest = <Output>(
+  manifest: AgentManifest,
+  runtimeOutputSchema: VersionedRuntimeSchema<Output>,
+) => {
+  if (
+    manifest.schemaRefs.output.id !== runtimeOutputSchema.reference.id ||
+    manifest.schemaRefs.output.version !== runtimeOutputSchema.reference.version
+  ) {
+    throw new Error(
+      'Runtime output schema reference does not match the manifest',
+    );
+  }
+
+  return createAgentResultSchema(runtimeOutputSchema.schema);
+};
+
+export type AgentResult = DeepReadonly<z.output<typeof AgentResultSchema>>;
