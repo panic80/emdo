@@ -33,7 +33,7 @@
 
 **Step 2:** Run `pnpm exec vitest run tests/workspace-layout.test.ts`; expect failure because the workspace files do not exist.
 
-**Step 3:** Add the minimum root tooling, package manifests, and architectural records needed by the test. Pin Node 24 in `.nvmrc`, Docker, and CI; permit local Node 25 only for development verification.
+**Step 3:** Add the minimum root tooling, package manifests, and architectural records needed by the test. Pin the local Node 24 baseline in `.nvmrc` and the package engines; permit local Node 25 only for development verification. Docker and CI Node 24 pins are deferred to Task 9, whose Files section owns those assets.
 
 **Step 4:** Run `pnpm install`, then rerun the focused test; expect pass.
 
