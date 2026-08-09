@@ -1,0 +1,33 @@
+{
+  "name": "emdo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=24 <26",
+    "pnpm": "9.x"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "tsc --project tsconfig.base.json --noEmit",
+    "test": "vitest run",
+    "test:integration": "vitest run --passWithNoTests --dir tests/integration",
+    "evals": "vitest run --passWithNoTests --dir evals",
+    "build": "pnpm --recursive --if-present run build",
+    "dev": "pnpm --parallel --recursive --if-present run dev"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.19.0",
+    "@types/node": "^22.10.7",
+    "eslint": "^9.19.0",
+    "eslint-config-prettier": "^10.0.1",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.22.0",
+    "vitest": "^2.1.9"
+  }
+}
