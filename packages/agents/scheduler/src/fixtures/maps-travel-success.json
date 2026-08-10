@@ -1,0 +1,15 @@
+[
+  {
+    "query": {
+      "origin": "Home",
+      "destination": "Clinic",
+      "mode": "driving",
+      "departureAt": "2026-08-10T14:00:00.000Z"
+    },
+    "response": {
+      "status": "available",
+      "durationSeconds": 1200,
+      "fetchedAt": "2026-08-10T13:59:00.000Z"
+    }
+  }
+]

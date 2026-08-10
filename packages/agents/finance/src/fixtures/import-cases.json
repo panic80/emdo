@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "csv-mixed-rows",
+      "sourceFile": "statement-mixed.csv",
+      "format": "csv",
+      "mapping": {
+        "dateFormat": "yyyy-mm-dd",
+        "defaultCategoryId": null,
+        "columns": {
+          "postedOn": "Date",
+          "description": "Description",
+          "amount": "Amount",
+          "externalId": "Reference",
+          "categoryId": "Category"
+        }
+      },
+      "expected": { "accepted": 2, "rejected": 1, "duplicates": 1 }
+    },
+    {
+      "id": "ofx-mixed-rows",
+      "sourceFile": "statement-mixed.ofx",
+      "format": "ofx",
+      "mapping": { "defaultCategoryId": "category-dining" },
+      "expected": { "accepted": 1, "rejected": 1, "duplicates": 0 }
+    }
+  ]
+}

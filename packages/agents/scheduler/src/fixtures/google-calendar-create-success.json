@@ -1,0 +1,27 @@
+{
+  "binding": {
+    "calendarId": "primary",
+    "eventId": "emdodentist20260810",
+    "operation": "create"
+  },
+  "before": {
+    "calendarVersion": "calendar-v7",
+    "event": null
+  },
+  "apply": {
+    "status": "applied",
+    "providerRequestId": "recorded-request-create-1"
+  },
+  "after": {
+    "calendarVersion": "calendar-v8",
+    "event": {
+      "eventId": "emdodentist20260810",
+      "summary": "Dentist",
+      "start": "2026-08-10T15:00:00.000Z",
+      "end": "2026-08-10T16:00:00.000Z",
+      "timeZone": "America/Toronto",
+      "location": "Clinic",
+      "eventVersion": "event-v1"
+    }
+  }
+}
