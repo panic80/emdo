@@ -14,7 +14,10 @@ import {
   ToolboxPolicyError,
   createCapabilityRegistry,
   hashCanonicalJson,
+  hashCapabilityDescriptorBinding,
+  hashProviderWriteApprovalBinding,
   type ProviderWriteApprovalBinding,
+  type ProviderWriteApprovalStore,
 } from './index.js';
 
 const specialistManifest = AgentManifestSchema.parse({
@@ -80,6 +83,104 @@ const descriptor = (overrides: Partial<CapabilityDescriptor> = {}) =>
     ...overrides,
   });
 
+const providerDescriptor = (overrides: Partial<CapabilityDescriptor> = {}) =>
+  descriptor({
+    capabilityKind: 'provider-write',
+    riskClass: 'provider-write',
+    freshness: {
+      required: true,
+      maxAgeMs: 0,
+      revalidateBeforeExecution: true,
+    },
+    idempotency: {
+      required: true,
+      scope: 'provider-target',
+      ttlMs: 86_400_000,
+    },
+    approval: {
+      rule: 'authenticated-visual-proposal',
+      expiresInSeconds: 600,
+    },
+    ...overrides,
+  });
+
+const providerWriteSafety = {
+  atomicConditions: 'provider-native-single-request',
+  idempotency: 'provider-key',
+  retryOwnership: 'adapter-bounded-within-invocation',
+  reconciliation: 'required',
+} as const;
+
+const disclosureGrantId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f106';
+const providerPermit = (capability: CapabilityDescriptor) => {
+  const issuedAt = '2026-08-09T16:02:00.000Z';
+  const binding = {
+    decisionId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f103',
+    userId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f101',
+    agentId: 'scheduler',
+    runId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f102',
+    capabilityId: capability.id,
+    capabilityFingerprint: hashCapabilityDescriptorBinding(capability),
+    disclosureGrantId,
+    payloadHash: hashCanonicalJson({ query: 'create the approved event' }),
+    idempotencyTtlMs: capability.idempotency.ttlMs,
+  };
+  return {
+    proposalId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f104',
+    approvalHash: 'a'.repeat(64),
+    approvalBindingHash: hashProviderWriteApprovalBinding(binding),
+    capabilityFingerprint: hashCapabilityDescriptorBinding(capability),
+    proposalCreatedAt: '2026-08-09T16:00:00.000Z',
+    expiresAt: '2026-08-09T16:10:00.000Z',
+    disclosureGrantId,
+    disclosureGrantHash: 'd'.repeat(64),
+    providerIdempotencyKey: 'b'.repeat(64),
+    idempotencyExpiresAt: new Date(
+      Date.parse(issuedAt) + capability.idempotency.ttlMs,
+    ).toISOString(),
+    attemptId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f105',
+    attemptVersion: 1,
+    issuedAt,
+    targets: [
+      {
+        kind: 'google-calendar.event',
+        id: 'primary',
+        expectedVersion: 'etag-v1',
+      },
+    ],
+    providerPreconditions: [
+      {
+        kind: 'calendar-version',
+        targetId: 'primary',
+        expectedValue: 'etag-v1',
+      },
+    ],
+  } as const;
+};
+
+const markDispatching = (capability: CapabilityDescriptor) => ({
+  status: 'dispatch-authorized' as const,
+  authorization: providerPermit(capability),
+});
+
+const providerManifest = () =>
+  AgentManifestSchema.parse({
+    ...specialistManifest,
+    capabilityAllowlist: ['google-calendar.event.create'],
+    riskCeiling: 'provider-write',
+  });
+
+const providerInvocationContext = {
+  requestId: 'request-1',
+  runId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f102',
+  userId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f101',
+  agentId: 'untrusted-caller-agent',
+  spaceAccessGrantId: 'space-grant-1',
+  disclosureGrantId,
+  approvalDecisionId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f103',
+  abortSignal: new AbortController().signal,
+} as const;
+
 const capabilityInputSchema = z.strictObject({ query: z.string() });
 const capabilityOutputSchema = z.strictObject({
   count: z.number().int().nonnegative(),
@@ -95,10 +196,20 @@ const runtimeSchemas = createRuntimeSchemaRegistry([
   },
 ]);
 
-const registration = (capability: CapabilityDescriptor = descriptor()) => ({
-  descriptor: capability,
-  execute: async () => ({ count: 0 }),
-});
+const registration = (capability: CapabilityDescriptor = descriptor()) =>
+  capability.capabilityKind === 'provider-write'
+    ? {
+        descriptor: capability,
+        executeProviderWrite: async () => ({
+          application: 'applied' as const,
+          output: { count: 0 },
+        }),
+        providerWriteSafety,
+      }
+    : {
+        descriptor: capability,
+        execute: async () => ({ count: 0 }),
+      };
 
 const expectPolicyCode = (operation: () => unknown, code: string) => {
   try {
@@ -222,10 +333,8 @@ describe('deny-by-default capability registry', () => {
   });
 
   it('binds provider writes to a fresh single-use visual approval', async () => {
-    const providerWrite = descriptor({
+    const providerWrite = providerDescriptor({
       id: 'google-calendar.event.create',
-      capabilityKind: 'provider-write',
-      riskClass: 'provider-write',
       approval: {
         rule: 'authenticated-visual-proposal',
         expiresInSeconds: 600,
@@ -243,12 +352,30 @@ describe('deny-by-default capability registry', () => {
     const input = { query: 'create the approved event' };
     let consumed = false;
     let consumedBinding: ProviderWriteApprovalBinding | undefined;
+    let finalized = false;
+    let observedExpectedVersion: string | undefined;
+    const providerRegistration = {
+      descriptor: providerWrite,
+      executeProviderWrite: async (
+        _input: unknown,
+        context: {
+          providerWritePermit: {
+            targets: readonly { expectedVersion: string }[];
+          };
+        },
+      ) => {
+        observedExpectedVersion =
+          context.providerWritePermit.targets[0]?.expectedVersion;
+        return { application: 'applied' as const, output: { count: 0 } };
+      },
+      providerWriteSafety,
+    };
     const registry = createCapabilityRegistry(
-      [registration(providerWrite)],
+      [providerRegistration],
       runtimeSchemas,
       {
         providerWriteApprovalStore: {
-          consume: async (binding) => {
+          acquire: async (binding) => {
             consumedBinding = binding;
             if (
               binding.decisionId !== decisionId ||
@@ -257,13 +384,35 @@ describe('deny-by-default capability registry', () => {
               binding.capabilityId !== 'google-calendar.event.create' ||
               binding.payloadHash !== hashCanonicalJson(input)
             ) {
-              return 'mismatch';
+              return { status: 'mismatch' };
             }
-            if (consumed) return 'consumed';
+            if (consumed) {
+              return {
+                status: 'existing-attempt',
+                attemptState: 'executed',
+                authorization: providerPermit(providerWrite),
+                completion: {
+                  state: 'executed',
+                  application: 'applied',
+                  outputStatus: 'valid',
+                  resultHash: hashCanonicalJson({ count: 0 }),
+                },
+              };
+            }
             consumed = true;
-            return 'authorized';
+            return {
+              status: 'authorized',
+              authorization: providerPermit(providerWrite),
+            };
           },
+          markDispatching: async () => markDispatching(providerWrite),
+          finalize: async () => {
+            finalized = true;
+            return 'finalized';
+          },
+          reconcile: async () => 'mismatch',
         },
+        now: () => new Date('2026-08-09T16:02:01.000Z'),
       },
     );
     const [resolved] = registry.resolveForAgent({
@@ -276,6 +425,7 @@ describe('deny-by-default capability registry', () => {
       userId,
       agentId: 'scheduler',
       spaceAccessGrantId: 'space-grant-1',
+      disclosureGrantId,
       abortSignal: new AbortController().signal,
     };
 
@@ -294,15 +444,559 @@ describe('deny-by-default capability registry', () => {
     expect(consumedBinding).toMatchObject({
       decisionId,
       userId,
+      agentId: 'scheduler',
       runId,
       capabilityId: 'google-calendar.event.create',
+      capabilityFingerprint: hashCapabilityDescriptorBinding(providerWrite),
+      disclosureGrantId,
       payloadHash: hashCanonicalJson(input),
     });
+    expect(observedExpectedVersion).toBe('etag-v1');
+    expect(finalized).toBe(true);
     await expect(
       resolved?.invoke(input, approvedContext),
     ).rejects.toMatchObject({
-      code: 'provider-write-approval-consumed',
+      code: 'provider-write-recovery-required',
     });
+  });
+
+  it('does not redispatch an existing provider attempt during recovery', async () => {
+    const providerWrite = providerDescriptor({
+      id: 'google-calendar.event.create',
+      executorId: 'google-calendar.event-create.v1',
+    });
+    let dispatches = 0;
+    const registry = createCapabilityRegistry(
+      [
+        {
+          descriptor: providerWrite,
+          executeProviderWrite: async () => {
+            dispatches += 1;
+            return { application: 'applied' as const, output: { count: 0 } };
+          },
+          providerWriteSafety,
+        },
+      ],
+      runtimeSchemas,
+      {
+        providerWriteApprovalStore: {
+          acquire: async () => ({
+            status: 'existing-attempt' as const,
+            attemptState: 'executing' as const,
+            authorization: providerPermit(providerWrite),
+          }),
+          markDispatching: async () => markDispatching(providerWrite),
+          finalize: async () => 'mismatch',
+          reconcile: async () => 'mismatch',
+        },
+        now: () => new Date('2026-08-09T16:02:01.000Z'),
+      },
+    );
+    const [resolved] = registry.resolveForAgent({
+      manifest: providerManifest(),
+      requestedCapabilityIds: ['google-calendar.event.create'],
+    });
+
+    await expect(
+      resolved?.invoke(
+        { query: 'create the approved event' },
+        providerInvocationContext,
+      ),
+    ).rejects.toMatchObject({ code: 'provider-write-recovery-required' });
+    expect(dispatches).toBe(0);
+  });
+
+  it('rejects a cross-wired permit from another approved proposal before dispatch', async () => {
+    const providerWrite = providerDescriptor({
+      id: 'google-calendar.event.create',
+      executorId: 'google-calendar.event-create.v1',
+    });
+    let dispatches = 0;
+    let dispatchMarks = 0;
+    const crossWiredPermit = {
+      ...providerPermit(providerWrite),
+      proposalId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f199',
+      approvalHash: '9'.repeat(64),
+      approvalBindingHash: '7'.repeat(64),
+      providerIdempotencyKey: '8'.repeat(64),
+      targets: [
+        {
+          kind: 'google-calendar.event',
+          id: 'someone-elses-calendar',
+          expectedVersion: 'etag-other',
+        },
+      ],
+    };
+    const registry = createCapabilityRegistry(
+      [
+        {
+          descriptor: providerWrite,
+          executeProviderWrite: async () => {
+            dispatches += 1;
+            return { application: 'applied' as const, output: { count: 1 } };
+          },
+          providerWriteSafety,
+        },
+      ],
+      runtimeSchemas,
+      {
+        providerWriteApprovalStore: {
+          acquire: async () => ({
+            status: 'authorized',
+            authorization: crossWiredPermit,
+          }),
+          markDispatching: async () => {
+            dispatchMarks += 1;
+            return {
+              status: 'dispatch-authorized' as const,
+              authorization: crossWiredPermit,
+            };
+          },
+          finalize: async () => 'finalized',
+          reconcile: async () => 'mismatch',
+        },
+        now: () => new Date('2026-08-09T16:02:01.000Z'),
+      },
+    );
+    const [resolved] = registry.resolveForAgent({
+      manifest: providerManifest(),
+      requestedCapabilityIds: ['google-calendar.event.create'],
+    });
+
+    await expect(
+      resolved?.invoke(
+        { query: 'create the approved event' },
+        providerInvocationContext,
+      ),
+    ).rejects.toMatchObject({ code: 'provider-write-approval-invalid' });
+    expect(dispatchMarks).toBe(0);
+    expect(dispatches).toBe(0);
+  });
+
+  it('passes provider executors only the permit-bound security context', async () => {
+    const providerWrite = providerDescriptor({
+      id: 'google-calendar.event.create',
+      executorId: 'google-calendar.event-create.v1',
+    });
+    let contextKeys: string[] = [];
+    const registry = createCapabilityRegistry(
+      [
+        {
+          descriptor: providerWrite,
+          executeProviderWrite: async (_input, context) => {
+            contextKeys = Object.keys(context).sort();
+            return { application: 'applied' as const, output: { count: 1 } };
+          },
+          providerWriteSafety,
+        },
+      ],
+      runtimeSchemas,
+      {
+        providerWriteApprovalStore: {
+          acquire: async () => ({
+            status: 'authorized',
+            authorization: providerPermit(providerWrite),
+          }),
+          markDispatching: async () => markDispatching(providerWrite),
+          finalize: async () => 'finalized',
+          reconcile: async () => 'mismatch',
+        },
+        now: () => new Date('2026-08-09T16:02:01.000Z'),
+      },
+    );
+    const [resolved] = registry.resolveForAgent({
+      manifest: providerManifest(),
+      requestedCapabilityIds: ['google-calendar.event.create'],
+    });
+
+    await resolved?.invoke(
+      { query: 'create the approved event' },
+      providerInvocationContext,
+    );
+
+    expect(contextKeys).toEqual([
+      'abortSignal',
+      'agentId',
+      'providerWritePermit',
+      'requestId',
+      'runId',
+      'userId',
+    ]);
+  });
+
+  it('enters the provider adapter in the dispatch-mark continuation without another microtask gap', async () => {
+    const providerWrite = providerDescriptor({
+      id: 'google-calendar.event.create',
+      executorId: 'google-calendar.event-create.v1',
+    });
+    let dispatchEntered = false;
+    let authorizeDispatch:
+      ((result: ReturnType<typeof markDispatching>) => void) | undefined;
+    const dispatchGate = new Promise<ReturnType<typeof markDispatching>>(
+      (resolve) => {
+        authorizeDispatch = resolve;
+      },
+    );
+    const registry = createCapabilityRegistry(
+      [
+        {
+          descriptor: providerWrite,
+          executeProviderWrite: async () => {
+            dispatchEntered = true;
+            return { application: 'applied' as const, output: { count: 1 } };
+          },
+          providerWriteSafety,
+        },
+      ],
+      runtimeSchemas,
+      {
+        providerWriteApprovalStore: {
+          acquire: async () => ({
+            status: 'authorized',
+            authorization: providerPermit(providerWrite),
+          }),
+          markDispatching: () => dispatchGate,
+          finalize: async () => 'finalized',
+          reconcile: async () => 'mismatch',
+        },
+        now: () => new Date('2026-08-09T16:02:01.000Z'),
+      },
+    );
+    const [resolved] = registry.resolveForAgent({
+      manifest: providerManifest(),
+      requestedCapabilityIds: ['google-calendar.event.create'],
+    });
+
+    const invocation = resolved?.invoke(
+      { query: 'create the approved event' },
+      providerInvocationContext,
+    );
+    await Promise.resolve();
+    expect(dispatchEntered).toBe(false);
+    authorizeDispatch?.(markDispatching(providerWrite));
+    await Promise.resolve();
+
+    expect(dispatchEntered).toBe(true);
+    await expect(invocation).resolves.toEqual({ count: 1 });
+  });
+
+  it('fails and finalizes a provider write when approved versions drift', async () => {
+    const providerWrite = providerDescriptor({
+      id: 'google-calendar.event.create',
+      approval: {
+        rule: 'authenticated-visual-proposal',
+        expiresInSeconds: 600,
+      },
+      executorId: 'google-calendar.event-create.v1',
+    });
+    const manifest = AgentManifestSchema.parse({
+      ...specialistManifest,
+      capabilityAllowlist: ['google-calendar.event.create'],
+      riskCeiling: 'provider-write',
+    });
+    let finalState: string | undefined;
+    let conditionalCommitCalled = false;
+    const registry = createCapabilityRegistry(
+      [
+        {
+          descriptor: providerWrite,
+          executeProviderWrite: async () => {
+            conditionalCommitCalled = true;
+            return {
+              application: 'not-applied' as const,
+              reason: 'provider-precondition-failed' as const,
+            };
+          },
+          providerWriteSafety,
+        },
+      ],
+      runtimeSchemas,
+      {
+        providerWriteApprovalStore: {
+          acquire: async () => ({
+            status: 'authorized',
+            authorization: providerPermit(providerWrite),
+          }),
+          markDispatching: async () => markDispatching(providerWrite),
+          finalize: async (_binding, completion) => {
+            finalState = completion.state;
+            return 'finalized';
+          },
+          reconcile: async () => 'mismatch',
+        },
+        now: () => new Date('2026-08-09T16:02:01.000Z'),
+      },
+    );
+    const [resolved] = registry.resolveForAgent({
+      manifest,
+      requestedCapabilityIds: ['google-calendar.event.create'],
+    });
+
+    await expect(
+      resolved?.invoke(
+        { query: 'create the approved event' },
+        {
+          requestId: 'request-1',
+          runId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f102',
+          userId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f101',
+          agentId: 'scheduler',
+          spaceAccessGrantId: 'space-grant-1',
+          disclosureGrantId,
+          approvalDecisionId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f103',
+          abortSignal: new AbortController().signal,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'provider-write-precondition-stale' });
+    expect(finalState).toBe('not-applied');
+    expect(conditionalCommitCalled).toBe(true);
+  });
+
+  it('records timeout and thrown post-dispatch outcomes as indeterminate', async () => {
+    const providerWrite = providerDescriptor({
+      id: 'google-calendar.event.create',
+      timeoutMs: 5,
+      executorId: 'google-calendar.event-create.v1',
+    });
+    let completion: unknown;
+    const registry = createCapabilityRegistry(
+      [
+        {
+          descriptor: providerWrite,
+          executeProviderWrite: async () => new Promise<never>(() => undefined),
+          providerWriteSafety,
+        },
+      ],
+      runtimeSchemas,
+      {
+        providerWriteApprovalStore: {
+          acquire: async () => ({
+            status: 'authorized',
+            authorization: providerPermit(providerWrite),
+          }),
+          markDispatching: async () => markDispatching(providerWrite),
+          finalize: async (_binding, value) => {
+            completion = value;
+            return 'finalized';
+          },
+          reconcile: async () => 'mismatch',
+        },
+        now: () => new Date('2026-08-09T16:02:01.000Z'),
+      },
+    );
+    const [resolved] = registry.resolveForAgent({
+      manifest: providerManifest(),
+      requestedCapabilityIds: ['google-calendar.event.create'],
+    });
+
+    await expect(
+      resolved?.invoke(
+        { query: 'create the approved event' },
+        providerInvocationContext,
+      ),
+    ).rejects.toMatchObject({ code: 'provider-write-outcome-indeterminate' });
+    expect(completion).toMatchObject({
+      state: 'indeterminate',
+      reason: 'timeout-after-dispatch',
+      reconciliationRequired: true,
+    });
+  });
+
+  it('records an applied write with invalid output as executed, not retryable', async () => {
+    const providerWrite = providerDescriptor({
+      id: 'google-calendar.event.create',
+      executorId: 'google-calendar.event-create.v1',
+    });
+    let completion: unknown;
+    const registry = createCapabilityRegistry(
+      [
+        {
+          descriptor: providerWrite,
+          executeProviderWrite: async () => ({
+            application: 'applied' as const,
+            output: { count: -1 },
+          }),
+          providerWriteSafety,
+        },
+      ],
+      runtimeSchemas,
+      {
+        providerWriteApprovalStore: {
+          acquire: async () => ({
+            status: 'authorized',
+            authorization: providerPermit(providerWrite),
+          }),
+          markDispatching: async () => markDispatching(providerWrite),
+          finalize: async (_binding, value) => {
+            completion = value;
+            return 'finalized';
+          },
+          reconcile: async () => 'mismatch',
+        },
+        now: () => new Date('2026-08-09T16:02:01.000Z'),
+      },
+    );
+    const [resolved] = registry.resolveForAgent({
+      manifest: providerManifest(),
+      requestedCapabilityIds: ['google-calendar.event.create'],
+    });
+
+    await expect(
+      resolved?.invoke(
+        { query: 'create the approved event' },
+        providerInvocationContext,
+      ),
+    ).rejects.toMatchObject({ code: 'provider-write-output-invalid' });
+    expect(completion).toMatchObject({
+      state: 'executed',
+      application: 'applied',
+      outputStatus: 'invalid',
+    });
+  });
+
+  it('fails closed on cyclic evidence after dispatch and stores only a safe outcome', async () => {
+    const providerWrite = providerDescriptor({
+      id: 'google-calendar.event.create',
+      executorId: 'google-calendar.event-create.v1',
+    });
+    const cyclic: { self?: unknown } = {};
+    cyclic.self = cyclic;
+    let completion: unknown;
+    const registry = createCapabilityRegistry(
+      [
+        {
+          descriptor: providerWrite,
+          executeProviderWrite: async () =>
+            ({
+              application: 'applied',
+              output: { count: 1 },
+              evidence: cyclic,
+            }) as never,
+          providerWriteSafety,
+        },
+      ],
+      runtimeSchemas,
+      {
+        providerWriteApprovalStore: {
+          acquire: async () => ({
+            status: 'authorized',
+            authorization: providerPermit(providerWrite),
+          }),
+          markDispatching: async () => markDispatching(providerWrite),
+          finalize: async (_binding, value) => {
+            completion = value;
+            return 'finalized';
+          },
+          reconcile: async () => 'mismatch',
+        },
+        now: () => new Date('2026-08-09T16:02:01.000Z'),
+      },
+    );
+    const [resolved] = registry.resolveForAgent({
+      manifest: providerManifest(),
+      requestedCapabilityIds: ['google-calendar.event.create'],
+    });
+
+    await expect(
+      resolved?.invoke(
+        { query: 'create the approved event' },
+        providerInvocationContext,
+      ),
+    ).rejects.toMatchObject({ code: 'provider-write-outcome-indeterminate' });
+    expect(completion).toEqual({
+      state: 'indeterminate',
+      application: 'indeterminate',
+      reason: 'provider-outcome-envelope-invalid',
+      reconciliationRequired: true,
+    });
+  });
+
+  it('rejects provider registrations without an atomic idempotent safety contract', () => {
+    const providerWrite = providerDescriptor({
+      id: 'google-calendar.event.create',
+      executorId: 'google-calendar.event-create.v1',
+    });
+    expectPolicyCode(
+      () =>
+        createCapabilityRegistry(
+          [
+            {
+              descriptor: providerWrite,
+              executeProviderWrite: async () => ({
+                application: 'applied' as const,
+                output: { count: 1 },
+              }),
+            },
+          ],
+          runtimeSchemas,
+        ),
+      'capability-registration-invalid',
+    );
+  });
+
+  it('snapshots trusted executors, approval-store methods, and manifest identity', async () => {
+    const providerWrite = providerDescriptor({
+      id: 'google-calendar.event.create',
+      executorId: 'google-calendar.event-create.v1',
+    });
+    let originalExecutorCalled = false;
+    let swappedExecutorCalled = false;
+    let acquiredAgentId: string | undefined;
+    let executorAgentId: string | undefined;
+    const mutableRegistration = {
+      descriptor: providerWrite,
+      executeProviderWrite: async (
+        _input: unknown,
+        context: { agentId: string },
+      ) => {
+        originalExecutorCalled = true;
+        executorAgentId = context.agentId;
+        return {
+          application: 'applied' as const,
+          output: { count: 1 },
+        };
+      },
+      providerWriteSafety,
+    };
+    const mutableStore: ProviderWriteApprovalStore = {
+      acquire: async (binding: ProviderWriteApprovalBinding) => {
+        acquiredAgentId = binding.agentId;
+        return {
+          status: 'authorized' as const,
+          authorization: providerPermit(providerWrite),
+        };
+      },
+      markDispatching: async () => markDispatching(providerWrite),
+      finalize: async () => 'already-finalized' as const,
+      reconcile: async () => 'mismatch' as const,
+    };
+    const registry = createCapabilityRegistry(
+      [mutableRegistration],
+      runtimeSchemas,
+      {
+        providerWriteApprovalStore: mutableStore,
+        now: () => new Date('2026-08-09T16:02:01.000Z'),
+      },
+    );
+    mutableRegistration.executeProviderWrite = async () => {
+      swappedExecutorCalled = true;
+      return { application: 'applied' as const, output: { count: 9 } };
+    };
+    mutableStore.acquire = async () => ({ status: 'mismatch' as const });
+    const [resolved] = registry.resolveForAgent({
+      manifest: providerManifest(),
+      requestedCapabilityIds: ['google-calendar.event.create'],
+    });
+
+    await expect(
+      resolved?.invoke(
+        { query: 'create the approved event' },
+        providerInvocationContext,
+      ),
+    ).resolves.toEqual({ count: 1 });
+    expect(originalExecutorCalled).toBe(true);
+    expect(swappedExecutorCalled).toBe(false);
+    expect(acquiredAgentId).toBe('scheduler');
+    expect(executorAgentId).toBe('scheduler');
   });
 
   it('denies duplicates and known capabilities absent from the allowlist', () => {
@@ -356,10 +1050,8 @@ describe('deny-by-default capability registry', () => {
   });
 
   it('enforces risk ceilings and readable data classes', () => {
-    const providerWrite = descriptor({
+    const providerWrite = providerDescriptor({
       id: 'google-calendar.event.create',
-      capabilityKind: 'provider-write',
-      riskClass: 'provider-write',
       approval: {
         rule: 'authenticated-visual-proposal',
         expiresInSeconds: 600,
@@ -409,10 +1101,8 @@ describe('deny-by-default capability registry', () => {
   });
 
   it('rejects provider writes that do not require an authenticated visual proposal', () => {
-    const unsafeWrite = descriptor({
+    const unsafeWrite = providerDescriptor({
       id: 'google-calendar.event.create',
-      capabilityKind: 'provider-write',
-      riskClass: 'provider-write',
       approval: { rule: 'none', expiresInSeconds: 0 },
       executorId: 'google-calendar.event-create.v1',
     });

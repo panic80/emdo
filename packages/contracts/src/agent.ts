@@ -123,23 +123,82 @@ const UsageSchema = z.strictObject({
   durationMs: z.number().int().nonnegative(),
 });
 
-const ModelResolutionSchema = z.strictObject({
-  requestedModel: ModelIdSchema,
-  resolvedModel: ModelIdSchema,
-  reason: z.enum([
-    'default',
-    'complexity',
-    'availability-fallback',
-    'failed-output-validation',
-    'low-confidence-reconciliation',
-  ]),
-});
-
 export const SafeErrorSchema = z.strictObject({
   code: IdentifierSchema,
   message: z.string().trim().min(1).max(500),
   retryable: z.boolean(),
 });
+
+const ResolvedModelResolutionSchema = z.strictObject({
+  status: z.literal('resolved'),
+  requestedModel: ModelIdSchema,
+  resolvedModel: ModelIdSchema,
+  reason: z.enum([
+    'default',
+    'dependent-cross-domain',
+    'failed-output-validation',
+    'low-confidence-reconciliation',
+    'complex-reasoning',
+    'luna-unavailable',
+  ]),
+});
+
+const NoConfiguredModelResolutionSchema = z
+  .strictObject({
+    status: z.literal('unavailable'),
+    requestedModel: ModelIdSchema,
+    attemptedModels: z.array(ModelIdSchema).length(2),
+    reason: z.literal('no-configured-model-available'),
+    safeError: z.strictObject({
+      code: z.literal('agent-model-unavailable'),
+      message: z.literal(
+        'AI is temporarily unavailable. Local features still work.',
+      ),
+      retryable: z.literal(true),
+    }),
+  })
+  .superRefine((value, context) => {
+    if (
+      value.attemptedModels[0] !== value.requestedModel ||
+      new Set(value.attemptedModels).size !== value.attemptedModels.length
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['attemptedModels'],
+        message:
+          'Unavailable model resolution must record the requested model first and each configured attempt once',
+      });
+    }
+  });
+
+const RequiredModelUnavailableSchema = z.strictObject({
+  status: z.literal('unavailable'),
+  requestedModel: z.literal('gpt-5.6-terra'),
+  attemptedModels: z.tuple([z.literal('gpt-5.6-terra')]),
+  reason: z.literal('required-complex-model-unavailable'),
+  escalationTrigger: z.enum([
+    'dependent-cross-domain',
+    'failed-output-validation',
+    'low-confidence-reconciliation',
+  ]),
+  safeError: z.strictObject({
+    code: z.literal('required-agent-model-unavailable'),
+    message: z.literal(
+      'The model required to complete this request safely is temporarily unavailable.',
+    ),
+    retryable: z.literal(true),
+  }),
+});
+
+export const ModelResolutionSchema = z.union([
+  ResolvedModelResolutionSchema,
+  NoConfiguredModelResolutionSchema,
+  RequiredModelUnavailableSchema,
+]);
+export type ModelId = z.output<typeof ModelIdSchema>;
+export type ModelResolution = DeepReadonly<
+  z.output<typeof ModelResolutionSchema>
+>;
 
 const createAgentResultBaseSchema = <Output>(outputSchema: z.ZodType<Output>) =>
   z
@@ -169,6 +228,36 @@ const createAgentResultBaseSchema = <Output>(outputSchema: z.ZodType<Output>) =>
           path: ['safeError'],
           message: 'Failed agent results require a safe error',
         });
+      }
+      if (value.modelResolution.status === 'unavailable') {
+        if (value.status !== 'failed') {
+          context.addIssue({
+            code: 'custom',
+            path: ['status'],
+            message: 'An unavailable model resolution requires a failed run',
+          });
+        }
+        if (value.output !== undefined || value.actionProposals.length > 0) {
+          context.addIssue({
+            code: 'custom',
+            path: ['modelResolution'],
+            message:
+              'An unavailable model cannot produce output or action proposals',
+          });
+        }
+        if (
+          value.safeError?.code !== value.modelResolution.safeError.code ||
+          value.safeError.message !== value.modelResolution.safeError.message ||
+          value.safeError.retryable !==
+            value.modelResolution.safeError.retryable
+        ) {
+          context.addIssue({
+            code: 'custom',
+            path: ['safeError'],
+            message:
+              'The run safe error must match the unavailable model resolution',
+          });
+        }
       }
       const evidenceIds = new Set(value.evidence.map((item) => item.id));
       for (const [index, derived] of value.derivedValues.entries()) {

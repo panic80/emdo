@@ -54,6 +54,7 @@ const proposal = {
   version: 1,
   runId: ids.run,
   capabilityId: 'google-calendar.event.create',
+  capabilityFingerprint: 'c'.repeat(64),
   canonicalArguments: {
     calendarId: 'primary',
     startsAt: '2026-08-11T14:00:00-04:00',
@@ -78,6 +79,7 @@ const proposal = {
     },
   ],
   payloadHash: 'a'.repeat(64),
+  approvalHash: 'b'.repeat(64),
   disclosureGrant: grant,
   createdAt: '2026-08-09T16:00:00.000Z',
   expiresAt: '2026-08-09T16:10:00.000Z',
@@ -231,6 +233,36 @@ describe('shared contract schemas', () => {
     ).toThrow(/ten minutes/i);
   });
 
+  it('requires the server disclosure grant to predate proposal creation', () => {
+    expect(() =>
+      ActionProposalSchema.parse({
+        ...proposal,
+        disclosureGrant: {
+          ...proposal.disclosureGrant,
+          createdAt: '2026-08-09T16:00:00.001Z',
+        },
+      }),
+    ).toThrow(/grant.*before.*proposal/i);
+  });
+
+  it('keeps provider idempotency alive through approval and execution recovery', () => {
+    expect(() =>
+      CapabilityDescriptorSchema.parse({
+        ...descriptor,
+        idempotency: { ...descriptor.idempotency, ttlMs: 0 },
+      }),
+    ).toThrow(/idempotency.*ttl/i);
+    expect(() =>
+      CapabilityDescriptorSchema.parse({
+        ...descriptor,
+        idempotency: {
+          ...descriptor.idempotency,
+          ttlMs: descriptor.approval.expiresInSeconds * 1000,
+        },
+      }),
+    ).toThrow(/approval.*execution/i);
+  });
+
   it('binds a disclosure grant to one run and a field-level record allowlist', () => {
     expect(DataDisclosureGrantSchema.parse(grant).oneRunOnly).toBe(true);
     expect(() =>
@@ -366,6 +398,7 @@ describe('shared contract schemas', () => {
         durationMs: 1400,
       },
       modelResolution: {
+        status: 'resolved',
         requestedModel: 'gpt-5.6-luna',
         resolvedModel: 'gpt-5.6-luna',
         reason: 'default',
@@ -394,6 +427,73 @@ describe('shared contract schemas', () => {
         },
       }),
     ).toThrow();
+
+    const unavailable = {
+      ...result,
+      status: 'failed',
+      output: undefined,
+      actionProposals: [],
+      modelResolution: {
+        status: 'unavailable',
+        requestedModel: 'gpt-5.6-luna',
+        attemptedModels: ['gpt-5.6-luna', 'gpt-5.6-terra'],
+        reason: 'no-configured-model-available',
+        safeError: {
+          code: 'agent-model-unavailable',
+          message: 'AI is temporarily unavailable. Local features still work.',
+          retryable: true,
+        },
+      },
+      safeError: {
+        code: 'agent-model-unavailable',
+        message: 'AI is temporarily unavailable. Local features still work.',
+        retryable: true,
+      },
+    } as const;
+    expect(AgentResultSchema.parse(unavailable).modelResolution.status).toBe(
+      'unavailable',
+    );
+    expect(() =>
+      AgentResultSchema.parse({
+        ...unavailable,
+        status: 'completed',
+      }),
+    ).toThrow(/unavailable.*failed/i);
+    expect(() =>
+      AgentResultSchema.parse({
+        ...unavailable,
+        modelResolution: {
+          ...unavailable.modelResolution,
+          resolvedModel: 'gpt-5.6-luna',
+        },
+      }),
+    ).toThrow();
+
+    const requiredModelUnavailable = {
+      ...unavailable,
+      modelResolution: {
+        status: 'unavailable',
+        requestedModel: 'gpt-5.6-terra',
+        attemptedModels: ['gpt-5.6-terra'],
+        reason: 'required-complex-model-unavailable',
+        escalationTrigger: 'failed-output-validation',
+        safeError: {
+          code: 'required-agent-model-unavailable',
+          message:
+            'The model required to complete this request safely is temporarily unavailable.',
+          retryable: true,
+        },
+      },
+      safeError: {
+        code: 'required-agent-model-unavailable',
+        message:
+          'The model required to complete this request safely is temporarily unavailable.',
+        retryable: true,
+      },
+    } as const;
+    expect(
+      AgentResultSchema.parse(requiredModelUnavailable).modelResolution.reason,
+    ).toBe('required-complex-model-unavailable');
 
     expect(() =>
       AgentResultSchema.parse({
@@ -448,6 +548,7 @@ describe('shared contract schemas', () => {
         userId: ids.user,
         authenticatedSessionId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f010',
         payloadHash: 'a'.repeat(64),
+        approvalHash: 'b'.repeat(64),
         decision: 'approved',
         channel: 'authenticated-visual',
         decidedAt: '2026-08-09T16:01:00.000Z',

@@ -1,0 +1,3892 @@
+{
+  "id": "46ee77d4-e788-4588-808e-3895ad411db6",
+  "prevId": "231f591c-b663-4906-b824-6b8a149c90d8",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "emdo.action_decisions": {
+      "name": "action_decisions",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "schema_version": {
+          "name": "schema_version",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "proposal_id": {
+          "name": "proposal_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_owner_user_id": {
+          "name": "original_owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authenticated_session_id": {
+          "name": "authenticated_session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload_hash": {
+          "name": "payload_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approval_hash": {
+          "name": "approval_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decision": {
+          "name": "decision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "action_decisions_household_space_idx": {
+          "name": "action_decisions_household_space_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "action_decisions_proposal_fk": {
+          "name": "action_decisions_proposal_fk",
+          "tableFrom": "action_decisions",
+          "tableTo": "action_proposals",
+          "schemaTo": "emdo",
+          "columnsFrom": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "proposal_id"
+          ],
+          "columnsTo": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "action_decisions_proposal_unique": {
+          "name": "action_decisions_proposal_unique",
+          "nullsNotDistinct": false,
+          "columns": ["proposal_id"]
+        },
+        "action_decisions_scope_id_unique": {
+          "name": "action_decisions_scope_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "id"
+          ]
+        },
+        "action_decisions_idempotency_unique": {
+          "name": "action_decisions_idempotency_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "household_id",
+            "original_owner_user_id",
+            "idempotency_key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "action_decisions_schema_version_check": {
+          "name": "action_decisions_schema_version_check",
+          "value": "\"emdo\".\"action_decisions\".\"schema_version\" = 1"
+        },
+        "action_decisions_decision_check": {
+          "name": "action_decisions_decision_check",
+          "value": "\"emdo\".\"action_decisions\".\"decision\" in ('approved', 'rejected')"
+        },
+        "action_decisions_channel_check": {
+          "name": "action_decisions_channel_check",
+          "value": "\"emdo\".\"action_decisions\".\"channel\" = 'authenticated-visual'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.action_proposals": {
+      "name": "action_proposals",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "schema_version": {
+          "name": "schema_version",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_owner_user_id": {
+          "name": "original_owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "disclosure_grant_id": {
+          "name": "disclosure_grant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "capability_id": {
+          "name": "capability_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "capability_fingerprint": {
+          "name": "capability_fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "canonical_arguments": {
+          "name": "canonical_arguments",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "targets": {
+          "name": "targets",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "before_preview": {
+          "name": "before_preview",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "after_preview": {
+          "name": "after_preview",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_preconditions": {
+          "name": "provider_preconditions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload_hash": {
+          "name": "payload_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approval_hash": {
+          "name": "approval_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "action_proposals_household_space_idx": {
+          "name": "action_proposals_household_space_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "action_proposals_grant_idx": {
+          "name": "action_proposals_grant_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "disclosure_grant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "action_proposals_household_space_fk": {
+          "name": "action_proposals_household_space_fk",
+          "tableFrom": "action_proposals",
+          "tableTo": "spaces",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "space_id"],
+          "columnsTo": ["household_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "action_proposals_owner_membership_fk": {
+          "name": "action_proposals_owner_membership_fk",
+          "tableFrom": "action_proposals",
+          "tableTo": "household_memberships",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "original_owner_user_id"],
+          "columnsTo": ["household_id", "user_id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "action_proposals_run_fk": {
+          "name": "action_proposals_run_fk",
+          "tableFrom": "action_proposals",
+          "tableTo": "agent_runs",
+          "schemaTo": "emdo",
+          "columnsFrom": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "run_id"
+          ],
+          "columnsTo": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "action_proposals_disclosure_grant_fk": {
+          "name": "action_proposals_disclosure_grant_fk",
+          "tableFrom": "action_proposals",
+          "tableTo": "disclosure_grants",
+          "schemaTo": "emdo",
+          "columnsFrom": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "disclosure_grant_id"
+          ],
+          "columnsTo": ["household_id", "space_id", "user_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "action_proposals_scope_id_unique": {
+          "name": "action_proposals_scope_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "id"
+          ]
+        },
+        "action_proposals_idempotency_unique": {
+          "name": "action_proposals_idempotency_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "household_id",
+            "original_owner_user_id",
+            "capability_id",
+            "idempotency_key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "action_proposals_schema_version_check": {
+          "name": "action_proposals_schema_version_check",
+          "value": "\"emdo\".\"action_proposals\".\"schema_version\" = 1"
+        },
+        "action_proposals_lifetime_check": {
+          "name": "action_proposals_lifetime_check",
+          "value": "\"emdo\".\"action_proposals\".\"expires_at\" > \"emdo\".\"action_proposals\".\"created_at\" and \"emdo\".\"action_proposals\".\"expires_at\" <= \"emdo\".\"action_proposals\".\"created_at\" + interval '10 minutes'"
+        },
+        "action_proposals_hash_check": {
+          "name": "action_proposals_hash_check",
+          "value": "\"emdo\".\"action_proposals\".\"payload_hash\" ~ '^[a-f0-9]{64}$' and \"emdo\".\"action_proposals\".\"approval_hash\" ~ '^[a-f0-9]{64}$' and \"emdo\".\"action_proposals\".\"capability_fingerprint\" ~ '^[a-f0-9]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.agent_runs": {
+      "name": "agent_runs",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_owner_user_id": {
+          "name": "original_owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parent_run_id": {
+          "name": "parent_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_version": {
+          "name": "agent_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requested_model": {
+          "name": "requested_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resolved_model": {
+          "name": "resolved_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "model_reason": {
+          "name": "model_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "local_trace_reference": {
+          "name": "local_trace_reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "safe_error": {
+          "name": "safe_error",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "usage": {
+          "name": "usage",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "agent_runs_household_space_idx": {
+          "name": "agent_runs_household_space_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "agent_runs_household_owner_created_idx": {
+          "name": "agent_runs_household_owner_created_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "original_owner_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "agent_runs_household_space_fk": {
+          "name": "agent_runs_household_space_fk",
+          "tableFrom": "agent_runs",
+          "tableTo": "spaces",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "space_id"],
+          "columnsTo": ["household_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "agent_runs_original_owner_membership_fk": {
+          "name": "agent_runs_original_owner_membership_fk",
+          "tableFrom": "agent_runs",
+          "tableTo": "household_memberships",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "original_owner_user_id"],
+          "columnsTo": ["household_id", "user_id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "agent_runs_scope_id_unique": {
+          "name": "agent_runs_scope_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "agent_runs_status_check": {
+          "name": "agent_runs_status_check",
+          "value": "\"emdo\".\"agent_runs\".\"status\" in ('queued', 'running', 'completed', 'failed', 'blocked')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.audit_events": {
+      "name": "audit_events",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_owner_user_id": {
+          "name": "original_owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "proposal_id": {
+          "name": "proposal_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "retain_until": {
+          "name": "retain_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now() + interval '12 months'"
+        }
+      },
+      "indexes": {
+        "audit_events_household_space_idx": {
+          "name": "audit_events_household_space_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "audit_events_household_occurred_idx": {
+          "name": "audit_events_household_occurred_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "audit_events_proposal_id_idx": {
+          "name": "audit_events_proposal_id_idx",
+          "columns": [
+            {
+              "expression": "proposal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "audit_events_household_space_fk": {
+          "name": "audit_events_household_space_fk",
+          "tableFrom": "audit_events",
+          "tableTo": "spaces",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "space_id"],
+          "columnsTo": ["household_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "audit_events_original_owner_membership_fk": {
+          "name": "audit_events_original_owner_membership_fk",
+          "tableFrom": "audit_events",
+          "tableTo": "household_memberships",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "original_owner_user_id"],
+          "columnsTo": ["household_id", "user_id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "emdo.auth_accounts": {
+      "name": "auth_accounts",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "access_token": {
+          "name": "access_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refresh_token": {
+          "name": "refresh_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "id_token": {
+          "name": "id_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "access_token_expires_at": {
+          "name": "access_token_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refresh_token_expires_at": {
+          "name": "refresh_token_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password": {
+          "name": "password",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "auth_accounts_user_id_idx": {
+          "name": "auth_accounts_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "auth_accounts_user_id_auth_users_id_fk": {
+          "name": "auth_accounts_user_id_auth_users_id_fk",
+          "tableFrom": "auth_accounts",
+          "tableTo": "auth_users",
+          "schemaTo": "emdo",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "auth_accounts_provider_account_unique": {
+          "name": "auth_accounts_provider_account_unique",
+          "nullsNotDistinct": false,
+          "columns": ["provider_id", "account_id"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "emdo.auth_passkeys": {
+      "name": "auth_passkeys",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "public_key": {
+          "name": "public_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "credential_id": {
+          "name": "credential_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "counter": {
+          "name": "counter",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "device_type": {
+          "name": "device_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "backed_up": {
+          "name": "backed_up",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "transports": {
+          "name": "transports",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aaguid": {
+          "name": "aaguid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "auth_passkeys_user_id_idx": {
+          "name": "auth_passkeys_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "auth_passkeys_user_id_auth_users_id_fk": {
+          "name": "auth_passkeys_user_id_auth_users_id_fk",
+          "tableFrom": "auth_passkeys",
+          "tableTo": "auth_users",
+          "schemaTo": "emdo",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "auth_passkeys_credential_id_unique": {
+          "name": "auth_passkeys_credential_id_unique",
+          "nullsNotDistinct": false,
+          "columns": ["credential_id"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "auth_passkeys_counter_nonnegative": {
+          "name": "auth_passkeys_counter_nonnegative",
+          "value": "\"emdo\".\"auth_passkeys\".\"counter\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.auth_rate_limits": {
+      "name": "auth_rate_limits",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "count": {
+          "name": "count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_request": {
+          "name": "last_request",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "auth_rate_limits_key_unique": {
+          "name": "auth_rate_limits_key_unique",
+          "nullsNotDistinct": false,
+          "columns": ["key"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "auth_rate_limits_count_nonnegative": {
+          "name": "auth_rate_limits_count_nonnegative",
+          "value": "\"emdo\".\"auth_rate_limits\".\"count\" >= 0"
+        },
+        "auth_rate_limits_last_request_nonnegative": {
+          "name": "auth_rate_limits_last_request_nonnegative",
+          "value": "\"emdo\".\"auth_rate_limits\".\"last_request\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.auth_sessions": {
+      "name": "auth_sessions",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_agent": {
+          "name": "user_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "active_household_id": {
+          "name": "active_household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "auth_sessions_user_id_idx": {
+          "name": "auth_sessions_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "auth_sessions_expires_at_idx": {
+          "name": "auth_sessions_expires_at_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "auth_sessions_active_household_id_idx": {
+          "name": "auth_sessions_active_household_id_idx",
+          "columns": [
+            {
+              "expression": "active_household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "auth_sessions_user_id_auth_users_id_fk": {
+          "name": "auth_sessions_user_id_auth_users_id_fk",
+          "tableFrom": "auth_sessions",
+          "tableTo": "auth_users",
+          "schemaTo": "emdo",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "restrict"
+        },
+        "auth_sessions_active_household_id_households_id_fk": {
+          "name": "auth_sessions_active_household_id_households_id_fk",
+          "tableFrom": "auth_sessions",
+          "tableTo": "households",
+          "schemaTo": "emdo",
+          "columnsFrom": ["active_household_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "auth_sessions_token_unique": {
+          "name": "auth_sessions_token_unique",
+          "nullsNotDistinct": false,
+          "columns": ["token"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "emdo.auth_users": {
+      "name": "auth_users",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_verified": {
+          "name": "email_verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "image": {
+          "name": "image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "auth_users_email_unique": {
+          "name": "auth_users_email_unique",
+          "columns": [
+            {
+              "expression": "lower(\"email\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "auth_users_email_normalized": {
+          "name": "auth_users_email_normalized",
+          "value": "\"emdo\".\"auth_users\".\"email\" = lower(\"emdo\".\"auth_users\".\"email\")"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.auth_verifications": {
+      "name": "auth_verifications",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "auth_verifications_identifier_idx": {
+          "name": "auth_verifications_identifier_idx",
+          "columns": [
+            {
+              "expression": "identifier",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "auth_verifications_expires_at_idx": {
+          "name": "auth_verifications_expires_at_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "emdo.conversation_events": {
+      "name": "conversation_events",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_owner_user_id": {
+          "name": "original_owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_event_id": {
+          "name": "client_event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "purge_after": {
+          "name": "purge_after",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "conversation_events_household_space_idx": {
+          "name": "conversation_events_household_space_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "conversation_events_conversation_idx": {
+          "name": "conversation_events_conversation_idx",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "conversation_events_household_space_fk": {
+          "name": "conversation_events_household_space_fk",
+          "tableFrom": "conversation_events",
+          "tableTo": "spaces",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "space_id"],
+          "columnsTo": ["household_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "conversation_events_original_owner_membership_fk": {
+          "name": "conversation_events_original_owner_membership_fk",
+          "tableFrom": "conversation_events",
+          "tableTo": "household_memberships",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "original_owner_user_id"],
+          "columnsTo": ["household_id", "user_id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "conversation_events_conversation_sequence_unique": {
+          "name": "conversation_events_conversation_sequence_unique",
+          "nullsNotDistinct": false,
+          "columns": ["conversation_id", "sequence"]
+        },
+        "conversation_events_client_event_unique": {
+          "name": "conversation_events_client_event_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "household_id",
+            "original_owner_user_id",
+            "client_event_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "conversation_events_sequence_positive": {
+          "name": "conversation_events_sequence_positive",
+          "value": "\"emdo\".\"conversation_events\".\"sequence\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.deployment_bootstraps": {
+      "name": "deployment_bootstraps",
+      "schema": "emdo",
+      "columns": {
+        "bootstrap_key": {
+          "name": "bootstrap_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "membership_id": {
+          "name": "membership_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "private_space_id": {
+          "name": "private_space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "deployment_bootstraps_user_fk": {
+          "name": "deployment_bootstraps_user_fk",
+          "tableFrom": "deployment_bootstraps",
+          "tableTo": "auth_users",
+          "schemaTo": "emdo",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "deployment_bootstraps_household_fk": {
+          "name": "deployment_bootstraps_household_fk",
+          "tableFrom": "deployment_bootstraps",
+          "tableTo": "households",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "deployment_bootstraps_membership_fk": {
+          "name": "deployment_bootstraps_membership_fk",
+          "tableFrom": "deployment_bootstraps",
+          "tableTo": "household_memberships",
+          "schemaTo": "emdo",
+          "columnsFrom": ["membership_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "deployment_bootstraps_private_space_fk": {
+          "name": "deployment_bootstraps_private_space_fk",
+          "tableFrom": "deployment_bootstraps",
+          "tableTo": "spaces",
+          "schemaTo": "emdo",
+          "columnsFrom": ["private_space_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "deployment_bootstraps_user_unique": {
+          "name": "deployment_bootstraps_user_unique",
+          "nullsNotDistinct": false,
+          "columns": ["user_id"]
+        },
+        "deployment_bootstraps_household_unique": {
+          "name": "deployment_bootstraps_household_unique",
+          "nullsNotDistinct": false,
+          "columns": ["household_id"]
+        },
+        "deployment_bootstraps_membership_unique": {
+          "name": "deployment_bootstraps_membership_unique",
+          "nullsNotDistinct": false,
+          "columns": ["membership_id"]
+        },
+        "deployment_bootstraps_private_space_unique": {
+          "name": "deployment_bootstraps_private_space_unique",
+          "nullsNotDistinct": false,
+          "columns": ["private_space_id"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "deployment_bootstraps_key_check": {
+          "name": "deployment_bootstraps_key_check",
+          "value": "\"emdo\".\"deployment_bootstraps\".\"bootstrap_key\" = 'initial-owner-v1'"
+        },
+        "deployment_bootstraps_state_check": {
+          "name": "deployment_bootstraps_state_check",
+          "value": "\"emdo\".\"deployment_bootstraps\".\"state\" in ('in_progress', 'complete')"
+        },
+        "deployment_bootstraps_terminal_check": {
+          "name": "deployment_bootstraps_terminal_check",
+          "value": "(\n        \"emdo\".\"deployment_bootstraps\".\"state\" = 'in_progress'\n        and \"emdo\".\"deployment_bootstraps\".\"completed_at\" is null\n        and \"emdo\".\"deployment_bootstraps\".\"user_id\" is null\n        and \"emdo\".\"deployment_bootstraps\".\"household_id\" is null\n        and \"emdo\".\"deployment_bootstraps\".\"membership_id\" is null\n        and \"emdo\".\"deployment_bootstraps\".\"private_space_id\" is null\n      ) or (\n        \"emdo\".\"deployment_bootstraps\".\"state\" = 'complete'\n        and \"emdo\".\"deployment_bootstraps\".\"completed_at\" is not null\n        and \"emdo\".\"deployment_bootstraps\".\"completed_at\" >= \"emdo\".\"deployment_bootstraps\".\"started_at\"\n        and \"emdo\".\"deployment_bootstraps\".\"user_id\" is not null\n        and \"emdo\".\"deployment_bootstraps\".\"household_id\" is not null\n        and \"emdo\".\"deployment_bootstraps\".\"membership_id\" is not null\n        and \"emdo\".\"deployment_bootstraps\".\"private_space_id\" is not null\n      )"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.disclosure_grants": {
+      "name": "disclosure_grants",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "schema_version": {
+          "name": "schema_version",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purpose": {
+          "name": "purpose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "record_allowlist": {
+          "name": "record_allowlist",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "grant_hash": {
+          "name": "grant_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "one_run_only": {
+          "name": "one_run_only",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "disclosure_grants_household_space_idx": {
+          "name": "disclosure_grants_household_space_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "disclosure_grants_user_expiry_idx": {
+          "name": "disclosure_grants_user_expiry_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "disclosure_grants_household_space_fk": {
+          "name": "disclosure_grants_household_space_fk",
+          "tableFrom": "disclosure_grants",
+          "tableTo": "spaces",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "space_id"],
+          "columnsTo": ["household_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "disclosure_grants_user_membership_fk": {
+          "name": "disclosure_grants_user_membership_fk",
+          "tableFrom": "disclosure_grants",
+          "tableTo": "household_memberships",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "user_id"],
+          "columnsTo": ["household_id", "user_id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "disclosure_grants_run_fk": {
+          "name": "disclosure_grants_run_fk",
+          "tableFrom": "disclosure_grants",
+          "tableTo": "agent_runs",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "space_id", "user_id", "run_id"],
+          "columnsTo": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "disclosure_grants_scope_id_unique": {
+          "name": "disclosure_grants_scope_id_unique",
+          "nullsNotDistinct": false,
+          "columns": ["household_id", "space_id", "user_id", "id"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "disclosure_grants_schema_version_check": {
+          "name": "disclosure_grants_schema_version_check",
+          "value": "\"emdo\".\"disclosure_grants\".\"schema_version\" = 1"
+        },
+        "disclosure_grants_version_positive": {
+          "name": "disclosure_grants_version_positive",
+          "value": "\"emdo\".\"disclosure_grants\".\"version\" > 0"
+        },
+        "disclosure_grants_one_run_only": {
+          "name": "disclosure_grants_one_run_only",
+          "value": "\"emdo\".\"disclosure_grants\".\"one_run_only\" = true"
+        },
+        "disclosure_grants_lifetime_check": {
+          "name": "disclosure_grants_lifetime_check",
+          "value": "\"emdo\".\"disclosure_grants\".\"expires_at\" > \"emdo\".\"disclosure_grants\".\"created_at\""
+        },
+        "disclosure_grants_terminal_check": {
+          "name": "disclosure_grants_terminal_check",
+          "value": "not (\"emdo\".\"disclosure_grants\".\"consumed_at\" is not null and \"emdo\".\"disclosure_grants\".\"revoked_at\" is not null)"
+        },
+        "disclosure_grants_hash_check": {
+          "name": "disclosure_grants_hash_check",
+          "value": "\"emdo\".\"disclosure_grants\".\"grant_hash\" ~ '^[a-f0-9]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.household_memberships": {
+      "name": "household_memberships",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "joined_at": {
+          "name": "joined_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "ended_at": {
+          "name": "ended_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "household_memberships_user_id_idx": {
+          "name": "household_memberships_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "household_memberships_active_idx": {
+          "name": "household_memberships_active_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "household_memberships_household_id_households_id_fk": {
+          "name": "household_memberships_household_id_households_id_fk",
+          "tableFrom": "household_memberships",
+          "tableTo": "households",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "household_memberships_user_id_auth_users_id_fk": {
+          "name": "household_memberships_user_id_auth_users_id_fk",
+          "tableFrom": "household_memberships",
+          "tableTo": "auth_users",
+          "schemaTo": "emdo",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "household_memberships_pk": {
+          "name": "household_memberships_pk",
+          "columns": ["household_id", "user_id"]
+        }
+      },
+      "uniqueConstraints": {
+        "household_memberships_id_unique": {
+          "name": "household_memberships_id_unique",
+          "nullsNotDistinct": false,
+          "columns": ["id"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "household_memberships_role_check": {
+          "name": "household_memberships_role_check",
+          "value": "\"emdo\".\"household_memberships\".\"role\" in ('owner', 'member')"
+        },
+        "household_memberships_status_check": {
+          "name": "household_memberships_status_check",
+          "value": "\"emdo\".\"household_memberships\".\"status\" in ('active', 'inactive')"
+        },
+        "household_memberships_ended_status_check": {
+          "name": "household_memberships_ended_status_check",
+          "value": "(\"emdo\".\"household_memberships\".\"status\" = 'active' and \"emdo\".\"household_memberships\".\"ended_at\" is null) or (\"emdo\".\"household_memberships\".\"status\" = 'inactive' and \"emdo\".\"household_memberships\".\"ended_at\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.households": {
+      "name": "households",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "logo": {
+          "name": "logo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "households_created_by_user_id_idx": {
+          "name": "households_created_by_user_id_idx",
+          "columns": [
+            {
+              "expression": "created_by_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "households_created_by_user_id_auth_users_id_fk": {
+          "name": "households_created_by_user_id_auth_users_id_fk",
+          "tableFrom": "households",
+          "tableTo": "auth_users",
+          "schemaTo": "emdo",
+          "columnsFrom": ["created_by_user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "households_slug_unique": {
+          "name": "households_slug_unique",
+          "nullsNotDistinct": false,
+          "columns": ["slug"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "emdo.invitations": {
+      "name": "invitations",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "invited_by_user_id": {
+          "name": "invited_by_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consumed_by_user_id": {
+          "name": "consumed_by_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consumed_session_id": {
+          "name": "consumed_session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "invitations_household_email_idx": {
+          "name": "invitations_household_email_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "invitations_expires_at_idx": {
+          "name": "invitations_expires_at_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "invitations_issuer_membership_fk": {
+          "name": "invitations_issuer_membership_fk",
+          "tableFrom": "invitations",
+          "tableTo": "household_memberships",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "invited_by_user_id"],
+          "columnsTo": ["household_id", "user_id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "invitations_token_hash_unique": {
+          "name": "invitations_token_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": ["token_hash"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "invitations_email_normalized": {
+          "name": "invitations_email_normalized",
+          "value": "\"emdo\".\"invitations\".\"email\" = lower(\"emdo\".\"invitations\".\"email\")"
+        },
+        "invitations_role_check": {
+          "name": "invitations_role_check",
+          "value": "\"emdo\".\"invitations\".\"role\" in ('owner', 'member')"
+        },
+        "invitations_lifetime_check": {
+          "name": "invitations_lifetime_check",
+          "value": "\"emdo\".\"invitations\".\"expires_at\" > \"emdo\".\"invitations\".\"created_at\" and \"emdo\".\"invitations\".\"expires_at\" <= \"emdo\".\"invitations\".\"created_at\" + interval '7 days'"
+        },
+        "invitations_terminal_check": {
+          "name": "invitations_terminal_check",
+          "value": "not (\"emdo\".\"invitations\".\"consumed_at\" is not null and \"emdo\".\"invitations\".\"revoked_at\" is not null)"
+        },
+        "invitations_token_hash_check": {
+          "name": "invitations_token_hash_check",
+          "value": "\"emdo\".\"invitations\".\"token_hash\" ~ '^[a-f0-9]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.memory_chunks": {
+      "name": "memory_chunks",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_owner_user_id": {
+          "name": "original_owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_record_id": {
+          "name": "source_record_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "embedding": {
+          "name": "embedding",
+          "type": "vector(1536)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "tombstoned_at": {
+          "name": "tombstoned_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "memory_chunks_household_space_idx": {
+          "name": "memory_chunks_household_space_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "memory_chunks_source_record_idx": {
+          "name": "memory_chunks_source_record_idx",
+          "columns": [
+            {
+              "expression": "source_record_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "memory_chunks_household_space_fk": {
+          "name": "memory_chunks_household_space_fk",
+          "tableFrom": "memory_chunks",
+          "tableTo": "spaces",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "space_id"],
+          "columnsTo": ["household_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "memory_chunks_original_owner_membership_fk": {
+          "name": "memory_chunks_original_owner_membership_fk",
+          "tableFrom": "memory_chunks",
+          "tableTo": "household_memberships",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "original_owner_user_id"],
+          "columnsTo": ["household_id", "user_id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "memory_chunks_content_hash_check": {
+          "name": "memory_chunks_content_hash_check",
+          "value": "\"emdo\".\"memory_chunks\".\"content_hash\" ~ '^[a-f0-9]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.proposal_events": {
+      "name": "proposal_events",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "proposal_id": {
+          "name": "proposal_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_owner_user_id": {
+          "name": "original_owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proposal_version": {
+          "name": "proposal_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "proposal_events_household_space_idx": {
+          "name": "proposal_events_household_space_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "proposal_events_proposal_fk": {
+          "name": "proposal_events_proposal_fk",
+          "tableFrom": "proposal_events",
+          "tableTo": "action_proposals",
+          "schemaTo": "emdo",
+          "columnsFrom": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "proposal_id"
+          ],
+          "columnsTo": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "proposal_events_sequence_unique": {
+          "name": "proposal_events_sequence_unique",
+          "nullsNotDistinct": false,
+          "columns": ["proposal_id", "sequence"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "proposal_events_version_positive": {
+          "name": "proposal_events_version_positive",
+          "value": "\"emdo\".\"proposal_events\".\"proposal_version\" > 0"
+        },
+        "proposal_events_sequence_positive": {
+          "name": "proposal_events_sequence_positive",
+          "value": "\"emdo\".\"proposal_events\".\"sequence\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.proposal_reconciliations": {
+      "name": "proposal_reconciliations",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "attempt_id": {
+          "name": "attempt_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_owner_user_id": {
+          "name": "original_owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "completion_hash": {
+          "name": "completion_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "application": {
+          "name": "application",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "result_hash": {
+          "name": "result_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evidence_hash": {
+          "name": "evidence_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recorded_at": {
+          "name": "recorded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "proposal_reconciliations_household_space_idx": {
+          "name": "proposal_reconciliations_household_space_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "proposal_reconciliations_attempt_fk": {
+          "name": "proposal_reconciliations_attempt_fk",
+          "tableFrom": "proposal_reconciliations",
+          "tableTo": "provider_attempts",
+          "schemaTo": "emdo",
+          "columnsFrom": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "attempt_id"
+          ],
+          "columnsTo": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "proposal_reconciliations_attempt_unique": {
+          "name": "proposal_reconciliations_attempt_unique",
+          "nullsNotDistinct": false,
+          "columns": ["attempt_id"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "proposal_reconciliations_application_check": {
+          "name": "proposal_reconciliations_application_check",
+          "value": "\"emdo\".\"proposal_reconciliations\".\"application\" in ('applied', 'not-applied')"
+        },
+        "proposal_reconciliations_completion_hash_check": {
+          "name": "proposal_reconciliations_completion_hash_check",
+          "value": "\"emdo\".\"proposal_reconciliations\".\"completion_hash\" ~ '^[a-f0-9]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.proposal_states": {
+      "name": "proposal_states",
+      "schema": "emdo",
+      "columns": {
+        "proposal_id": {
+          "name": "proposal_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_owner_user_id": {
+          "name": "original_owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "proposal_states_household_space_idx": {
+          "name": "proposal_states_household_space_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "proposal_states_proposal_fk": {
+          "name": "proposal_states_proposal_fk",
+          "tableFrom": "proposal_states",
+          "tableTo": "action_proposals",
+          "schemaTo": "emdo",
+          "columnsFrom": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "proposal_id"
+          ],
+          "columnsTo": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "proposal_states_version_positive": {
+          "name": "proposal_states_version_positive",
+          "value": "\"emdo\".\"proposal_states\".\"version\" > 0"
+        },
+        "proposal_states_state_check": {
+          "name": "proposal_states_state_check",
+          "value": "\"emdo\".\"proposal_states\".\"state\" in ('pending', 'approved', 'rejected', 'prepared', 'executing', 'executed', 'not-applied', 'indeterminate', 'expired', 'failed')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.provider_attempts": {
+      "name": "provider_attempts",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "proposal_id": {
+          "name": "proposal_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decision_id": {
+          "name": "decision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_owner_user_id": {
+          "name": "original_owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempt_version": {
+          "name": "attempt_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempt_state": {
+          "name": "attempt_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'prepared'"
+        },
+        "binding_hash": {
+          "name": "binding_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "capability_fingerprint": {
+          "name": "capability_fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approval_hash": {
+          "name": "approval_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "disclosure_grant_id": {
+          "name": "disclosure_grant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "disclosure_grant_hash": {
+          "name": "disclosure_grant_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_idempotency_key": {
+          "name": "provider_idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "idempotency_expires_at": {
+          "name": "idempotency_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_set_hash": {
+          "name": "target_set_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "targets": {
+          "name": "targets",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_preconditions": {
+          "name": "provider_preconditions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issued_at": {
+          "name": "issued_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dispatched_at": {
+          "name": "dispatched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "provider_attempts_household_space_idx": {
+          "name": "provider_attempts_household_space_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "provider_attempts_decision_idx": {
+          "name": "provider_attempts_decision_idx",
+          "columns": [
+            {
+              "expression": "decision_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "provider_attempts_proposal_fk": {
+          "name": "provider_attempts_proposal_fk",
+          "tableFrom": "provider_attempts",
+          "tableTo": "action_proposals",
+          "schemaTo": "emdo",
+          "columnsFrom": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "proposal_id"
+          ],
+          "columnsTo": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "provider_attempts_decision_fk": {
+          "name": "provider_attempts_decision_fk",
+          "tableFrom": "provider_attempts",
+          "tableTo": "action_decisions",
+          "schemaTo": "emdo",
+          "columnsFrom": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "decision_id"
+          ],
+          "columnsTo": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "provider_attempts_proposal_unique": {
+          "name": "provider_attempts_proposal_unique",
+          "nullsNotDistinct": false,
+          "columns": ["proposal_id"]
+        },
+        "provider_attempts_decision_unique": {
+          "name": "provider_attempts_decision_unique",
+          "nullsNotDistinct": false,
+          "columns": ["decision_id"]
+        },
+        "provider_attempts_scope_id_unique": {
+          "name": "provider_attempts_scope_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "id"
+          ]
+        },
+        "provider_attempts_provider_key_unique": {
+          "name": "provider_attempts_provider_key_unique",
+          "nullsNotDistinct": false,
+          "columns": ["provider_id", "provider_idempotency_key"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "provider_attempts_version_positive": {
+          "name": "provider_attempts_version_positive",
+          "value": "\"emdo\".\"provider_attempts\".\"attempt_version\" > 0"
+        },
+        "provider_attempts_state_check": {
+          "name": "provider_attempts_state_check",
+          "value": "\"emdo\".\"provider_attempts\".\"attempt_state\" in ('prepared', 'dispatching', 'executed', 'not-applied', 'indeterminate')"
+        },
+        "provider_attempts_dispatch_time_check": {
+          "name": "provider_attempts_dispatch_time_check",
+          "value": "(\"emdo\".\"provider_attempts\".\"attempt_state\" = 'prepared' and \"emdo\".\"provider_attempts\".\"dispatched_at\" is null) or (\"emdo\".\"provider_attempts\".\"attempt_state\" <> 'prepared' and \"emdo\".\"provider_attempts\".\"dispatched_at\" is not null)"
+        },
+        "provider_attempts_idempotency_lifetime_check": {
+          "name": "provider_attempts_idempotency_lifetime_check",
+          "value": "\"emdo\".\"provider_attempts\".\"idempotency_expires_at\" > \"emdo\".\"provider_attempts\".\"issued_at\""
+        },
+        "provider_attempts_hash_check": {
+          "name": "provider_attempts_hash_check",
+          "value": "\"emdo\".\"provider_attempts\".\"binding_hash\" ~ '^[a-f0-9]{64}$' and \"emdo\".\"provider_attempts\".\"capability_fingerprint\" ~ '^[a-f0-9]{64}$' and \"emdo\".\"provider_attempts\".\"approval_hash\" ~ '^[a-f0-9]{64}$' and \"emdo\".\"provider_attempts\".\"disclosure_grant_hash\" ~ '^[a-f0-9]{64}$' and \"emdo\".\"provider_attempts\".\"provider_idempotency_key\" ~ '^[a-f0-9]{64}$' and \"emdo\".\"provider_attempts\".\"target_set_hash\" ~ '^[a-f0-9]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.provider_outcomes": {
+      "name": "provider_outcomes",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "attempt_id": {
+          "name": "attempt_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_owner_user_id": {
+          "name": "original_owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "completion_hash": {
+          "name": "completion_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "application": {
+          "name": "application",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "output_status": {
+          "name": "output_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "result_hash": {
+          "name": "result_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evidence_hash": {
+          "name": "evidence_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "safe_error_code": {
+          "name": "safe_error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recorded_at": {
+          "name": "recorded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "provider_outcomes_household_space_idx": {
+          "name": "provider_outcomes_household_space_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "provider_outcomes_attempt_fk": {
+          "name": "provider_outcomes_attempt_fk",
+          "tableFrom": "provider_outcomes",
+          "tableTo": "provider_attempts",
+          "schemaTo": "emdo",
+          "columnsFrom": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "attempt_id"
+          ],
+          "columnsTo": [
+            "household_id",
+            "space_id",
+            "original_owner_user_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "provider_outcomes_attempt_unique": {
+          "name": "provider_outcomes_attempt_unique",
+          "nullsNotDistinct": false,
+          "columns": ["attempt_id"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "provider_outcomes_application_check": {
+          "name": "provider_outcomes_application_check",
+          "value": "\"emdo\".\"provider_outcomes\".\"application\" in ('applied', 'not-applied', 'indeterminate')"
+        },
+        "provider_outcomes_completion_hash_check": {
+          "name": "provider_outcomes_completion_hash_check",
+          "value": "\"emdo\".\"provider_outcomes\".\"completion_hash\" ~ '^[a-f0-9]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.rotating_sessions": {
+      "name": "rotating_sessions",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rotation": {
+          "name": "rotation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "rotating_sessions_user_id_idx": {
+          "name": "rotating_sessions_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "rotating_sessions_expires_at_idx": {
+          "name": "rotating_sessions_expires_at_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "rotating_sessions_user_id_auth_users_id_fk": {
+          "name": "rotating_sessions_user_id_auth_users_id_fk",
+          "tableFrom": "rotating_sessions",
+          "tableTo": "auth_users",
+          "schemaTo": "emdo",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "rotating_sessions_token_hash_unique": {
+          "name": "rotating_sessions_token_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": ["token_hash"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "rotating_sessions_rotation_nonnegative": {
+          "name": "rotating_sessions_rotation_nonnegative",
+          "value": "\"emdo\".\"rotating_sessions\".\"rotation\" >= 0"
+        },
+        "rotating_sessions_lifetime_check": {
+          "name": "rotating_sessions_lifetime_check",
+          "value": "\"emdo\".\"rotating_sessions\".\"expires_at\" > \"emdo\".\"rotating_sessions\".\"created_at\""
+        },
+        "rotating_sessions_token_hash_check": {
+          "name": "rotating_sessions_token_hash_check",
+          "value": "\"emdo\".\"rotating_sessions\".\"token_hash\" ~ '^[a-f0-9]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.space_records": {
+      "name": "space_records",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_owner_user_id": {
+          "name": "original_owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "record_kind": {
+          "name": "record_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_intent": {
+          "name": "actor_intent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "tombstoned_at": {
+          "name": "tombstoned_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "space_records_household_space_idx": {
+          "name": "space_records_household_space_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "space_records_household_owner_idx": {
+          "name": "space_records_household_owner_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "original_owner_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "space_records_kind_created_idx": {
+          "name": "space_records_kind_created_idx",
+          "columns": [
+            {
+              "expression": "record_kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "space_records_household_space_fk": {
+          "name": "space_records_household_space_fk",
+          "tableFrom": "space_records",
+          "tableTo": "spaces",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "space_id"],
+          "columnsTo": ["household_id", "id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "space_records_original_owner_membership_fk": {
+          "name": "space_records_original_owner_membership_fk",
+          "tableFrom": "space_records",
+          "tableTo": "household_memberships",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "original_owner_user_id"],
+          "columnsTo": ["household_id", "user_id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "space_records_household_space_id_unique": {
+          "name": "space_records_household_space_id_unique",
+          "nullsNotDistinct": false,
+          "columns": ["household_id", "space_id", "id"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "space_records_revision_positive": {
+          "name": "space_records_revision_positive",
+          "value": "\"emdo\".\"space_records\".\"revision\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "emdo.spaces": {
+      "name": "spaces",
+      "schema": "emdo",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_owner_user_id": {
+          "name": "original_owner_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "visibility": {
+          "name": "visibility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "tombstoned_at": {
+          "name": "tombstoned_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "spaces_household_owner_idx": {
+          "name": "spaces_household_owner_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "original_owner_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "spaces_household_visibility_idx": {
+          "name": "spaces_household_visibility_idx",
+          "columns": [
+            {
+              "expression": "household_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "visibility",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "spaces_original_owner_membership_fk": {
+          "name": "spaces_original_owner_membership_fk",
+          "tableFrom": "spaces",
+          "tableTo": "household_memberships",
+          "schemaTo": "emdo",
+          "columnsFrom": ["household_id", "original_owner_user_id"],
+          "columnsTo": ["household_id", "user_id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "spaces_household_id_id_unique": {
+          "name": "spaces_household_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": ["household_id", "id"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "spaces_visibility_check": {
+          "name": "spaces_visibility_check",
+          "value": "\"emdo\".\"spaces\".\"visibility\" in ('private', 'shared')"
+        },
+        "spaces_revision_positive": {
+          "name": "spaces_revision_positive",
+          "value": "\"emdo\".\"spaces\".\"revision\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {
+    "emdo": "emdo"
+  },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {
+    "emdo.active_household_memberships": {
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "definition": "select id, household_id as organization_id, user_id, role,\n                 joined_at as created_at\n            from emdo.household_memberships\n           where status = 'active'",
+      "name": "active_household_memberships",
+      "schema": "emdo",
+      "isExisting": false,
+      "with": {
+        "securityBarrier": true
+      },
+      "materialized": false
+    },
+    "emdo.better_auth_invitations": {
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "inviter_id": {
+          "name": "inviter_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "definition": "select id, household_id as organization_id, email, role,\n                 'pending'::text as status,\n                 expires_at, created_at, invited_by_user_id as inviter_id\n            from emdo.invitations\n           where consumed_at is null\n             and revoked_at is null\n             and expires_at > clock_timestamp()",
+      "name": "better_auth_invitations",
+      "schema": "emdo",
+      "isExisting": false,
+      "with": {
+        "securityBarrier": true
+      },
+      "materialized": false
+    },
+    "emdo.better_auth_organizations": {
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "logo": {
+          "name": "logo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "definition": "select id, name, slug, logo, metadata, created_at\n            from emdo.households",
+      "name": "better_auth_organizations",
+      "schema": "emdo",
+      "isExisting": false,
+      "with": {
+        "securityBarrier": true
+      },
+      "materialized": false
+    }
+  },
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

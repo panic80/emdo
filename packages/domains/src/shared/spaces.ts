@@ -1,41 +1,30 @@
+import { z } from 'zod';
+
+import { OpaqueReferenceSchema, deepFreeze } from '@emdo/contracts';
+
 export type SpaceVisibility = 'private' | 'shared';
 
-export interface Space {
-  readonly id: string;
-  readonly householdId: string;
-  readonly originalOwnerUserId: string;
-  readonly visibility: SpaceVisibility;
-}
+const SpaceSchema = z
+  .strictObject({
+    id: OpaqueReferenceSchema,
+    householdId: OpaqueReferenceSchema,
+    originalOwnerUserId: OpaqueReferenceSchema,
+    visibility: z.enum(['private', 'shared']),
+  })
+  .transform(deepFreeze);
 
-export interface SpaceAccessSubject {
-  readonly userId: string;
-  readonly householdId?: string;
-  readonly activeMember: boolean;
-}
+const SpaceAccessSubjectSchema = z
+  .strictObject({
+    userId: OpaqueReferenceSchema,
+    householdId: OpaqueReferenceSchema,
+    activeMember: z.boolean(),
+  })
+  .transform(deepFreeze);
 
-const requireValue = (name: string, value: string): string => {
-  const normalized = value.trim();
-  if (normalized.length === 0) {
-    throw new TypeError(`${name} must not be empty`);
-  }
-  return normalized;
-};
+export type Space = z.input<typeof SpaceSchema>;
+export type SpaceAccessSubject = z.input<typeof SpaceAccessSubjectSchema>;
 
-export const createSpace = (input: Space): Space =>
-  (() => {
-    if (input.visibility !== 'private' && input.visibility !== 'shared') {
-      throw new TypeError('space visibility is invalid');
-    }
-    return Object.freeze({
-      id: requireValue('space id', input.id),
-      householdId: requireValue('household id', input.householdId),
-      originalOwnerUserId: requireValue(
-        'original owner user id',
-        input.originalOwnerUserId,
-      ),
-      visibility: input.visibility,
-    });
-  })();
+export const createSpace = (input: Space): Space => SpaceSchema.parse(input);
 
 /**
  * Application-level mirror of the database access rule. The role of the
@@ -46,13 +35,26 @@ export const canReadSpace = (
   space: Space,
   subject: SpaceAccessSubject,
 ): boolean => {
-  if (!subject.activeMember) {
+  const parsedSpace = SpaceSchema.safeParse(space);
+  const parsedSubject = SpaceAccessSubjectSchema.safeParse(subject);
+  if (!parsedSpace.success || !parsedSubject.success) return false;
+  const validatedSpace = parsedSpace.data;
+  const validatedSubject = parsedSubject.data;
+
+  if (
+    !validatedSubject.activeMember ||
+    validatedSubject.householdId !== validatedSpace.householdId
+  ) {
     return false;
   }
 
-  if (space.visibility === 'private') {
-    return subject.userId === space.originalOwnerUserId;
+  if (validatedSpace.visibility === 'private') {
+    return validatedSubject.userId === validatedSpace.originalOwnerUserId;
   }
 
-  return subject.householdId === space.householdId;
+  if (validatedSpace.visibility === 'shared') {
+    return true;
+  }
+
+  return false;
 };

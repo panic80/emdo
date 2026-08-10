@@ -13,11 +13,33 @@ const issuer = {
   role: 'owner',
   activeMember: true,
 } as const;
+const identityProvider = {
+  resolveAuthenticatedIdentity: async (sessionId: string) =>
+    sessionId === 'verified-session'
+      ? {
+          userId: 'member-1',
+          email: 'member@example.com',
+          emailVerified: true as const,
+        }
+      : sessionId === 'exact-session'
+        ? {
+            userId: 'member-2',
+            email: 'exact@example.com',
+            emailVerified: true as const,
+          }
+        : sessionId === 'other-session'
+          ? {
+              userId: 'other-1',
+              email: 'other@example.com',
+              emailVerified: true as const,
+            }
+          : undefined,
+};
 
 describe('InvitationService', () => {
   it('issues an email-bound seven-day invitation and stores only its hash', async () => {
     const repository = new InMemoryInvitationRepository();
-    const service = new InvitationService(repository);
+    const service = new InvitationService(repository, identityProvider);
     const issued = await service.issue({
       issuer,
       email: 'Member@Example.com',
@@ -42,7 +64,10 @@ describe('InvitationService', () => {
   });
 
   it('consumes exactly once and rejects wrong email, expiry, and excessive lifetime', async () => {
-    const service = new InvitationService(new InMemoryInvitationRepository());
+    const service = new InvitationService(
+      new InMemoryInvitationRepository(),
+      identityProvider,
+    );
     const issued = await service.issue({
       issuer,
       email: 'member@example.com',
@@ -54,7 +79,7 @@ describe('InvitationService', () => {
     await expect(
       service.consume({
         invitationId: issued.invitation.id,
-        email: 'other@example.com',
+        authenticatedSessionId: 'other-session',
         token: issued.token,
         now,
       }),
@@ -62,7 +87,7 @@ describe('InvitationService', () => {
     await expect(
       service.consume({
         invitationId: issued.invitation.id,
-        email: 'member@example.com',
+        authenticatedSessionId: 'verified-session',
         token: issued.token,
         now,
       }),
@@ -70,7 +95,7 @@ describe('InvitationService', () => {
     await expect(
       service.consume({
         invitationId: issued.invitation.id,
-        email: 'member@example.com',
+        authenticatedSessionId: 'verified-session',
         token: issued.token,
         now,
       }),
@@ -93,6 +118,15 @@ describe('InvitationService', () => {
         expiresAt: new Date('2026-08-10T16:00:00.000Z'),
       }),
     ).rejects.toMatchObject({ code: 'invitation-issuer-unauthorized' });
+    await expect(
+      service.issue({
+        issuer,
+        email: 'invalid-date@example.com',
+        role: 'member',
+        now: new Date('invalid'),
+        expiresAt: new Date('invalid'),
+      }),
+    ).rejects.toMatchObject({ code: 'invitation-expiry-invalid' });
     const exactExpiry = await service.issue({
       issuer,
       email: 'exact@example.com',
@@ -103,10 +137,35 @@ describe('InvitationService', () => {
     await expect(
       service.consume({
         invitationId: exactExpiry.invitation.id,
-        email: 'exact@example.com',
+        authenticatedSessionId: 'exact-session',
         token: exactExpiry.token,
         now: new Date('2026-08-10T16:00:00.000Z'),
       }),
     ).rejects.toMatchObject({ code: 'invitation-expired' });
+    await expect(
+      service.consume({
+        invitationId: exactExpiry.invitation.id,
+        authenticatedSessionId: 'exact-session',
+        token: exactExpiry.token,
+        now: new Date('invalid'),
+      }),
+    ).rejects.toMatchObject({ code: 'invitation-expiry-invalid' });
+    await expect(
+      service.issue({
+        issuer: { ...issuer, activeMember: 'false' as never },
+        email: 'member@example.com',
+        role: 'admin' as never,
+        now,
+        expiresAt: new Date('2026-08-10T16:00:00.000Z'),
+      }),
+    ).rejects.toMatchObject({ code: 'invitation-issuer-unauthorized' });
+    await expect(
+      service.consume({
+        invitationId: issued.invitation.id,
+        authenticatedSessionId: 'unverified-session',
+        token: issued.token,
+        now,
+      }),
+    ).rejects.toMatchObject({ code: 'invitation-invalid' });
   });
 });

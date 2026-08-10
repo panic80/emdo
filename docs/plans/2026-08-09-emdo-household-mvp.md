@@ -70,7 +70,8 @@
 **Files:**
 - Create: `packages/db/src/{client,schema,rls,scoped-repository,migrations}.ts`
 - Create: `packages/db/drizzle/*`
-- Create: `packages/auth/src/{better-auth,bootstrap-owner,invitations,session,csrf}.ts`
+- Create: `packages/auth/src/{better-auth,invitations,session,csrf}.ts`
+- Create: `packages/db/deployment/bootstrap-owner.ts`
 - Create: `packages/integrations/src/vault/{crypto,repository}.ts`
 - Create: `packages/domains/src/shared/{spaces,audit,proposals,retention}.ts`
 - Test: `packages/db/src/rls.integration.test.ts`
@@ -277,4 +278,3 @@
 **Step 6:** Document unexecuted external gates honestly. Do not mark Hostinger staging, production deployment, provider backup, or restore complete without authenticated evidence.
 
 **Step 7:** Commit with `docs: add emdo release and operations runbooks`.
-

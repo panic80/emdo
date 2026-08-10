@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1786316538923,
+      "tag": "0000_household_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786319149582,
+      "tag": "0001_identity_onboarding",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786320903356,
+      "tag": "0002_owner_bootstrap",
+      "breakpoints": true
+    }
+  ]
+}

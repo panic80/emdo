@@ -34,5 +34,12 @@ describe('CsrfProtector', () => {
         headerToken: token,
       }),
     ).toBe(false);
+    expect(
+      () =>
+        new CsrfProtector({
+          secret: Buffer.alloc(32, 7),
+          trustedOrigins: ['ftp://localhost'],
+        }),
+    ).toThrow(/HTTPS origins/);
   });
 });

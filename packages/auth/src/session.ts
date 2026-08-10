@@ -20,12 +20,19 @@ export interface RotatingSessionRepository {
     nextHash: string,
     expiresAt: Date,
   ): Promise<RotatingSessionRecord | undefined>;
-  revoke(id: string, revokedAt: Date): Promise<void>;
+  revoke(id: string, expectedHash: string, revokedAt: Date): Promise<boolean>;
 }
 
 const hashToken = (token: string) =>
   createHash('sha256').update(token).digest('hex');
 const newToken = () => randomBytes(32).toString('base64url');
+
+const finiteDateValue = (date: Date, name: string): number => {
+  const value = date.getTime();
+  if (!Number.isFinite(value))
+    throw new TypeError(`${name} must be a valid date`);
+  return value;
+};
 
 const cloneRecord = (record: RotatingSessionRecord): RotatingSessionRecord =>
   Object.freeze({
@@ -45,8 +52,12 @@ export class RotatingSessionService {
     readonly now: Date;
     readonly expiresAt: Date;
   }) {
-    if (input.expiresAt <= input.now)
-      throw new Error('Session expiry is invalid');
+    if (input.userId.trim().length === 0) {
+      throw new TypeError('Session user id is required');
+    }
+    const nowMs = finiteDateValue(input.now, 'Session issue time');
+    const expiresAtMs = finiteDateValue(input.expiresAt, 'Session expiry');
+    if (expiresAtMs <= nowMs) throw new Error('Session expiry is invalid');
     const token = newToken();
     const session = Object.freeze({
       id: randomUUID(),
@@ -61,11 +72,14 @@ export class RotatingSessionService {
   }
 
   async authenticate(token: string, now: Date) {
+    const nowMs = now.getTime();
+    if (!Number.isFinite(nowMs)) return undefined;
     const session = await this.repository.findByHash(hashToken(token));
     if (
       session === undefined ||
       session.revokedAt !== undefined ||
-      session.expiresAt <= now
+      !Number.isFinite(session.expiresAt.getTime()) ||
+      session.expiresAt.getTime() <= nowMs
     ) {
       return undefined;
     }
@@ -77,13 +91,16 @@ export class RotatingSessionService {
     readonly now: Date;
     readonly expiresAt: Date;
   }) {
+    const nowMs = finiteDateValue(input.now, 'Session rotation time');
+    const expiresAtMs = finiteDateValue(input.expiresAt, 'Session expiry');
     const currentHash = hashToken(input.token);
     const current = await this.repository.findByHash(currentHash);
     if (
       current === undefined ||
       current.revokedAt !== undefined ||
-      current.expiresAt <= input.now ||
-      input.expiresAt <= input.now
+      !Number.isFinite(current.expiresAt.getTime()) ||
+      current.expiresAt.getTime() <= nowMs ||
+      expiresAtMs <= nowMs
     ) {
       throw new Error('Session is not rotatable');
     }
@@ -99,12 +116,12 @@ export class RotatingSessionService {
   }
 
   async revoke(token: string, now: Date): Promise<boolean> {
+    finiteDateValue(now, 'Session revocation time');
     const session = await this.repository.findByHash(hashToken(token));
     if (session === undefined || session.revokedAt !== undefined) {
       return false;
     }
-    await this.repository.revoke(session.id, now);
-    return true;
+    return this.repository.revoke(session.id, session.tokenHash, now);
   }
 }
 
@@ -132,7 +149,11 @@ export class InMemorySessionRepository implements RotatingSessionRepository {
     expiresAt: Date,
   ) {
     const current = this.records.get(id);
-    if (current === undefined || current.tokenHash !== expectedHash)
+    if (
+      current === undefined ||
+      current.tokenHash !== expectedHash ||
+      current.revokedAt !== undefined
+    )
       return undefined;
     const next = Object.freeze({
       ...current,
@@ -143,13 +164,19 @@ export class InMemorySessionRepository implements RotatingSessionRepository {
     this.records.set(id, next);
     return cloneRecord(next);
   }
-  async revoke(id: string, revokedAt: Date) {
+  async revoke(id: string, expectedHash: string, revokedAt: Date) {
     const current = this.records.get(id);
-    if (current !== undefined) {
-      this.records.set(
-        id,
-        Object.freeze({ ...current, revokedAt: new Date(revokedAt) }),
-      );
+    if (
+      current === undefined ||
+      current.tokenHash !== expectedHash ||
+      current.revokedAt !== undefined
+    ) {
+      return false;
     }
+    this.records.set(
+      id,
+      Object.freeze({ ...current, revokedAt: new Date(revokedAt) }),
+    );
+    return true;
   }
 }

@@ -1,46 +1,75 @@
-import type { EncryptedVaultPayload, VaultScope } from './crypto.js';
+import {
+  EncryptedVaultPayloadSchema,
+  VaultScopeSchema,
+  type VaultScope,
+} from './crypto.js';
+import { z } from 'zod';
 
-export interface VaultRecord {
-  readonly scope: VaultScope;
-  readonly ownerUserId: string;
-  readonly payload: EncryptedVaultPayload;
-  readonly createdAt: Date;
-}
+import { OpaqueReferenceSchema } from '@emdo/contracts';
 
-const scopeKey = (scope: VaultScope) =>
-  JSON.stringify([scope.householdId, scope.spaceId, scope.recordId]);
+const VaultRecordSchema = z.strictObject({
+  scope: VaultScopeSchema,
+  ownerUserId: OpaqueReferenceSchema,
+  payload: EncryptedVaultPayloadSchema,
+  createdAt: z.date().refine((value) => Number.isFinite(value.getTime())),
+});
+
+export type VaultRecord = z.input<typeof VaultRecordSchema>;
+
+const scopeKey = (rawScope: VaultScope) => {
+  const scope = VaultScopeSchema.parse(rawScope);
+  return JSON.stringify([
+    scope.householdId,
+    scope.spaceId,
+    scope.provider,
+    scope.grantType,
+    scope.recordId,
+  ]);
+};
 
 const cloneRecord = (record: VaultRecord): VaultRecord =>
-  Object.freeze({
-    scope: Object.freeze({ ...record.scope }),
-    ownerUserId: record.ownerUserId,
-    payload: Object.freeze({ ...record.payload }),
-    createdAt: new Date(record.createdAt),
-  });
+  (() => {
+    const validated = VaultRecordSchema.parse(record);
+    return Object.freeze({
+      scope: validated.scope,
+      ownerUserId: validated.ownerUserId,
+      payload: validated.payload,
+      createdAt: new Date(validated.createdAt),
+    });
+  })();
 
 export class InMemoryVaultRepository {
   private readonly records = new Map<string, VaultRecord>();
 
   async put(record: VaultRecord) {
-    const current = this.records.get(scopeKey(record.scope));
-    if (current !== undefined && current.ownerUserId !== record.ownerUserId) {
+    const candidate = cloneRecord(record);
+    const key = scopeKey(candidate.scope);
+    const current = this.records.get(key);
+    if (
+      current !== undefined &&
+      current.ownerUserId !== candidate.ownerUserId
+    ) {
       throw new Error('Vault record ownership cannot be reassigned');
     }
-    this.records.set(scopeKey(record.scope), cloneRecord(record));
+    this.records.set(key, candidate);
   }
 
   async get(scope: VaultScope, ownerUserId: string) {
-    const record = this.records.get(scopeKey(scope));
-    return record === undefined || record.ownerUserId !== ownerUserId
+    const key = scopeKey(scope);
+    const owner = OpaqueReferenceSchema.parse(ownerUserId);
+    const record = this.records.get(key);
+    return record === undefined || record.ownerUserId !== owner
       ? undefined
       : cloneRecord(record);
   }
 
   async delete(scope: VaultScope, ownerUserId: string): Promise<boolean> {
-    const record = this.records.get(scopeKey(scope));
-    if (record === undefined || record.ownerUserId !== ownerUserId) {
+    const key = scopeKey(scope);
+    const owner = OpaqueReferenceSchema.parse(ownerUserId);
+    const record = this.records.get(key);
+    if (record === undefined || record.ownerUserId !== owner) {
       return false;
     }
-    return this.records.delete(scopeKey(scope));
+    return this.records.delete(key);
   }
 }

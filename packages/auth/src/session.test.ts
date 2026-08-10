@@ -62,10 +62,70 @@ describe('RotatingSessionService', () => {
       service.authenticate(issued.token, new Date('2026-08-09T17:00:00.000Z')),
     ).resolves.toBeUndefined();
     await expect(
+      service.authenticate(issued.token, new Date('invalid')),
+    ).resolves.toBeUndefined();
+    await expect(
       service.revoke(issued.token, new Date('2026-08-09T16:30:00.000Z')),
     ).resolves.toBe(true);
     await expect(
       service.authenticate(issued.token, new Date('2026-08-09T16:31:00.000Z')),
     ).resolves.toBeUndefined();
+    await expect(
+      service.issue({
+        userId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f101',
+        now: new Date('invalid'),
+        expiresAt: new Date('invalid'),
+      }),
+    ).rejects.toThrow(/valid date/i);
+    await expect(
+      service.issue({
+        userId: '   ',
+        now: new Date('2026-08-09T16:00:00.000Z'),
+        expiresAt: new Date('2026-08-09T17:00:00.000Z'),
+      }),
+    ).rejects.toThrow(/user id is required/i);
+  });
+
+  it('allows only revoke or rotate to win their atomic race', async () => {
+    const service = new RotatingSessionService(new InMemorySessionRepository());
+    const issued = await service.issue({
+      userId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f101',
+      now: new Date('2026-08-09T16:00:00.000Z'),
+      expiresAt: new Date('2026-08-10T16:00:00.000Z'),
+    });
+    const results = await Promise.allSettled([
+      service.revoke(issued.token, new Date('2026-08-09T17:00:00.000Z')),
+      service.rotate({
+        token: issued.token,
+        now: new Date('2026-08-09T17:00:00.000Z'),
+        expiresAt: new Date('2026-08-10T17:00:00.000Z'),
+      }),
+    ]);
+    const successfulOutcomes = results.filter(
+      (result) =>
+        result.status === 'fulfilled' &&
+        (typeof result.value !== 'boolean' || result.value),
+    );
+    expect(successfulOutcomes).toHaveLength(1);
+
+    const second = await service.issue({
+      userId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f101',
+      now: new Date('2026-08-09T16:00:00.000Z'),
+      expiresAt: new Date('2026-08-10T16:00:00.000Z'),
+    });
+    const reverseResults = await Promise.allSettled([
+      service.rotate({
+        token: second.token,
+        now: new Date('2026-08-09T17:00:00.000Z'),
+        expiresAt: new Date('2026-08-10T17:00:00.000Z'),
+      }),
+      service.revoke(second.token, new Date('2026-08-09T17:00:00.000Z')),
+    ]);
+    const reverseSuccessfulOutcomes = reverseResults.filter(
+      (result) =>
+        result.status === 'fulfilled' &&
+        (typeof result.value !== 'boolean' || result.value),
+    );
+    expect(reverseSuccessfulOutcomes).toHaveLength(1);
   });
 });

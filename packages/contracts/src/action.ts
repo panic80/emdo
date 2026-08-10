@@ -33,12 +33,14 @@ const ActionProposalBaseSchema = z
     version: z.number().int().positive(),
     runId: UuidSchema,
     capabilityId: IdentifierSchema,
+    capabilityFingerprint: Sha256Schema,
     canonicalArguments: JsonValueSchema,
     targets: z.array(ProposalTargetSchema).min(1).max(64),
     beforePreview: JsonValueSchema,
     afterPreview: JsonValueSchema,
     providerPreconditions: z.array(ProviderPreconditionSchema).max(64),
     payloadHash: Sha256Schema,
+    approvalHash: Sha256Schema,
     disclosureGrant: DataDisclosureGrantSchema,
     createdAt: IsoDateTimeSchema,
     expiresAt: IsoDateTimeSchema,
@@ -47,8 +49,11 @@ const ActionProposalBaseSchema = z
       'pending',
       'approved',
       'rejected',
+      'prepared',
       'executing',
       'executed',
+      'not-applied',
+      'indeterminate',
       'expired',
       'failed',
     ]),
@@ -70,6 +75,13 @@ const ActionProposalBaseSchema = z
         code: 'custom',
         path: ['disclosureGrant', 'runId'],
         message: 'Disclosure grant must be bound to the proposal run',
+      });
+    }
+    if (Date.parse(value.disclosureGrant.createdAt) > createdAt) {
+      context.addIssue({
+        code: 'custom',
+        path: ['disclosureGrant', 'createdAt'],
+        message: 'Disclosure grant must be created before the proposal',
       });
     }
     if (Date.parse(value.disclosureGrant.expiresAt) < expiresAt) {
@@ -95,11 +107,27 @@ const ActionDecisionBaseSchema = z.strictObject({
   userId: UuidSchema,
   authenticatedSessionId: UuidSchema,
   payloadHash: Sha256Schema,
+  approvalHash: Sha256Schema,
   decision: z.enum(['approved', 'rejected']),
   channel: z.literal('authenticated-visual'),
   decidedAt: IsoDateTimeSchema,
   idempotencyKey: IdempotencyKeySchema,
 });
+
+const ActionDecisionRequestBaseSchema = z.strictObject({
+  schemaVersion: SchemaVersionSchema,
+  proposalId: UuidSchema,
+  payloadHash: Sha256Schema,
+  approvalHash: Sha256Schema,
+  decision: z.enum(['approved', 'rejected']),
+  idempotencyKey: IdempotencyKeySchema,
+});
+
+export const ActionDecisionRequestSchema =
+  ActionDecisionRequestBaseSchema.transform(deepFreeze);
+export type ActionDecisionRequest = DeepReadonly<
+  z.input<typeof ActionDecisionRequestBaseSchema>
+>;
 
 export const ActionDecisionSchema =
   ActionDecisionBaseSchema.transform(deepFreeze);

@@ -189,6 +189,47 @@ export const CapabilityDescriptorSchema =
         message: 'Visual approval must have a positive expiry',
       });
     }
+    if (value.capabilityKind === 'provider-write') {
+      if (
+        !value.freshness.required ||
+        !value.freshness.revalidateBeforeExecution
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['freshness'],
+          message:
+            'Provider writes require freshness and execution-time revalidation',
+        });
+      }
+      if (
+        !value.idempotency.required ||
+        value.idempotency.scope !== 'provider-target'
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['idempotency'],
+          message:
+            'Provider writes require provider-target idempotency protection',
+        });
+      }
+      const minimumIdempotencyTtlMs =
+        value.approval.expiresInSeconds * 1000 + value.timeoutMs;
+      if (value.idempotency.ttlMs < minimumIdempotencyTtlMs) {
+        context.addIssue({
+          code: 'custom',
+          path: ['idempotency', 'ttlMs'],
+          message:
+            'Provider idempotency TTL must cover the approval window and execution recovery timeout',
+        });
+      }
+      if (!value.audit.required) {
+        context.addIssue({
+          code: 'custom',
+          path: ['audit', 'required'],
+          message: 'Provider writes require an audit record',
+        });
+      }
+    }
   }).transform(deepFreeze);
 
 export type CapabilityDescriptor = DeepReadonly<
@@ -204,24 +245,173 @@ export const CadMoneySchema = z
 
 export type CadMoney = DeepReadonly<z.input<typeof CadMoneySchema>>;
 
-export interface ServerCapabilityContext {
+export interface CapabilityInvocationContext {
   readonly requestId: string;
   readonly runId: string;
   readonly userId: string;
   readonly agentId: string;
   readonly spaceAccessGrantId: string;
+  readonly disclosureGrantId?: string;
   readonly approvalDecisionId?: string;
   readonly abortSignal: AbortSignal;
 }
 
+const ProviderWriteAuthorizationBaseSchema = z
+  .strictObject({
+    proposalId: UuidSchema,
+    approvalHash: Sha256Schema,
+    approvalBindingHash: Sha256Schema,
+    capabilityFingerprint: Sha256Schema,
+    proposalCreatedAt: IsoDateTimeSchema,
+    expiresAt: IsoDateTimeSchema,
+    disclosureGrantId: UuidSchema,
+    disclosureGrantHash: Sha256Schema,
+    providerIdempotencyKey: Sha256Schema,
+    idempotencyExpiresAt: IsoDateTimeSchema,
+    attemptId: UuidSchema,
+    attemptVersion: z.number().int().positive().safe(),
+    issuedAt: IsoDateTimeSchema,
+    targets: z
+      .array(
+        z.strictObject({
+          kind: IdentifierSchema,
+          id: OpaqueReferenceSchema,
+          expectedVersion: z.string().trim().min(1).max(512),
+        }),
+      )
+      .min(1)
+      .max(64),
+    providerPreconditions: z
+      .array(
+        z.strictObject({
+          kind: IdentifierSchema,
+          targetId: OpaqueReferenceSchema,
+          expectedValue: z.string().min(1).max(2048),
+        }),
+      )
+      .max(64),
+  })
+  .superRefine((value, context) => {
+    if (Date.parse(value.proposalCreatedAt) > Date.parse(value.issuedAt)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['issuedAt'],
+        message: 'Provider write permit cannot predate its proposal',
+      });
+    }
+    if (Date.parse(value.issuedAt) >= Date.parse(value.expiresAt)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['expiresAt'],
+        message: 'Provider write permit must be issued before approval expiry',
+      });
+    }
+    if (Date.parse(value.idempotencyExpiresAt) <= Date.parse(value.issuedAt)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['idempotencyExpiresAt'],
+        message: 'Provider idempotency protection must outlive permit issuance',
+      });
+    }
+  });
+
+export const ProviderWriteAuthorizationSchema =
+  ProviderWriteAuthorizationBaseSchema.transform(deepFreeze);
+
+export type ProviderWriteAuthorization = DeepReadonly<
+  z.input<typeof ProviderWriteAuthorizationBaseSchema>
+>;
+
+export interface ProviderWriteCapabilityContext extends Omit<
+  CapabilityInvocationContext,
+  'spaceAccessGrantId' | 'disclosureGrantId' | 'approvalDecisionId'
+> {
+  readonly providerWritePermit: ProviderWriteAuthorization;
+}
+
+export const ProviderCommitOutcomeSchema = z.discriminatedUnion('application', [
+  z.strictObject({
+    application: z.literal('applied'),
+    output: z.unknown(),
+    evidence: z.unknown().optional(),
+  }),
+  z.strictObject({
+    application: z.literal('not-applied'),
+    reason: z.enum([
+      'approval-expired-before-dispatch',
+      'approval-policy-mismatch',
+      'provider-precondition-failed',
+      'provider-rejected-before-apply',
+    ]),
+    evidence: z.unknown().optional(),
+  }),
+  z.strictObject({
+    application: z.literal('indeterminate'),
+    reason: z.enum([
+      'timeout-after-dispatch',
+      'transport-lost-after-dispatch',
+      'executor-threw-after-dispatch-boundary',
+      'provider-outcome-envelope-invalid',
+    ]),
+    evidence: z.unknown().optional(),
+  }),
+]);
+
+export type ProviderCommitOutcome<Output = unknown> =
+  | {
+      readonly application: 'applied';
+      readonly output: Output;
+      readonly evidence?: JsonValue;
+    }
+  | {
+      readonly application: 'not-applied';
+      readonly reason:
+        | 'approval-expired-before-dispatch'
+        | 'approval-policy-mismatch'
+        | 'provider-precondition-failed'
+        | 'provider-rejected-before-apply';
+      readonly evidence?: JsonValue;
+    }
+  | {
+      readonly application: 'indeterminate';
+      readonly reason:
+        | 'timeout-after-dispatch'
+        | 'transport-lost-after-dispatch'
+        | 'executor-threw-after-dispatch-boundary'
+        | 'provider-outcome-envelope-invalid';
+      readonly evidence?: JsonValue;
+    };
+
+export interface ProviderWriteSafetyContract {
+  readonly atomicConditions: 'provider-native-single-request';
+  readonly idempotency: 'provider-key' | 'deterministic-resource-id';
+  /** All automatic mutation retries stay inside one approved invocation. */
+  readonly retryOwnership: 'adapter-bounded-within-invocation';
+  readonly reconciliation: 'required';
+}
+
 export type CapabilityExecutor<Input, Output> = (
   input: DeepReadonly<Input>,
-  context: ServerCapabilityContext,
+  context: CapabilityInvocationContext,
 ) => Promise<Output>;
+
+/**
+ * Dispatches one provider-native conditional/idempotent mutation. Automatic
+ * retries remain bounded inside this invocation and reuse the permit key.
+ */
+export type ProviderWriteCapabilityExecutor<Input, Output> = (
+  input: DeepReadonly<Input>,
+  context: ProviderWriteCapabilityContext,
+) => Promise<ProviderCommitOutcome<Output>>;
 
 export interface RegisteredCapability<Input = unknown, Output = unknown> {
   readonly descriptor: CapabilityDescriptor;
-  readonly execute: CapabilityExecutor<Input, Output>;
+  readonly execute?: CapabilityExecutor<Input, Output>;
+  readonly executeProviderWrite?: ProviderWriteCapabilityExecutor<
+    Input,
+    Output
+  >;
+  readonly providerWriteSafety?: ProviderWriteSafetyContract;
 }
 
 export interface VersionedRuntimeSchema<Output = unknown> {
@@ -289,5 +479,5 @@ export const createRuntimeSchemaRegistry = (
 
 export interface ResolvedCapability<Output = unknown> {
   readonly descriptor: CapabilityDescriptor;
-  invoke(input: unknown, context: ServerCapabilityContext): Promise<Output>;
+  invoke(input: unknown, context: CapabilityInvocationContext): Promise<Output>;
 }

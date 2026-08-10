@@ -23,10 +23,10 @@ export class CsrfProtector {
     this.trustedOrigins = new Set(
       options.trustedOrigins.map((origin) => {
         const url = new URL(origin);
-        if (
-          url.origin !== origin ||
-          (url.protocol !== 'https:' && url.hostname !== 'localhost')
-        ) {
+        const isSecure = url.protocol === 'https:';
+        const isLocalDevelopment =
+          url.protocol === 'http:' && url.hostname === 'localhost';
+        if (url.origin !== origin || (!isSecure && !isLocalDevelopment)) {
           throw new Error('Trusted origins must be exact HTTPS origins');
         }
         return url.origin;

@@ -35,6 +35,27 @@ describe('audit and retention', () => {
         payload: {},
       }),
     ).toThrow(/already exists/);
+    expect(() =>
+      ledger.append({
+        id: 'audit-2',
+        householdId: 'household-1',
+        actorUserId: 'user-1',
+        eventType: 'invalid.payload',
+        occurredAt: '2026-08-09T16:02:00.000Z',
+        payload: { when: new Date() } as never,
+      }),
+    ).toThrow();
+    expect(() =>
+      ledger.append({
+        id: 'audit-invalid',
+        householdId: '',
+        actorUserId: null,
+        eventType: 'proposal.approved',
+        occurredAt: 'not-a-date',
+        payload: {},
+      }),
+    ).toThrow();
+    expect(ledger.list()).toHaveLength(1);
   });
 
   it('honors retention periods and legal holds', () => {

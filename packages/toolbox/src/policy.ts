@@ -42,6 +42,10 @@ export const hashCanonicalJson = (value: unknown): string =>
     .update(canonicalJson(JsonValueSchema.parse(value)))
     .digest('hex');
 
+export const hashCapabilityDescriptorBinding = (
+  descriptor: CapabilityDescriptor,
+): string => hashCanonicalJson(descriptor);
+
 export const assertCapabilityAllowed = (
   manifest: AgentManifest,
   descriptor: CapabilityDescriptor,

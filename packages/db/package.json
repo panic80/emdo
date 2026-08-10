@@ -2,5 +2,24 @@
   "name": "@emdo/db",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "deploy:bootstrap-owner": "node ./deployment/bootstrap-owner.ts"
+  },
+  "dependencies": {
+    "@emdo/contracts": "workspace:*",
+    "better-auth": "1.6.26",
+    "drizzle-orm": "0.45.2",
+    "pg": "8.23.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@better-auth/passkey": "1.6.26",
+    "@types/pg": "8.21.0",
+    "drizzle-kit": "0.31.10"
+  }
 }

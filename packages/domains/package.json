@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@emdo/contracts": "workspace:*",
-    "@emdo/toolbox": "workspace:*"
+    "@emdo/toolbox": "workspace:*",
+    "zod": "4.4.3"
   }
 }
