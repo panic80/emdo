@@ -24,7 +24,8 @@ require_regular_file "$backup_file"
 require_regular_file "$backup_file.sha256"
 require_regular_file "$backup_file.complete"
 
-# shellcheck disable=SC2031 -- assert_production_healthy isolates the same names in a subshell.
+# assert_production_healthy isolates the same names in a subshell.
+# shellcheck disable=SC2031
 export COMPOSE_PROJECT_NAME="emdo-restore-$restore_id" \
   DEPLOYMENT_NAMESPACE="restore-$restore_id" \
   EMDO_ENVIRONMENT=staging

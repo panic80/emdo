@@ -21,7 +21,8 @@ fi
 assert_digest_lock "$digest_lock"
 export_digest_lock
 load_deployment_config "$STAGING_CONFIG_FILE"
-# shellcheck disable=SC2031 -- assert_production_healthy isolates the same names in a subshell.
+# assert_production_healthy isolates the same names in a subshell.
+# shellcheck disable=SC2031
 export COMPOSE_PROJECT_NAME="emdo-staging-$run_id" \
   DEPLOYMENT_NAMESPACE="staging-$run_id" \
   EMDO_ENVIRONMENT=staging

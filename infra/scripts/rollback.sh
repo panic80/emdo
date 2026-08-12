@@ -97,7 +97,8 @@ assert_governed_parent_chain "$PRODUCTION_STATE_DIR" /var/lib/emdo
 assert_secret_directory_permissions "$SECRETS_DIR"
 assert_directory_within "$SECRETS_DIR" /etc/emdo/production SECRETS_DIR
 assert_base_secret_manifest "$SECRETS_DIR"
-# shellcheck disable=SC2031 -- assert_production_healthy isolates the same names in a subshell.
+# assert_production_healthy isolates the same names in a subshell.
+# shellcheck disable=SC2031
 export COMPOSE_PROJECT_NAME=emdo-production \
   DEPLOYMENT_NAMESPACE=production \
   EMDO_ENVIRONMENT=production
