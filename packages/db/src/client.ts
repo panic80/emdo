@@ -45,7 +45,7 @@ const asScopedPool = (pool: Pool): DatabasePool => ({
           rows: result.rows as readonly Record<string, unknown>[],
         };
       },
-      release: () => client.release(),
+      release: (destroy = false) => client.release(destroy),
     };
   },
 });

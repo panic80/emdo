@@ -18,14 +18,14 @@ const operation = (overrides: Record<string, unknown> = {}) => ({
   schemaVersion: 1,
   clientId: CLIENT_ID,
   operationId: OPERATION_ID,
-  entity: { type: 'shopping.item', id: 'milk' },
+  entity: { type: 'finance.transaction', id: 'txn-1' },
   mutation: {
     kind: 'update',
     payload: { spaceId: SPACE_ID, patch: { quantity: 2, unit: 'litre' } },
   },
   baseRevision: 1,
   dependencies: [],
-  actorIntent: 'Update the household milk quantity',
+  actorIntent: 'Append an adjustment to the household transaction ledger',
   createdAt: '2026-08-09T12:00:00.000Z',
   ...overrides,
 });
@@ -99,6 +99,52 @@ describe('CanonicalSyncUploadValidator', () => {
         validationContext,
       ),
     ).toThrow(expect.objectContaining({ code: 'mutation-not-allowed' }));
+  });
+
+  it.each([
+    [
+      'unsupported generic scheduler type',
+      operation({
+        entity: { type: 'scheduler.task', id: 'task-1' },
+        mutation: {
+          kind: 'create',
+          payload: { spaceId: SPACE_ID, value: { title: 'Task' } },
+        },
+        baseRevision: 0,
+      }),
+      'entity-not-supported',
+    ],
+    [
+      'scheduler delete without a deterministic reducer',
+      operation({
+        entity: { type: 'scheduler.item', id: 'appointment' },
+        mutation: { kind: 'delete', payload: { spaceId: SPACE_ID } },
+      }),
+      'mutation-not-allowed',
+    ],
+    [
+      'budget delete without a deterministic reducer',
+      operation({
+        entity: { type: 'finance.budget', id: 'monthly' },
+        mutation: { kind: 'delete', payload: { spaceId: SPACE_ID } },
+      }),
+      'mutation-not-allowed',
+    ],
+    [
+      'shopping replacement without a deterministic reducer',
+      operation({
+        entity: { type: 'shopping.item', id: 'milk' },
+        mutation: {
+          kind: 'update',
+          payload: { spaceId: SPACE_ID, patch: { quantityMinorUnits: 2_000 } },
+        },
+      }),
+      'mutation-not-allowed',
+    ],
+  ])('rejects %s before repository execution', (_label, candidate, code) => {
+    expect(() =>
+      validator.validate({ operations: [candidate] }, validationContext),
+    ).toThrow(expect.objectContaining({ code }));
   });
 
   it('fingerprints canonical data independently of object key order', () => {

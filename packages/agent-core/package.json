@@ -2,5 +2,32 @@
   "name": "@emdo/agent-core",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "development": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "source": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node smoke/clean-dist.mjs && tsc --project tsconfig.build.json",
+    "test:source-consumer": "vitest run smoke/source-consumer.test.ts",
+    "test:package": "pnpm run build && tsc --project tsconfig.consumer.json && node smoke/assert-dist.mjs && node smoke/pack-consumer.mjs"
+  },
+  "dependencies": {
+    "@emdo/contracts": "workspace:*",
+    "@openai/agents": "0.14.3",
+    "zod": "4.4.3"
+  }
 }

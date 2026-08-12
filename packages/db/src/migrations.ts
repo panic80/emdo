@@ -1,24 +1,44 @@
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { isAbsolute, join, normalize } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 
 export const migrationsDirectoryUrl = new URL('../drizzle/', import.meta.url);
 export const migrationsDirectoryPath = fileURLToPath(migrationsDirectoryUrl);
-const migrationJournalUrl = new URL(
-  'meta/_journal.json',
-  migrationsDirectoryUrl,
-);
+export interface DatabaseMigrationOptions {
+  /** Absolute directory copied beside the deployed API bundle. */
+  readonly migrationsFolder?: string;
+}
+
+const resolveMigrationsFolder = (
+  options: DatabaseMigrationOptions = {},
+): string => {
+  const migrationsFolder = options.migrationsFolder ?? migrationsDirectoryPath;
+  if (
+    migrationsFolder.length === 0 ||
+    migrationsFolder.length > 4_096 ||
+    migrationsFolder.includes('\0') ||
+    !isAbsolute(migrationsFolder)
+  ) {
+    throw new Error('Database migrations folder must be an absolute path');
+  }
+  return normalize(migrationsFolder);
+};
 
 interface MigrationJournalEntry {
   readonly idx: number;
   readonly tag: string;
 }
 
-const readJournalEntries = async (): Promise<
-  readonly MigrationJournalEntry[]
-> => {
-  const raw: unknown = JSON.parse(await readFile(migrationJournalUrl, 'utf8'));
+const readJournalEntries = async (
+  migrationsFolder: string,
+): Promise<readonly MigrationJournalEntry[]> => {
+  const journalUrl = pathToFileURL(
+    join(migrationsFolder, 'meta/_journal.json'),
+  );
+  const raw: unknown = JSON.parse(await readFile(journalUrl, 'utf8'));
   if (typeof raw !== 'object' || raw === null || !('entries' in raw)) {
     throw new Error('Drizzle migration journal is malformed');
   }
@@ -58,14 +78,15 @@ export interface OrderedMigration {
 export const loadOrderedMigrations = async (): Promise<
   readonly OrderedMigration[]
 > => {
-  const entries = await readJournalEntries();
+  const migrationsFolder = resolveMigrationsFolder();
+  const entries = await readJournalEntries(migrationsFolder);
   return Promise.all(
     entries.map(async ({ idx, tag }) =>
       Object.freeze({
         id: tag,
         index: idx,
         sql: await readFile(
-          new URL(`${tag}.sql`, migrationsDirectoryUrl),
+          pathToFileURL(join(migrationsFolder, `${tag}.sql`)),
           'utf8',
         ),
       }),
@@ -76,6 +97,80 @@ export const loadOrderedMigrations = async (): Promise<
 /** Applies every unapplied journal entry through Drizzle's tracked migrator. */
 export const applyDatabaseMigrations = async (
   database: Parameters<typeof migrate>[0],
+  options: DatabaseMigrationOptions = {},
 ): Promise<void> => {
-  await migrate(database, { migrationsFolder: migrationsDirectoryPath });
+  await migrate(database, {
+    migrationsFolder: resolveMigrationsFolder(options),
+  });
+};
+
+export interface MigrationLockClient {
+  query(
+    text: string,
+    values?: unknown[],
+  ): Promise<{
+    readonly rowCount: number | null;
+    readonly rows: readonly unknown[];
+  }>;
+  release(destroy?: boolean): void;
+}
+
+export interface MigrationLockPool {
+  connect(): Promise<MigrationLockClient>;
+}
+
+const migrationLockName = 'emdo.database.migrations.v1';
+
+/**
+ * Runs Drizzle's journal-aware migrator on the same dedicated PostgreSQL
+ * session that owns the advisory lock. Concurrent deployment containers are
+ * serialized, while Drizzle's migration journal keeps successful replays
+ * idempotent.
+ */
+export const applyLockedDatabaseMigrations = async (
+  pool: MigrationLockPool,
+  options: DatabaseMigrationOptions = {},
+): Promise<void> => {
+  const client = await pool.connect();
+  let locked = false;
+  let failed = false;
+  let destroyClient = false;
+  try {
+    await client.query('begin');
+    await client.query(`set local statement_timeout = '30s'`);
+    await client.query(
+      `select pg_catalog.pg_advisory_lock(
+         pg_catalog.hashtextextended($1, 0)
+       )`,
+      [migrationLockName],
+    );
+    locked = true;
+    await client.query('commit');
+    await applyDatabaseMigrations(drizzle(client as never), options);
+  } catch {
+    failed = true;
+    if (!locked) {
+      try {
+        await client.query('rollback');
+      } catch {
+        destroyClient = true;
+      }
+    }
+  } finally {
+    if (locked) {
+      try {
+        await client.query(
+          `select pg_catalog.pg_advisory_unlock(
+             pg_catalog.hashtextextended($1, 0)
+           )`,
+          [migrationLockName],
+        );
+      } catch {
+        failed = true;
+        destroyClient = true;
+      }
+    }
+    client.release(destroyClient);
+  }
+  if (failed) throw new Error('Database migration failed');
 };

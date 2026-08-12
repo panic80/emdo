@@ -1,0 +1,87 @@
+name: Publish images
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: true
+      matrix:
+        target: [api, worker, web]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish ${{ matrix.target }}
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile
+          target: ${{ matrix.target }}
+          push: true
+          tags: ghcr.io/panic80/emdo-${{ matrix.target }}:sha-${{ github.sha }}
+          build-args: |
+            SOURCE_SHA=${{ github.sha }}
+            BUILD_CREATED=${{ github.event.head_commit.timestamp }}
+          platforms: linux/amd64
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+      - name: Record immutable digest
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          install -d -m 0700 digest
+          printf '%s\n' "$IMAGE_DIGEST" > "digest/${{ matrix.target }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-${{ matrix.target }}
+          path: digest/${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 14
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: image-*
+          path: digests
+      - name: Create application digest lock
+        run: |
+          install -d -m 0700 release
+          printf 'SOURCE_SHA=%s\n' '${{ github.sha }}' > release/release-images.env
+          for target in api worker web; do
+            digest="$(cat "digests/image-$target/$target")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            key="$(printf '%s' "$target" | tr '[:lower:]' '[:upper:]')_IMAGE"
+            printf '%s=ghcr.io/panic80/emdo-%s@%s\n' "$key" "$target" "$digest" >> release/release-images.env
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-images
+          path: release/release-images.env
+          if-no-files-found: error
+          retention-days: 14

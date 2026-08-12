@@ -17,18 +17,6 @@ const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeDatabase = databaseUrl ? describe.sequential : describe.skip;
 const requiredDatabaseUrl =
   databaseUrl ?? 'postgresql://integration-test-unavailable.invalid/postgres';
-const emdoRoles = [
-  'emdo_app',
-  'emdo_auth',
-  'emdo_identity_reader',
-  'emdo_onboarding',
-  'emdo_onboarding_executor',
-  'emdo_owner_bootstrap',
-  'emdo_owner_bootstrap_executor',
-  'emdo_policy_reader',
-  'emdo_worker',
-  'emdo_workflow',
-] as const;
 
 const userA = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f101';
 const sessionA = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f102';
@@ -85,8 +73,8 @@ describeDatabase(
       );
 
       const preexistingRoles = await adminPool.query<{ rolname: string }>(
-        `select rolname from pg_catalog.pg_roles where rolname = any($1::text[])`,
-        [emdoRoles],
+        `select rolname from pg_catalog.pg_roles
+          where rolname like 'emdo\\_%' escape '\\'`,
       );
       if (preexistingRoles.rows.length > 0) {
         throw new Error(
@@ -227,8 +215,17 @@ describeDatabase(
         );
       }
       if (ownsEmdoRoles) {
-        for (const role of [...emdoRoles].reverse()) {
-          await adminPool.query(`drop role if exists ${quoteIdentifier(role)}`);
+        const createdRoles = await adminPool.query<{ rolname: string }>(
+          `select rolname from pg_catalog.pg_roles
+            where rolname like 'emdo\\_%' escape '\\'
+            order by rolname`,
+        );
+        if (createdRoles.rows.length > 0) {
+          await adminPool.query(
+            `drop role if exists ${createdRoles.rows
+              .map(({ rolname }) => quoteIdentifier(rolname))
+              .join(', ')}`,
+          );
         }
       }
       await adminPool.end();

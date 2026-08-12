@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">EMDO maskable icon</title>
+  <rect width="512" height="512" fill="#07162f"/>
+  <g transform="translate(55 55) scale(.785)">
+    <path d="M126 138h260v58H190v31h156v55H190v34h196v58H126z" fill="#fff"/>
+    <path d="M386 138v236h-58V138z" fill="#087154"/>
+  </g>
+</svg>

@@ -1,7 +1,3 @@
-export * from './better-auth-claim-transaction.js';
-export * from './client.js';
-export * from './invited-account-provisioner.js';
-export * from './migrations.js';
-export * from './rls.js';
-export * from './schema.js';
-export * from './scoped-repository.js';
+// The bare package is deliberately inert. Production runtimes must choose the
+// narrow Node-only `@emdo/db/api`, `/sync`, `/worker`, or `/migrations` surface.
+export {};

@@ -9,7 +9,7 @@ import {
   UuidSchema,
   deepFreeze,
   type DeepReadonly,
-} from './capability.js';
+} from './primitives.js';
 
 const SyncMutationSchema = z.strictObject({
   kind: z.enum(['create', 'update', 'delete', 'delta']),

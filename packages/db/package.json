@@ -4,22 +4,41 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./api": {
+      "node": "./src/api.ts"
+    },
+    "./sync": {
+      "node": "./src/sync/runtime.ts"
+    },
+    "./worker": "./src/worker/runtime.ts",
+    "./migrations": "./src/migrations.ts",
+    "./deployment/bootstrap-owner-command": {
+      "node": "./deployment/bootstrap-owner-command.ts"
+    }
   },
   "scripts": {
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
-    "deploy:bootstrap-owner": "node ./deployment/bootstrap-owner.ts"
+    "deploy:bootstrap-owner": "node --disable-warning=ExperimentalWarning ./deployment/bootstrap-owner.ts"
   },
   "dependencies": {
     "@emdo/contracts": "workspace:*",
+    "@emdo/domains": "workspace:*",
     "better-auth": "1.6.26",
     "drizzle-orm": "0.45.2",
+    "jose": "6.2.8",
+    "kysely": "0.29.4",
     "pg": "8.23.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@better-auth/core": "1.6.26",
     "@better-auth/passkey": "1.6.26",
+    "@better-auth/utils": "0.4.2",
+    "@better-fetch/fetch": "1.3.1",
+    "@emdo/toolbox": "workspace:*",
     "@types/pg": "8.21.0",
-    "drizzle-kit": "0.31.10"
+    "better-call": "1.3.7",
+    "nanostores": "1.4.2"
   }
 }

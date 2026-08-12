@@ -19,7 +19,7 @@ export interface DatabaseClient {
     text: string,
     values?: readonly unknown[],
   ): Promise<DatabaseQueryResult>;
-  release(): void;
+  release(destroy?: boolean): void;
 }
 
 export interface DatabasePool {
@@ -308,11 +308,13 @@ class ScopedDatabase {
     try {
       await client.query('begin');
       began = true;
+      await client.query('set local row_security = on');
+      await client.query("set local statement_timeout = '30s'");
+      await client.query("set local lock_timeout = '5s'");
       await client.query(
         `select set_config('emdo.user_id', $1, true),
                 set_config('emdo.session_id', $2, true),
-                set_config('emdo.request_id', $3, true);
-         set local row_security = on`,
+                set_config('emdo.request_id', $3, true)`,
         [identity.data.userId, identity.data.sessionId, scope.requestId],
       );
 

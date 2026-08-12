@@ -1,0 +1,198 @@
+# This file is always combined with compose.yml. Interpolation uses a staging
+# SECRETS_DIR; production credentials are never mounted into this project.
+services:
+  postgres:
+    restart: 'no'
+    environment:
+      EMDO_SYNTHETIC_DATA_ONLY: 'true'
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+          cpus: '0.50'
+        reservations:
+          memory: 192M
+
+  migrate:
+    environment:
+      EMDO_ENVIRONMENT: staging
+      EMDO_SYNTHETIC_DATA_ONLY: 'true'
+      EMDO_EXTERNAL_PROVIDERS_ENABLED: 'false'
+      EMDO_STAGING_SOURCE_SHA: ${EMDO_STAGING_SOURCE_SHA:?EMDO_STAGING_SOURCE_SHA is required}
+      EMDO_STAGING_WORKFLOW_RUN_ID: ${EMDO_STAGING_WORKFLOW_RUN_ID:?EMDO_STAGING_WORKFLOW_RUN_ID is required}
+    deploy:
+      resources:
+        limits:
+          memory: 320M
+          cpus: '0.50'
+
+  provision:
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.20'
+
+  job-schema:
+    environment:
+      EMDO_ENVIRONMENT: staging
+      EMDO_SYNTHETIC_DATA_ONLY: 'true'
+      EMDO_EXTERNAL_PROVIDERS_ENABLED: 'false'
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+          cpus: '0.30'
+
+  api:
+    restart: 'no'
+    ports: !override []
+    environment:
+      EMDO_ENVIRONMENT: staging
+      EMDO_ALLOW_LOOPBACK_API_INGRESS: 'true'
+      EMDO_SYNTHETIC_DATA_ONLY: 'true'
+      EMDO_EXTERNAL_PROVIDERS_ENABLED: 'false'
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+          cpus: '0.40'
+        reservations:
+          memory: 96M
+
+  worker:
+    restart: 'no'
+    environment:
+      EMDO_ENVIRONMENT: staging
+      EMDO_SYNTHETIC_DATA_ONLY: 'true'
+      EMDO_EXTERNAL_PROVIDERS_ENABLED: 'false'
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+
+  web:
+    restart: 'no'
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: '0.15'
+        reservations:
+          memory: 24M
+
+  powersync:
+    restart: 'no'
+    environment:
+      EMDO_SYNTHETIC_DATA_ONLY: 'true'
+    deploy:
+      resources:
+        limits:
+          memory: 416M
+          cpus: '0.50'
+        reservations:
+          memory: 160M
+
+  caddy:
+    restart: 'no'
+    ports: !override
+      - '127.0.0.1:${STAGING_HTTP_PORT:?STAGING_HTTP_PORT is required}:8080'
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: '0.15'
+        reservations:
+          memory: 24M
+
+  synthetic-data:
+    image: '${API_IMAGE:?API_IMAGE must be an immutable application image reference}'
+    profiles: [operations]
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - '${SECRETS_DIR:?SECRETS_DIR must point to staging credentials}/synthetic.env'
+      - '${SECRETS_DIR:?SECRETS_DIR must point to staging credentials}/synthetic-bootstrap.env'
+    environment:
+      EMDO_ENVIRONMENT: staging
+      EMDO_SYNTHETIC_DATA_ONLY: 'true'
+      EMDO_EXTERNAL_PROVIDERS_ENABLED: 'false'
+    command:
+      - node
+      - dist/cli/seed-synthetic.js
+      - --fail-if-nonempty
+      - --staging-only
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid,nodev
+    depends_on:
+      api:
+        condition: service_healthy
+    network_mode: service:api
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+          cpus: '0.20'
+          pids: 64
+    pids_limit: 64
+
+  staging-acceptance:
+    image: '${API_IMAGE:?API_IMAGE must be an immutable application image reference}'
+    profiles: [operations]
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - '${SECRETS_DIR:?SECRETS_DIR must point to staging credentials}/synthetic.env'
+    environment:
+      EMDO_ENVIRONMENT: staging
+      EMDO_SYNTHETIC_DATA_ONLY: 'true'
+      EMDO_EXTERNAL_PROVIDERS_ENABLED: 'false'
+    command:
+      - node
+      - dist/cli/staging-acceptance.js
+      - --all-mvp-gates
+      - --require-synthetic
+      - --forbid-external-providers
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    depends_on:
+      api:
+        condition: service_healthy
+    network_mode: service:api
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+          cpus: '0.40'
+          pids: 96
+    pids_limit: 96
+
+# Aggregate steady-state limit: 1248 MiB. Operations services are sequential
+# and excluded from this steady-state total.
+networks:
+  edge:
+    name: emdo-staging-${STAGING_RUN_ID:?STAGING_RUN_ID is required}-edge
+    internal: true
+  egress:
+    name: emdo-staging-${STAGING_RUN_ID:?STAGING_RUN_ID is required}-egress
+    internal: true
+  backend:
+    name: emdo-staging-${STAGING_RUN_ID:?STAGING_RUN_ID is required}-backend
+    internal: true
+
+volumes:
+  postgres-data:
+    name: emdo-staging-${STAGING_RUN_ID:?STAGING_RUN_ID is required}-postgres
+  caddy-data:
+    name: emdo-staging-${STAGING_RUN_ID:?STAGING_RUN_ID is required}-caddy-data
+  caddy-config:
+    name: emdo-staging-${STAGING_RUN_ID:?STAGING_RUN_ID is required}-caddy-config

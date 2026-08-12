@@ -1,0 +1,12 @@
+[Unit]
+Description=Check EMDO logical-replication and Docker disk pressure
+
+[Timer]
+OnBootSec=5m
+OnUnitActiveSec=15m
+Persistent=true
+AccuracySec=1m
+Unit=emdo-replication-pressure.service
+
+[Install]
+WantedBy=timers.target

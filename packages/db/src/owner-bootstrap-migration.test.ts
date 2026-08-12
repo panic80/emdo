@@ -1,4 +1,6 @@
+import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -8,6 +10,14 @@ const migrationUrl = new URL(
 );
 const packageUrl = new URL('../package.json', import.meta.url);
 const indexUrl = new URL('./index.ts', import.meta.url);
+const commandUrl = new URL(
+  '../deployment/bootstrap-owner-command.ts',
+  import.meta.url,
+);
+const executableUrl = new URL(
+  '../deployment/bootstrap-owner.ts',
+  import.meta.url,
+);
 
 const readMigration = async () =>
   (await readFile(migrationUrl, 'utf8')).toLowerCase().replaceAll('"', '');
@@ -113,17 +123,61 @@ describe('deployment-only initial owner bootstrap migration', () => {
     }
   });
 
-  it('keeps the command deployment-only and outside package exports', async () => {
+  it('keeps the command behind a narrow server-only export and outside the root barrel', async () => {
     const packageJson = JSON.parse(await readFile(packageUrl, 'utf8')) as {
-      readonly exports: Readonly<Record<string, string>>;
+      readonly exports: Readonly<
+        Record<string, string | Readonly<Record<string, string>>>
+      >;
       readonly scripts: Readonly<Record<string, string>>;
     };
     const indexSource = await readFile(indexUrl, 'utf8');
+    const commandSource = await readFile(commandUrl, 'utf8');
+    const executableSource = await readFile(executableUrl, 'utf8');
 
-    expect(packageJson.exports).toEqual({ '.': './src/index.ts' });
+    expect(packageJson.exports).toEqual({
+      '.': './src/index.ts',
+      './api': {
+        node: './src/api.ts',
+      },
+      './sync': {
+        node: './src/sync/runtime.ts',
+      },
+      './worker': './src/worker/runtime.ts',
+      './migrations': './src/migrations.ts',
+      './deployment/bootstrap-owner-command': {
+        node: './deployment/bootstrap-owner-command.ts',
+      },
+    });
     expect(packageJson.scripts['deploy:bootstrap-owner']).toBe(
-      'node ./deployment/bootstrap-owner.ts',
+      'node --disable-warning=ExperimentalWarning ./deployment/bootstrap-owner.ts',
     );
     expect(indexSource).not.toMatch(/bootstrap-owner|bootstrap_initial_owner/);
+    expect(commandSource).not.toMatch(
+      /pathToFileURL|process\.argv|process\.exitCode|import\.meta\.url/,
+    );
+    expect(executableSource).toContain(
+      "from '@emdo/db/deployment/bootstrap-owner-command'",
+    );
+    expect(executableSource).toContain('pathToFileURL(invokedPath).href');
+    expect(executableSource).not.toMatch(
+      /better-auth|from 'pg'|from 'zod'|bootstrap_initial_owner/,
+    );
+  });
+
+  it('runs the thin executable directly with a single sanitized exit', () => {
+    const execution = spawnSync(
+      process.execPath,
+      ['--disable-warning=ExperimentalWarning', fileURLToPath(executableUrl)],
+      {
+        encoding: 'utf8',
+        env: Object.freeze({ PATH: process.env.PATH ?? '' }),
+      },
+    );
+
+    expect(execution.status).toBe(64);
+    expect(execution.stdout).toBe('');
+    expect(execution.stderr).toBe(
+      'Owner bootstrap configuration is invalid.\n',
+    );
   });
 });

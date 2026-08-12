@@ -4,10 +4,13 @@
 !.env.example
 .worktrees/
 node_modules/
+node_modules
 dist/
 coverage/
 .turbo/
 playwright-report/
 test-results/
+/output/
+/.superpowers/
 *.log
-
+/apps/web/public/@powersync/

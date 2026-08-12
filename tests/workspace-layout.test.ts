@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import ts from 'typescript';
 
 const root = resolve(import.meta.dirname, '..');
 
@@ -83,6 +84,44 @@ describe('EMDO workspace layout', () => {
     ]) {
       expect(manifest.scripts[script]).toEqual(expect.any(String));
     }
+  });
+
+  test('explicitly typechecks the web TSX graph from the root command', () => {
+    const rootManifest = JSON.parse(
+      readFileSync(resolve(root, 'package.json'), 'utf8'),
+    );
+    const webManifest = JSON.parse(
+      readFileSync(resolve(root, 'apps/web/package.json'), 'utf8'),
+    );
+    expect(webManifest.scripts.typecheck).toBe(
+      'tsc --project tsconfig.json --noEmit',
+    );
+    expect(rootManifest.scripts.typecheck).toBe(
+      'tsc --project tsconfig.base.json --noEmit && pnpm --filter @emdo/web typecheck',
+    );
+
+    const webConfigPath = resolve(root, 'apps/web/tsconfig.json');
+    const config = ts.readConfigFile(webConfigPath, ts.sys.readFile);
+    expect(config.error).toBeUndefined();
+    const parsed = ts.parseJsonConfigFileContent(
+      config.config,
+      ts.sys,
+      dirname(webConfigPath),
+    );
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.fileNames).toContain(resolve(root, 'apps/web/src/main.tsx'));
+  });
+
+  test('keeps the shared Vitest runner out of the web package importer', () => {
+    const rootManifest = JSON.parse(
+      readFileSync(resolve(root, 'package.json'), 'utf8'),
+    );
+    const webManifest = JSON.parse(
+      readFileSync(resolve(root, 'apps/web/package.json'), 'utf8'),
+    );
+
+    expect(rootManifest.devDependencies.vitest).toEqual(expect.any(String));
+    expect(webManifest.devDependencies).not.toHaveProperty('vitest');
   });
 
   test('records the architectural boundaries', () => {

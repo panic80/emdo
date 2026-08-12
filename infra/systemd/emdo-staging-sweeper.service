@@ -1,0 +1,18 @@
+[Unit]
+Description=Remove expired isolated EMDO staging projects
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/sbin/emdo-cleanup-expired-staging
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/emdo/staging /var/lib/emdo/locks /var/lib/emdo/staging-releases /run /var/run

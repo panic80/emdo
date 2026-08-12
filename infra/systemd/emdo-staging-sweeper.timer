@@ -1,0 +1,12 @@
+[Unit]
+Description=Check EMDO staging expiry deadlines every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=15s
+Persistent=true
+Unit=emdo-staging-sweeper.service
+
+[Install]
+WantedBy=timers.target

@@ -9,7 +9,7 @@ import {
   type DeepReadonly,
   type JsonValue,
   type SyncOperation,
-} from '@emdo/contracts';
+} from '@emdo/contracts/browser';
 import { z } from 'zod';
 
 type ConflictStatus =

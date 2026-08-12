@@ -62,6 +62,7 @@ The initial publication/grant allowlist is:
 - `emdo.household_memberships` (authorization lookup only; not emitted)
 - `emdo.spaces`
 - `emdo.space_records`
+- `emdo.sync_entities` (canonical offline scheduler/finance/shopping rows)
 - `emdo.conversation_events`
 - `emdo.audit_events`
 
@@ -98,7 +99,8 @@ must remain private or separately authenticated.
 - `private_space_data` returns private spaces only when the signed-in user is
   both active in the household and the space's immutable original owner.
 - `shared_space_data` returns shared spaces only to active household members.
-- Domain records, conversation events, and audit events inherit access through
+- Domain records (including revisioned/tombstoned `sync_entities`), conversation
+  events, and audit events inherit access through
   the authorized space CTE. Household owners get no private-member bypass.
 - Queries enumerate output columns so a newly added secret or internal column
   cannot silently start replicating.

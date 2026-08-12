@@ -1,0 +1,485 @@
+name: ${COMPOSE_PROJECT_NAME:-emdo-production}
+
+x-logging: &default-logging
+  driver: local
+  options:
+    max-size: 10m
+    max-file: '3'
+
+x-runtime-security: &runtime-security
+  init: true
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  postgres:
+    image: '${POSTGRES_IMAGE:?POSTGRES_IMAGE must be an immutable pgvector PostgreSQL 17 image reference}'
+    restart: unless-stopped
+    shm_size: 128m
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=8
+      - -c
+      - max_wal_senders=8
+      - -c
+      - max_slot_wal_keep_size=2048MB
+      - -c
+      - password_encryption=scram-sha-256
+    environment:
+      POSTGRES_DB: emdo_app
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_superuser_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    secrets:
+      - postgres_superuser_password
+      - api_database_password
+      - auth_database_password
+      - onboarding_database_password
+      - worker_database_password
+      - worker_executor_database_password
+      - worker_dispatcher_database_password
+      - audio_reconciliation_database_password
+      - workflow_database_password
+      - powersync_replication_password
+      - powersync_storage_password
+      - owner_bootstrap_database_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres-init.sql:/docker-entrypoint-initdb.d/010-emdo-principals.sql:ro
+    networks:
+      - backend
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d emdo_app']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          cpus: '1.25'
+          pids: 256
+        reservations:
+          memory: 512M
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  migrate:
+    image: '${API_IMAGE:?API_IMAGE must be an immutable application image reference}'
+    profiles: [operations]
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/migration.env'
+    environment:
+      EMDO_ENVIRONMENT: ${EMDO_ENVIRONMENT:-production}
+      EMDO_MIGRATION_MODE: expand-contract
+    command:
+      - node
+      - dist/cli/migrate.js
+      - --require-backward-compatible
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid,nodev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+          pids: 128
+    pids_limit: 128
+    logging: *default-logging
+
+  owner-bootstrap:
+    image: '${API_IMAGE:?API_IMAGE must be an immutable application image reference}'
+    profiles: [owner-bootstrap]
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - path: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/owner-bootstrap.env'
+        required: false
+    environment:
+      EMDO_ENVIRONMENT: production
+    command:
+      - node
+      - dist/cli/bootstrap-owner.js
+      - --confirm
+      - bootstrap-initial-owner-v1
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid,nodev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.50'
+          pids: 64
+    pids_limit: 64
+    logging: *default-logging
+
+  job-schema:
+    image: '${WORKER_IMAGE:?WORKER_IMAGE must be an immutable application image reference}'
+    profiles: [operations]
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/migration.env'
+    environment:
+      EMDO_ENVIRONMENT: ${EMDO_ENVIRONMENT:-production}
+    command:
+      - node
+      - dist/cli/migrate-jobs.js
+      - --install-only
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid,nodev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.50'
+          pids: 96
+    pids_limit: 96
+    logging: *default-logging
+
+  provision:
+    image: '${POSTGRES_IMAGE:?POSTGRES_IMAGE must be an immutable pgvector PostgreSQL 17 image reference}'
+    profiles: [operations]
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - postgres_superuser_password
+      - api_database_password
+      - auth_database_password
+      - onboarding_database_password
+      - worker_database_password
+      - worker_executor_database_password
+      - worker_dispatcher_database_password
+      - audio_reconciliation_database_password
+      - workflow_database_password
+      - powersync_replication_password
+      - powersync_storage_password
+      - owner_bootstrap_database_password
+    volumes:
+      - ./provision-runtime.sh:/opt/emdo/provision-runtime.sh:ro
+      - ./provision-runtime.sql:/opt/emdo/provision-runtime.sql:ro
+    entrypoint: ['/opt/emdo/provision-runtime.sh']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+          pids: 64
+    pids_limit: 64
+    logging: *default-logging
+
+  api:
+    <<: *runtime-security
+    image: '${API_IMAGE:?API_IMAGE must be an immutable application image reference}'
+    restart: unless-stopped
+    env_file:
+      - '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/api.env'
+      - '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/edge-proxy.env'
+    environment:
+      EMDO_ENVIRONMENT: ${EMDO_ENVIRONMENT:-production}
+      HOST: 0.0.0.0
+      PORT: '3000'
+      TZ: America/Toronto
+    ports:
+      - '127.0.0.1:13000:3000'
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+      - edge
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+          pids: 128
+        reservations:
+          memory: 192M
+    pids_limit: 128
+    logging: *default-logging
+
+  worker:
+    <<: *runtime-security
+    image: '${WORKER_IMAGE:?WORKER_IMAGE must be an immutable application image reference}'
+    restart: unless-stopped
+    env_file:
+      - '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/worker.env'
+    environment:
+      EMDO_ENVIRONMENT: ${EMDO_ENVIRONMENT:-production}
+      HEALTH_HOST: 0.0.0.0
+      HEALTH_PORT: '3001'
+      TZ: America/Toronto
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+      - egress
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3001/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+          cpus: '0.75'
+          pids: 128
+        reservations:
+          memory: 128M
+    pids_limit: 128
+    logging: *default-logging
+
+  web:
+    <<: *runtime-security
+    image: '${WEB_IMAGE:?WEB_IMAGE must be an immutable application image reference}'
+    restart: unless-stopped
+    tmpfs:
+      - /var/cache/nginx:size=16m,nosuid,nodev,uid=101,gid=101,mode=0750
+      - /var/run:size=4m,nosuid,nodev,uid=101,gid=101,mode=0750
+      - /tmp:size=16m,noexec,nosuid,nodev
+    networks:
+      - edge
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8080/healthz >/dev/null']
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+          pids: 64
+        reservations:
+          memory: 32M
+    pids_limit: 64
+    logging: *default-logging
+
+  powersync:
+    <<: *runtime-security
+    image: '${POWERSYNC_IMAGE:?POWERSYNC_IMAGE must be an immutable PowerSync image reference}'
+    restart: unless-stopped
+    env_file:
+      - '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/powersync.env'
+    environment:
+      PS_EMDO_JWKS_URI: ${POWERSYNC_JWKS_URI:?POWERSYNC_JWKS_URI is required}
+    command: ['start', '-r', 'unified']
+    volumes:
+      - ../powersync/config.yaml:/config/config.yaml:ro
+      - ../powersync/sync-rules.yaml:/config/sync-rules.yaml:ro
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      - backend
+      - edge
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:8080/probes/liveness').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: '1.0'
+          pids: 192
+        reservations:
+          memory: 256M
+    pids_limit: 192
+    logging: *default-logging
+
+  caddy:
+    image: '${CADDY_IMAGE:?CADDY_IMAGE must be an immutable Caddy image reference}'
+    restart: unless-stopped
+    user: '65532:65532'
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/edge-proxy.env'
+    environment:
+      EMDO_DOMAIN: ${EMDO_DOMAIN:?EMDO_DOMAIN is required}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ../caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid,nodev
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    networks:
+      - edge
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:2019/config/ >/dev/null']
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+          pids: 64
+        reservations:
+          memory: 32M
+    pids_limit: 64
+    logging: *default-logging
+
+  caddy-init:
+    image: '${CADDY_IMAGE:?CADDY_IMAGE must be an immutable Caddy image reference}'
+    profiles: [operations]
+    user: '0:0'
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    entrypoint: ['/bin/sh', '-ec']
+    command: ['chown -R 65532:65532 /data /config']
+    network_mode: none
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+          cpus: '0.10'
+          pids: 32
+    pids_limit: 32
+    logging: *default-logging
+
+networks:
+  edge:
+    name: emdo-${DEPLOYMENT_NAMESPACE:?DEPLOYMENT_NAMESPACE is required}-edge
+  egress:
+    name: emdo-${DEPLOYMENT_NAMESPACE:?DEPLOYMENT_NAMESPACE is required}-egress
+  backend:
+    name: emdo-${DEPLOYMENT_NAMESPACE:?DEPLOYMENT_NAMESPACE is required}-backend
+    internal: true
+
+volumes:
+  postgres-data:
+    name: emdo-${DEPLOYMENT_NAMESPACE:?DEPLOYMENT_NAMESPACE is required}-postgres
+  caddy-data:
+    name: emdo-${DEPLOYMENT_NAMESPACE:?DEPLOYMENT_NAMESPACE is required}-caddy-data
+  caddy-config:
+    name: emdo-${DEPLOYMENT_NAMESPACE:?DEPLOYMENT_NAMESPACE is required}-caddy-config
+
+secrets:
+  postgres_superuser_password:
+    file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/postgres_superuser_password'
+  api_database_password:
+    file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/api_database_password'
+  auth_database_password:
+    file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/auth_database_password'
+  onboarding_database_password:
+    file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/onboarding_database_password'
+  worker_database_password:
+    file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/worker_database_password'
+  worker_executor_database_password:
+    file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/worker_executor_database_password'
+  worker_dispatcher_database_password:
+    file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/worker_dispatcher_database_password'
+  audio_reconciliation_database_password:
+    file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/audio_reconciliation_database_password'
+  workflow_database_password:
+    file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/workflow_database_password'
+  powersync_replication_password:
+    file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/powersync_replication_password'
+  powersync_storage_password:
+    file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/powersync_storage_password'
+  owner_bootstrap_database_password:
+    file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/owner_bootstrap_database_password'

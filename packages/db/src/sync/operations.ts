@@ -41,63 +41,19 @@ export const DEFAULT_SYNC_ENTITY_POLICIES: readonly SyncEntityPolicy[] =
     },
     {
       entityType: 'scheduler.item',
-      allowedMutations: ['create', 'update', 'delete'],
-    },
-    {
-      entityType: 'scheduler.task',
-      allowedMutations: ['create', 'update', 'delete'],
-    },
-    {
-      entityType: 'scheduler.reminder',
-      allowedMutations: ['create', 'update', 'delete'],
-    },
-    {
-      entityType: 'scheduler.chore',
-      allowedMutations: ['create', 'update', 'delete'],
-    },
-    {
-      entityType: 'scheduler.routine',
-      allowedMutations: ['create', 'update', 'delete'],
-    },
-    {
-      entityType: 'finance.account',
-      allowedMutations: ['create', 'update', 'delete'],
+      allowedMutations: ['create', 'update'],
     },
     {
       entityType: 'finance.transaction',
       allowedMutations: ['create', 'update'],
     },
     {
-      entityType: 'finance.category',
-      allowedMutations: ['create', 'update', 'delete'],
-    },
-    {
       entityType: 'finance.budget',
-      allowedMutations: ['create', 'update', 'delete'],
-    },
-    {
-      entityType: 'finance.bill',
-      allowedMutations: ['create', 'update', 'delete'],
-    },
-    {
-      entityType: 'finance.subscription',
-      allowedMutations: ['create', 'update', 'delete'],
-    },
-    {
-      entityType: 'finance.goal',
-      allowedMutations: ['create', 'update', 'delete'],
-    },
-    {
-      entityType: 'shopping.list',
-      allowedMutations: ['create', 'update', 'delete'],
+      allowedMutations: ['create', 'update'],
     },
     {
       entityType: 'shopping.item',
-      allowedMutations: ['create', 'update', 'delete', 'delta'],
-    },
-    {
-      entityType: 'shopping.preference',
-      allowedMutations: ['create', 'update', 'delete'],
+      allowedMutations: ['create', 'delete', 'delta'],
     },
   ]);
 
@@ -174,7 +130,7 @@ const RESERVED_OFFLINE_DATA_FIELDS = new Set([
   'visibility',
 ]);
 
-const containsReservedOfflineDataField = (value: unknown): boolean => {
+export const containsReservedOfflineDataField = (value: unknown): boolean => {
   if (value === null || typeof value !== 'object') return false;
   if (Array.isArray(value)) {
     return value.some((entry) => containsReservedOfflineDataField(entry));

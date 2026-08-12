@@ -54,6 +54,10 @@ describe('scoped database', () => {
     expect(database.query).toHaveBeenNthCalledWith(1, 'begin');
     expect(database.query).toHaveBeenNthCalledWith(
       2,
+      'set local row_security = on',
+    );
+    expect(database.query).toHaveBeenNthCalledWith(
+      5,
       expect.stringContaining("set_config('emdo.user_id', $1, true)"),
       [userId, sessionId, requestId],
     );

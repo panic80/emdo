@@ -1,10 +1,15 @@
 import {
+  ActionProposalApprovalDisplaySchema,
   DataDisclosureGrantSchema,
   JsonValueSchema,
+  ProviderWriteAuthorityBindingSchema,
   deepFreeze,
+  type ActionProposalApprovalDisplay,
   type DeepReadonly,
   type JsonValue,
+  type ProviderWriteAuthorityBinding,
 } from '@emdo/contracts';
+import { hashCanonicalJson } from '@emdo/toolbox';
 import { z } from 'zod';
 
 import { SchedulerDomainError } from './errors.js';
@@ -44,9 +49,17 @@ const TargetReferenceSchema = z
   );
 const GoogleEventIdSchema = z
   .string()
-  .min(5)
-  .max(240)
-  .regex(/^[0-9a-v]+$/);
+  .trim()
+  .min(1)
+  .max(512)
+  .refine(
+    (value) =>
+      !Array.from(value).some((character) => {
+        const codePoint = character.codePointAt(0) ?? 0;
+        return codePoint <= 31 || codePoint === 127;
+      }),
+    'Google event ID contains control characters',
+  );
 const VersionSchema = z.string().trim().min(1).max(512);
 const EventTextSchema = z.string().trim().min(1).max(8_000);
 const EmailSchema = z.email().max(320);
@@ -207,6 +220,8 @@ export interface CalendarProposalStateReader {
 }
 
 export interface CalendarProposalMaterialization {
+  readonly providerAuthorityBindingHash: string;
+  readonly approvalDisplay: ActionProposalApprovalDisplay;
   readonly targets: readonly {
     readonly kind: 'google-calendar.event';
     readonly id: string;
@@ -300,7 +315,98 @@ const parseEventRecord = (input: unknown): CalendarEventRecord | null => {
   return parsed.data;
 };
 
-const asPreview = (input: unknown): JsonValue => JsonValueSchema.parse(input);
+const asPreview = (
+  input: unknown,
+  operation: 'create' | 'update' | 'delete',
+): JsonValue =>
+  JsonValueSchema.parse({
+    ...(input as Record<string, unknown>),
+    attendeeNotificationPolicy: {
+      sendUpdates: 'none',
+      disclosure:
+        operation === 'delete'
+          ? 'Attendee cancellation notifications will not be sent.'
+          : 'Attendee invitation and update notifications will not be sent.',
+    },
+  });
+
+const displayFieldsForEvent = (
+  calendarId: string,
+  event: z.infer<typeof CalendarEventPayloadSchema>,
+): readonly { readonly label: string; readonly value: string }[] => [
+  { label: 'Calendar', value: calendarId },
+  { label: 'Title', value: event.summary },
+  { label: 'Starts', value: event.start },
+  { label: 'Ends', value: event.end },
+  { label: 'Time zone', value: event.timeZone },
+  ...(event.location === undefined
+    ? []
+    : [{ label: 'Location', value: event.location }]),
+  ...(event.description === undefined
+    ? []
+    : [{ label: 'Description', value: event.description }]),
+  ...(event.attendees === undefined
+    ? []
+    : [{ label: 'Attendees', value: event.attendees.join(', ') }]),
+  ...(event.recurrence === undefined
+    ? []
+    : [{ label: 'Recurrence', value: JSON.stringify(event.recurrence) }]),
+];
+
+const approvalDisplayFor = (
+  operation: 'create' | 'update',
+  calendarId: string,
+  event: z.infer<typeof CalendarEventPayloadSchema>,
+): ActionProposalApprovalDisplay => {
+  const verb = operation === 'create' ? 'creating' : 'updating';
+  const titleVerb = operation === 'create' ? 'Create' : 'Update';
+  const parsed = ActionProposalApprovalDisplaySchema.safeParse({
+    schemaVersion: 1,
+    title: `${titleVerb} Google Calendar event`,
+    summary: `Review the exact event details before ${verb} it in Google Calendar.`,
+    beforeSummary:
+      operation === 'create'
+        ? 'No event exists at the approved target.'
+        : 'The current event will be replaced.',
+    afterSummary:
+      operation === 'create'
+        ? 'The approved event will be created.'
+        : 'The approved event details will replace it.',
+    fields: displayFieldsForEvent(calendarId, event),
+  });
+  if (!parsed.success) return invalidArguments();
+  return parsed.data;
+};
+
+const deleteApprovalDisplayFor = (
+  argumentsValue: Extract<
+    CalendarCanonicalArguments,
+    { readonly operation: 'delete' }
+  >,
+): ActionProposalApprovalDisplay => {
+  const parsed = ActionProposalApprovalDisplaySchema.safeParse({
+    schemaVersion: 1,
+    title: 'Delete Google Calendar event',
+    summary:
+      'Review the exact event identifiers before deleting it in Google Calendar.',
+    beforeSummary: 'The event at the approved target will be deleted.',
+    afterSummary: 'No event will remain at the approved target.',
+    fields: [
+      { label: 'Calendar', value: argumentsValue.calendarId },
+      { label: 'Event ID', value: argumentsValue.eventId },
+      {
+        label: 'Expected calendar version',
+        value: argumentsValue.expectedCalendarVersion,
+      },
+      {
+        label: 'Expected event version',
+        value: argumentsValue.expectedEventVersion,
+      },
+    ],
+  });
+  if (!parsed.success) return invalidArguments();
+  return parsed.data;
+};
 
 const assertRecurrenceDeterministic = (
   event: z.infer<typeof CalendarEventPayloadSchema>,
@@ -343,10 +449,12 @@ const assertRecurrenceDeterministic = (
  */
 export class CalendarProposalMaterializer {
   readonly #scope: CalendarProposalReadScope;
+  readonly #providerAuthorityBindingHash: string;
 
   constructor(
     private readonly reader: CalendarProposalStateReader,
     scopeInput: unknown,
+    authorityBindingInput: unknown,
   ) {
     const scope = boundedSafeParse(CalendarProposalReadScopeSchema, scopeInput);
     if (!scope.success) {
@@ -356,6 +464,22 @@ export class CalendarProposalMaterializer {
       );
     }
     this.#scope = deepFreeze(scope.data);
+    const authorityBinding = boundedSafeParse(
+      ProviderWriteAuthorityBindingSchema,
+      authorityBindingInput,
+    );
+    if (
+      !authorityBinding.success ||
+      authorityBinding.data.householdId !== this.#scope.householdId
+    ) {
+      throw new SchedulerDomainError(
+        'calendar-authorization-invalid',
+        'The calendar proposal authority is invalid for this household.',
+      );
+    }
+    this.#providerAuthorityBindingHash = hashCanonicalJson(
+      authorityBinding.data,
+    );
   }
 
   async materialize(input: unknown): Promise<CalendarProposalMaterialization> {
@@ -451,6 +575,12 @@ export class CalendarProposalMaterializer {
         );
       }
       return deepFreeze({
+        providerAuthorityBindingHash: this.#providerAuthorityBindingHash,
+        approvalDisplay: approvalDisplayFor(
+          'create',
+          argumentsValue.calendarId,
+          argumentsValue.event,
+        ),
         targets: [
           {
             kind: 'google-calendar.event' as const,
@@ -459,7 +589,7 @@ export class CalendarProposalMaterializer {
           },
         ],
         beforePreview: null,
-        afterPreview: asPreview(argumentsValue.event),
+        afterPreview: asPreview(argumentsValue.event, 'create'),
         providerPreconditions: [
           {
             kind: 'calendar-version' as const,
@@ -493,6 +623,15 @@ export class CalendarProposalMaterializer {
     }
 
     return deepFreeze({
+      providerAuthorityBindingHash: this.#providerAuthorityBindingHash,
+      approvalDisplay:
+        argumentsValue.operation === 'update'
+          ? approvalDisplayFor(
+              'update',
+              argumentsValue.calendarId,
+              argumentsValue.replacement,
+            )
+          : deleteApprovalDisplayFor(argumentsValue),
       targets: [
         {
           kind: 'google-calendar.event' as const,
@@ -500,10 +639,10 @@ export class CalendarProposalMaterializer {
           expectedVersion: argumentsValue.expectedEventVersion,
         },
       ],
-      beforePreview: asPreview(currentEvent),
+      beforePreview: asPreview(currentEvent, argumentsValue.operation),
       afterPreview:
         argumentsValue.operation === 'update'
-          ? asPreview(argumentsValue.replacement)
+          ? asPreview(argumentsValue.replacement, 'update')
           : null,
       providerPreconditions: [
         {
@@ -523,7 +662,24 @@ export class CalendarProposalMaterializer {
 
 /** Adapter used by the shared proposal service with server-scoped grant data. */
 export class ScopedCalendarProposalMaterializer implements TrustedProposalMaterializer {
-  constructor(private readonly reader: CalendarProposalStateReader) {}
+  readonly #authorityBinding: ProviderWriteAuthorityBinding;
+
+  constructor(
+    private readonly reader: CalendarProposalStateReader,
+    authorityBindingInput: unknown,
+  ) {
+    const authorityBinding = boundedSafeParse(
+      ProviderWriteAuthorityBindingSchema,
+      authorityBindingInput,
+    );
+    if (!authorityBinding.success) {
+      throw new SchedulerDomainError(
+        'calendar-authorization-invalid',
+        'The calendar proposal provider authority is invalid.',
+      );
+    }
+    this.#authorityBinding = deepFreeze(authorityBinding.data);
+  }
 
   async materialize(
     input: Parameters<TrustedProposalMaterializer['materialize']>[0],
@@ -537,6 +693,7 @@ export class ScopedCalendarProposalMaterializer implements TrustedProposalMateri
       !grant.success ||
       grant.data.agentId !== 'scheduler' ||
       grant.data.provider !== 'google-calendar' ||
+      grant.data.householdId !== this.#authorityBinding.householdId ||
       !Number.isSafeInteger(now) ||
       now < Date.parse(grant.data.createdAt) ||
       now >= Date.parse(grant.data.expiresAt)
@@ -567,6 +724,7 @@ export class ScopedCalendarProposalMaterializer implements TrustedProposalMateri
     return new CalendarProposalMaterializer(
       this.reader,
       scope.data,
+      this.#authorityBinding,
     ).materialize({
       capabilityId: input.capabilityId,
       canonicalArguments: input.canonicalArguments,

@@ -5,7 +5,7 @@ import {
   OWNER_BOOTSTRAP_CONFIRMATION,
   runOwnerBootstrapCommand,
   type BootstrapOwnerEnvironment,
-} from '../../packages/db/deployment/bootstrap-owner.js';
+} from '../../packages/db/deployment/bootstrap-owner-command.js';
 import {
   createDatabaseClient,
   type EmdoDatabaseClient,
@@ -67,7 +67,7 @@ describeDatabase(
       );
 
       const migrations = await loadOrderedMigrations();
-      expect(migrations.at(-1)?.id).toBe('0002_owner_bootstrap');
+      expect(migrations[2]?.id).toBe('0002_owner_bootstrap');
       for (const migration of migrations) {
         await admin.query(migration.sql);
       }

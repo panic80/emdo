@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { loadOrderedMigrations } from './migrations.js';
@@ -101,6 +103,13 @@ describeDatabase(
               ($3, $4, $6, 'Shared', 'shared')`,
         [ownerSpace, memberSpace, sharedSpace, household, owner, member],
       );
+      await client.query(
+        `insert into emdo.auth_sessions
+           (id, user_id, token, expires_at, active_household_id)
+         values ($1, $2, 'rls-foundation-owner-session',
+                 pg_catalog.clock_timestamp() + interval '1 hour', $3)`,
+        [sessionId, owner, household],
+      );
 
       await client.query('set local role emdo_app');
       await client.query(
@@ -116,9 +125,17 @@ describeDatabase(
         sharedSpace,
       ]);
 
+      await client.query('savepoint raw_membership_read');
+      await expect(
+        client.query(
+          'select user_id from emdo.household_memberships where household_id = $1 order by user_id',
+          [household],
+        ),
+      ).rejects.toMatchObject({ code: '42501' });
+      await client.query('rollback to savepoint raw_membership_read');
+
       const memberships = await client.query<{ user_id: string }>(
-        'select user_id from emdo.household_memberships where household_id = $1 order by user_id',
-        [household],
+        'select user_id from emdo.list_household_memberships() order by user_id',
       );
       expect(memberships.rows.map(({ user_id }) => user_id)).toEqual([
         owner,
@@ -145,6 +162,7 @@ describeDatabase(
         auth_can_write_invitation_base: boolean;
         auth_can_write_membership_base: boolean;
         onboarding_can_execute: boolean;
+        onboarding_can_execute_raw: boolean;
         onboarding_can_read_invitation_base: boolean;
         onboarding_can_write_user_base: boolean;
       }>(`select
@@ -172,9 +190,14 @@ describeDatabase(
           as auth_can_write_membership_base,
         has_function_privilege(
           'emdo_onboarding',
-          'emdo.provision_invited_account(uuid,text,text,text,text)',
+          'emdo.redeem_household_invitation(integer,uuid,text,text,text,text,text,uuid)',
           'EXECUTE'
         ) as onboarding_can_execute,
+        has_function_privilege(
+          'emdo_onboarding',
+          'emdo.provision_invited_account(uuid,text,text,text,text)',
+          'EXECUTE'
+        ) as onboarding_can_execute_raw,
         has_table_privilege('emdo_onboarding', 'emdo.invitations', 'SELECT')
           as onboarding_can_read_invitation_base,
         has_table_privilege('emdo_onboarding', 'emdo.auth_users', 'INSERT')
@@ -188,6 +211,7 @@ describeDatabase(
         auth_can_write_invitation_base: false,
         auth_can_write_membership_base: false,
         onboarding_can_execute: true,
+        onboarding_can_execute_raw: false,
         onboarding_can_read_invitation_base: false,
         onboarding_can_write_user_base: false,
       });
@@ -357,59 +381,112 @@ describeDatabase(
       const owner = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f001';
       const household = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f010';
       const invitation = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f040';
+      const deliverySecret = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f042';
       const tokenHash = 'd'.repeat(64);
       const passwordHash = `${'e'.repeat(32)}:${'f'.repeat(128)}`;
+      const operationId = `invitation:${invitation}`;
+      const payloadHash = createHash('sha256')
+        .update('emdo.invitation.delivery.v1')
+        .update('\0')
+        .update(
+          JSON.stringify({
+            deliverySecretId: deliverySecret,
+            invitationId: invitation,
+            operationId,
+            origin: 'deterministic-worker',
+            schemaVersion: 1,
+          }),
+        )
+        .digest('hex');
 
       await client.query('set local role emdo_app');
       await client.query(
         "select set_config('emdo.user_id', $1, true), set_config('emdo.session_id', $2, true), set_config('emdo.request_id', $3, true)",
         [owner, sessionId, requestId],
       );
-      await client.query(
-        `insert into emdo.invitations
-           (id, household_id, invited_by_user_id, email, role, token_hash,
-            created_at, expires_at)
-         values ($1, $2, $3, 'new-member@example.test', 'member', $4,
-                 now(), now() + interval '7 days')`,
-        [invitation, household, owner, tokenHash],
+      const issued = await client.query<{ invitation_id: string }>(
+        `select invitation_id
+           from emdo.issue_household_invitation(
+             'new-member@example.test', 'member', 604800, $1, $2, $3,
+             $4::uuid, $5, $6::uuid, 'invitation-redemption.v1',
+             $7::jsonb, $8
+           )`,
+        [
+          tokenHash,
+          'invitation-issue:rls-0001',
+          'a'.repeat(64),
+          invitation,
+          operationId,
+          deliverySecret,
+          JSON.stringify({
+            algorithm: 'RSA-OAEP-256',
+            bindingHash: 'b'.repeat(64),
+            ciphertext: 'A'.repeat(64),
+            keyId: 'rls-foundation-test-key',
+            schemaVersion: 1,
+          }),
+          payloadHash,
+        ],
       );
+      expect(issued.rows).toEqual([{ invitation_id: invitation }]);
       await client.query('reset role');
 
       await client.query('set local role emdo_onboarding');
       const provisioned = await client.query<{
-        email: string;
-        email_verified: boolean;
-        household_id: string;
-        role: string;
+        result: {
+          emailVerified: boolean;
+          householdId: string;
+          role: string;
+          schemaVersion: number;
+          userId: string;
+        };
         status: string;
-        user_id: string;
       }>(
-        `select * from emdo.provision_invited_account(
-           $1::uuid, $2::text, 'new-member@example.test'::text,
-           'New Member'::text, $3::text
+        `select * from emdo.redeem_household_invitation(
+           1, $1::uuid, $2::text, 'new-member@example.test'::text,
+           'New Member'::text, $3::text, $4::text, $5::uuid
          )`,
-        [invitation, tokenHash, passwordHash],
+        [
+          invitation,
+          tokenHash,
+          passwordHash,
+          'invitation-redemption:rls-0001',
+          '018f1f5e-6f47-7d61-a6dd-1e86f8b8f041',
+        ],
       );
       expect(provisioned.rows).toHaveLength(1);
       expect(provisioned.rows[0]).toMatchObject({
-        email: 'new-member@example.test',
-        email_verified: true,
-        household_id: household,
-        role: 'member',
         status: 'provisioned',
+        result: {
+          emailVerified: true,
+          householdId: household,
+          role: 'member',
+          schemaVersion: 1,
+        },
       });
       const replay = await client.query(
-        `select * from emdo.provision_invited_account(
-           $1::uuid, $2::text, 'new-member@example.test'::text,
-           'New Member'::text, $3::text
+        `select * from emdo.redeem_household_invitation(
+           1, $1::uuid, $2::text, 'new-member@example.test'::text,
+           'New Member'::text, $3::text, $4::text, $5::uuid
          )`,
-        [invitation, tokenHash, passwordHash],
+        [
+          invitation,
+          tokenHash,
+          passwordHash,
+          'invitation-redemption:rls-0001',
+          '018f1f5e-6f47-7d61-a6dd-1e86f8b8f041',
+        ],
       );
-      expect(replay.rows).toEqual([]);
+      expect(replay.rows).toEqual([
+        {
+          status: 'replay',
+          result: provisioned.rows[0]?.result,
+        },
+      ]);
       await client.query('reset role');
 
       await client.query('set local role emdo_app');
-      const newUserId = provisioned.rows[0]?.user_id;
+      const newUserId = provisioned.rows[0]?.result.userId;
       const hiddenPrivateSpaces = await client.query(
         `select id from emdo.spaces
           where household_id = $1 and original_owner_user_id = $2`,
@@ -427,9 +504,23 @@ describeDatabase(
 
     it('hides invitation token hashes and permits only one-way owner revocation', async () => {
       const owner = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f001';
-      const household = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f010';
       const invitation = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f043';
+      const deliverySecret = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f044';
       const tokenHash = 'c'.repeat(64);
+      const operationId = `invitation:${invitation}`;
+      const payloadHash = createHash('sha256')
+        .update('emdo.invitation.delivery.v1')
+        .update('\0')
+        .update(
+          JSON.stringify({
+            deliverySecretId: deliverySecret,
+            invitationId: invitation,
+            operationId,
+            origin: 'deterministic-worker',
+            schemaVersion: 1,
+          }),
+        )
+        .digest('hex');
 
       const privileges = await client.query<{
         can_insert_token_hash: boolean;
@@ -458,13 +549,13 @@ describeDatabase(
         has_column_privilege('emdo_app', 'emdo.invitations', 'consumed_at', 'UPDATE') as can_update_consumed_at,
         has_column_privilege('emdo_app', 'emdo.invitations', 'revoked_at', 'UPDATE') as can_update_revoked_at`);
       expect(privileges.rows[0]).toEqual({
-        can_insert_token_hash: true,
-        can_read_email: true,
+        can_insert_token_hash: false,
+        can_read_email: false,
         can_read_token_hash: false,
         can_update_consumed_at: false,
         can_update_email: false,
         can_update_expires_at: false,
-        can_update_revoked_at: true,
+        can_update_revoked_at: false,
         can_update_role: false,
         can_update_token_hash: false,
         table_insert: false,
@@ -477,22 +568,55 @@ describeDatabase(
         "select set_config('emdo.user_id', $1, true), set_config('emdo.session_id', $2, true), set_config('emdo.request_id', $3, true)",
         [owner, sessionId, requestId],
       );
-      await client.query(
-        `insert into emdo.invitations
-           (id, household_id, invited_by_user_id, email, role, token_hash,
-            created_at, expires_at)
-         values ($1, $2, $3, 'revocable@example.test', 'member', $4,
-                 now(), now() + interval '7 days')`,
-        [invitation, household, owner, tokenHash],
+      const issued = await client.query<{
+        invitation_id: string;
+        state: string;
+        version: number;
+      }>(
+        `select invitation_id, state, version
+           from emdo.issue_household_invitation(
+             'revocable@example.test', 'member', 604800, $1, $2, $3,
+             $4::uuid, $5, $6::uuid, 'invitation-redemption.v1',
+             $7::jsonb, $8
+           )`,
+        [
+          tokenHash,
+          'invitation-issue:rls-0002',
+          'c'.repeat(64),
+          invitation,
+          operationId,
+          deliverySecret,
+          JSON.stringify({
+            algorithm: 'RSA-OAEP-256',
+            bindingHash: 'd'.repeat(64),
+            ciphertext: 'B'.repeat(64),
+            keyId: 'rls-foundation-test-key',
+            schemaVersion: 1,
+          }),
+          payloadHash,
+        ],
       );
+      expect(issued.rows).toEqual([
+        { invitation_id: invitation, state: 'pending', version: 1 },
+      ]);
       const safeSummary = await client.query<{
         email: string;
         role: string;
-      }>('select email, role from emdo.invitations where id = $1', [
-        invitation,
-      ]);
+        state: string;
+        version: number;
+      }>(
+        `select email, role, state, version
+           from emdo.list_household_invitations()
+          where invitation_id = $1`,
+        [invitation],
+      );
       expect(safeSummary.rows).toEqual([
-        { email: 'revocable@example.test', role: 'member' },
+        {
+          email: 'revocable@example.test',
+          role: 'member',
+          state: 'pending',
+          version: 1,
+        },
       ]);
 
       await client.query('savepoint token_read_denied');
@@ -524,6 +648,10 @@ describeDatabase(
           'consume_update_denied',
           'update emdo.invitations set consumed_at = now() where id = $1',
         ],
+        [
+          'direct_revoke_denied',
+          'update emdo.invitations set revoked_at = now() where id = $1',
+        ],
       ] as const) {
         await client.query(`savepoint ${savepoint}`);
         await expect(
@@ -532,30 +660,54 @@ describeDatabase(
         await client.query(`rollback to savepoint ${savepoint}`);
       }
 
-      const revoked = await client.query<{ revoked_at: Date }>(
-        `update emdo.invitations
-            set revoked_at = now()
-          where id = $1
-        returning revoked_at`,
-        [invitation],
+      const revoked = await client.query<{
+        replayed: boolean;
+        state: string;
+        version: number;
+      }>(
+        `select state, version, replayed
+           from emdo.revoke_household_invitation($1, 1, $2, $3)`,
+        [invitation, 'invitation-revoke:rls-0001', 'e'.repeat(64)],
       );
-      expect(revoked.rows).toHaveLength(1);
-      const clearAttempt = await client.query(
-        'update emdo.invitations set revoked_at = null where id = $1',
-        [invitation],
+      expect(revoked.rows).toEqual([
+        { replayed: false, state: 'revoked', version: 2 },
+      ]);
+
+      const revokeReplay = await client.query<{
+        replayed: boolean;
+        state: string;
+        version: number;
+      }>(
+        `select state, version, replayed
+           from emdo.revoke_household_invitation($1, 1, $2, $3)`,
+        [invitation, 'invitation-revoke:rls-0001', 'e'.repeat(64)],
       );
-      expect(clearAttempt.rowCount).toBe(0);
+      expect(revokeReplay.rows).toEqual([
+        { replayed: true, state: 'revoked', version: 2 },
+      ]);
+
+      await client.query('savepoint clear_revocation_denied');
+      await expect(
+        client.query(
+          'update emdo.invitations set revoked_at = null where id = $1',
+          [invitation],
+        ),
+      ).rejects.toMatchObject({ code: '42501' });
+      await client.query('rollback to savepoint clear_revocation_denied');
       await client.query('reset role');
 
       const stored = await client.query<{
         email: string;
+        administration_version: number;
         revoked_at: Date | null;
         token_hash: string;
       }>(
-        'select email, token_hash, revoked_at from emdo.invitations where id = $1',
+        `select email, token_hash, revoked_at, administration_version
+           from emdo.invitations where id = $1`,
         [invitation],
       );
       expect(stored.rows[0]).toMatchObject({
+        administration_version: 2,
         email: 'revocable@example.test',
         token_hash: tokenHash,
       });

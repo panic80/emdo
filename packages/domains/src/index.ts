@@ -1,4 +1,2 @@
-export * from './shared/audit.js';
-export * from './shared/proposals.js';
-export * from './shared/retention.js';
-export * from './shared/spaces.js';
+/** Production consumers must use an explicit least-privilege domain subpath. */
+export {};

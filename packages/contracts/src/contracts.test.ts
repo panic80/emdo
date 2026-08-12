@@ -4,12 +4,15 @@ import { z } from 'zod';
 import {
   ActionDecisionSchema,
   ActionProposalSchema,
+  ActionProposalApprovalDisplaySchema,
   AgentManifestSchema,
   AgentResultSchema,
   CapabilityDescriptorSchema,
   CommerceOfferSchema,
   DataDisclosureGrantSchema,
+  EffectiveAuthorizationScopeFingerprintSchema,
   JsonValueSchema,
+  ProviderWriteAuthorizationSchema,
   SyncOperationSchema,
   createAgentResultSchemaForManifest,
   createRuntimeSchemaRegistry,
@@ -48,6 +51,18 @@ const grant = {
   oneRunOnly: true,
 } as const;
 
+const approvalDisplay = {
+  schemaVersion: 1,
+  title: 'Create Google Calendar event',
+  summary: 'Review the event details before creating it in Google Calendar.',
+  beforeSummary: 'No event exists at the proposed target.',
+  afterSummary: 'One event will be created.',
+  fields: [
+    { label: 'Title', value: 'Dentist appointment' },
+    { label: 'Starts', value: '2026-08-11 14:00' },
+  ],
+} as const;
+
 const proposal = {
   schemaVersion: 1,
   id: ids.proposal,
@@ -55,6 +70,7 @@ const proposal = {
   runId: ids.run,
   capabilityId: 'google-calendar.event.create',
   capabilityFingerprint: 'c'.repeat(64),
+  authorizationScopeFingerprint: 'e'.repeat(64),
   canonicalArguments: {
     calendarId: 'primary',
     startsAt: '2026-08-11T14:00:00-04:00',
@@ -71,6 +87,7 @@ const proposal = {
     title: 'Dentist appointment',
     startsAt: '2026-08-11T14:00:00-04:00',
   },
+  approvalDisplay,
   providerPreconditions: [
     {
       kind: 'calendar-version',
@@ -78,6 +95,8 @@ const proposal = {
       expectedValue: 'sync-token-1',
     },
   ],
+  providerAuthorityBindingHash: '9'.repeat(64),
+  providerSdkCallId: 'call-google-calendar-create-1',
   payloadHash: 'a'.repeat(64),
   approvalHash: 'b'.repeat(64),
   disclosureGrant: grant,
@@ -224,13 +243,219 @@ describe('shared contract schemas', () => {
     const parsed = ActionProposalSchema.parse(proposal);
 
     expect(parsed.state).toBe('pending');
+    expect(parsed.authorizationScopeFingerprint).toBe('e'.repeat(64));
     expect(Object.isFrozen(parsed.canonicalArguments)).toBe(true);
+    expect(parsed.approvalDisplay).toEqual(approvalDisplay);
+    expect(Object.isFrozen(parsed.approvalDisplay)).toBe(true);
+    expect(Object.isFrozen(parsed.approvalDisplay.fields)).toBe(true);
+    expect(Object.isFrozen(parsed.approvalDisplay.fields[0])).toBe(true);
     expect(() =>
       ActionProposalSchema.parse({
         ...proposal,
         expiresAt: '2026-08-09T16:10:00.001Z',
       }),
     ).toThrow(/ten minutes/i);
+  });
+
+  it('requires an exact, deeply frozen, bounded approval display without kind or capability ID', () => {
+    const schema = ActionProposalApprovalDisplaySchema;
+
+    const boundaryDisplay = {
+      schemaVersion: 1,
+      title: 't'.repeat(200),
+      summary: 's'.repeat(1_000),
+      beforeSummary: 'b'.repeat(2_000),
+      afterSummary: 'a'.repeat(2_000),
+      fields: Array.from({ length: 32 }, () => ({
+        label: 'l'.repeat(120),
+        value: 'v'.repeat(2_000),
+      })),
+    } as const;
+    const parsed = schema.parse(boundaryDisplay);
+
+    expect(parsed).toEqual(boundaryDisplay);
+    expect(Object.isFrozen(parsed)).toBe(true);
+    expect(Object.isFrozen(parsed.fields)).toBe(true);
+    expect(Object.isFrozen(parsed.fields[0])).toBe(true);
+    expect(schema.safeParse({ ...approvalDisplay, title: '' }).success).toBe(
+      false,
+    );
+    expect(
+      schema.safeParse({ ...approvalDisplay, title: 't'.repeat(201) }).success,
+    ).toBe(false);
+    expect(schema.safeParse({ ...approvalDisplay, summary: '' }).success).toBe(
+      false,
+    );
+    expect(
+      schema.safeParse({ ...approvalDisplay, summary: 's'.repeat(1_001) })
+        .success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        ...approvalDisplay,
+        beforeSummary: 'b'.repeat(2_001),
+      }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        ...approvalDisplay,
+        afterSummary: 'a'.repeat(2_001),
+      }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        ...approvalDisplay,
+        fields: Array.from({ length: 33 }, () => ({ label: 'L', value: '' })),
+      }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        ...approvalDisplay,
+        fields: [{ label: '', value: '' }],
+      }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        ...approvalDisplay,
+        fields: [{ label: 'l'.repeat(121), value: '' }],
+      }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        ...approvalDisplay,
+        fields: [{ label: 'L', value: 'v'.repeat(2_001) }],
+      }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        ...approvalDisplay,
+        kind: 'scheduler.calendar.create',
+      }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        ...approvalDisplay,
+        capabilityId: 'google-calendar.event.create',
+      }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        ...approvalDisplay,
+        fields: [{ label: 'Title', value: 'Dentist', raw: true }],
+      }).success,
+    ).toBe(false);
+    expect(schema.safeParse({ ...approvalDisplay, title: '   ' }).success).toBe(
+      false,
+    );
+    expect(
+      schema.safeParse({ ...approvalDisplay, summary: '\t' }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        ...approvalDisplay,
+        fields: [{ label: '  ', value: '' }],
+      }).success,
+    ).toBe(false);
+
+    for (const hostile of [
+      '\u0000',
+      '\u001f',
+      '\u007f',
+      '\u0080',
+      '\u009f',
+      '\u00ad',
+      '\u061c',
+      '\u200b',
+      '\u200c',
+      '\u200d',
+      '\u200e',
+      '\u200f',
+      '\u202a',
+      '\u202e',
+      '\u2060',
+      '\u2066',
+      '\u2069',
+      '\ufeff',
+    ]) {
+      expect(
+        schema.safeParse({
+          ...approvalDisplay,
+          title: `Review${hostile}event`,
+        }).success,
+      ).toBe(false);
+      expect(
+        schema.safeParse({
+          ...approvalDisplay,
+          beforeSummary: `Before${hostile}`,
+        }).success,
+      ).toBe(false);
+      expect(
+        schema.safeParse({
+          ...approvalDisplay,
+          fields: [{ label: 'Title', value: `Dentist${hostile}` }],
+        }).success,
+      ).toBe(false);
+    }
+
+    for (const blankLooking of [
+      '\u00ad',
+      '\u200b',
+      '\u200c\u200d',
+      '\u2060',
+      '\ufeff',
+      ' \u200b ',
+    ]) {
+      expect(
+        schema.safeParse({ ...approvalDisplay, title: blankLooking }).success,
+      ).toBe(false);
+      expect(
+        schema.safeParse({ ...approvalDisplay, summary: blankLooking }).success,
+      ).toBe(false);
+      expect(
+        schema.safeParse({
+          ...approvalDisplay,
+          fields: [{ label: blankLooking, value: '' }],
+        }).success,
+      ).toBe(false);
+    }
+
+    const multilingual = {
+      ...approvalDisplay,
+      title: '  إنشاء موعد 📅  ',
+      summary: 'סקירת פרטי האירוע ✅',
+      beforeSummary: '',
+      afterSummary: '',
+      fields: [{ label: 'כותרת 🦷', value: '' }],
+    } as const;
+    const multilingualParsed = schema.parse(multilingual);
+    expect(multilingualParsed).toEqual(multilingual);
+    expect(multilingualParsed.title).toBe(multilingual.title);
+    const { approvalDisplay: _omitted, ...withoutApprovalDisplay } = proposal;
+    expect(_omitted).toBeDefined();
+    expect(() => ActionProposalSchema.parse(withoutApprovalDisplay)).toThrow();
+  });
+
+  it('binds a provider proposal to one immutable SDK call', () => {
+    expect(
+      ActionProposalSchema.parse({
+        ...proposal,
+        providerSdkCallId: 'call-google-calendar-create-1',
+      }).providerSdkCallId,
+    ).toBe('call-google-calendar-create-1');
+  });
+
+  it('requires a lowercase effective authorization-scope fingerprint', () => {
+    const { authorizationScopeFingerprint: _omitted, ...withoutFingerprint } =
+      proposal;
+    expect(_omitted).toBeDefined();
+
+    expect(() => ActionProposalSchema.parse(withoutFingerprint)).toThrow();
+    expect(() =>
+      ActionProposalSchema.parse({
+        ...proposal,
+        authorizationScopeFingerprint: 'E'.repeat(64),
+      }),
+    ).toThrow(/lowercase|SHA-256/i);
   });
 
   it('requires the server disclosure grant to predate proposal creation', () => {
@@ -261,6 +486,95 @@ describe('shared contract schemas', () => {
         },
       }),
     ).toThrow(/approval.*execution/i);
+  });
+
+  it('requires a closed trusted authority binding on provider-write permits', () => {
+    const authorization = {
+      proposalId: ids.proposal,
+      approvalHash: 'a'.repeat(64),
+      approvalBindingHash: 'b'.repeat(64),
+      capabilityFingerprint: 'c'.repeat(64),
+      proposalCreatedAt: '2026-08-09T16:00:00.000Z',
+      expiresAt: '2026-08-09T16:10:00.000Z',
+      disclosureGrantId: ids.grant,
+      disclosureGrantHash: 'd'.repeat(64),
+      approvalBinding: {
+        decisionId: ids.request,
+        userId: ids.user,
+        agentId: 'scheduler',
+        runId: ids.run,
+        capabilityId: 'google-calendar.event.create',
+        capabilityFingerprint: 'c'.repeat(64),
+        disclosureGrantId: ids.grant,
+        payloadHash: 'f'.repeat(64),
+        idempotencyTtlMs: 86_400_000,
+        authorityBinding: {
+          kind: 'google-calendar-grant-v2',
+          householdId: ids.household,
+          privateSpaceId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f009',
+          authorizationScopeFingerprint: '9'.repeat(64),
+          providerGrantReference: 'google-grant-reference-1',
+          authorizationEpoch: 1,
+        },
+      },
+      providerIdempotencyKey: 'e'.repeat(64),
+      idempotencyExpiresAt: '2026-08-10T16:02:00.000Z',
+      attemptId: ids.operation,
+      attemptVersion: 1,
+      issuedAt: '2026-08-09T16:02:00.000Z',
+      targets: [
+        {
+          kind: 'google-calendar.event',
+          id: 'primary',
+          expectedVersion: 'etag-v1',
+        },
+      ],
+      providerPreconditions: [],
+    } as const;
+
+    expect(
+      ProviderWriteAuthorizationSchema.parse(authorization).approvalBinding
+        .authorityBinding,
+    ).toEqual(authorization.approvalBinding.authorityBinding);
+    expect(
+      EffectiveAuthorizationScopeFingerprintSchema.parse('9'.repeat(64)),
+    ).toBe('9'.repeat(64));
+    expect(() =>
+      ProviderWriteAuthorizationSchema.parse({
+        ...authorization,
+        approvalBinding: {
+          ...authorization.approvalBinding,
+          authorityBinding: {
+            ...authorization.approvalBinding.authorityBinding,
+            kind: 'client-supplied-provider-context',
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      ProviderWriteAuthorizationSchema.parse({
+        ...authorization,
+        approvalBinding: {
+          ...authorization.approvalBinding,
+          authorityBinding: {
+            ...authorization.approvalBinding.authorityBinding,
+            spaceAccessGrantId: 'rotating-grant-must-not-enter-v2',
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      ProviderWriteAuthorizationSchema.parse({
+        ...authorization,
+        approvalBinding: {
+          ...authorization.approvalBinding,
+          authorityBinding: {
+            ...authorization.approvalBinding.authorityBinding,
+            accessToken: 'must-never-enter-the-permit',
+          },
+        },
+      }),
+    ).toThrow();
   });
 
   it('binds a disclosure grant to one run and a field-level record allowlist', () => {
@@ -494,6 +808,74 @@ describe('shared contract schemas', () => {
     expect(
       AgentResultSchema.parse(requiredModelUnavailable).modelResolution.reason,
     ).toBe('required-complex-model-unavailable');
+
+    expect(
+      AgentResultSchema.parse({
+        ...result,
+        modelResolution: {
+          status: 'resolved',
+          requestedModel: 'gpt-5.6-terra',
+          resolvedModel: 'gpt-5.6-luna',
+          reason: 'terra-unavailable',
+          escalationTrigger: 'complex-reasoning',
+        },
+      }).modelResolution,
+    ).toMatchObject({
+      reason: 'terra-unavailable',
+      escalationTrigger: 'complex-reasoning',
+    });
+
+    const policyDenied = {
+      ...unavailable,
+      modelResolution: {
+        status: 'unavailable',
+        requestedModel: 'gpt-5.6-terra',
+        attemptedModels: [],
+        reason: 'configured-model-escalation-not-allowed',
+        escalationTrigger: 'failed-output-validation',
+        safeError: {
+          code: 'agent-model-escalation-not-allowed',
+          message:
+            'The active agent policy does not allow the required model escalation.',
+          retryable: false,
+        },
+      },
+      safeError: {
+        code: 'agent-model-escalation-not-allowed',
+        message:
+          'The active agent policy does not allow the required model escalation.',
+        retryable: false,
+      },
+    } as const;
+    expect(AgentResultSchema.parse(policyDenied).modelResolution).toMatchObject(
+      {
+        reason: 'configured-model-escalation-not-allowed',
+        attemptedModels: [],
+      },
+    );
+
+    const fallbackDenied = {
+      ...unavailable,
+      modelResolution: {
+        status: 'unavailable',
+        requestedModel: 'gpt-5.6-luna',
+        attemptedModels: ['gpt-5.6-luna'],
+        reason: 'configured-model-fallback-not-allowed',
+        safeError: {
+          code: 'agent-model-fallback-not-allowed',
+          message: 'The active agent policy does not allow a model fallback.',
+          retryable: false,
+        },
+      },
+      safeError: {
+        code: 'agent-model-fallback-not-allowed',
+        message: 'The active agent policy does not allow a model fallback.',
+        retryable: false,
+      },
+    } as const;
+    expect(AgentResultSchema.parse(fallbackDenied).modelResolution.reason).toBe(
+      'configured-model-fallback-not-allowed',
+    );
 
     expect(() =>
       AgentResultSchema.parse({

@@ -1,12 +1,16 @@
 import { deepFreeze } from '@emdo/contracts';
 import { z } from 'zod';
 
-const SafeLocationSchema = z.string().trim().min(1).max(512);
+const SafeLocationSchema = z.string().max(512).trim().min(1);
+const SafeDepartureAtSchema = z
+  .string()
+  .max(64)
+  .pipe(z.iso.datetime({ offset: true }));
 export const MapsTravelQuerySchema = z.strictObject({
   origin: SafeLocationSchema,
   destination: SafeLocationSchema,
   mode: z.enum(['driving', 'transit', 'walking']),
-  departureAt: z.iso.datetime({ offset: true }),
+  departureAt: SafeDepartureAtSchema,
 });
 
 export const MapsTravelResponseSchema = z.discriminatedUnion('status', [

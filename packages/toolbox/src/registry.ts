@@ -5,7 +5,9 @@ import {
   CapabilityDescriptorSchema,
   IdentifierSchema,
   JsonValueSchema,
+  ProviderWriteApprovalBindingSchema,
   ProviderCommitOutcomeSchema,
+  TrustedProviderWriteAuthorityResolutionSchema,
   ProviderWriteAuthorizationSchema,
   Sha256Schema,
   UuidSchema,
@@ -14,10 +16,15 @@ import {
   type CapabilityInvocationContext,
   type DeepReadonly,
   type JsonValue,
+  type ProviderWriteApprovalBinding,
+  type ProviderWriteAuthorityBinding,
   type ProviderWriteAuthorization,
+  type ProviderWriteCapabilityId,
+  type ProviderWriteOperationScope,
   type RegisteredCapability,
   type ResolvedCapability,
   type RuntimeSchemaRegistry,
+  type TrustedProviderWriteAuthorityResolution,
 } from '@emdo/contracts';
 
 import { ToolboxPolicyError } from './errors.js';
@@ -187,25 +194,17 @@ export type ProviderWriteCompletion = z.infer<
 export type ProviderWriteFinalizationStatus =
   'finalized' | 'already-finalized' | 'not-found' | 'mismatch';
 
-export interface ProviderWriteApprovalBinding {
-  readonly decisionId: string;
-  readonly userId: string;
-  readonly agentId: string;
-  readonly runId: string;
-  readonly capabilityId: string;
-  readonly capabilityFingerprint: string;
-  readonly disclosureGrantId: string;
-  readonly payloadHash: string;
-  readonly idempotencyTtlMs: number;
-}
+export type { ProviderWriteApprovalBinding } from '@emdo/contracts';
 
 export const hashProviderWriteApprovalBinding = (
   binding: ProviderWriteApprovalBinding,
-): string =>
-  hashCanonicalJson({
+): string => {
+  const validatedBinding = ProviderWriteApprovalBindingSchema.parse(binding);
+  return hashCanonicalJson({
     domain: 'emdo.provider-write-approval-binding.v1',
-    binding,
+    binding: validatedBinding,
   });
+};
 
 export interface ProviderWriteApprovalStore {
   /**
@@ -215,6 +214,7 @@ export interface ProviderWriteApprovalStore {
    */
   acquire(
     binding: ProviderWriteApprovalBinding,
+    operationScope: ProviderWriteOperationScope,
   ): Promise<ProviderWriteApprovalResult>;
   /**
    * Atomically crosses the irreversible dispatch boundary for one prepared
@@ -223,6 +223,7 @@ export interface ProviderWriteApprovalStore {
   markDispatching(
     binding: ProviderWriteApprovalBinding,
     attemptId: string,
+    operationScope: ProviderWriteOperationScope,
   ): Promise<ProviderWriteDispatchResult>;
   finalize(
     binding: ProviderWriteApprovalBinding,
@@ -235,8 +236,45 @@ export interface ProviderWriteApprovalStore {
   ): Promise<ProviderWriteFinalizationStatus>;
 }
 
+export interface TrustedProviderWriteAuthorityResolutionInput {
+  readonly requestId: string;
+  readonly runId: string;
+  readonly sessionId: string;
+  readonly userId: string;
+  readonly householdId: string;
+  readonly agentId: string;
+  readonly spaceAccessGrantId: string;
+  readonly disclosureGrantId: string;
+  readonly decisionId: string;
+  readonly capabilityId: ProviderWriteCapabilityId;
+  readonly capabilityFingerprint: string;
+}
+
+export interface TrustedProviderWriteAuthorityResolver {
+  /** Resolves server-owned provider authority; no client/model field is used. */
+  resolve(
+    input: TrustedProviderWriteAuthorityResolutionInput,
+  ): Promise<TrustedProviderWriteAuthorityResolution | undefined>;
+}
+
+const operationScopeMatchesInvocation = (
+  scope: ProviderWriteOperationScope,
+  context: CapabilityInvocationContext,
+): boolean =>
+  scope.requestId === context.requestId &&
+  scope.sessionId === context.sessionId &&
+  scope.householdId === context.householdId &&
+  scope.userId === context.userId &&
+  scope.spaceAccessGrantId === context.spaceAccessGrantId;
+
+const authorityBindingsMatch = (
+  left: ProviderWriteAuthorityBinding,
+  right: ProviderWriteAuthorityBinding,
+): boolean => hashCanonicalJson(left) === hashCanonicalJson(right);
+
 export interface CapabilityRegistryOptions {
   readonly providerWriteApprovalStore?: ProviderWriteApprovalStore;
+  readonly trustedProviderWriteAuthorityResolver?: TrustedProviderWriteAuthorityResolver;
   readonly now?: () => Date;
 }
 
@@ -247,6 +285,8 @@ export const createCapabilityRegistry = (
 ): CapabilityRegistry => {
   const byId = new Map<string, ResolvedCapability>();
   const configuredApprovalStore = options.providerWriteApprovalStore;
+  const configuredAuthorityResolver =
+    options.trustedProviderWriteAuthorityResolver;
   const approvalStoreFacade =
     configuredApprovalStore === undefined
       ? undefined
@@ -262,6 +302,14 @@ export const createCapabilityRegistry = (
           ),
           reconcile: configuredApprovalStore.reconcile.bind(
             configuredApprovalStore,
+          ),
+        });
+  const authorityResolverFacade =
+    configuredAuthorityResolver === undefined
+      ? undefined
+      : Object.freeze({
+          resolve: configuredAuthorityResolver.resolve.bind(
+            configuredAuthorityResolver,
           ),
         });
   const configuredClock = options.now?.bind(options);
@@ -321,6 +369,8 @@ export const createCapabilityRegistry = (
         requestId: context.requestId,
         runId: context.runId,
         userId: context.userId,
+        householdId: context.householdId,
+        sessionId: context.sessionId,
         agentId: context.agentId,
         spaceAccessGrantId: context.spaceAccessGrantId,
         ...(context.disclosureGrantId === undefined
@@ -366,18 +416,77 @@ export const createCapabilityRegistry = (
           );
         }
 
-        const binding = {
+        const authorityResolver = authorityResolverFacade;
+        if (authorityResolver === undefined) {
+          throw new ToolboxPolicyError(
+            'provider-write-authority-binding-required',
+            'Provider-write execution requires trusted provider authority',
+          );
+        }
+        const capabilityFingerprint =
+          hashCapabilityDescriptorBinding(descriptor);
+        const authorityResolutionInput =
+          (): TrustedProviderWriteAuthorityResolutionInput =>
+            Object.freeze({
+              requestId: invocationContext.requestId,
+              runId: invocationContext.runId,
+              sessionId: invocationContext.sessionId,
+              userId: invocationContext.userId,
+              householdId: invocationContext.householdId,
+              agentId: invocationContext.agentId,
+              spaceAccessGrantId: invocationContext.spaceAccessGrantId,
+              disclosureGrantId: disclosureGrantId.data,
+              decisionId: decisionId.data,
+              capabilityId: descriptor.id,
+              capabilityFingerprint,
+            });
+        const resolveCurrentAuthority =
+          async (): Promise<TrustedProviderWriteAuthorityResolution> => {
+            try {
+              const resolvedAuthority = await authorityResolver.resolve(
+                authorityResolutionInput(),
+              );
+              const resolution =
+                TrustedProviderWriteAuthorityResolutionSchema.parse(
+                  resolvedAuthority,
+                );
+              if (
+                !operationScopeMatchesInvocation(
+                  resolution.operationScope,
+                  invocationContext,
+                )
+              ) {
+                throw new TypeError(
+                  'Trusted provider authority does not match the invocation',
+                );
+              }
+              return resolution;
+            } catch {
+              throw new ToolboxPolicyError(
+                'provider-write-authority-binding-invalid',
+                'Trusted provider authority could not be established',
+              );
+            }
+          };
+        const initialAuthority = await resolveCurrentAuthority();
+        const authorityBinding = initialAuthority.authorityBinding;
+
+        const binding = ProviderWriteApprovalBindingSchema.parse({
           decisionId: decisionId.data,
-          userId: context.userId,
-          agentId: context.agentId,
-          runId: context.runId,
+          userId: invocationContext.userId,
+          agentId: invocationContext.agentId,
+          runId: invocationContext.runId,
           capabilityId: descriptor.id,
-          capabilityFingerprint: hashCapabilityDescriptorBinding(descriptor),
+          capabilityFingerprint,
           disclosureGrantId: disclosureGrantId.data,
           payloadHash: hashCanonicalJson(providerInput),
           idempotencyTtlMs: descriptor.idempotency.ttlMs,
-        };
-        const approvalResult = await approvalStore.acquire(binding);
+          authorityBinding,
+        });
+        const approvalResult = await approvalStore.acquire(
+          binding,
+          initialAuthority.operationScope,
+        );
         if (
           approvalResult.status === 'existing-attempt' &&
           approvalResult.attemptState !== 'prepared'
@@ -459,6 +568,8 @@ export const createCapabilityRegistry = (
         if (
           permit.approvalBindingHash !==
             hashProviderWriteApprovalBinding(binding) ||
+          hashCanonicalJson(permit.approvalBinding) !==
+            hashCanonicalJson(binding) ||
           permit.capabilityFingerprint !== binding.capabilityFingerprint ||
           permit.disclosureGrantId !== binding.disclosureGrantId ||
           dispatchAt.getTime() < Date.parse(permit.issuedAt) ||
@@ -501,9 +612,36 @@ export const createCapabilityRegistry = (
           );
         }
 
+        let dispatchAuthority: TrustedProviderWriteAuthorityResolution;
+        try {
+          dispatchAuthority = await resolveCurrentAuthority();
+          if (
+            !authorityBindingsMatch(
+              dispatchAuthority.authorityBinding,
+              authorityBinding,
+            )
+          ) {
+            throw new ToolboxPolicyError(
+              'provider-write-authority-binding-invalid',
+              'Trusted provider authority changed before dispatch',
+            );
+          }
+        } catch {
+          await finalize({
+            state: 'not-applied',
+            application: 'not-applied',
+            reason: 'approval-policy-mismatch',
+          });
+          throw new ToolboxPolicyError(
+            'provider-write-authority-binding-invalid',
+            'Trusted provider authority could not be revalidated before dispatch',
+          );
+        }
+
         const dispatchResult = await approvalStore.markDispatching(
           binding,
           permit.attemptId,
+          dispatchAuthority.operationScope,
         );
         if (dispatchResult.status === 'existing-attempt') {
           throw new ToolboxPolicyError(
@@ -540,7 +678,9 @@ export const createCapabilityRegistry = (
         if (
           hashCanonicalJson(dispatchPermit) !== hashCanonicalJson(permit) ||
           dispatchPermit.approvalBindingHash !==
-            hashProviderWriteApprovalBinding(binding)
+            hashProviderWriteApprovalBinding(binding) ||
+          hashCanonicalJson(dispatchPermit.approvalBinding) !==
+            hashCanonicalJson(binding)
         ) {
           await finalize({
             state: 'not-applied',
@@ -579,9 +719,12 @@ export const createCapabilityRegistry = (
             requestId: invocationContext.requestId,
             runId: invocationContext.runId,
             userId: invocationContext.userId,
+            householdId: invocationContext.householdId,
+            sessionId: invocationContext.sessionId,
             agentId: invocationContext.agentId,
             abortSignal: providerAbortController.signal,
             providerWritePermit: dispatchPermit,
+            providerWriteOperationScope: dispatchAuthority.operationScope,
           });
           const timeoutPromise = new Promise<never>((_resolve, reject) => {
             timeoutHandle = setTimeout(() => {
@@ -713,7 +856,11 @@ export const createCapabilityRegistry = (
       return runtimeSchemas.parse(descriptor.outputSchema, rawOutput);
     };
 
-    byId.set(descriptor.id, Object.freeze({ descriptor, invoke }));
+    const resolved: ResolvedCapability =
+      descriptor.capabilityKind === 'provider-write'
+        ? Object.freeze({ descriptor, invoke })
+        : Object.freeze({ descriptor, invoke });
+    byId.set(descriptor.id, resolved);
   }
 
   const resolveForAgent: CapabilityRegistry['resolveForAgent'] = (
@@ -741,14 +888,15 @@ export const createCapabilityRegistry = (
         }
 
         assertCapabilityAllowed(request.manifest, registration.descriptor);
-        return Object.freeze({
-          descriptor: registration.descriptor,
-          invoke: (input: unknown, context: CapabilityInvocationContext) =>
-            registration.invoke(input, {
-              ...context,
-              agentId: request.manifest.id,
-            }),
-        });
+        const descriptor = registration.descriptor;
+        const invoke = (input: unknown, context: CapabilityInvocationContext) =>
+          registration.invoke(input, {
+            ...context,
+            agentId: request.manifest.id,
+          });
+        return descriptor.capabilityKind === 'provider-write'
+          ? Object.freeze({ descriptor, invoke })
+          : Object.freeze({ descriptor, invoke });
       }),
     );
   };

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -7,7 +8,9 @@ import {
   InMemoryCalendarWriteReceiptStore,
   RecordedGoogleCalendarGateway,
   hashGoogleCalendarPayload,
+  type ApprovedCalendarCanonicalArguments,
   type CalendarWriteReceiptStore,
+  type GoogleCalendarWriteCommand,
 } from './calendar-write.js';
 
 const payload = {
@@ -17,6 +20,16 @@ const payload = {
   end: '2026-08-10T16:00:00.000Z',
   timeZone: 'America/Toronto' as const,
 };
+
+const authorityIds = {
+  request: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f009',
+  session: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f010',
+  household: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f007',
+  privateSpace: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f008',
+  spaceAccessGrant: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f011',
+} as const;
+const authorizationScopeFingerprint =
+  EffectiveAuthorizationScopeFingerprintSchema.parse('5'.repeat(64));
 
 const createCommand = {
   schemaVersion: 1 as const,
@@ -46,19 +59,9 @@ const canonicalJson = (value: unknown): string => {
 const hashJson = (value: unknown): string =>
   createHash('sha256').update(canonicalJson(value)).digest('hex');
 
-interface TestCalendarCommand {
-  schemaVersion: 1;
-  readonly calendarId: string;
-  readonly eventId: string;
-  readonly expectedCalendarVersion: string;
-  readonly expectedEventVersion: string;
-  readonly operation: 'create' | 'update' | 'delete';
-  readonly payload: unknown;
-  readonly payloadHash: string;
-  readonly idempotencyKey: string;
-}
-
-const canonicalArgumentsForCommand = (command: TestCalendarCommand) => {
+const canonicalArgumentsForCommand = (
+  command: GoogleCalendarWriteCommand,
+): ApprovedCalendarCanonicalArguments => {
   const common = {
     operation: command.operation,
     calendarId: command.calendarId,
@@ -84,7 +87,7 @@ const canonicalArgumentsForCommand = (command: TestCalendarCommand) => {
   };
 };
 
-const approvedContext = (command: TestCalendarCommand) => {
+const approvedContext = (command: GoogleCalendarWriteCommand) => {
   const approvedCanonicalArguments = canonicalArgumentsForCommand(command);
   const approvalBinding = {
     decisionId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f004',
@@ -96,10 +99,26 @@ const approvedContext = (command: TestCalendarCommand) => {
     disclosureGrantId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f002',
     payloadHash: hashJson(approvedCanonicalArguments),
     idempotencyTtlMs: 86_400_000,
+    authorityBinding: {
+      kind: 'google-calendar-grant-v2' as const,
+      householdId: authorityIds.household,
+      privateSpaceId: authorityIds.privateSpace,
+      authorizationScopeFingerprint,
+      providerGrantReference: 'gcal-grant-reference-1',
+      authorizationEpoch: 0,
+    },
   };
   return {
     approvedCanonicalArguments,
     approvalBinding,
+    providerWriteOperationScope: {
+      requestId: authorityIds.request,
+      sessionId: authorityIds.session,
+      householdId: authorityIds.household,
+      userId: approvalBinding.userId,
+      spaceAccessGrantId: authorityIds.spaceAccessGrant,
+      authorizationScopeFingerprint,
+    },
     providerWritePermit: {
       proposalId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f001',
       approvalHash: '1'.repeat(64),
@@ -112,6 +131,7 @@ const approvedContext = (command: TestCalendarCommand) => {
       expiresAt: '2026-08-09T12:10:00.000Z',
       disclosureGrantId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f002',
       disclosureGrantHash: '4'.repeat(64),
+      approvalBinding,
       providerIdempotencyKey: command.idempotencyKey,
       idempotencyExpiresAt: '2026-08-10T12:01:00.000Z',
       attemptId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f003',
@@ -205,6 +225,90 @@ describe('CalendarWriteExecutor', () => {
     expect(gateway.readbackCount).toBe(1);
     await expect(
       executor.execute(createCommand, createAuthorization),
+    ).resolves.toEqual(first);
+    expect(gateway.applyCount).toBe(1);
+  });
+
+  it('keeps one durable provider attempt when the fresh operation sidecar rotates', async () => {
+    const receipts = new InMemoryCalendarWriteReceiptStore();
+    const firstGateway = new RecordedGoogleCalendarGateway({
+      binding: {
+        calendarId: 'primary',
+        eventId: payload.eventId,
+        operation: 'create',
+      },
+      before: { calendarVersion: 'calendar-v7', event: null },
+      apply: { status: 'applied', providerRequestId: 'recorded-rotation-1' },
+      after: {
+        calendarVersion: 'calendar-v8',
+        event: { ...payload, eventVersion: 'event-v1' },
+      },
+    });
+    const first = await new CalendarWriteExecutor(
+      firstGateway,
+      receipts,
+    ).execute(createCommand, createAuthorization);
+    expect(first).toMatchObject({ status: 'applied' });
+
+    const rotatedOperationScope = {
+      ...createAuthorization,
+      providerWriteOperationScope: {
+        ...createAuthorization.providerWriteOperationScope,
+        requestId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f019',
+        sessionId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f020',
+        spaceAccessGrantId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f021',
+      },
+    };
+    const recoveryGateway = new RecordedGoogleCalendarGateway({
+      binding: {
+        calendarId: 'primary',
+        eventId: payload.eventId,
+        operation: 'create',
+      },
+      before: { calendarVersion: 'must-not-read', event: null },
+      apply: { status: 'applied', providerRequestId: 'must-not-dispatch' },
+      after: { calendarVersion: 'must-not-read', event: null },
+    });
+    await expect(
+      new CalendarWriteExecutor(recoveryGateway, receipts).execute(
+        createCommand,
+        rotatedOperationScope,
+      ),
+    ).resolves.toEqual(first);
+    expect(recoveryGateway.readCurrentCount).toBe(0);
+    expect(recoveryGateway.applyCount).toBe(0);
+  });
+
+  it('provider-deduplicates the same approved attempt across a fresh operation sidecar', async () => {
+    const gateway = new RecordedGoogleCalendarGateway({
+      binding: {
+        calendarId: 'primary',
+        eventId: payload.eventId,
+        operation: 'create',
+      },
+      before: { calendarVersion: 'calendar-v7', event: null },
+      apply: { status: 'applied', providerRequestId: 'recorded-rotation-2' },
+      after: {
+        calendarVersion: 'calendar-v8',
+        event: { ...payload, eventVersion: 'event-v1' },
+      },
+    });
+    const first = await gateway.applyConditionalExactlyOnce(
+      createCommand,
+      createAuthorization,
+    );
+    const rotatedAuthorization = {
+      ...createAuthorization,
+      providerWriteOperationScope: {
+        ...createAuthorization.providerWriteOperationScope,
+        requestId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f022',
+        sessionId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f023',
+        spaceAccessGrantId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f024',
+      },
+    };
+
+    await expect(
+      gateway.applyConditionalExactlyOnce(createCommand, rotatedAuthorization),
     ).resolves.toEqual(first);
     expect(gateway.applyCount).toBe(1);
   });
@@ -518,6 +622,18 @@ describe('CalendarWriteExecutor', () => {
               id: 'tampered-target',
             },
           ],
+        },
+      }),
+    ).resolves.toMatchObject({
+      safeError: { code: 'calendar-authorization-invalid' },
+    });
+    await expect(
+      executor.execute(createCommand, {
+        ...createAuthorization,
+        providerWriteOperationScope: {
+          ...createAuthorization.providerWriteOperationScope,
+          authorizationScopeFingerprint:
+            EffectiveAuthorizationScopeFingerprintSchema.parse('6'.repeat(64)),
         },
       }),
     ).resolves.toMatchObject({

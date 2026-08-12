@@ -1,4 +1,7 @@
-import { ActionProposalSchema } from '@emdo/contracts';
+import {
+  ActionProposalSchema,
+  EffectiveAuthorizationScopeFingerprintSchema,
+} from '@emdo/contracts';
 import { hashCanonicalJson } from '@emdo/toolbox';
 import { describe, expect, it } from 'vitest';
 
@@ -7,6 +10,7 @@ import {
   ScopedCalendarProposalMaterializer,
 } from './proposals.js';
 import {
+  InMemoryProposalRepository,
   ProposalService,
   hashActionProposalApproval,
 } from '../shared/proposals.js';
@@ -49,6 +53,21 @@ const proposalScope = (...calendarIds: string[]) => ({
   })),
 });
 
+const authorizationScopeFingerprint =
+  EffectiveAuthorizationScopeFingerprintSchema.parse('e'.repeat(64));
+const providerAuthorityBinding = {
+  kind: 'google-calendar-grant-v2' as const,
+  householdId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f203',
+  privateSpaceId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f205',
+  authorizationScopeFingerprint,
+  providerGrantReference: 'google-grant-reference-1',
+  authorizationEpoch: 1,
+};
+const proposalSpaceAccessGrantId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f206';
+const providerAuthorityBindingHash = hashCanonicalJson(
+  providerAuthorityBinding,
+);
+
 const reader = {
   readTargetState: async ({
     calendarId,
@@ -79,6 +98,7 @@ describe('CalendarProposalMaterializer', () => {
     const materializer = new CalendarProposalMaterializer(
       reader,
       proposalScope('primary', 'secondary'),
+      providerAuthorityBinding,
     );
     await expect(
       materializer.materialize({
@@ -91,6 +111,7 @@ describe('CalendarProposalMaterializer', () => {
         },
       }),
     ).resolves.toEqual({
+      providerAuthorityBindingHash,
       targets: [
         {
           kind: 'google-calendar.event',
@@ -99,7 +120,30 @@ describe('CalendarProposalMaterializer', () => {
         },
       ],
       beforePreview: null,
-      afterPreview: event,
+      afterPreview: {
+        ...event,
+        attendeeNotificationPolicy: {
+          sendUpdates: 'none',
+          disclosure:
+            'Attendee invitation and update notifications will not be sent.',
+        },
+      },
+      approvalDisplay: {
+        schemaVersion: 1 as const,
+        title: 'Create Google Calendar event',
+        summary:
+          'Review the exact event details before creating it in Google Calendar.',
+        beforeSummary: 'No event exists at the approved target.',
+        afterSummary: 'The approved event will be created.',
+        fields: [
+          { label: 'Calendar', value: 'secondary' },
+          { label: 'Title', value: 'Dentist' },
+          { label: 'Starts', value: '2026-08-10T15:00:00.000Z' },
+          { label: 'Ends', value: '2026-08-10T16:00:00.000Z' },
+          { label: 'Time zone', value: 'America/Toronto' },
+          { label: 'Location', value: 'Clinic' },
+        ],
+      },
       providerPreconditions: [
         {
           kind: 'calendar-version',
@@ -139,7 +183,14 @@ describe('CalendarProposalMaterializer', () => {
         summary: 'Dentist',
         eventVersion: 'event-v3',
       }),
-      afterPreview: replacement,
+      afterPreview: {
+        ...replacement,
+        attendeeNotificationPolicy: {
+          sendUpdates: 'none',
+          disclosure:
+            'Attendee invitation and update notifications will not be sent.',
+        },
+      },
       providerPreconditions: [
         {
           kind: 'calendar-version',
@@ -166,8 +217,28 @@ describe('CalendarProposalMaterializer', () => {
         },
       }),
     ).resolves.toMatchObject({
-      beforePreview: expect.objectContaining({ summary: 'Dentist' }),
+      beforePreview: expect.objectContaining({
+        summary: 'Dentist',
+        attendeeNotificationPolicy: {
+          sendUpdates: 'none',
+          disclosure: 'Attendee cancellation notifications will not be sent.',
+        },
+      }),
       afterPreview: null,
+      approvalDisplay: {
+        schemaVersion: 1,
+        title: 'Delete Google Calendar event',
+        summary:
+          'Review the exact event identifiers before deleting it in Google Calendar.',
+        beforeSummary: 'The event at the approved target will be deleted.',
+        afterSummary: 'No event will remain at the approved target.',
+        fields: [
+          { label: 'Calendar', value: 'primary' },
+          { label: 'Event ID', value: event.eventId },
+          { label: 'Expected calendar version', value: 'calendar-v7' },
+          { label: 'Expected event version', value: 'event-v3' },
+        ],
+      },
     });
   });
 
@@ -175,6 +246,7 @@ describe('CalendarProposalMaterializer', () => {
     const materializer = new CalendarProposalMaterializer(
       reader,
       proposalScope('primary', 'secondary'),
+      providerAuthorityBinding,
     );
     await expect(
       materializer.materialize({
@@ -230,6 +302,7 @@ describe('CalendarProposalMaterializer', () => {
     const materializer = new CalendarProposalMaterializer(
       reader,
       proposalScope('primary'),
+      providerAuthorityBinding,
     );
     let getterCalls = 0;
     const hostile = Object.defineProperty({}, 'capabilityId', {
@@ -257,6 +330,35 @@ describe('CalendarProposalMaterializer', () => {
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.targets)).toBe(true);
     expect(Object.isFrozen(result.beforePreview)).toBe(true);
+    expect(Object.isFrozen(result.approvalDisplay)).toBe(true);
+    expect(Object.isFrozen(result.approvalDisplay.fields)).toBe(true);
+  });
+
+  it('rejects display-spoofing controls before a proposal can be persisted', async () => {
+    const materializer = new CalendarProposalMaterializer(
+      {
+        readTargetState: async ({ calendarId, eventId }) => ({
+          calendarId,
+          queriedEventId: eventId,
+          calendarVersion: 'calendar-v2',
+          event: null,
+        }),
+      },
+      proposalScope('secondary'),
+      providerAuthorityBinding,
+    );
+
+    await expect(
+      materializer.materialize({
+        capabilityId: 'google-calendar.event.create',
+        canonicalArguments: {
+          operation: 'create',
+          calendarId: 'secondary',
+          expectedCalendarVersion: 'calendar-v2',
+          event: { ...event, summary: 'Dentist\u202Eapproved' },
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'calendar-arguments-invalid' });
   });
 
   it('rejects recurrence rules that bypass Toronto DST semantics', async () => {
@@ -270,6 +372,7 @@ describe('CalendarProposalMaterializer', () => {
         }),
       },
       proposalScope('secondary'),
+      providerAuthorityBinding,
     );
     const recurringEvent = {
       ...event,
@@ -373,6 +476,7 @@ describe('CalendarProposalMaterializer', () => {
         }),
       },
       proposalScope('secondary'),
+      providerAuthorityBinding,
     );
 
     await expect(
@@ -412,6 +516,7 @@ describe('CalendarProposalMaterializer', () => {
         }),
       },
       proposalScope('primary'),
+      providerAuthorityBinding,
     );
     await expect(
       materializer.materialize({
@@ -449,6 +554,7 @@ describe('CalendarProposalMaterializer', () => {
           },
         ],
       },
+      providerAuthorityBinding,
     );
 
     await expect(
@@ -524,6 +630,8 @@ describe('CalendarProposalMaterializer', () => {
       runId: disclosureGrant.runId,
       capabilityId: 'google-calendar.event.update',
       capabilityFingerprint: 'c'.repeat(64),
+      authorizationScopeFingerprint:
+        providerAuthorityBinding.authorizationScopeFingerprint,
       canonicalArguments,
       targets: [
         {
@@ -538,6 +646,22 @@ describe('CalendarProposalMaterializer', () => {
         eventVersion: 'event-v3',
       },
       afterPreview: replacement,
+      approvalDisplay: {
+        schemaVersion: 1 as const,
+        title: 'Update Google Calendar event',
+        summary:
+          'Review the exact event details before updating it in Google Calendar.',
+        beforeSummary: 'The current event will be replaced.',
+        afterSummary: 'The approved event details will replace it.',
+        fields: [
+          { label: 'Calendar', value: 'primary' },
+          { label: 'Title', value: replacement.summary },
+          { label: 'Starts', value: replacement.start },
+          { label: 'Ends', value: replacement.end },
+          { label: 'Time zone', value: replacement.timeZone },
+          { label: 'Location', value: replacement.location },
+        ],
+      },
       providerPreconditions: [
         {
           kind: 'calendar-version',
@@ -550,6 +674,8 @@ describe('CalendarProposalMaterializer', () => {
           expectedValue: 'event-v3',
         },
       ],
+      providerAuthorityBindingHash,
+      providerSdkCallId: 'call-scheduler-scope-test-1',
       payloadHash: hashCanonicalJson(canonicalArguments),
       disclosureGrant,
       createdAt: '2026-08-09T12:00:00.000Z',
@@ -562,13 +688,32 @@ describe('CalendarProposalMaterializer', () => {
       approvalHash: hashActionProposalApproval(proposalInput),
     });
     const service = new ProposalService(
-      new ScopedCalendarProposalMaterializer(scopedReader),
+      new ScopedCalendarProposalMaterializer(
+        scopedReader,
+        providerAuthorityBinding,
+      ),
       { resolve: async () => disclosureGrant },
-      undefined,
+      new InMemoryProposalRepository(),
       () => new Date('2026-08-09T12:05:00.000Z'),
     );
 
-    await expect(service.create(proposal)).rejects.toMatchObject({
+    await expect(
+      service.create(proposal, {
+        proposalId: proposal.id,
+        originRequestId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f106',
+        runId: proposal.runId,
+        householdId: disclosureGrant.householdId,
+        userId: disclosureGrant.userId,
+        originSessionId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f107',
+        agentId: disclosureGrant.agentId,
+        originSpaceAccessGrantId: proposalSpaceAccessGrantId,
+        disclosureGrantId: disclosureGrant.id,
+        disclosurePolicyVersion: '1.0.0',
+        capabilityId: proposal.capabilityId,
+        sdkCallId: proposal.providerSdkCallId,
+        providerAuthorityBindingHash,
+      }),
+    ).rejects.toMatchObject({
       code: 'calendar-authorization-invalid',
     });
     expect(readCalls).toBe(0);

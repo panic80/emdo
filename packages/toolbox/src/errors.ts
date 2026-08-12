@@ -11,6 +11,8 @@ export type ToolboxPolicyErrorCode =
   | 'provider-write-approval-missing'
   | 'provider-write-approval-invalid'
   | 'provider-write-approval-expired'
+  | 'provider-write-authority-binding-required'
+  | 'provider-write-authority-binding-invalid'
   | 'provider-write-recovery-required'
   | 'provider-write-precondition-stale'
   | 'provider-write-not-applied'

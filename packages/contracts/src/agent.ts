@@ -143,6 +143,14 @@ const ResolvedModelResolutionSchema = z.strictObject({
   ]),
 });
 
+const TerraFallbackModelResolutionSchema = z.strictObject({
+  status: z.literal('resolved'),
+  requestedModel: z.literal('gpt-5.6-terra'),
+  resolvedModel: z.literal('gpt-5.6-luna'),
+  reason: z.literal('terra-unavailable'),
+  escalationTrigger: z.literal('complex-reasoning'),
+});
+
 const NoConfiguredModelResolutionSchema = z
   .strictObject({
     status: z.literal('unavailable'),
@@ -180,6 +188,7 @@ const RequiredModelUnavailableSchema = z.strictObject({
     'dependent-cross-domain',
     'failed-output-validation',
     'low-confidence-reconciliation',
+    'luna-unavailable',
   ]),
   safeError: z.strictObject({
     code: z.literal('required-agent-model-unavailable'),
@@ -190,10 +199,48 @@ const RequiredModelUnavailableSchema = z.strictObject({
   }),
 });
 
+const ConfiguredEscalationDeniedSchema = z.strictObject({
+  status: z.literal('unavailable'),
+  requestedModel: z.literal('gpt-5.6-terra'),
+  attemptedModels: z.tuple([]),
+  reason: z.literal('configured-model-escalation-not-allowed'),
+  escalationTrigger: z.enum([
+    'dependent-cross-domain',
+    'failed-output-validation',
+    'low-confidence-reconciliation',
+    'luna-unavailable',
+    'complex-reasoning',
+  ]),
+  safeError: z.strictObject({
+    code: z.literal('agent-model-escalation-not-allowed'),
+    message: z.literal(
+      'The active agent policy does not allow the required model escalation.',
+    ),
+    retryable: z.literal(false),
+  }),
+});
+
+const ConfiguredFallbackDeniedSchema = z.strictObject({
+  status: z.literal('unavailable'),
+  requestedModel: z.literal('gpt-5.6-luna'),
+  attemptedModels: z.tuple([z.literal('gpt-5.6-luna')]),
+  reason: z.literal('configured-model-fallback-not-allowed'),
+  safeError: z.strictObject({
+    code: z.literal('agent-model-fallback-not-allowed'),
+    message: z.literal(
+      'The active agent policy does not allow a model fallback.',
+    ),
+    retryable: z.literal(false),
+  }),
+});
+
 export const ModelResolutionSchema = z.union([
   ResolvedModelResolutionSchema,
+  TerraFallbackModelResolutionSchema,
   NoConfiguredModelResolutionSchema,
   RequiredModelUnavailableSchema,
+  ConfiguredEscalationDeniedSchema,
+  ConfiguredFallbackDeniedSchema,
 ]);
 export type ModelId = z.output<typeof ModelIdSchema>;
 export type ModelResolution = DeepReadonly<

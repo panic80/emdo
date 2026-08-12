@@ -1,0 +1,11 @@
+[Unit]
+Description=Check EMDO logical backup freshness hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+AccuracySec=5m
+Unit=emdo-backup-age.service
+
+[Install]
+WantedBy=timers.target

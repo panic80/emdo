@@ -1,12 +1,20 @@
 import { z } from 'zod';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   AgentManifestSchema,
   CapabilityDescriptorSchema,
+  EffectiveAuthorizationScopeFingerprintSchema,
   createRuntimeSchemaRegistry,
+  parseProviderWriteCapabilityDescriptor,
   type AgentManifest,
   type CapabilityDescriptor,
+  type ProviderWriteCapabilityDescriptor,
+  type ProviderWriteOperationScope,
+  type ProviderWriteRegisteredCapability,
+  type RegisteredCapability,
+  type StandardCapabilityDescriptor,
+  type StandardRegisteredCapability,
 } from '@emdo/contracts';
 
 import {
@@ -17,6 +25,7 @@ import {
   hashCapabilityDescriptorBinding,
   hashProviderWriteApprovalBinding,
   type ProviderWriteApprovalBinding,
+  type ProviderWriteCompletion,
   type ProviderWriteApprovalStore,
 } from './index.js';
 
@@ -51,7 +60,9 @@ const specialistManifest = AgentManifestSchema.parse({
   evalSuite: { id: 'scheduler.evals', version: '1.0.0' },
 });
 
-const descriptor = (overrides: Partial<CapabilityDescriptor> = {}) =>
+const descriptor = (
+  overrides: Readonly<Record<string, unknown>> = {},
+): CapabilityDescriptor =>
   CapabilityDescriptorSchema.parse({
     schemaVersion: 1,
     id: 'calendar.events.read',
@@ -83,8 +94,11 @@ const descriptor = (overrides: Partial<CapabilityDescriptor> = {}) =>
     ...overrides,
   });
 
-const providerDescriptor = (overrides: Partial<CapabilityDescriptor> = {}) =>
-  descriptor({
+const providerDescriptor = (
+  overrides: Readonly<Record<string, unknown>> = {},
+): ProviderWriteCapabilityDescriptor =>
+  parseProviderWriteCapabilityDescriptor({
+    ...descriptor(),
     capabilityKind: 'provider-write',
     riskClass: 'provider-write',
     freshness: {
@@ -112,6 +126,34 @@ const providerWriteSafety = {
 } as const;
 
 const disclosureGrantId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f106';
+const providerRequestId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f109';
+const providerSessionId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f110';
+const providerHouseholdId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f107';
+const providerSpaceAccessGrantId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f111';
+const authorizationScopeFingerprint =
+  EffectiveAuthorizationScopeFingerprintSchema.parse('f'.repeat(64));
+const providerAuthorityBinding = {
+  kind: 'google-calendar-grant-v2',
+  householdId: providerHouseholdId,
+  privateSpaceId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f108',
+  authorizationScopeFingerprint,
+  providerGrantReference: 'google-grant-reference-1',
+  authorizationEpoch: 1,
+} as const;
+const providerOperationScope = {
+  requestId: providerRequestId,
+  sessionId: providerSessionId,
+  householdId: providerHouseholdId,
+  userId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f101',
+  spaceAccessGrantId: providerSpaceAccessGrantId,
+  authorizationScopeFingerprint,
+} as const;
+const trustedProviderWriteAuthorityResolver = {
+  resolve: async () => ({
+    authorityBinding: providerAuthorityBinding,
+    operationScope: providerOperationScope,
+  }),
+};
 const providerPermit = (capability: CapabilityDescriptor) => {
   const issuedAt = '2026-08-09T16:02:00.000Z';
   const binding = {
@@ -124,6 +166,7 @@ const providerPermit = (capability: CapabilityDescriptor) => {
     disclosureGrantId,
     payloadHash: hashCanonicalJson({ query: 'create the approved event' }),
     idempotencyTtlMs: capability.idempotency.ttlMs,
+    authorityBinding: providerAuthorityBinding,
   };
   return {
     proposalId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f104',
@@ -134,6 +177,7 @@ const providerPermit = (capability: CapabilityDescriptor) => {
     expiresAt: '2026-08-09T16:10:00.000Z',
     disclosureGrantId,
     disclosureGrantHash: 'd'.repeat(64),
+    approvalBinding: binding,
     providerIdempotencyKey: 'b'.repeat(64),
     idempotencyExpiresAt: new Date(
       Date.parse(issuedAt) + capability.idempotency.ttlMs,
@@ -171,11 +215,13 @@ const providerManifest = () =>
   });
 
 const providerInvocationContext = {
-  requestId: 'request-1',
+  requestId: providerRequestId,
   runId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f102',
+  sessionId: providerSessionId,
+  householdId: providerHouseholdId,
   userId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f101',
   agentId: 'untrusted-caller-agent',
-  spaceAccessGrantId: 'space-grant-1',
+  spaceAccessGrantId: providerSpaceAccessGrantId,
   disclosureGrantId,
   approvalDecisionId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f103',
   abortSignal: new AbortController().signal,
@@ -196,8 +242,18 @@ const runtimeSchemas = createRuntimeSchemaRegistry([
   },
 ]);
 
-const registration = (capability: CapabilityDescriptor = descriptor()) =>
-  capability.capabilityKind === 'provider-write'
+function registration(): StandardRegisteredCapability;
+function registration(
+  capability: ProviderWriteCapabilityDescriptor,
+): ProviderWriteRegisteredCapability;
+function registration(
+  capability: StandardCapabilityDescriptor,
+): StandardRegisteredCapability;
+function registration(capability: CapabilityDescriptor): RegisteredCapability;
+function registration(
+  capability: CapabilityDescriptor = descriptor(),
+): RegisteredCapability {
+  return capability.capabilityKind === 'provider-write'
     ? {
         descriptor: capability,
         executeProviderWrite: async () => ({
@@ -210,6 +266,7 @@ const registration = (capability: CapabilityDescriptor = descriptor()) =>
         descriptor: capability,
         execute: async () => ({ count: 0 }),
       };
+}
 
 const expectPolicyCode = (operation: () => unknown, code: string) => {
   try {
@@ -222,6 +279,43 @@ const expectPolicyCode = (operation: () => unknown, code: string) => {
 };
 
 describe('deny-by-default capability registry', () => {
+  it('fails closed before approval consumption when trusted provider authority is unavailable', async () => {
+    const providerWrite = providerDescriptor({
+      id: 'google-calendar.event.create',
+      executorId: 'google-calendar.event-create.v1',
+    });
+    let approvalConsumed = false;
+    const registry = createCapabilityRegistry(
+      [registration(providerWrite)],
+      runtimeSchemas,
+      {
+        providerWriteApprovalStore: {
+          acquire: async () => {
+            approvalConsumed = true;
+            return { status: 'mismatch' };
+          },
+          markDispatching: async () => ({ status: 'mismatch' }),
+          finalize: async () => 'mismatch',
+          reconcile: async () => 'mismatch',
+        },
+      },
+    );
+    const [resolved] = registry.resolveForAgent({
+      manifest: providerManifest(),
+      requestedCapabilityIds: ['google-calendar.event.create'],
+    });
+
+    await expect(
+      resolved?.invoke(
+        { query: 'create the approved event' },
+        providerInvocationContext,
+      ),
+    ).rejects.toMatchObject({
+      code: 'provider-write-authority-binding-required',
+    });
+    expect(approvalConsumed).toBe(false);
+  });
+
   it('resolves only capabilities present in a parsed manifest allowlist', async () => {
     const registry = createCapabilityRegistry([registration()], runtimeSchemas);
 
@@ -242,6 +336,8 @@ describe('deny-by-default capability registry', () => {
           requestId: 'request-1',
           runId: 'run-1',
           userId: 'user-1',
+          householdId: providerHouseholdId,
+          sessionId: providerSessionId,
           agentId: 'scheduler',
           spaceAccessGrantId: 'space-grant-1',
           abortSignal: new AbortController().signal,
@@ -255,6 +351,8 @@ describe('deny-by-default capability registry', () => {
           requestId: 'request-1',
           runId: 'run-1',
           userId: 'user-1',
+          householdId: providerHouseholdId,
+          sessionId: providerSessionId,
           agentId: 'scheduler',
           spaceAccessGrantId: 'space-grant-1',
           abortSignal: new AbortController().signal,
@@ -292,6 +390,8 @@ describe('deny-by-default capability registry', () => {
           requestId: 'request-1',
           runId: 'run-1',
           userId: 'user-1',
+          householdId: providerHouseholdId,
+          sessionId: providerSessionId,
           agentId: 'scheduler',
           spaceAccessGrantId: 'space-grant-1',
           abortSignal: new AbortController().signal,
@@ -321,6 +421,8 @@ describe('deny-by-default capability registry', () => {
             requestId: 'request-1',
             runId: 'run-1',
             userId: 'user-1',
+            householdId: providerHouseholdId,
+            sessionId: providerSessionId,
             agentId: 'scheduler',
             spaceAccessGrantId: 'space-grant-1',
             abortSignal: new AbortController().signal,
@@ -352,8 +454,19 @@ describe('deny-by-default capability registry', () => {
     const input = { query: 'create the approved event' };
     let consumed = false;
     let consumedBinding: ProviderWriteApprovalBinding | undefined;
+    let acquiredScope: ProviderWriteOperationScope | undefined;
+    let dispatchScope: ProviderWriteOperationScope | undefined;
+    let executedScope: ProviderWriteOperationScope | undefined;
     let finalized = false;
     let observedExpectedVersion: string | undefined;
+    const resolverInputs: unknown[] = [];
+    const resolveAuthority = vi.fn(async (input: unknown) => {
+      resolverInputs.push(input);
+      return {
+        authorityBinding: providerAuthorityBinding,
+        operationScope: providerOperationScope,
+      };
+    });
     const providerRegistration = {
       descriptor: providerWrite,
       executeProviderWrite: async (
@@ -362,10 +475,12 @@ describe('deny-by-default capability registry', () => {
           providerWritePermit: {
             targets: readonly { expectedVersion: string }[];
           };
+          providerWriteOperationScope: ProviderWriteOperationScope;
         },
       ) => {
         observedExpectedVersion =
           context.providerWritePermit.targets[0]?.expectedVersion;
+        executedScope = context.providerWriteOperationScope;
         return { application: 'applied' as const, output: { count: 0 } };
       },
       providerWriteSafety,
@@ -374,9 +489,13 @@ describe('deny-by-default capability registry', () => {
       [providerRegistration],
       runtimeSchemas,
       {
+        trustedProviderWriteAuthorityResolver: {
+          resolve: resolveAuthority,
+        },
         providerWriteApprovalStore: {
-          acquire: async (binding) => {
+          acquire: async (binding, currentScope) => {
             consumedBinding = binding;
+            acquiredScope = currentScope;
             if (
               binding.decisionId !== decisionId ||
               binding.userId !== userId ||
@@ -405,7 +524,10 @@ describe('deny-by-default capability registry', () => {
               authorization: providerPermit(providerWrite),
             };
           },
-          markDispatching: async () => markDispatching(providerWrite),
+          markDispatching: async (_binding, _attemptId, currentScope) => {
+            dispatchScope = currentScope;
+            return markDispatching(providerWrite);
+          },
           finalize: async () => {
             finalized = true;
             return 'finalized';
@@ -420,11 +542,13 @@ describe('deny-by-default capability registry', () => {
       requestedCapabilityIds: ['google-calendar.event.create'],
     });
     const context = {
-      requestId: 'request-1',
+      requestId: providerRequestId,
       runId,
+      sessionId: providerSessionId,
+      householdId: providerHouseholdId,
       userId,
       agentId: 'scheduler',
-      spaceAccessGrantId: 'space-grant-1',
+      spaceAccessGrantId: providerSpaceAccessGrantId,
       disclosureGrantId,
       abortSignal: new AbortController().signal,
     };
@@ -450,7 +574,42 @@ describe('deny-by-default capability registry', () => {
       capabilityFingerprint: hashCapabilityDescriptorBinding(providerWrite),
       disclosureGrantId,
       payloadHash: hashCanonicalJson(input),
+      authorityBinding: providerAuthorityBinding,
     });
+    expect(acquiredScope).toEqual(providerOperationScope);
+    expect(dispatchScope).toEqual(providerOperationScope);
+    expect(executedScope).toEqual(providerOperationScope);
+    expect(resolveAuthority).toHaveBeenCalledTimes(2);
+    const exactResolverInput = {
+      requestId: providerRequestId,
+      runId,
+      sessionId: providerSessionId,
+      userId,
+      householdId: providerHouseholdId,
+      agentId: 'scheduler',
+      spaceAccessGrantId: providerSpaceAccessGrantId,
+      disclosureGrantId,
+      decisionId,
+      capabilityId: providerWrite.id,
+      capabilityFingerprint: hashCapabilityDescriptorBinding(providerWrite),
+    };
+    expect(resolverInputs).toEqual([exactResolverInput, exactResolverInput]);
+    expect(Object.keys(resolverInputs[0] as object).sort()).toEqual(
+      Object.keys(exactResolverInput).sort(),
+    );
+    expect(Object.isFrozen(resolverInputs[0])).toBe(true);
+    expect(Object.isFrozen(resolverInputs[1])).toBe(true);
+    expect(resolverInputs[0]).not.toBe(resolverInputs[1]);
+    expect(
+      hashProviderWriteApprovalBinding({
+        ...consumedBinding!,
+        authorityBinding: {
+          ...providerAuthorityBinding,
+          providerGrantReference: 'google-grant-reference-2',
+          authorizationEpoch: 2,
+        },
+      }),
+    ).not.toBe(hashProviderWriteApprovalBinding(consumedBinding!));
     expect(observedExpectedVersion).toBe('etag-v1');
     expect(finalized).toBe(true);
     await expect(
@@ -479,6 +638,7 @@ describe('deny-by-default capability registry', () => {
       ],
       runtimeSchemas,
       {
+        trustedProviderWriteAuthorityResolver,
         providerWriteApprovalStore: {
           acquire: async () => ({
             status: 'existing-attempt' as const,
@@ -505,6 +665,104 @@ describe('deny-by-default capability registry', () => {
     ).rejects.toMatchObject({ code: 'provider-write-recovery-required' });
     expect(dispatches).toBe(0);
   });
+
+  it.each([
+    {
+      name: 'provider grant instance',
+      dispatchResolution: {
+        authorityBinding: {
+          ...providerAuthorityBinding,
+          providerGrantReference: 'google-grant-reference-reconnected',
+          authorizationEpoch: 2,
+        },
+        operationScope: providerOperationScope,
+      },
+    },
+    {
+      name: 'current invocation scope',
+      dispatchResolution: {
+        authorityBinding: providerAuthorityBinding,
+        operationScope: {
+          ...providerOperationScope,
+          requestId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f199',
+        },
+      },
+    },
+  ])(
+    'fails closed when the $name changes during pre-dispatch revalidation',
+    async ({ dispatchResolution }) => {
+      const providerWrite = providerDescriptor({
+        id: 'google-calendar.event.create',
+        executorId: 'google-calendar.event-create.v1',
+      });
+      let resolutionCount = 0;
+      let dispatchMarks = 0;
+      let providerDispatches = 0;
+      let completion: ProviderWriteCompletion | undefined;
+      const registry = createCapabilityRegistry(
+        [
+          {
+            descriptor: providerWrite,
+            executeProviderWrite: async () => {
+              providerDispatches += 1;
+              return { application: 'applied' as const, output: { count: 1 } };
+            },
+            providerWriteSafety,
+          },
+        ],
+        runtimeSchemas,
+        {
+          trustedProviderWriteAuthorityResolver: {
+            resolve: async () => {
+              resolutionCount += 1;
+              return resolutionCount === 1
+                ? {
+                    authorityBinding: providerAuthorityBinding,
+                    operationScope: providerOperationScope,
+                  }
+                : dispatchResolution;
+            },
+          },
+          providerWriteApprovalStore: {
+            acquire: async () => ({
+              status: 'authorized',
+              authorization: providerPermit(providerWrite),
+            }),
+            markDispatching: async () => {
+              dispatchMarks += 1;
+              return markDispatching(providerWrite);
+            },
+            finalize: async (_binding, value) => {
+              completion = value;
+              return 'finalized';
+            },
+            reconcile: async () => 'mismatch',
+          },
+          now: () => new Date('2026-08-09T16:02:01.000Z'),
+        },
+      );
+      const [resolved] = registry.resolveForAgent({
+        manifest: providerManifest(),
+        requestedCapabilityIds: ['google-calendar.event.create'],
+      });
+
+      await expect(
+        resolved?.invoke(
+          { query: 'create the approved event' },
+          providerInvocationContext,
+        ),
+      ).rejects.toMatchObject({
+        code: 'provider-write-authority-binding-invalid',
+      });
+      expect(resolutionCount).toBe(2);
+      expect(dispatchMarks).toBe(0);
+      expect(providerDispatches).toBe(0);
+      expect(completion).toMatchObject({
+        state: 'not-applied',
+        reason: 'approval-policy-mismatch',
+      });
+    },
+  );
 
   it('rejects a cross-wired permit from another approved proposal before dispatch', async () => {
     const providerWrite = providerDescriptor({
@@ -540,6 +798,7 @@ describe('deny-by-default capability registry', () => {
       ],
       runtimeSchemas,
       {
+        trustedProviderWriteAuthorityResolver,
         providerWriteApprovalStore: {
           acquire: async () => ({
             status: 'authorized',
@@ -592,6 +851,7 @@ describe('deny-by-default capability registry', () => {
       ],
       runtimeSchemas,
       {
+        trustedProviderWriteAuthorityResolver,
         providerWriteApprovalStore: {
           acquire: async () => ({
             status: 'authorized',
@@ -617,9 +877,12 @@ describe('deny-by-default capability registry', () => {
     expect(contextKeys).toEqual([
       'abortSignal',
       'agentId',
+      'householdId',
+      'providerWriteOperationScope',
       'providerWritePermit',
       'requestId',
       'runId',
+      'sessionId',
       'userId',
     ]);
   });
@@ -630,6 +893,7 @@ describe('deny-by-default capability registry', () => {
       executorId: 'google-calendar.event-create.v1',
     });
     let dispatchEntered = false;
+    let dispatchClaimEntered = false;
     let authorizeDispatch:
       ((result: ReturnType<typeof markDispatching>) => void) | undefined;
     const dispatchGate = new Promise<ReturnType<typeof markDispatching>>(
@@ -650,12 +914,16 @@ describe('deny-by-default capability registry', () => {
       ],
       runtimeSchemas,
       {
+        trustedProviderWriteAuthorityResolver,
         providerWriteApprovalStore: {
           acquire: async () => ({
             status: 'authorized',
             authorization: providerPermit(providerWrite),
           }),
-          markDispatching: () => dispatchGate,
+          markDispatching: () => {
+            dispatchClaimEntered = true;
+            return dispatchGate;
+          },
           finalize: async () => 'finalized',
           reconcile: async () => 'mismatch',
         },
@@ -671,7 +939,7 @@ describe('deny-by-default capability registry', () => {
       { query: 'create the approved event' },
       providerInvocationContext,
     );
-    await Promise.resolve();
+    await vi.waitFor(() => expect(dispatchClaimEntered).toBe(true));
     expect(dispatchEntered).toBe(false);
     authorizeDispatch?.(markDispatching(providerWrite));
     await Promise.resolve();
@@ -712,6 +980,7 @@ describe('deny-by-default capability registry', () => {
       ],
       runtimeSchemas,
       {
+        trustedProviderWriteAuthorityResolver,
         providerWriteApprovalStore: {
           acquire: async () => ({
             status: 'authorized',
@@ -736,14 +1005,8 @@ describe('deny-by-default capability registry', () => {
       resolved?.invoke(
         { query: 'create the approved event' },
         {
-          requestId: 'request-1',
-          runId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f102',
-          userId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f101',
+          ...providerInvocationContext,
           agentId: 'scheduler',
-          spaceAccessGrantId: 'space-grant-1',
-          disclosureGrantId,
-          approvalDecisionId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f103',
-          abortSignal: new AbortController().signal,
         },
       ),
     ).rejects.toMatchObject({ code: 'provider-write-precondition-stale' });
@@ -768,6 +1031,7 @@ describe('deny-by-default capability registry', () => {
       ],
       runtimeSchemas,
       {
+        trustedProviderWriteAuthorityResolver,
         providerWriteApprovalStore: {
           acquire: async () => ({
             status: 'authorized',
@@ -820,6 +1084,7 @@ describe('deny-by-default capability registry', () => {
       ],
       runtimeSchemas,
       {
+        trustedProviderWriteAuthorityResolver,
         providerWriteApprovalStore: {
           acquire: async () => ({
             status: 'authorized',
@@ -876,6 +1141,7 @@ describe('deny-by-default capability registry', () => {
       ],
       runtimeSchemas,
       {
+        trustedProviderWriteAuthorityResolver,
         providerWriteApprovalStore: {
           acquire: async () => ({
             status: 'authorized',
@@ -925,7 +1191,7 @@ describe('deny-by-default capability registry', () => {
                 application: 'applied' as const,
                 output: { count: 1 },
               }),
-            },
+            } as unknown as RegisteredCapability,
           ],
           runtimeSchemas,
         ),
@@ -973,6 +1239,7 @@ describe('deny-by-default capability registry', () => {
       [mutableRegistration],
       runtimeSchemas,
       {
+        trustedProviderWriteAuthorityResolver,
         providerWriteApprovalStore: mutableStore,
         now: () => new Date('2026-08-09T16:02:01.000Z'),
       },

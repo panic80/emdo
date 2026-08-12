@@ -6,6 +6,7 @@ import {
   IsoDateTimeSchema,
   JsonValueSchema,
   OpaqueReferenceSchema,
+  EffectiveAuthorizationScopeFingerprintSchema,
   SchemaVersionSchema,
   Sha256Schema,
   UuidSchema,
@@ -26,6 +27,65 @@ const ProviderPreconditionSchema = z.strictObject({
   expectedValue: z.string().min(1).max(2048),
 });
 
+// Approval text is a security-sensitive visual projection. Reject every
+// control and format code point (including bidi controls and zero-width
+// default-ignorables) instead of maintaining an incomplete denylist.
+const ApprovalDisplayUnsafeCharacterPattern = /[\p{Cc}\p{Cf}]/u;
+
+const hasVisibleApprovalText = (value: string): boolean =>
+  value.replace(/[\p{White_Space}\p{Default_Ignorable_Code_Point}]/gu, '')
+    .length > 0;
+
+const approvalDisplayTextSchema = (
+  maxLength: number,
+  requireVisibleText: boolean,
+) =>
+  z
+    .string()
+    .max(maxLength)
+    .superRefine((value, context) => {
+      if (requireVisibleText && !hasVisibleApprovalText(value)) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Approval display text must contain a visible character',
+        });
+      }
+      if (ApprovalDisplayUnsafeCharacterPattern.test(value)) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Approval display text contains a control character',
+        });
+      }
+    });
+
+const ActionProposalApprovalDisplayFieldBaseSchema = z.strictObject({
+  label: approvalDisplayTextSchema(120, true),
+  value: approvalDisplayTextSchema(2_000, false),
+});
+
+export const ActionProposalApprovalDisplayFieldSchema =
+  ActionProposalApprovalDisplayFieldBaseSchema.transform(deepFreeze);
+
+export type ActionProposalApprovalDisplayField = DeepReadonly<
+  z.input<typeof ActionProposalApprovalDisplayFieldBaseSchema>
+>;
+
+const ActionProposalApprovalDisplayBaseSchema = z.strictObject({
+  schemaVersion: SchemaVersionSchema,
+  title: approvalDisplayTextSchema(200, true),
+  summary: approvalDisplayTextSchema(1_000, true),
+  beforeSummary: approvalDisplayTextSchema(2_000, false),
+  afterSummary: approvalDisplayTextSchema(2_000, false),
+  fields: z.array(ActionProposalApprovalDisplayFieldSchema).max(32),
+});
+
+export const ActionProposalApprovalDisplaySchema =
+  ActionProposalApprovalDisplayBaseSchema.transform(deepFreeze);
+
+export type ActionProposalApprovalDisplay = DeepReadonly<
+  z.input<typeof ActionProposalApprovalDisplayBaseSchema>
+>;
+
 const ActionProposalBaseSchema = z
   .strictObject({
     schemaVersion: SchemaVersionSchema,
@@ -34,11 +94,15 @@ const ActionProposalBaseSchema = z
     runId: UuidSchema,
     capabilityId: IdentifierSchema,
     capabilityFingerprint: Sha256Schema,
+    authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprintSchema,
     canonicalArguments: JsonValueSchema,
     targets: z.array(ProposalTargetSchema).min(1).max(64),
     beforePreview: JsonValueSchema,
     afterPreview: JsonValueSchema,
+    approvalDisplay: ActionProposalApprovalDisplaySchema,
     providerPreconditions: z.array(ProviderPreconditionSchema).max(64),
+    providerAuthorityBindingHash: Sha256Schema,
+    providerSdkCallId: OpaqueReferenceSchema,
     payloadHash: Sha256Schema,
     approvalHash: Sha256Schema,
     disclosureGrant: DataDisclosureGrantSchema,
@@ -97,7 +161,7 @@ export const ActionProposalSchema =
   ActionProposalBaseSchema.transform(deepFreeze);
 
 export type ActionProposal = DeepReadonly<
-  z.input<typeof ActionProposalBaseSchema>
+  z.output<typeof ActionProposalBaseSchema>
 >;
 
 const ActionDecisionBaseSchema = z.strictObject({

@@ -13,17 +13,34 @@ export type SyncConflictCode =
   | 'revision-mismatch'
   | 'tombstoned'
   | 'mutation-invalid'
-  | 'repository-rejected';
+  | 'repository-rejected'
+  | 'domain-operation-invalid'
+  | 'domain-operation-unsupported'
+  | 'base-revision-unavailable'
+  | 'base-state-mismatch'
+  | 'material-conflict';
+
+export type SyncAppliedResolution =
+  'created' | 'applied' | 'merged' | 'ignored' | 'duplicate';
+
+export interface SyncConflictDetail {
+  readonly field: string;
+  readonly material: boolean;
+}
 
 export type StoredSyncOperationOutcome =
   | {
       readonly status: 'applied';
       readonly revision: number;
+      readonly resolution: SyncAppliedResolution;
+      readonly conflicts: readonly SyncConflictDetail[];
     }
   | {
       readonly status: 'conflict';
       readonly code: SyncConflictCode;
+      readonly disposition: 'terminal';
       readonly currentRevision?: number;
+      readonly conflicts: readonly SyncConflictDetail[];
     };
 
 export interface OfflineSyncExecutionContext {
@@ -116,6 +133,8 @@ type AppliedProcessResult = {
   readonly operationId: string;
   readonly status: 'applied';
   readonly revision: number;
+  readonly resolution: SyncAppliedResolution;
+  readonly conflicts: readonly SyncConflictDetail[];
   readonly replayed: boolean;
 };
 
@@ -124,7 +143,9 @@ type ConflictProcessResult = {
   readonly status: 'conflict';
   readonly code:
     SyncConflictCode | 'idempotency-key-reused' | 'operation-in-progress';
+  readonly disposition: 'terminal' | 'retryable';
   readonly currentRevision?: number;
+  readonly conflicts: readonly SyncConflictDetail[];
   readonly replayed: boolean;
 };
 
@@ -137,6 +158,8 @@ type BlockedProcessResult = {
     | 'dependency-failed'
     | 'dependency-cycle';
   readonly dependencyOperationId?: string;
+  readonly disposition: 'terminal' | 'retryable';
+  readonly conflicts: readonly SyncConflictDetail[];
   readonly replayed: false;
 };
 
@@ -262,6 +285,9 @@ const isSuccessful = (
   result: SyncOperationProcessResult | StoredSyncOperationOutcome,
 ) => result.status === 'applied';
 
+const isRetryable = (result: SyncOperationProcessResult) =>
+  result.status !== 'applied' && result.disposition === 'retryable';
+
 export interface SyncUploadProcessorOptions {
   readonly validator: CanonicalSyncUploadValidator;
   readonly repository: SyncOperationProcessorRepository;
@@ -365,6 +391,8 @@ export class SyncUploadProcessor {
         operationId: operation.operationId,
         status: 'blocked',
         code: 'dependency-cycle',
+        disposition: 'terminal',
+        conflicts: [],
         replayed: false,
       }));
     for (const result of cycleResults) {
@@ -448,15 +476,30 @@ export class SyncUploadProcessor {
             status: 'blocked',
             code: 'dependency-missing',
             dependencyOperationId: dependencyId,
+            disposition: 'retryable',
+            conflicts: [],
             replayed: false,
           };
         }
         if (!isSuccessful(dependencyResult)) {
+          if (isRetryable(dependencyResult)) {
+            return {
+              operationId: operation.operationId,
+              status: 'blocked',
+              code: 'dependency-missing',
+              dependencyOperationId: dependencyId,
+              disposition: 'retryable',
+              conflicts: [],
+              replayed: false,
+            };
+          }
           return {
             operationId: operation.operationId,
             status: 'blocked',
             code: 'dependency-failed',
             dependencyOperationId: dependencyId,
+            disposition: 'terminal',
+            conflicts: [],
             replayed: false,
           };
         }
@@ -470,6 +513,8 @@ export class SyncUploadProcessor {
           status: 'blocked',
           code: 'dependency-missing',
           dependencyOperationId: dependencyId,
+          disposition: 'retryable',
+          conflicts: [],
           replayed: false,
         };
       }
@@ -479,6 +524,8 @@ export class SyncUploadProcessor {
           status: 'blocked',
           code: 'dependency-failed',
           dependencyOperationId: dependencyId,
+          disposition: 'terminal',
+          conflicts: [],
           replayed: false,
         };
       }
@@ -501,6 +548,8 @@ export class SyncUploadProcessor {
         operationId: operation.operationId,
         status: 'conflict',
         code: 'idempotency-key-reused',
+        disposition: 'terminal',
+        conflicts: [],
         replayed: false,
       };
     }
@@ -509,6 +558,8 @@ export class SyncUploadProcessor {
         operationId: operation.operationId,
         status: 'conflict',
         code: 'operation-in-progress',
+        disposition: 'retryable',
+        conflicts: [],
         replayed: false,
       };
     }
@@ -517,6 +568,8 @@ export class SyncUploadProcessor {
         operationId: operation.operationId,
         status: 'blocked',
         code: 'authorization-revoked',
+        disposition: 'terminal',
+        conflicts: [],
         replayed: false,
       };
     }
@@ -525,6 +578,8 @@ export class SyncUploadProcessor {
         operationId: operation.operationId,
         status: 'applied',
         revision: execution.outcome.revision,
+        resolution: execution.outcome.resolution,
+        conflicts: [],
         replayed: execution.kind === 'replay',
       };
     }
@@ -532,6 +587,8 @@ export class SyncUploadProcessor {
       operationId: operation.operationId,
       status: 'conflict',
       code: execution.outcome.code,
+      disposition: execution.outcome.disposition,
+      conflicts: execution.outcome.conflicts,
       replayed: execution.kind === 'replay',
       ...(execution.outcome.currentRevision === undefined
         ? {}

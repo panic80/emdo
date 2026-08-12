@@ -7,7 +7,7 @@ import {
   type BootstrapOwnerEnvironment,
   type BootstrapOwnerLogger,
   type BootstrapOwnerPool,
-} from './bootstrap-owner.js';
+} from './bootstrap-owner-command.js';
 
 const password = 'correct horse battery staple';
 const passwordHash = `${'a'.repeat(32)}:${'b'.repeat(128)}`;

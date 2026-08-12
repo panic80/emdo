@@ -1,97 +1,28 @@
 import { z } from 'zod';
 
-export type DeepReadonly<T> = T extends (...args: never[]) => unknown
-  ? T
-  : T extends readonly (infer Item)[]
-    ? readonly DeepReadonly<Item>[]
-    : T extends object
-      ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> }
-      : T;
+import {
+  IdentifierSchema,
+  IsoDateTimeSchema,
+  OpaqueReferenceSchema,
+  SchemaVersionSchema,
+  SemanticVersionSchema,
+  Sha256Schema,
+  UuidSchema,
+  VersionedSchemaReferenceSchema,
+  deepFreeze,
+  type DeepReadonly,
+  type JsonValue,
+  type VersionedSchemaReference,
+} from './primitives.js';
 
-export const deepFreeze = <T>(value: T): DeepReadonly<T> => {
-  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
-    for (const nested of Object.values(value)) {
-      deepFreeze(nested);
-    }
-    Object.freeze(value);
-  }
+export * from './primitives.js';
 
-  return value as DeepReadonly<T>;
-};
+/** Server-derived stable scope binding; callers may compare but never mint it. */
+export const EffectiveAuthorizationScopeFingerprintSchema =
+  Sha256Schema.brand<'EffectiveAuthorizationScopeFingerprint'>();
 
-export type JsonValue =
-  null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
-
-export const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
-  z.union([
-    z.null(),
-    z.boolean(),
-    z.number().finite(),
-    z.string(),
-    z.array(JsonValueSchema),
-    z.record(z.string(), JsonValueSchema),
-  ]),
-);
-
-export const SchemaVersionSchema = z.literal(1);
-
-export const IdentifierSchema = z
-  .string()
-  .min(2)
-  .max(160)
-  .regex(
-    /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/,
-    'Identifier must contain only lowercase segments',
-  );
-
-export const OpaqueReferenceSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(512)
-  .refine(
-    (value) =>
-      !Array.from(value).some((character) => {
-        const codePoint = character.codePointAt(0) ?? 0;
-        return codePoint <= 31 || codePoint === 127;
-      }),
-    'Opaque reference contains control characters',
-  );
-
-export const SemanticVersionSchema = z
-  .string()
-  .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, 'Expected a semantic version');
-
-export const UuidSchema = z.uuid();
-
-export const IsoDateTimeSchema = z.iso.datetime({ offset: true });
-
-export const Sha256Schema = z
-  .string()
-  .regex(/^[a-f0-9]{64}$/, 'Expected a lowercase SHA-256 digest');
-
-export const IdempotencyKeySchema = z
-  .string()
-  .min(16)
-  .max(200)
-  .regex(/^[A-Za-z0-9:._-]+$/, 'Invalid idempotency key');
-
-export const HttpsUrlSchema = z
-  .url()
-  .refine(
-    (value) => new URL(value).protocol === 'https:',
-    'Expected an HTTPS URL',
-  );
-
-export const VersionedSchemaReferenceSchema = z
-  .strictObject({
-    id: IdentifierSchema,
-    version: SemanticVersionSchema,
-  })
-  .transform(deepFreeze);
-
-export type VersionedSchemaReference = DeepReadonly<
-  z.input<typeof VersionedSchemaReferenceSchema>
+export type EffectiveAuthorizationScopeFingerprint = z.infer<
+  typeof EffectiveAuthorizationScopeFingerprintSchema
 >;
 
 export const DataClassSchema = IdentifierSchema;
@@ -111,6 +42,16 @@ export const CapabilityKindSchema = z.enum([
   'provider-write',
   'import',
 ]);
+
+declare const providerWriteCapabilityIdBrand: unique symbol;
+
+/**
+ * Nominal identifier granted only by validated provider-write descriptor
+ * parsing. It remains a primitive string at runtime and on every wire.
+ */
+export type ProviderWriteCapabilityId = string & {
+  readonly [providerWriteCapabilityIdBrand]: 'provider-write-capability-id';
+};
 
 const FreshnessPolicySchema = z.strictObject({
   required: z.boolean(),
@@ -152,6 +93,32 @@ const CapabilityDescriptorBaseSchema = z.strictObject({
   audit: AuditPolicySchema,
   executorId: IdentifierSchema,
 });
+
+type CapabilityDescriptorFields = DeepReadonly<
+  z.input<typeof CapabilityDescriptorBaseSchema>
+>;
+
+export type StandardCapabilityDescriptor = Omit<
+  CapabilityDescriptorFields,
+  'capabilityKind'
+> & {
+  readonly capabilityKind: Exclude<
+    z.output<typeof CapabilityKindSchema>,
+    'provider-write'
+  >;
+};
+
+export type ProviderWriteCapabilityDescriptor = Omit<
+  CapabilityDescriptorFields,
+  'id' | 'capabilityKind' | 'riskClass'
+> & {
+  readonly id: ProviderWriteCapabilityId;
+  readonly capabilityKind: 'provider-write';
+  readonly riskClass: 'provider-write';
+};
+
+export type CapabilityDescriptor =
+  StandardCapabilityDescriptor | ProviderWriteCapabilityDescriptor;
 
 export const CapabilityDescriptorSchema =
   CapabilityDescriptorBaseSchema.superRefine((value, context) => {
@@ -230,11 +197,25 @@ export const CapabilityDescriptorSchema =
         });
       }
     }
-  }).transform(deepFreeze);
+  }).transform((value): CapabilityDescriptor => {
+    const validated = deepFreeze(value);
+    if (validated.capabilityKind === 'provider-write') {
+      // The nominal type is minted only after the complete descriptor policy
+      // above has validated the high-risk branch.
+      return validated as ProviderWriteCapabilityDescriptor;
+    }
+    return validated as StandardCapabilityDescriptor;
+  });
 
-export type CapabilityDescriptor = DeepReadonly<
-  z.input<typeof CapabilityDescriptorBaseSchema>
->;
+export const parseProviderWriteCapabilityDescriptor = (
+  value: unknown,
+): ProviderWriteCapabilityDescriptor => {
+  const descriptor = CapabilityDescriptorSchema.parse(value);
+  if (descriptor.capabilityKind !== 'provider-write') {
+    throw new TypeError('Expected a provider-write capability descriptor');
+  }
+  return descriptor;
+};
 
 export const CadMoneySchema = z
   .strictObject({
@@ -249,12 +230,95 @@ export interface CapabilityInvocationContext {
   readonly requestId: string;
   readonly runId: string;
   readonly userId: string;
+  readonly householdId: string;
+  readonly sessionId: string;
   readonly agentId: string;
   readonly spaceAccessGrantId: string;
   readonly disclosureGrantId?: string;
   readonly approvalDecisionId?: string;
   readonly abortSignal: AbortSignal;
 }
+
+const GoogleCalendarGrantAuthorityBindingSchema = z.strictObject({
+  kind: z.literal('google-calendar-grant-v2'),
+  householdId: UuidSchema,
+  privateSpaceId: UuidSchema,
+  authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprintSchema,
+  providerGrantReference: OpaqueReferenceSchema,
+  authorizationEpoch: z.number().int().safe().nonnegative(),
+});
+
+/**
+ * Closed, server-derived authority for an external provider write. OAuth
+ * secrets never enter this value; reconnecting rotates the reference/epoch.
+ */
+export const ProviderWriteAuthorityBindingSchema =
+  GoogleCalendarGrantAuthorityBindingSchema.transform(deepFreeze);
+
+export type ProviderWriteAuthorityBinding = DeepReadonly<
+  z.output<typeof GoogleCalendarGrantAuthorityBindingSchema>
+>;
+
+const ProviderWriteOperationScopeBaseSchema = z.strictObject({
+  requestId: UuidSchema,
+  sessionId: UuidSchema,
+  householdId: UuidSchema,
+  userId: UuidSchema,
+  spaceAccessGrantId: UuidSchema,
+  authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprintSchema,
+});
+
+export const ProviderWriteOperationScopeSchema =
+  ProviderWriteOperationScopeBaseSchema.transform(deepFreeze);
+
+export type ProviderWriteOperationScope = DeepReadonly<
+  z.output<typeof ProviderWriteOperationScopeBaseSchema>
+>;
+
+const TrustedProviderWriteAuthorityResolutionBaseSchema = z
+  .strictObject({
+    authorityBinding: ProviderWriteAuthorityBindingSchema,
+    operationScope: ProviderWriteOperationScopeSchema,
+  })
+  .superRefine((value, context) => {
+    if (
+      value.operationScope.householdId !== value.authorityBinding.householdId ||
+      value.operationScope.authorizationScopeFingerprint !==
+        value.authorityBinding.authorizationScopeFingerprint
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Provider authority resolution scope does not match',
+      });
+    }
+  });
+
+export const TrustedProviderWriteAuthorityResolutionSchema =
+  TrustedProviderWriteAuthorityResolutionBaseSchema.transform(deepFreeze);
+
+export type TrustedProviderWriteAuthorityResolution = DeepReadonly<
+  z.output<typeof TrustedProviderWriteAuthorityResolutionBaseSchema>
+>;
+
+const ProviderWriteApprovalBindingBaseSchema = z.strictObject({
+  decisionId: UuidSchema,
+  userId: UuidSchema,
+  agentId: IdentifierSchema,
+  runId: UuidSchema,
+  capabilityId: IdentifierSchema,
+  capabilityFingerprint: Sha256Schema,
+  disclosureGrantId: UuidSchema,
+  payloadHash: Sha256Schema,
+  idempotencyTtlMs: z.number().int().positive().safe().max(31_536_000_000),
+  authorityBinding: ProviderWriteAuthorityBindingSchema,
+});
+
+export const ProviderWriteApprovalBindingSchema =
+  ProviderWriteApprovalBindingBaseSchema.transform(deepFreeze);
+
+export type ProviderWriteApprovalBinding = DeepReadonly<
+  z.output<typeof ProviderWriteApprovalBindingBaseSchema>
+>;
 
 const ProviderWriteAuthorizationBaseSchema = z
   .strictObject({
@@ -266,6 +330,7 @@ const ProviderWriteAuthorizationBaseSchema = z
     expiresAt: IsoDateTimeSchema,
     disclosureGrantId: UuidSchema,
     disclosureGrantHash: Sha256Schema,
+    approvalBinding: ProviderWriteApprovalBindingSchema,
     providerIdempotencyKey: Sha256Schema,
     idempotencyExpiresAt: IsoDateTimeSchema,
     attemptId: UuidSchema,
@@ -292,6 +357,23 @@ const ProviderWriteAuthorizationBaseSchema = z
       .max(64),
   })
   .superRefine((value, context) => {
+    if (
+      value.approvalBinding.capabilityFingerprint !==
+      value.capabilityFingerprint
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['approvalBinding', 'capabilityFingerprint'],
+        message: 'Approval binding capability does not match the permit',
+      });
+    }
+    if (value.approvalBinding.disclosureGrantId !== value.disclosureGrantId) {
+      context.addIssue({
+        code: 'custom',
+        path: ['approvalBinding', 'disclosureGrantId'],
+        message: 'Approval binding disclosure grant does not match the permit',
+      });
+    }
     if (Date.parse(value.proposalCreatedAt) > Date.parse(value.issuedAt)) {
       context.addIssue({
         code: 'custom',
@@ -319,7 +401,7 @@ export const ProviderWriteAuthorizationSchema =
   ProviderWriteAuthorizationBaseSchema.transform(deepFreeze);
 
 export type ProviderWriteAuthorization = DeepReadonly<
-  z.input<typeof ProviderWriteAuthorizationBaseSchema>
+  z.output<typeof ProviderWriteAuthorizationBaseSchema>
 >;
 
 export interface ProviderWriteCapabilityContext extends Omit<
@@ -327,6 +409,7 @@ export interface ProviderWriteCapabilityContext extends Omit<
   'spaceAccessGrantId' | 'disclosureGrantId' | 'approvalDecisionId'
 > {
   readonly providerWritePermit: ProviderWriteAuthorization;
+  readonly providerWriteOperationScope: ProviderWriteOperationScope;
 }
 
 export const ProviderCommitOutcomeSchema = z.discriminatedUnion('application', [
@@ -404,15 +487,29 @@ export type ProviderWriteCapabilityExecutor<Input, Output> = (
   context: ProviderWriteCapabilityContext,
 ) => Promise<ProviderCommitOutcome<Output>>;
 
-export interface RegisteredCapability<Input = unknown, Output = unknown> {
-  readonly descriptor: CapabilityDescriptor;
-  readonly execute?: CapabilityExecutor<Input, Output>;
-  readonly executeProviderWrite?: ProviderWriteCapabilityExecutor<
-    Input,
-    Output
-  >;
-  readonly providerWriteSafety?: ProviderWriteSafetyContract;
+export interface StandardRegisteredCapability<
+  Input = unknown,
+  Output = unknown,
+> {
+  readonly descriptor: StandardCapabilityDescriptor;
+  readonly execute: CapabilityExecutor<Input, Output>;
+  readonly executeProviderWrite?: never;
+  readonly providerWriteSafety?: never;
 }
+
+export interface ProviderWriteRegisteredCapability<
+  Input = unknown,
+  Output = unknown,
+> {
+  readonly descriptor: ProviderWriteCapabilityDescriptor;
+  readonly execute?: never;
+  readonly executeProviderWrite: ProviderWriteCapabilityExecutor<Input, Output>;
+  readonly providerWriteSafety: ProviderWriteSafetyContract;
+}
+
+export type RegisteredCapability<Input = unknown, Output = unknown> =
+  | StandardRegisteredCapability<Input, Output>
+  | ProviderWriteRegisteredCapability<Input, Output>;
 
 export interface VersionedRuntimeSchema<Output = unknown> {
   readonly reference: VersionedSchemaReference;
@@ -477,7 +574,19 @@ export const createRuntimeSchemaRegistry = (
   return Object.freeze({ size: parsers.size, parse, schema });
 };
 
-export interface ResolvedCapability<Output = unknown> {
-  readonly descriptor: CapabilityDescriptor;
+interface ResolvedCapabilityBase<
+  Descriptor extends CapabilityDescriptor,
+  Output,
+> {
+  readonly descriptor: Descriptor;
   invoke(input: unknown, context: CapabilityInvocationContext): Promise<Output>;
 }
+
+export type StandardResolvedCapability<Output = unknown> =
+  ResolvedCapabilityBase<StandardCapabilityDescriptor, Output>;
+
+export type ProviderWriteResolvedCapability<Output = unknown> =
+  ResolvedCapabilityBase<ProviderWriteCapabilityDescriptor, Output>;
+
+export type ResolvedCapability<Output = unknown> =
+  StandardResolvedCapability<Output> | ProviderWriteResolvedCapability<Output>;

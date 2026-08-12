@@ -2,5 +2,15 @@
   "name": "@emdo/agent-shopping",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./evals": "./src/evals/index.ts",
+    "./fixtures": "./src/fixtures/index.ts"
+  },
+  "dependencies": {
+    "@emdo/agent-core": "workspace:*",
+    "@emdo/contracts": "workspace:*",
+    "zod": "4.4.3"
+  }
 }

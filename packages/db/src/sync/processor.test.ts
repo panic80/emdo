@@ -37,7 +37,10 @@ const op = (input: {
   payload?: Record<string, unknown>;
   createdAt?: string;
 }) => {
-  const kind = input.kind ?? 'update';
+  // Keep the shared shopping fixture within the production offline allowlist.
+  // Shopping edits are represented as deltas; full replacement is not an
+  // offline-authorized mutation for this entity.
+  const kind = input.kind ?? 'delta';
   const localData = input.payload ?? { quantity: 2 };
   const spaceId = input.spaceId ?? SPACE_ID;
   const payload =
@@ -76,6 +79,7 @@ class InMemorySyncRepository implements SyncOperationProcessorRepository {
   dependencyLookupCount = 0;
   authorizationActive = true;
   revokeAfterOperationId?: string;
+  inProgressOperationId?: string;
 
   private key(clientId: string, operationId: string) {
     return `${clientId}:${operationId}`;
@@ -126,6 +130,9 @@ class InMemorySyncRepository implements SyncOperationProcessorRepository {
     input: SyncExecuteOnceInput,
   ): Promise<SyncExecuteOnceResult> {
     if (!this.authorizationActive) return { kind: 'authorization-revoked' };
+    if (input.operation.operationId === this.inProgressOperationId) {
+      return { kind: 'in-progress' };
+    }
     const receiptKey = this.key(
       input.operation.clientId,
       input.operation.operationId,
@@ -148,6 +155,8 @@ class InMemorySyncRepository implements SyncOperationProcessorRepository {
         outcome = {
           status: 'conflict',
           code: 'entity-exists',
+          disposition: 'terminal',
+          conflicts: [],
           currentRevision: entity?.revision,
         };
       } else {
@@ -157,14 +166,26 @@ class InMemorySyncRepository implements SyncOperationProcessorRepository {
           tombstoned: false,
         });
         this.mutationCount += 1;
-        outcome = { status: 'applied', revision: 1 };
+        outcome = {
+          status: 'applied',
+          revision: 1,
+          resolution: 'created',
+          conflicts: [],
+        };
       }
     } else if (entity === undefined || entity.tombstoned) {
-      outcome = { status: 'conflict', code: 'entity-not-found' };
+      outcome = {
+        status: 'conflict',
+        code: 'entity-not-found',
+        disposition: 'terminal',
+        conflicts: [],
+      };
     } else if (entity.revision !== input.operation.baseRevision) {
       outcome = {
         status: 'conflict',
         code: 'revision-mismatch',
+        disposition: 'terminal',
+        conflicts: [],
         currentRevision: entity.revision,
       };
     } else {
@@ -172,7 +193,12 @@ class InMemorySyncRepository implements SyncOperationProcessorRepository {
       entity.payload = input.operation.mutation.payload;
       entity.tombstoned = input.operation.mutation.kind === 'delete';
       this.mutationCount += 1;
-      outcome = { status: 'applied', revision: entity.revision };
+      outcome = {
+        status: 'applied',
+        revision: entity.revision,
+        resolution: 'applied',
+        conflicts: [],
+      };
     }
 
     this.receipts.set(receiptKey, { fingerprint: input.fingerprint, outcome });
@@ -206,7 +232,7 @@ describe('SyncUploadProcessor', () => {
             clientId: CLIENT_A,
             operationId: secondId,
             entityId: 'bread',
-            kind: 'update',
+            kind: 'delta',
             baseRevision: 1,
             dependencies: [firstId],
           }),
@@ -319,6 +345,50 @@ describe('SyncUploadProcessor', () => {
         status: 'blocked',
         code: 'dependency-failed',
         dependencyOperationId: conflictId,
+      }),
+    ]);
+  });
+
+  it('keeps a dependent retryable while its in-batch prerequisite is still in progress', async () => {
+    const repository = new InMemorySyncRepository();
+    const prerequisiteId = '40000000-0000-4000-8000-000000000029';
+    const dependentId = '40000000-0000-4000-8000-000000000030';
+    repository.inProgressOperationId = prerequisiteId;
+
+    const result = await createProcessor(repository).process(
+      {
+        operations: [
+          op({
+            clientId: CLIENT_A,
+            operationId: dependentId,
+            entityId: 'bread',
+            dependencies: [prerequisiteId],
+          }),
+          op({
+            clientId: CLIENT_A,
+            operationId: prerequisiteId,
+            entityId: 'bread',
+            kind: 'create',
+            baseRevision: 0,
+          }),
+        ],
+      },
+      processContext(CLIENT_A),
+    );
+
+    expect(result.results).toEqual([
+      expect.objectContaining({
+        operationId: prerequisiteId,
+        status: 'conflict',
+        code: 'operation-in-progress',
+        disposition: 'retryable',
+      }),
+      expect.objectContaining({
+        operationId: dependentId,
+        status: 'blocked',
+        code: 'dependency-missing',
+        dependencyOperationId: prerequisiteId,
+        disposition: 'retryable',
       }),
     ]);
   });
@@ -520,7 +590,7 @@ describe('SyncUploadProcessor', () => {
             clientId: CLIENT_A,
             operationId: secondId,
             entityId: 'eggs',
-            kind: 'update',
+            kind: 'delta',
             baseRevision: 1,
             dependencies: [firstId],
           }),

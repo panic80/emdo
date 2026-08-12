@@ -68,6 +68,22 @@ streams:
         WHERE r.space_id IN authorized_private_spaces
       - |
         SELECT
+          se.id,
+          se.household_id,
+          se.space_id,
+          se.original_owner_user_id,
+          se.entity_type,
+          se.entity_id,
+          se.payload,
+          se.actor_intent,
+          se.revision,
+          se.tombstoned_at,
+          se.created_at,
+          se.updated_at
+        FROM "emdo"."sync_entities" AS se
+        WHERE se.space_id IN authorized_private_spaces
+      - |
+        SELECT
           e.id,
           e.household_id,
           e.space_id,
@@ -139,6 +155,22 @@ streams:
           r.updated_at
         FROM "emdo"."space_records" AS r
         WHERE r.space_id IN authorized_shared_spaces
+      - |
+        SELECT
+          se.id,
+          se.household_id,
+          se.space_id,
+          se.original_owner_user_id,
+          se.entity_type,
+          se.entity_id,
+          se.payload,
+          se.actor_intent,
+          se.revision,
+          se.tombstoned_at,
+          se.created_at,
+          se.updated_at
+        FROM "emdo"."sync_entities" AS se
+        WHERE se.space_id IN authorized_shared_spaces
       - |
         SELECT
           e.id,

@@ -2,11 +2,15 @@ import { createHash } from 'node:crypto';
 
 import {
   JsonValueSchema,
+  ProviderWriteApprovalBindingSchema,
   ProviderWriteAuthorizationSchema,
+  ProviderWriteOperationScopeSchema,
   deepFreeze,
   type DeepReadonly,
   type JsonValue,
+  type ProviderWriteApprovalBinding,
   type ProviderWriteAuthorization,
+  type ProviderWriteOperationScope,
 } from '@emdo/contracts';
 import { z } from 'zod';
 
@@ -23,18 +27,30 @@ const ReferenceSchema = z
       }),
     'Reference contains control characters',
   );
-const GoogleEventIdSchema = z
+const CreatedGoogleEventIdSchema = z
   .string()
   .min(5)
   .max(240)
   .regex(/^[0-9a-v]+$/);
+const OpaqueGoogleEventIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(512)
+  .refine(
+    (value) =>
+      !Array.from(value).some((character) => {
+        const codePoint = character.codePointAt(0) ?? 0;
+        return codePoint <= 31 || codePoint === 127;
+      }),
+    'Google event ID contains control characters',
+  );
 const VersionSchema = z.string().trim().min(1).max(512);
 const EventTextSchema = z.string().trim().min(1).max(8_000);
-const Sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 
 const GoogleCalendarEventPayloadSchema = z
   .strictObject({
-    eventId: GoogleEventIdSchema,
+    eventId: OpaqueGoogleEventIdSchema,
     summary: EventTextSchema.max(2_000),
     start: z.iso.datetime({ offset: true }),
     end: z.iso.datetime({ offset: true }),
@@ -69,7 +85,6 @@ const GoogleCalendarEventPayloadSchema = z
 const CommonCommandShape = {
   schemaVersion: z.literal(1),
   calendarId: ReferenceSchema,
-  eventId: GoogleEventIdSchema,
   expectedCalendarVersion: VersionSchema,
   payloadHash: z.string().regex(/^[a-f0-9]{64}$/),
   idempotencyKey: z.string().regex(/^[a-f0-9]{64}$/),
@@ -82,6 +97,7 @@ export const GoogleCalendarWriteCommandSchema = z.discriminatedUnion(
       .strictObject({
         ...CommonCommandShape,
         operation: z.literal('create'),
+        eventId: CreatedGoogleEventIdSchema,
         expectedEventVersion: z.literal('absent'),
         payload: GoogleCalendarEventPayloadSchema,
       })
@@ -98,6 +114,7 @@ export const GoogleCalendarWriteCommandSchema = z.discriminatedUnion(
       .strictObject({
         ...CommonCommandShape,
         operation: z.literal('update'),
+        eventId: OpaqueGoogleEventIdSchema,
         expectedEventVersion: VersionSchema,
         payload: GoogleCalendarEventPayloadSchema,
       })
@@ -113,6 +130,7 @@ export const GoogleCalendarWriteCommandSchema = z.discriminatedUnion(
     z.strictObject({
       ...CommonCommandShape,
       operation: z.literal('delete'),
+      eventId: OpaqueGoogleEventIdSchema,
       expectedEventVersion: VersionSchema,
       payload: z.null(),
     }),
@@ -136,7 +154,7 @@ const ApprovedCalendarCanonicalArgumentsSchema = z.discriminatedUnion(
       .strictObject({
         operation: z.literal('update'),
         calendarId: ReferenceSchema,
-        eventId: GoogleEventIdSchema,
+        eventId: OpaqueGoogleEventIdSchema,
         expectedCalendarVersion: VersionSchema,
         expectedEventVersion: VersionSchema,
         replacement: GoogleCalendarEventPayloadSchema,
@@ -153,7 +171,7 @@ const ApprovedCalendarCanonicalArgumentsSchema = z.discriminatedUnion(
     z.strictObject({
       operation: z.literal('delete'),
       calendarId: ReferenceSchema,
-      eventId: GoogleEventIdSchema,
+      eventId: OpaqueGoogleEventIdSchema,
       expectedCalendarVersion: VersionSchema,
       expectedEventVersion: VersionSchema,
     }),
@@ -167,11 +185,15 @@ export type ApprovedCalendarCanonicalArguments = DeepReadonly<
 const ProviderEventSchema = GoogleCalendarEventPayloadSchema.extend({
   eventVersion: VersionSchema,
 });
+const ProviderEventIdentitySchema = z.strictObject({
+  eventId: OpaqueGoogleEventIdSchema,
+  eventVersion: VersionSchema,
+});
 const ProviderStateSchema = z.strictObject({
   calendarId: ReferenceSchema,
-  queriedEventId: GoogleEventIdSchema,
+  queriedEventId: OpaqueGoogleEventIdSchema,
   calendarVersion: VersionSchema,
-  event: ProviderEventSchema.nullable(),
+  event: z.union([ProviderEventSchema, ProviderEventIdentitySchema]).nullable(),
 });
 export type GoogleCalendarProviderState = DeepReadonly<
   z.infer<typeof ProviderStateSchema>
@@ -193,36 +215,20 @@ const ApplyResultSchema = z.discriminatedUnion('status', [
 ]);
 type ApplyResult = DeepReadonly<z.infer<typeof ApplyResultSchema>>;
 
-const CalendarWriteApprovalBindingSchema = z.strictObject({
-  decisionId: ReferenceSchema,
-  userId: ReferenceSchema,
-  agentId: z.literal('scheduler'),
-  runId: ReferenceSchema,
-  capabilityId: z.enum([
-    'google-calendar.event.create',
-    'google-calendar.event.update',
-    'google-calendar.event.delete',
-  ]),
-  capabilityFingerprint: Sha256Schema,
-  disclosureGrantId: ReferenceSchema,
-  payloadHash: Sha256Schema,
-  idempotencyTtlMs: z.number().int().positive().safe().max(31_536_000_000),
-});
-
 const ApprovedCalendarWriteContextSchema = z.strictObject({
   approvedCanonicalArguments: ApprovedCalendarCanonicalArgumentsSchema,
-  approvalBinding: CalendarWriteApprovalBindingSchema,
+  approvalBinding: ProviderWriteApprovalBindingSchema,
   providerWritePermit: ProviderWriteAuthorizationSchema,
+  providerWriteOperationScope: ProviderWriteOperationScopeSchema,
 });
 
-export type CalendarWriteApprovalBinding = DeepReadonly<
-  z.infer<typeof CalendarWriteApprovalBindingSchema>
->;
+export type CalendarWriteApprovalBinding = ProviderWriteApprovalBinding;
 
 export interface ApprovedCalendarWriteContext {
   readonly approvedCanonicalArguments: ApprovedCalendarCanonicalArguments;
   readonly approvalBinding: CalendarWriteApprovalBinding;
   readonly providerWritePermit: ProviderWriteAuthorization;
+  readonly providerWriteOperationScope: ProviderWriteOperationScope;
 }
 
 const isBoundedPlainData = (input: unknown): boolean => {
@@ -326,6 +332,17 @@ const hashApprovalBinding = (binding: CalendarWriteApprovalBinding): string =>
     binding,
   });
 
+const hashCalendarWriteAttempt = (
+  command: GoogleCalendarWriteCommand,
+  authorization: ApprovedCalendarWriteContext,
+): string =>
+  hashJson({
+    command,
+    approvedCanonicalArguments: authorization.approvedCanonicalArguments,
+    approvalBinding: authorization.approvalBinding,
+    providerWritePermit: authorization.providerWritePermit,
+  });
+
 const capabilityForOperation = {
   create: 'google-calendar.event.create',
   update: 'google-calendar.event.update',
@@ -395,20 +412,45 @@ const authorizationMatchesCommand = (
   ];
   const binding = authorization.approvalBinding;
   const permit = authorization.providerWritePermit;
+  const authority = binding.authorityBinding;
+  const operationScope = authorization.providerWriteOperationScope;
   const canonicalArguments = authorization.approvedCanonicalArguments;
   return (
     binding.capabilityId === capabilityForOperation[command.operation] &&
+    binding.agentId === 'scheduler' &&
+    operationScope.userId === binding.userId &&
+    operationScope.householdId === authority.householdId &&
+    operationScope.authorizationScopeFingerprint ===
+      authority.authorizationScopeFingerprint &&
     binding.capabilityFingerprint === permit.capabilityFingerprint &&
     binding.disclosureGrantId === permit.disclosureGrantId &&
     binding.payloadHash === hashJson(canonicalArguments) &&
+    hashJson(binding) === hashJson(permit.approvalBinding) &&
     hashApprovalBinding(binding) === permit.approvalBindingHash &&
     Date.parse(permit.idempotencyExpiresAt) - Date.parse(permit.issuedAt) ===
       binding.idempotencyTtlMs &&
     permit.providerIdempotencyKey === command.idempotencyKey &&
+    command.payloadHash === hashJson(command.payload) &&
     commandMatchesCanonicalArguments(command, canonicalArguments) &&
     hashJson(permit.targets) === hashJson(expectedTarget) &&
     hashJson(permit.providerPreconditions) === hashJson(expectedPreconditions)
   );
+};
+
+/**
+ * Defense-in-depth check for production provider adapters. The executor calls
+ * the same check before dispatch; exporting the predicate prevents an adapter
+ * from accepting a context that was not bound to this exact command.
+ */
+export const isGoogleCalendarWriteAuthorized = (
+  command: GoogleCalendarWriteCommand,
+  authorization: ApprovedCalendarWriteContext,
+): boolean => {
+  try {
+    return authorizationMatchesCommand(command, authorization);
+  } catch {
+    return false;
+  }
 };
 
 const parseApprovedContext = (
@@ -628,10 +670,22 @@ const readbackMatches = (
     return false;
   }
   if (command.operation === 'delete') return state.event === null;
+  const fullEvent = ProviderEventSchema.safeParse(state.event);
   return (
-    state.event !== null &&
-    hashJson(providerPayload(state.event)) === command.payloadHash
+    fullEvent.success &&
+    hashJson(providerPayload(fullEvent.data)) === command.payloadHash
   );
+};
+
+const verifiedReadbackEvent = (
+  command: GoogleCalendarWriteCommand,
+  state: GoogleCalendarProviderState,
+): z.infer<typeof ProviderEventSchema> | null | undefined => {
+  if (command.operation === 'delete') {
+    return state.event === null ? null : undefined;
+  }
+  const parsed = ProviderEventSchema.safeParse(state.event);
+  return parsed.success ? parsed.data : undefined;
 };
 
 export class CalendarWriteExecutor {
@@ -683,9 +737,21 @@ export class CalendarWriteExecutor {
       );
     }
     const authorization = parsedAuthorization;
-    const commandHash = hashJson({ command, authorization });
+    const authorityBinding = authorization.approvalBinding.authorityBinding;
+    // The current request/session/grant sidecar proves this invocation but is
+    // intentionally excluded from durable provider idempotency. An exact
+    // recovery under a freshly re-resolved operation scope must identify the
+    // same provider attempt rather than conflict or dispatch again.
+    const commandHash = hashCalendarWriteAttempt(command, authorization);
     const receiptKey = hashJson({
       userId: authorization.approvalBinding.userId,
+      authorityKind: authorityBinding.kind,
+      householdId: authorityBinding.householdId,
+      privateSpaceId: authorityBinding.privateSpaceId,
+      authorizationScopeFingerprint:
+        authorityBinding.authorizationScopeFingerprint,
+      providerGrantReference: authorityBinding.providerGrantReference,
+      authorizationEpoch: authorityBinding.authorizationEpoch,
       providerIdempotencyKey:
         authorization.providerWritePermit.providerIdempotencyKey,
     });
@@ -840,12 +906,19 @@ export class CalendarWriteExecutor {
         'Provider readback did not match the approved calendar action.',
       );
     }
+    const verifiedEvent = verifiedReadbackEvent(command, readback.data);
+    if (verifiedEvent === undefined) {
+      return indeterminate(
+        'calendar-readback-invalid',
+        'Provider readback did not include the approved event payload.',
+      );
+    }
     return deepFreeze({
       status: 'applied' as const,
       providerRequestId: applied.data.providerRequestId,
       reconciled: false,
       readbackCalendarVersion: readback.data.calendarVersion,
-      readback: readback.data.event,
+      readback: verifiedEvent,
     });
   }
 
@@ -864,12 +937,19 @@ export class CalendarWriteExecutor {
           'A prior calendar attempt still requires reconciliation.',
         );
       }
+      const verifiedEvent = verifiedReadbackEvent(command, readback.data);
+      if (verifiedEvent === undefined) {
+        return indeterminate(
+          'calendar-provider-indeterminate',
+          'A prior calendar attempt still requires reconciliation.',
+        );
+      }
       return deepFreeze({
         status: 'applied' as const,
         providerRequestId: null,
         reconciled: true,
         readbackCalendarVersion: readback.data.calendarVersion,
-        readback: readback.data.event,
+        readback: verifiedEvent,
       });
     } catch {
       return indeterminate(
@@ -887,7 +967,7 @@ const ProviderStateBodySchema = z.strictObject({
 const RecordedGatewayFixtureSchema = z.strictObject({
   binding: z.strictObject({
     calendarId: ReferenceSchema,
-    eventId: GoogleEventIdSchema,
+    eventId: OpaqueGoogleEventIdSchema,
     operation: z.enum(['create', 'update', 'delete']),
   }),
   before: ProviderStateBodySchema,
@@ -956,7 +1036,7 @@ export class RecordedGoogleCalendarGateway implements GoogleCalendarConditionalG
         reason: 'conditional-rejected',
       });
     }
-    const fingerprint = hashJson({ command, authorization });
+    const fingerprint = hashCalendarWriteAttempt(command, authorization);
     const existing = this.#applications.get(command.idempotencyKey);
     if (existing !== undefined) {
       return existing.hash === fingerprint
