@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# shellcheck source=./_common.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/_common.sh"
 
 run_id="${1:-}"
 assert_safe_identifier "$run_id" STAGING_RUN_ID
 [[ "$run_id" =~ ^[0-9]{1,20}$ ]] || die 'STAGING_RUN_ID must be numeric'
 
+staging_capacity_lock_fd=''
 acquire_host_lock /var/lib/emdo/locks/capacity.lock staging_capacity_lock_fd
 : "$staging_capacity_lock_fd"
 state_dir="$STAGING_STATE_ROOT/$run_id"

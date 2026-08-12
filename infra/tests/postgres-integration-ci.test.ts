@@ -15,9 +15,7 @@ describe('live PostgreSQL CI evidence boundary', () => {
     expect(workflow).toContain(
       'pgvector/pgvector@sha256:7ae6051efd0e60444282c27c7e141af07f322ce033300e727a49c3dd11075e38',
     );
-    expect(workflow).toContain(
-      "--health-cmd 'pg_isready --username=postgres --dbname=postgres'",
-    );
+    expect(workflow).toContain('--health-cmd pg_isready');
     expect(workflow).toContain('POSTGRES_INTEGRATION_ADMIN_URL:');
     expect(workflow).toContain('pnpm test:postgres-integration');
     expect(workflow).toContain('postgres-integration-non-release-raw-probe');

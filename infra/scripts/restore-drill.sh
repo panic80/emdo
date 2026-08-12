@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 umask 077
 
+# shellcheck source=./_common.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/_common.sh"
 
 backup_file="${1:-}"
@@ -13,6 +14,8 @@ identity_file="${BACKUP_AGE_IDENTITY_FILE:-}"
   die 'RESTORE_TARGET_ENVIRONMENT must be exactly staging'
 assert_safe_identifier "$restore_id" RESTORE_RUN_ID
 [[ "$restore_id" =~ ^[0-9]{1,20}$ ]] || die 'RESTORE_RUN_ID must be numeric'
+restore_capacity_lock_fd=''
+restore_operation_lock_fd=''
 acquire_host_lock /var/lib/emdo/locks/capacity.lock restore_capacity_lock_fd
 assert_no_active_staging_state
 acquire_host_lock /var/lib/emdo/locks/production-mutation.lock restore_operation_lock_fd

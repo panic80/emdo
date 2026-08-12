@@ -99,6 +99,14 @@ describe('EMDO workspace layout', () => {
     expect(rootManifest.scripts.typecheck).toBe(
       'tsc --project tsconfig.base.json --noEmit && pnpm --filter @emdo/web typecheck',
     );
+    const rootTypeScriptConfig = JSON.parse(
+      readFileSync(resolve(root, 'tsconfig.base.json'), 'utf8'),
+    ) as {
+      readonly compilerOptions?: { readonly customConditions?: string[] };
+    };
+    expect(rootTypeScriptConfig.compilerOptions?.customConditions).toContain(
+      'source',
+    );
 
     const webConfigPath = resolve(root, 'apps/web/tsconfig.json');
     const config = ts.readConfigFile(webConfigPath, ts.sys.readFile);

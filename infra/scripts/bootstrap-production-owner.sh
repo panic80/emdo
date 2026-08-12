@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# shellcheck source=./_common.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/_common.sh"
 
 [[ "${PRODUCTION_OWNER_BOOTSTRAP_APPROVED:-}" == true ]] ||
   die 'production owner bootstrap requires explicit protected approval'
 
+bootstrap_capacity_lock_fd=''
+bootstrap_operation_lock_fd=''
 acquire_host_lock /var/lib/emdo/locks/capacity.lock bootstrap_capacity_lock_fd
 assert_no_active_staging_state
 acquire_host_lock /var/lib/emdo/locks/production-mutation.lock bootstrap_operation_lock_fd
@@ -73,6 +76,8 @@ assert_production_healthy
 
 bootstrap_login_enabled=false
 disable_bootstrap_login() {
+  # Deliberately expand these variables only inside the container shell.
+  # shellcheck disable=SC2016
   production_compose exec -T postgres /bin/sh -ec '
     export PGPASSWORD="$(tr -d "\r\n" < /run/secrets/postgres_superuser_password)"
     exec psql --host 127.0.0.1 --username postgres --dbname emdo_app \
@@ -93,6 +98,8 @@ cleanup_bootstrap_login() {
 trap cleanup_bootstrap_login EXIT
 
 bootstrap_login_enabled=true
+# Deliberately expand these variables only inside the container shell.
+# shellcheck disable=SC2016
 production_compose exec -T postgres /bin/sh -ec '
   export PGPASSWORD="$(tr -d "\r\n" < /run/secrets/postgres_superuser_password)"
   exec psql --host 127.0.0.1 --username postgres --dbname emdo_app \

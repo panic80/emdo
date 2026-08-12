@@ -5,6 +5,7 @@ set -Eeuo pipefail
 readonly MIN_AVAILABLE_MEMORY_KIB=1835008
 readonly MIN_FREE_DISK_KIB=10485760
 
+# shellcheck source=./_common.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/_common.sh"
 
 require_command docker

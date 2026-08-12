@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# shellcheck source=./_common.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/_common.sh"
 
 run_id="${1:-}"
@@ -12,6 +13,7 @@ assert_safe_identifier "$run_id" STAGING_RUN_ID
 ((ttl_minutes >= 15 && ttl_minutes <= 240)) ||
   die 'staging TTL must be between 15 and 240 minutes'
 
+staging_capacity_lock_fd=''
 acquire_host_lock /var/lib/emdo/locks/capacity.lock staging_capacity_lock_fd
 : "$staging_capacity_lock_fd"
 require_command docker

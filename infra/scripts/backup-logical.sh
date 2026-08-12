@@ -2,8 +2,11 @@
 set -Eeuo pipefail
 umask 077
 
+# shellcheck source=./_common.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/_common.sh"
 
+backup_capacity_lock_fd=''
+backup_operation_lock_fd=''
 acquire_host_lock /var/lib/emdo/locks/capacity.lock backup_capacity_lock_fd
 acquire_host_lock /var/lib/emdo/locks/production-mutation.lock backup_operation_lock_fd
 : "$backup_capacity_lock_fd" "$backup_operation_lock_fd"

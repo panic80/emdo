@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# shellcheck source=./_common.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/_common.sh"
 
 candidate_lock="${1:-}"
@@ -126,6 +127,8 @@ else
   fi
 fi
 
+production_capacity_lock_fd=''
+production_operation_lock_fd=''
 acquire_host_lock /var/lib/emdo/locks/capacity.lock production_capacity_lock_fd
 assert_no_active_staging_state
 acquire_host_lock /var/lib/emdo/locks/production-mutation.lock production_operation_lock_fd

@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 umask 077
 
+# shellcheck source=./_common.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/_common.sh"
 
 [[ "${PRODUCTION_DEPLOYMENT_APPROVED:-}" == true ]] ||
@@ -11,6 +12,8 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/_common.sh"
 [[ "${ROLLBACK_REASON:-}" =~ ^[a-zA-Z0-9][a-zA-Z0-9\ .,/_:-]{0,255}$ ]] ||
   die 'ROLLBACK_REASON must be one printable audit line'
 
+rollback_capacity_lock_fd=''
+rollback_operation_lock_fd=''
 acquire_host_lock /var/lib/emdo/locks/capacity.lock rollback_capacity_lock_fd
 assert_no_active_staging_state
 acquire_host_lock /var/lib/emdo/locks/production-mutation.lock rollback_operation_lock_fd

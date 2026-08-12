@@ -5,12 +5,16 @@ if [[ -n "${EMDO_COMMON_SH_LOADED:-}" ]]; then
 fi
 readonly EMDO_COMMON_SH_LOADED=1
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly INFRA_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SCRIPT_DIR
+INFRA_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
+readonly INFRA_DIR
 readonly COMPOSE_DIR="$INFRA_DIR/compose"
 readonly PRODUCTION_STATE_DIR="/var/lib/emdo/deployments"
 readonly STAGING_STATE_ROOT="/var/lib/emdo/staging"
 readonly PRODUCTION_CONFIG_FILE="/etc/emdo/production/deployment.env"
+# Used by the deployment entrypoints that source this shared library.
+# shellcheck disable=SC2034
 readonly STAGING_CONFIG_FILE="/etc/emdo/staging/deployment.env"
 readonly -a BASE_SECRET_MANIFEST=(
   postgres_superuser_password
@@ -188,14 +192,14 @@ assert_infrastructure_promotion_unchanged() (
 
   assert_digest_lock "$current_lock"
   for key in POSTGRES_IMAGE POWERSYNC_IMAGE CADDY_IMAGE; do
-    current_values[$index]="$(image_lock_value "$key")"
+    current_values[index]="$(image_lock_value "$key")"
     index=$((index + 1))
   done
 
   assert_digest_lock "$candidate_lock"
   index=0
   for key in POSTGRES_IMAGE POWERSYNC_IMAGE CADDY_IMAGE; do
-    [[ "$(image_lock_value "$key")" == "${current_values[$index]}" ]] ||
+    [[ "$(image_lock_value "$key")" == "${current_values[index]}" ]] ||
       die "$key infrastructure image changes require a separate maintenance procedure"
     index=$((index + 1))
   done
@@ -239,7 +243,7 @@ export_digest_lock() {
   local key
   for key in "${DIGEST_KEYS[@]}"; do
     printf -v "$key" '%s' "$(image_lock_value "$key")"
-    export "$key"
+    export "${key?}"
   done
 }
 
@@ -298,7 +302,7 @@ export_required_config() {
   for key in EMDO_DOMAIN ACME_EMAIL POWERSYNC_JWKS_URI SECRETS_DIR; do
     [[ -n "$(config_value "$key")" ]] || die "deployment config is missing $key"
     printf -v "$key" '%s' "$(config_value "$key")"
-    export "$key"
+    export "${key?}"
   done
   assert_absolute_scoped_directory "$SECRETS_DIR" SECRETS_DIR
   require_directory "$SECRETS_DIR"
@@ -725,7 +729,7 @@ assert_staging_attestation_matches() {
   [[ "$candidate_initial_bootstrap" == true || "$candidate_initial_bootstrap" == false ]] ||
     die 'candidate lock has no valid initial deployment assertion'
   for key in "${DIGEST_KEYS[@]}"; do
-    candidate[$index]="$(image_lock_value "$key")"
+    candidate[index]="$(image_lock_value "$key")"
     index=$((index + 1))
   done
 
@@ -757,7 +761,7 @@ assert_staging_attestation_matches() {
 
   index=0
   for key in "${DIGEST_KEYS[@]}"; do
-    [[ "$(image_lock_value "$key")" == "${candidate[$index]}" ]] ||
+    [[ "$(image_lock_value "$key")" == "${candidate[index]}" ]] ||
       die "staging attestation does not match $key"
     index=$((index + 1))
   done
