@@ -9391,7 +9391,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "clock_timestamp()"
+          "default": "statement_timestamp()"
         },
         "completed_at": {
           "name": "completed_at",
@@ -9404,14 +9404,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "clock_timestamp() + interval '90 days'"
+          "default": "statement_timestamp() + interval '90 days'"
         },
         "compaction_after": {
           "name": "compaction_after",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "clock_timestamp() + interval '91 days'"
+          "default": "statement_timestamp() + interval '91 days'"
         },
         "compaction_policy": {
           "name": "compaction_policy",

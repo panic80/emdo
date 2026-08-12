@@ -400,8 +400,8 @@ const executePayloadBound = async <Response>(input: {
               initial_request_id, latest_request_id, request_fingerprint,
               response, recorded_at, completed_at, retain_until)
            values ($1, $2, $3, $4, $5, $6, $6, $7, null,
-                   pg_catalog.clock_timestamp(), null,
-                   pg_catalog.clock_timestamp() + interval '90 days')
+                   pg_catalog.statement_timestamp(), null,
+                   pg_catalog.statement_timestamp() + interval '90 days')
            returning id`,
           [
             input.principal.householdId,

@@ -14,9 +14,10 @@ export_digest_lock
 export EMDO_STAGING_SOURCE_SHA="$IMAGE_LOCK_SOURCE_SHA"
 export EMDO_STAGING_WORKFLOW_RUN_ID="$run_id"
 load_deployment_config "$STAGING_CONFIG_FILE"
-export COMPOSE_PROJECT_NAME="emdo-staging-$run_id"
-export DEPLOYMENT_NAMESPACE="staging-$run_id"
-export EMDO_ENVIRONMENT=staging
+# shellcheck disable=SC2031 -- assert_production_healthy isolates the same names in a subshell.
+export COMPOSE_PROJECT_NAME="emdo-staging-$run_id" \
+  DEPLOYMENT_NAMESPACE="staging-$run_id" \
+  EMDO_ENVIRONMENT=staging
 export STAGING_RUN_ID="$run_id"
 export STAGING_HTTP_PORT="${DEPLOY_CONFIG_STAGING_HTTP_PORT:-18080}"
 assert_unprivileged_tcp_port "$STAGING_HTTP_PORT"

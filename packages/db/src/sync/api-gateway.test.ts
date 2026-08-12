@@ -173,6 +173,11 @@ describe('production Postgres sync gateway runtime', () => {
       replayed: true,
     });
     expect(fixture.syncClientInsertCount).toBe(1);
+    const receiptInsert = fixture.query.mock.calls.find(([sql]) =>
+      sql.includes('insert into emdo.sync_api_request_receipts'),
+    );
+    expect(receiptInsert?.[0]).toContain('pg_catalog.statement_timestamp()');
+    expect(receiptInsert?.[0]).not.toContain('pg_catalog.clock_timestamp()');
 
     await expect(
       runtime.gateway.registerClient({

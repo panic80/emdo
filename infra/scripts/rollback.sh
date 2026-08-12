@@ -97,9 +97,10 @@ assert_governed_parent_chain "$PRODUCTION_STATE_DIR" /var/lib/emdo
 assert_secret_directory_permissions "$SECRETS_DIR"
 assert_directory_within "$SECRETS_DIR" /etc/emdo/production SECRETS_DIR
 assert_base_secret_manifest "$SECRETS_DIR"
-export COMPOSE_PROJECT_NAME=emdo-production
-export DEPLOYMENT_NAMESPACE=production
-export EMDO_ENVIRONMENT=production
+# shellcheck disable=SC2031 -- assert_production_healthy isolates the same names in a subshell.
+export COMPOSE_PROJECT_NAME=emdo-production \
+  DEPLOYMENT_NAMESPACE=production \
+  EMDO_ENVIRONMENT=production
 
 failed_lock="$(mktemp "$PRODUCTION_STATE_DIR/failed-$(date --utc +%Y%m%dT%H%M%SZ).XXXXXX.env")"
 install -m 0600 "$current_lock" "$failed_lock"

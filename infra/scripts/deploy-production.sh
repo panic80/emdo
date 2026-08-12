@@ -46,9 +46,10 @@ assert_production_public_config
 assert_secret_directory_permissions "$SECRETS_DIR"
 assert_directory_within "$SECRETS_DIR" /etc/emdo/production SECRETS_DIR
 assert_base_secret_manifest "$SECRETS_DIR"
-export COMPOSE_PROJECT_NAME=emdo-production
-export DEPLOYMENT_NAMESPACE=production
-export EMDO_ENVIRONMENT=production
+# shellcheck disable=SC2031 -- assert_production_healthy isolates the same names in a subshell.
+export COMPOSE_PROJECT_NAME=emdo-production \
+  DEPLOYMENT_NAMESPACE=production \
+  EMDO_ENVIRONMENT=production
 
 current_lock="$PRODUCTION_STATE_DIR/current.env"
 previous_lock="$PRODUCTION_STATE_DIR/previous.env"

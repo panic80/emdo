@@ -101,6 +101,13 @@ describe('sync conflict outcome migration', () => {
     expect(sql).toContain('"request_fingerprint" text NOT NULL');
     expect(sql).toContain('"response" jsonb');
     expect(sql).toContain('"completed_at" timestamp with time zone');
+    expect(sql).toContain('DEFAULT pg_catalog.statement_timestamp() NOT NULL');
+    expect(sql).toContain(
+      "DEFAULT (pg_catalog.statement_timestamp() + interval '90 days') NOT NULL",
+    );
+    expect(sql).toContain(
+      "DEFAULT (pg_catalog.statement_timestamp() + interval '91 days') NOT NULL",
+    );
     expect(sql).toContain("'register-client', 'apply-operations'");
     expect(sql).toContain(
       'UNIQUE("household_id","user_id","client_id","request_kind","idempotency_key")',

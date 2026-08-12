@@ -24,9 +24,10 @@ require_regular_file "$backup_file"
 require_regular_file "$backup_file.sha256"
 require_regular_file "$backup_file.complete"
 
-export COMPOSE_PROJECT_NAME="emdo-restore-$restore_id"
-export DEPLOYMENT_NAMESPACE="restore-$restore_id"
-export EMDO_ENVIRONMENT=staging
+# shellcheck disable=SC2031 -- assert_production_healthy isolates the same names in a subshell.
+export COMPOSE_PROJECT_NAME="emdo-restore-$restore_id" \
+  DEPLOYMENT_NAMESPACE="restore-$restore_id" \
+  EMDO_ENVIRONMENT=staging
 export EMDO_DOMAIN='http://:8080'
 export ACME_EMAIL='restore-invalid@emdo.invalid'
 export POWERSYNC_JWKS_URI='http://api:3000/.well-known/jwks.json'

@@ -2963,14 +2963,14 @@ export const syncApiRequestReceipts = emdoSchema.table(
     requestFingerprint: text('request_fingerprint').notNull(),
     response: jsonb('response').$type<JsonValue>(),
     recordedAt: timestamp('recorded_at', { withTimezone: true })
-      .default(sql`clock_timestamp()`)
+      .default(sql`statement_timestamp()`)
       .notNull(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
     retainUntil: timestamp('retain_until', { withTimezone: true })
-      .default(sql`clock_timestamp() + interval '90 days'`)
+      .default(sql`statement_timestamp() + interval '90 days'`)
       .notNull(),
     compactionAfter: timestamp('compaction_after', { withTimezone: true })
-      .default(sql`clock_timestamp() + interval '91 days'`)
+      .default(sql`statement_timestamp() + interval '91 days'`)
       .notNull(),
     compactionPolicy: text('compaction_policy')
       .default('manual-review-required')

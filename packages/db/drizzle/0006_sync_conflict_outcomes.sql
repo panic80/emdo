@@ -561,12 +561,12 @@ CREATE TABLE "emdo"."sync_api_request_receipts" (
 	"request_fingerprint" text NOT NULL,
 	"response" jsonb,
 	"recorded_at" timestamp with time zone
-		DEFAULT pg_catalog.clock_timestamp() NOT NULL,
+		DEFAULT pg_catalog.statement_timestamp() NOT NULL,
 	"completed_at" timestamp with time zone,
 	"retain_until" timestamp with time zone
-		DEFAULT (pg_catalog.clock_timestamp() + interval '90 days') NOT NULL,
+		DEFAULT (pg_catalog.statement_timestamp() + interval '90 days') NOT NULL,
 	"compaction_after" timestamp with time zone
-		DEFAULT (pg_catalog.clock_timestamp() + interval '91 days') NOT NULL,
+		DEFAULT (pg_catalog.statement_timestamp() + interval '91 days') NOT NULL,
 	"compaction_policy" text DEFAULT 'manual-review-required' NOT NULL,
 	CONSTRAINT sync_api_request_receipts_scope_key_unique
 		UNIQUE("household_id","user_id","client_id","request_kind","idempotency_key"),
