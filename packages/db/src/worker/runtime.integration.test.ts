@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { loadOrderedMigrations } from '../migrations.js';
@@ -12,6 +14,8 @@ const describeDatabase = databaseUrl === undefined ? describe.skip : describe;
 const executorLogin = 'emdo_worker_executor_login';
 const dispatcherLogin = 'emdo_worker_dispatcher_login';
 const extraRole = 'emdo_worker_integration_extra';
+const executorPassword = `emdo-test-${randomUUID()}`;
+const dispatcherPassword = `emdo-test-${randomUUID()}`;
 
 describeDatabase(
   'worker fixed PostgreSQL roles (requires isolated TEST_WORKER_ROLE_DATABASE_URL)',
@@ -19,10 +23,10 @@ describeDatabase(
     let admin: import('pg').Client;
     const clients: EmdoWorkerDatabaseClient[] = [];
 
-    const urlFor = (login: string) => {
+    const urlFor = (login: string, password: string) => {
       const url = new URL(databaseUrl!);
       url.username = login;
-      url.password = '';
+      url.password = password;
       return url.toString();
     };
     const clientFor = (
@@ -30,7 +34,10 @@ describeDatabase(
       fixedRole: 'emdo_worker_executor' | 'emdo_worker_dispatch_executor',
     ) => {
       const client = createDatabaseClient({
-        connectionString: urlFor(login),
+        connectionString: urlFor(
+          login,
+          login === executorLogin ? executorPassword : dispatcherPassword,
+        ),
         applicationName: `emdo-worker-role-${fixedRole}`,
         fixedRole,
       });
@@ -54,10 +61,10 @@ describeDatabase(
         await admin.query(migration.sql);
       }
       await admin.query(
-        `create role ${executorLogin} login nosuperuser nocreatedb nocreaterole noinherit nobypassrls noreplication`,
+        `create role ${executorLogin} login nosuperuser nocreatedb nocreaterole noinherit nobypassrls noreplication password '${executorPassword}'`,
       );
       await admin.query(
-        `create role ${dispatcherLogin} login nosuperuser nocreatedb nocreaterole noinherit nobypassrls noreplication`,
+        `create role ${dispatcherLogin} login nosuperuser nocreatedb nocreaterole noinherit nobypassrls noreplication password '${dispatcherPassword}'`,
       );
       await admin.query(
         `create role ${extraRole} nologin nosuperuser nocreatedb nocreaterole noinherit nobypassrls noreplication`,

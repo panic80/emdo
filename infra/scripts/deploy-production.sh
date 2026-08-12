@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# shellcheck source=./_common.sh
+# shellcheck source=infra/scripts/_common.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/_common.sh"
 
 candidate_lock="${1:-}"

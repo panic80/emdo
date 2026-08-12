@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabaseClient, type EmdoDatabaseClient } from '../client.js';
@@ -29,6 +31,7 @@ const principal = {
   householdId: ids.household,
 };
 const loginRole = 'emdo_disclosure_integration_login';
+const loginPassword = `emdo-test-${randomUUID()}`;
 
 describeDatabase(
   'PostgreSQL 17 disclosure authority (requires isolated TEST_DISCLOSURE_DATABASE_URL)',
@@ -90,12 +93,12 @@ describeDatabase(
       );
       await admin.query(`drop role if exists ${loginRole}`);
       await admin.query(
-        `create role ${loginRole} login nosuperuser nocreatedb nocreaterole inherit nobypassrls noreplication`,
+        `create role ${loginRole} login nosuperuser nocreatedb nocreaterole inherit nobypassrls noreplication password '${loginPassword}'`,
       );
       await admin.query(`grant emdo_app to ${loginRole}`);
       const runtimeUrl = new URL(databaseUrl!);
       runtimeUrl.username = loginRole;
-      runtimeUrl.password = '';
+      runtimeUrl.password = loginPassword;
       runtime = createDatabaseClient({
         connectionString: runtimeUrl.toString(),
         applicationName: 'emdo-disclosure-integration',

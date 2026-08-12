@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -38,6 +38,7 @@ const actor = {
   privateSpaceId: ids.space,
 };
 const loginRole = 'emdo_oauth_authority_integration_login';
+const loginPassword = `emdo-test-${randomUUID()}`;
 const providerReferenceA = 'gcal-provider-reference-integration-a';
 const providerReferenceB = 'gcal-provider-reference-integration-b';
 const payload = {
@@ -130,12 +131,12 @@ describeDatabase(
       );
       await admin.query(`drop role if exists ${loginRole}`);
       await admin.query(
-        `create role ${loginRole} login nosuperuser nocreatedb nocreaterole inherit nobypassrls noreplication`,
+        `create role ${loginRole} login nosuperuser nocreatedb nocreaterole inherit nobypassrls noreplication password '${loginPassword}'`,
       );
       await admin.query(`grant emdo_app to ${loginRole}`);
       const runtimeUrl = new URL(databaseUrl!);
       runtimeUrl.username = loginRole;
-      runtimeUrl.password = '';
+      runtimeUrl.password = loginPassword;
       runtime = createDatabaseClient({
         connectionString: runtimeUrl.toString(),
         applicationName: 'emdo-oauth-authority-integration',

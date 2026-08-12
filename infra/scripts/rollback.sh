@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 umask 077
 
-# shellcheck source=./_common.sh
+# shellcheck source=infra/scripts/_common.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/_common.sh"
 
 [[ "${PRODUCTION_DEPLOYMENT_APPROVED:-}" == true ]] ||
