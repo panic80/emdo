@@ -6559,14 +6559,24 @@ BEGIN
 	) THEN
 		CREATE ROLE emdo_workflow_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION;
 	END IF;
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_catalog.pg_roles
+		WHERE rolname = 'emdo_visual_decision_login'
+	) THEN
+		CREATE ROLE emdo_visual_decision_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION;
+	END IF;
 END
 $roles$;
 --> statement-breakpoint
 ALTER ROLE emdo_workflow_executor NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION;
 ALTER ROLE emdo_workflow_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
 	NOINHERIT NOBYPASSRLS NOREPLICATION;
+ALTER ROLE emdo_visual_decision_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+	NOINHERIT NOBYPASSRLS NOREPLICATION;
 REVOKE emdo_workflow FROM emdo_workflow_login;
 REVOKE emdo_workflow_executor FROM emdo_workflow_login;
+REVOKE emdo_workflow FROM emdo_visual_decision_login;
+REVOKE emdo_workflow_executor FROM emdo_visual_decision_login;
 --> statement-breakpoint
 DO $membership_guard$
 BEGIN
@@ -6575,12 +6585,16 @@ BEGIN
 		FROM pg_catalog.pg_auth_members AS membership
 		JOIN pg_catalog.pg_roles AS parent ON parent.oid = membership.roleid
 		JOIN pg_catalog.pg_roles AS child ON child.oid = membership.member
-		WHERE parent.rolname = 'emdo_workflow_executor'
-			OR child.rolname = 'emdo_workflow_executor'
+		WHERE parent.rolname IN (
+			'emdo_workflow_executor', 'emdo_visual_decision_login'
+		)
+			OR child.rolname IN (
+				'emdo_workflow_executor', 'emdo_visual_decision_login'
+			)
 	) THEN
 		RAISE EXCEPTION USING
 			ERRCODE = '55000',
-			MESSAGE = 'workflow executor must not have role memberships';
+			MESSAGE = 'workflow executor must not have role memberships; visual decision login must not have role memberships';
 	END IF;
 END
 $membership_guard$;
@@ -8092,6 +8106,10 @@ REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA "emdo" FROM emdo_workflow_login;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "emdo" FROM emdo_workflow_login;
 REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA "emdo" FROM emdo_workflow_login;
 REVOKE ALL ON SCHEMA "emdo" FROM emdo_workflow_login;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA "emdo" FROM emdo_visual_decision_login;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "emdo" FROM emdo_visual_decision_login;
+REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA "emdo" FROM emdo_visual_decision_login;
+REVOKE ALL ON SCHEMA "emdo" FROM emdo_visual_decision_login;
 --> statement-breakpoint
 GRANT USAGE ON SCHEMA "emdo" TO emdo_workflow_login;
 --> statement-breakpoint
@@ -12143,7 +12161,7 @@ REVOKE ALL ON FUNCTION
 	emdo_worker_dispatch_executor, emdo_worker_scope_executor,
 	emdo_oauth_flow_executor, emdo_space_grant_executor,
 	emdo_disclosure_executor, emdo_visual_proof_executor,
-	emdo_workflow_executor, emdo_workflow_login,
+	emdo_workflow_executor, emdo_workflow_login, emdo_visual_decision_login,
 	emdo_proposal_reconciliation_executor;
 REVOKE ALL ON FUNCTION
 	"emdo"."commit_provider_proposal_create"(text, jsonb),
@@ -12158,7 +12176,7 @@ REVOKE ALL ON FUNCTION
 	emdo_worker_dispatch_executor, emdo_worker_scope_executor,
 	emdo_oauth_flow_executor, emdo_space_grant_executor,
 	emdo_disclosure_executor, emdo_visual_proof_executor,
-	emdo_workflow_executor, emdo_workflow_login,
+	emdo_workflow_executor, emdo_workflow_login, emdo_visual_decision_login,
 	emdo_proposal_reconciliation_executor;
 GRANT EXECUTE ON FUNCTION
 	"emdo"."commit_provider_proposal_create"(text, jsonb),
@@ -12169,6 +12187,10 @@ GRANT EXECUTE ON FUNCTION
 	"emdo"."commit_provider_proposal_dispatch"(text, jsonb),
 	"emdo"."commit_provider_proposal_completion"(jsonb)
 	TO emdo_workflow_login;
+GRANT USAGE ON SCHEMA "emdo" TO emdo_visual_decision_login;
+GRANT EXECUTE ON FUNCTION
+	"emdo"."commit_provider_proposal_decision"(text, jsonb)
+	TO emdo_visual_decision_login;
 GRANT EXECUTE ON FUNCTION
 	"emdo"."commit_provider_proposal_reconciliation"(jsonb)
 	TO emdo_worker_executor;
@@ -14077,4 +14099,102 @@ GRANT EXECUTE ON FUNCTION
 	"emdo"."read_manager_turn_operation"(uuid, text, uuid, text),
 	"emdo"."manager_turn_store_ready"()
 	TO emdo_app;
+--> statement-breakpoint
+
+-- PostgreSQL grants EXECUTE on new functions to PUBLIC by default. These
+-- helpers are reached only from the bounded SECURITY DEFINER aggregates (or
+-- the manager-turn transition trigger), so make every caller explicit before
+-- the public visual-decision login is granted its single entrypoint.
+ALTER FUNCTION "emdo"."provider_proposal_mutation_hash"(text, jsonb)
+	OWNER TO emdo_workflow_executor;
+ALTER FUNCTION "emdo"."proposal_row_matches_input"(
+	emdo.action_proposals, integer, text, jsonb
+) OWNER TO emdo_workflow_executor;
+ALTER FUNCTION "emdo"."jsonb_object_has_exact_keys"(jsonb, text[])
+	OWNER TO emdo_workflow_executor;
+ALTER FUNCTION "emdo"."json_text_utf16_length"(text)
+	OWNER TO emdo_workflow_executor;
+ALTER FUNCTION "emdo"."proposal_approval_display_text_is_safe"(text, boolean)
+	OWNER TO emdo_workflow_executor;
+ALTER FUNCTION "emdo"."proposal_approval_display_is_valid"(jsonb)
+	OWNER TO emdo_workflow_executor;
+ALTER FUNCTION "emdo"."proposal_event_has_only_known_keys"(jsonb)
+	OWNER TO emdo_workflow_executor;
+ALTER FUNCTION "emdo"."provider_completion_is_valid"(jsonb, boolean)
+	OWNER TO emdo_workflow_executor;
+ALTER FUNCTION "emdo"."canonical_json_text"(jsonb)
+	OWNER TO emdo_workflow_executor;
+ALTER FUNCTION "emdo"."canonical_json_hash"(jsonb)
+	OWNER TO emdo_workflow_executor;
+ALTER FUNCTION "emdo"."enforce_manager_turn_transition"()
+	OWNER TO emdo_manager_turn_executor;
+REVOKE ALL ON FUNCTION
+	"emdo"."provider_proposal_mutation_hash"(text, jsonb),
+	"emdo"."proposal_row_matches_input"(
+		emdo.action_proposals, integer, text, jsonb
+	),
+	"emdo"."jsonb_object_has_exact_keys"(jsonb, text[]),
+	"emdo"."json_text_utf16_length"(text),
+	"emdo"."proposal_approval_display_text_is_safe"(text, boolean),
+	"emdo"."proposal_approval_display_is_valid"(jsonb),
+	"emdo"."proposal_event_has_only_known_keys"(jsonb),
+	"emdo"."provider_completion_is_valid"(jsonb, boolean),
+	"emdo"."canonical_json_text"(jsonb),
+	"emdo"."canonical_json_hash"(jsonb),
+	"emdo"."enforce_manager_turn_transition"()
+	FROM PUBLIC, emdo_app, emdo_auth, emdo_worker, emdo_workflow,
+	emdo_policy_reader, emdo_metering_executor, emdo_worker_executor,
+	emdo_worker_dispatch_executor, emdo_worker_scope_executor,
+	emdo_oauth_flow_executor, emdo_space_grant_executor,
+	emdo_disclosure_executor, emdo_visual_proof_executor,
+	emdo_workflow_executor, emdo_workflow_login,
+	emdo_visual_decision_login, emdo_proposal_reconciliation_executor,
+	emdo_approval_resume_executor, emdo_proposal_query_executor,
+	emdo_manager_turn_executor;
+GRANT EXECUTE ON FUNCTION
+	"emdo"."provider_proposal_mutation_hash"(text, jsonb),
+	"emdo"."proposal_row_matches_input"(
+		emdo.action_proposals, integer, text, jsonb
+	),
+	"emdo"."jsonb_object_has_exact_keys"(jsonb, text[]),
+	"emdo"."json_text_utf16_length"(text),
+	"emdo"."proposal_approval_display_text_is_safe"(text, boolean),
+	"emdo"."proposal_approval_display_is_valid"(jsonb),
+	"emdo"."proposal_event_has_only_known_keys"(jsonb),
+	"emdo"."provider_completion_is_valid"(jsonb, boolean),
+	"emdo"."canonical_json_text"(jsonb),
+	"emdo"."canonical_json_hash"(jsonb)
+	TO emdo_workflow_executor;
+GRANT EXECUTE ON FUNCTION
+	"emdo"."proposal_row_matches_input"(
+		emdo.action_proposals, integer, text, jsonb
+	),
+	"emdo"."jsonb_object_has_exact_keys"(jsonb, text[]),
+	"emdo"."proposal_event_has_only_known_keys"(jsonb),
+	"emdo"."provider_completion_is_valid"(jsonb, boolean),
+	"emdo"."canonical_json_text"(jsonb),
+	"emdo"."canonical_json_hash"(jsonb)
+	TO emdo_proposal_reconciliation_executor;
+GRANT EXECUTE ON FUNCTION
+	"emdo"."canonical_json_text"(jsonb),
+	"emdo"."canonical_json_hash"(jsonb),
+	"emdo"."jsonb_object_has_exact_keys"(jsonb, text[]),
+	"emdo"."enforce_manager_turn_transition"()
+	TO emdo_manager_turn_executor;
+--> statement-breakpoint
+
+-- This login is exposed to the internet-facing API. Revoke again after every
+-- function in this migration exists so default PUBLIC execution on a later
+-- helper can never widen it beyond the single visual-decision aggregate.
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA "emdo"
+	FROM emdo_visual_decision_login;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "emdo"
+	FROM emdo_visual_decision_login;
+REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA "emdo"
+	FROM emdo_visual_decision_login;
+REVOKE ALL ON SCHEMA "emdo" FROM emdo_visual_decision_login;
+GRANT USAGE ON SCHEMA "emdo" TO emdo_visual_decision_login;
+GRANT EXECUTE ON FUNCTION
+	"emdo"."commit_provider_proposal_decision"(text, jsonb)
+	TO emdo_visual_decision_login;
 --> statement-breakpoint

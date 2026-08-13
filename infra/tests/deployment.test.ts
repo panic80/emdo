@@ -235,6 +235,9 @@ describe('container and edge configuration', () => {
     expect(staging).not.toContain('PRODUCTION_SECRETS_DIR');
     expect(common).toContain('EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL');
     expect(common).toContain('EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL');
+    expect(common).toContain('EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL');
+    expect(common).toContain('EMDO_VISUAL_DECISION_DATABASE_URL');
+    expect(common).not.toContain('EMDO_WORKFLOW_DATABASE_URL');
     expect(staging.match(/restart: 'no'/g)).toHaveLength(6);
     expect(staging).toMatch(/api:[\s\S]*?ports: !override \[\]/);
     expect(staging).toMatch(
@@ -306,6 +309,7 @@ describe('container and edge configuration', () => {
       'worker_dispatcher_database_password',
       'audio_reconciliation_database_password',
       'workflow_database_password',
+      'visual_decision_database_password',
       'powersync_replication_password',
       'powersync_storage_password',
       'owner_bootstrap_database_password',
@@ -327,6 +331,7 @@ describe('container and edge configuration', () => {
       'worker_dispatcher_database_password',
       'audio_reconciliation_database_password',
       'workflow_database_password',
+      'visual_decision_database_password',
       'powersync_replication_password',
       'powersync_storage_password',
       'owner_bootstrap_database_password',
@@ -400,6 +405,18 @@ describe('container and edge configuration', () => {
       'GRANT emdo_workflow TO emdo_workflow_login',
     );
     expect(initialization).toContain('CREATE ROLE emdo_workflow_login LOGIN');
+    expect(initialization).toContain(
+      'CREATE ROLE emdo_visual_decision_login LOGIN',
+    );
+    expect(provision).toContain(
+      'ALTER ROLE emdo_visual_decision_login LOGIN NOSUPERUSER',
+    );
+    expect(provision).toContain(
+      'emdo.commit_provider_proposal_decision(text, jsonb)\nTO emdo_visual_decision_login',
+    );
+    expect(provision).not.toMatch(
+      /GRANT EXECUTE ON FUNCTION[^;]*commit_provider_proposal_create\(text, jsonb\)[^;]*TO emdo_visual_decision_login/,
+    );
     expect(provision).not.toContain(
       'GRANT EXECUTE ON FUNCTION emdo.claim_workflow_operation_scope(text)',
     );

@@ -13,20 +13,28 @@ authenticated staging acceptance run remain separate gates.
 
 ## Composed durable capabilities
 
-| Readiness component                  | Built-in binding                                                                                                                                | Required configuration                                                                                                                                   | Readiness evidence                                                                                                                                                                                                                                                                         |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `authority.authentication`           | Better Auth, CSRF, the PostgreSQL claim bridge, request-current scope resolver, atomic invitation redemption, and Resend action-email callbacks | Exact auth/API/onboarding DSNs, independent auth/session secrets, HTTPS public origin, Google identity client, and the selected Resend credential/sender | One coalesced probe requires the dedicated auth login, exact API scope routines, onboarding aggregate, and the verified Resend sending domain. Missing or malformed configuration opens no auth pools; a false probe routes every auth operation through the bounded unavailable boundary. |
-| `authority.household-administration` | `PostgresHouseholdAdministrationService` plus the public-only `InvitationDeliverySecretSealer`                                                  | `EMDO_API_DATABASE_URL`, `EMDO_INVITATION_DELIVERY_KEY_ID`, `EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL`                                         | `household_administration_ready()` through `checkReady()`; malformed or missing key material leaves only this component unavailable.                                                                                                                                                       |
-| `authority.proposal-queries`         | `PostgresProposalQueryRepository` with a dedicated authenticated cursor codec                                                                   | `EMDO_API_DATABASE_URL`, strict `EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL`                                                                               | `check()` proves the exact query functions and privileges. Cursor verification happens before SQL, and SQL re-derives the current collection authorization scope. Missing, malformed, retired-under-grace, or duplicate key material leaves only proposal reads unavailable.               |
-| `experience.*`                       | The seven gateways returned by `createPostgresExperienceReadGateways()` with a separate authenticated cursor codec                              | `EMDO_API_DATABASE_URL`, strict `EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL`                                                                             | Exact per-component database probes keep one projection failure from hiding the health of the other six. Missing or malformed cursor keys leave the experience ports unavailable; cursor integrity is not inferred from database readiness.                                                |
-| `sync.gateway`, `sync.jwks`          | The gateway and public JWKS returned by `createPostgresSyncGatewayRuntime()`                                                                    | `EMDO_API_DATABASE_URL`, exact HTTPS `EMDO_PUBLIC_ORIGIN`, strict `EMDO_SYNC_JWT_KEYRING_B64URL`                                                         | One coalesced `checkReady()` proves the exact API login/role, function and column privileges, forced RLS, and prohibited mutation/executor capabilities. The old PEM fields are unsupported.                                                                                               |
-| `voice.audio-requests`               | `PostgresAudioRequestCoordinator`                                                                                                               | `EMDO_API_DATABASE_URL`                                                                                                                                  | `audio_request_receipts_ready()` through `checkReady()` proves the receipt capability and isolation from operator reconciliation. It does not prove the OpenAI provider.                                                                                                                   |
+| Readiness component                  | Built-in binding                                                                                                                                | Required configuration                                                                                                                                   | Readiness evidence                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `authority.authentication`           | Better Auth, CSRF, the PostgreSQL claim bridge, request-current scope resolver, atomic invitation redemption, and Resend action-email callbacks | Exact auth/API/onboarding DSNs, independent auth/session secrets, HTTPS public origin, Google identity client, and the selected Resend credential/sender | One coalesced probe requires the dedicated auth login, exact API scope routines, onboarding aggregate, and the verified Resend sending domain. Missing or malformed configuration opens no auth pools; a false probe routes every auth operation through the bounded unavailable boundary.                                                                          |
+| `authority.household-administration` | `PostgresHouseholdAdministrationService` plus the public-only `InvitationDeliverySecretSealer`                                                  | `EMDO_API_DATABASE_URL`, `EMDO_INVITATION_DELIVERY_KEY_ID`, `EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL`                                         | `household_administration_ready()` through `checkReady()`; malformed or missing key material leaves only this component unavailable.                                                                                                                                                                                                                                |
+| `authority.proposal-queries`         | `PostgresProposalQueryRepository` with a dedicated authenticated cursor codec                                                                   | `EMDO_API_DATABASE_URL`, strict `EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL`                                                                               | `check()` proves the exact query functions and privileges. Cursor verification happens before SQL, and SQL re-derives the current collection authorization scope. Missing, malformed, retired-under-grace, or duplicate key material leaves only proposal reads unavailable.                                                                                        |
+| `authority.visual-proof-issuance`    | `PostgresVisualDecisionProofStore` with a dedicated rotating proof-token codec                                                                  | `EMDO_API_DATABASE_URL`, strict `EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL`                                                                                  | `check()` proves the prepare/finalize functions. PostgreSQL fixes the immutable issuance binding under locks, the API HMACs it, and only the digest is stored. Missing, malformed, retired, duplicate, or under-drained key material leaves proof issuance unavailable.                                                                                             |
+| `authority.visual-decisions`         | Request-scoped `PostgresProposalRepository` plus the narrow `ProposalDecisionService`                                                           | `EMDO_API_DATABASE_URL`, exact `EMDO_VISUAL_DECISION_DATABASE_URL`, and the visual-proof keyring                                                         | One combined probe proves the API read/replay path and a membership-free decision login that can execute only the decision aggregate. Each request loads the persisted operation fingerprint, while the aggregate independently re-derives it under the fresh grant, consumes or exactly replays the proof, persists the decision, and links the staged resume job. |
+| `experience.*`                       | The seven gateways returned by `createPostgresExperienceReadGateways()` with a separate authenticated cursor codec                              | `EMDO_API_DATABASE_URL`, strict `EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL`                                                                             | Exact per-component database probes keep one projection failure from hiding the health of the other six. Missing or malformed cursor keys leave the experience ports unavailable; cursor integrity is not inferred from database readiness.                                                                                                                         |
+| `sync.gateway`, `sync.jwks`          | The gateway and public JWKS returned by `createPostgresSyncGatewayRuntime()`                                                                    | `EMDO_API_DATABASE_URL`, exact HTTPS `EMDO_PUBLIC_ORIGIN`, strict `EMDO_SYNC_JWT_KEYRING_B64URL`                                                         | One coalesced `checkReady()` proves the exact API login/role, function and column privileges, forced RLS, and prohibited mutation/executor capabilities. The old PEM fields are unsupported.                                                                                                                                                                        |
+| `voice.audio-requests`               | `PostgresAudioRequestCoordinator`                                                                                                               | `EMDO_API_DATABASE_URL`                                                                                                                                  | `audio_request_receipts_ready()` through `checkReady()` proves the receipt capability and isolation from operator reconciliation. It does not prove the OpenAI provider.                                                                                                                                                                                            |
 
-Durable read/sync bindings share the curated `createDatabaseClient()` API
-pool. Authentication additionally owns three bounded, purpose-specific clients:
+Durable reads, proof issuance, and sync share the curated
+`createDatabaseClient()` API pool. Visual decisions additionally own a bounded
+`emdo_visual_decision_login` pool that can execute only the decision aggregate.
+The broader `emdo_workflow_login` remains reserved for the unavailable agent
+runtime, is not admitted to `api.env`, and is never opened by the public
+decision route.
+Authentication owns three bounded, purpose-specific clients:
 `emdo_auth_login`, `emdo_api_login`, and `emdo_onboarding_login`. Adapter
-construction is isolated per capability, and the process closes every client
-it owns exactly once.
+construction is isolated per capability. The process closes every resource it
+owns. If cleanup during partial construction fails, that client is retained
+for the process-level cleanup pass.
 
 The proposal-query adapter is constructed and independently probed, but the
 top-level graph selects it only when the trusted authentication binding was
@@ -66,35 +74,13 @@ staging run remains pending.
 
 ## Intentionally unavailable capabilities
 
-### Visual proof, decision, and approval resume
-
-Authenticated `proposalQueries.{list,getDetail}` is independently composed as
-a read-only durable capability above. `visualProofs.issue` and
-`proposals.decideWithVisualProof` remain unavailable until the write-side
-authority-v2 aggregate is completely composed:
-
-- every phase re-proves the stable server-derived
-  `authorizationScopeFingerprint` under database locks;
-- request, session, and space-grant IDs remain fresh non-hashed operation
-  sidecars rather than immutable authority;
-- visual proof tokens use a separate strict HMAC key ring; retired entries
-  carry `issueUntil` and `verifyUntil`, current keys alone make new issuances,
-  and prior keys only reproduce or verify eligible persisted artifacts;
-- visual decision persistence, one-time proof consumption or deterministic
-  replay, approval-resume job linkage, fresh phase-grant issuance, and terminal
-  event CAS are atomic; and
-- proof, decision, and resume adapters each expose exact fail-closed readiness
-  probes after their SQL functions and ACLs are journaled.
-
-Presence of the visual codec or key material is not health evidence. The
-write-side private env name is `EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL`; the API
-must not consume it until the final rotation schema and durable aggregate land.
-
 ### Agent runtime and run events
 
-`createProductionAgentServiceBindingsFromDependencies()` can bind concrete
-`managerTurns`, `runEvents`, and the approval-resume-backed `proposals` port.
-Its environment factory remains empty because no complete request-scoped graph
+Visual decision persistence now atomically moves the already-staged
+`approval_resume_jobs` row to ready. It does not claim that job or resume model
+execution. `createProductionAgentServiceBindingsFromDependencies()` can bind
+concrete `managerTurns`, `runEvents`, and the approval-resume dispatcher, but
+its environment factory remains empty because no complete request-scoped graph
 supplies all of `DurableManagerTurnStore`, `DurableRunEventSource`,
 `ProductionAgentRuntimeFactory`, and
 `DurableApprovalDecisionResumeBoundary`, plus their exact probes.

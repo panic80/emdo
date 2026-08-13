@@ -8,7 +8,10 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 
 import type { DatabaseClient, DatabasePool } from '../scoped-repository.js';
-import { PostgresProposalRepository } from './postgres-proposal-repository.js';
+import {
+  checkPostgresVisualDecisionReadiness,
+  PostgresProposalRepository,
+} from './postgres-proposal-repository.js';
 
 const ids = {
   user: '91000000-0000-4000-8000-000000000001',
@@ -1439,6 +1442,54 @@ describe('PostgresProposalRepository', () => {
     };
     await expect(
       repositoryFor(readyRead.pool, failedPool).check(),
+    ).resolves.toBe(false);
+  });
+
+  it('requires both the API replay path and the isolated decision-only login', async () => {
+    const api = poolFor((sql) =>
+      sql.includes('visual_decision_api_readiness') ? [{ ready: true }] : [],
+    );
+    const decision = poolFor((sql) =>
+      sql.includes('visual_decision_commit_readiness') ? [{ ready: true }] : [],
+    );
+
+    await expect(
+      checkPostgresVisualDecisionReadiness(api.pool, decision.pool),
+    ).resolves.toBe(true);
+
+    const apiProbe = api.query.mock.calls.find(([sql]) =>
+      sql.includes('visual_decision_api_readiness'),
+    )?.[0];
+    expect(apiProbe).toContain("session_user = 'emdo_api_login'");
+    expect(apiProbe).toContain(
+      'emdo.resolve_provider_proposal_decision_replay(uuid,uuid,text,text,uuid)',
+    );
+    expect(apiProbe).toContain('relforcerowsecurity');
+
+    const decisionProbe = decision.query.mock.calls.find(([sql]) =>
+      sql.includes('visual_decision_commit_readiness'),
+    )?.[0];
+    expect(decisionProbe).toContain(
+      "session_user = 'emdo_visual_decision_login'",
+    );
+    expect(decisionProbe).toContain(
+      'emdo.commit_provider_proposal_decision(text,jsonb)',
+    );
+    expect(decisionProbe).toContain('has_table_privilege');
+    expect(decisionProbe).toContain('pg_auth_members');
+  });
+
+  it('stays unavailable when either half of the visual-decision path fails', async () => {
+    const readyApi = poolFor(() => [{ ready: true }]);
+    const readyDecision = poolFor(() => [{ ready: true }]);
+    const deniedApi = poolFor(() => [{ ready: false }]);
+    const deniedDecision = poolFor(() => [{ ready: false }]);
+
+    await expect(
+      checkPostgresVisualDecisionReadiness(deniedApi.pool, readyDecision.pool),
+    ).resolves.toBe(false);
+    await expect(
+      checkPostgresVisualDecisionReadiness(readyApi.pool, deniedDecision.pool),
     ).resolves.toBe(false);
   });
 });

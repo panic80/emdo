@@ -26,6 +26,7 @@ readonly -a BASE_SECRET_MANIFEST=(
   worker_dispatcher_database_password
   audio_reconciliation_database_password
   workflow_database_password
+  visual_decision_database_password
   powersync_replication_password
   powersync_storage_password
   owner_bootstrap_database_password
@@ -528,10 +529,11 @@ assert_staging_secret_manifest() {
   assert_env_file_allowed_keys "$1/api.env" \
     EMDO_PUBLIC_ORIGIN EMDO_METRICS_TOKEN EMDO_API_DATABASE_URL \
     EMDO_AUTH_DATABASE_URL EMDO_ONBOARDING_DATABASE_URL \
-    EMDO_WORKFLOW_DATABASE_URL \
+    EMDO_VISUAL_DECISION_DATABASE_URL \
     EMDO_API_AUTH_SECRET EMDO_SESSION_SECRET EMDO_SYNC_JWT_KEYRING_B64URL \
     EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL \
     EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL \
+    EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL \
     EMDO_INVITATION_DELIVERY_KEY_ID \
     EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL \
     EMDO_CREDENTIAL_VAULT_KEY \
@@ -564,7 +566,7 @@ assert_staging_secret_manifest() {
   assert_internal_postgres_uri "$1/api.env" \
     EMDO_ONBOARDING_DATABASE_URL emdo_onboarding_login emdo_app
   assert_internal_postgres_uri "$1/api.env" \
-    EMDO_WORKFLOW_DATABASE_URL emdo_workflow_login emdo_app
+    EMDO_VISUAL_DECISION_DATABASE_URL emdo_visual_decision_login emdo_app
   assert_staging_auth_provider_config "$1/api.env"
   assert_internal_postgres_uri "$1/worker.env" \
     EMDO_WORKER_DATABASE_URL emdo_worker_login emdo_app

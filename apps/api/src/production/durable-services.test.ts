@@ -10,6 +10,8 @@ import {
 
 const databaseUrl =
   'postgresql://emdo_api_login:secret@postgres:5432/emdo_app?sslmode=disable';
+const visualDecisionDatabaseUrl =
+  'postgresql://emdo_visual_decision_login:secret@postgres:5432/emdo_app?sslmode=disable';
 const experienceCursorKeyring = Buffer.from(
   JSON.stringify({
     schemaVersion: 1,
@@ -27,6 +29,17 @@ const proposalCursorKeyring = Buffer.from(
     current: {
       keyId: 'proposal.current-1',
       keyB64url: Buffer.alloc(32, 43).toString('base64url'),
+    },
+    previous: [],
+  }),
+  'utf8',
+).toString('base64url');
+const visualProofKeyring = Buffer.from(
+  JSON.stringify({
+    schemaVersion: 1,
+    current: {
+      keyId: 'visual.current-1',
+      keyB64url: Buffer.alloc(32, 47).toString('base64url'),
     },
     previous: [],
   }),
@@ -93,6 +106,20 @@ const dependencies = (): ProductionDurableServiceDependencies => {
         }) as unknown as ApiServices['proposalQueries'] & {
           check(): Promise<boolean>;
         },
+    ),
+    createVisualProofIssuanceGateway: vi.fn(
+      () =>
+        ({
+          issue: vi.fn(),
+          check: vi.fn(async () => true),
+        }) as never,
+    ),
+    createVisualProposalDecisionGateway: vi.fn(
+      () =>
+        ({
+          decideWithVisualProof: vi.fn(),
+          checkReady: vi.fn(async () => true),
+        }) as never,
     ),
     createSyncGatewayRuntime: vi.fn(
       () =>
@@ -296,6 +323,133 @@ describe('production durable API service composition', () => {
     expect(
       malformedAdapters.createProposalQueryRepository,
     ).not.toHaveBeenCalled();
+  });
+
+  it('binds visual proof issuance and decision commits through distinct API and decision-only pools', async () => {
+    const adapters = dependencies();
+    const result = await createProductionDurableServiceBindings(
+      {
+        EMDO_API_DATABASE_URL: databaseUrl,
+        EMDO_VISUAL_DECISION_DATABASE_URL: visualDecisionDatabaseUrl,
+        EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL: visualProofKeyring,
+      },
+      adapters,
+    );
+
+    expect(adapters.createDatabaseClient).toHaveBeenCalledTimes(2);
+    expect(adapters.createDatabaseClient).toHaveBeenNthCalledWith(1, {
+      connectionString: databaseUrl,
+      applicationName: 'emdo-api',
+    });
+    expect(adapters.createDatabaseClient).toHaveBeenNthCalledWith(2, {
+      connectionString: visualDecisionDatabaseUrl,
+      applicationName: 'emdo-api-visual-decision',
+    });
+    const apiDatabase = vi.mocked(adapters.createDatabaseClient).mock
+      .results[0]!.value;
+    const decisionDatabase = vi.mocked(adapters.createDatabaseClient).mock
+      .results[1]!.value;
+    expect(adapters.createVisualProofIssuanceGateway).toHaveBeenCalledWith(
+      apiDatabase.scopedPool,
+      expect.any(Object),
+    );
+    expect(adapters.createVisualProposalDecisionGateway).toHaveBeenCalledWith({
+      readPool: apiDatabase.scopedPool,
+      decisionPool: decisionDatabase.scopedPool,
+    });
+    expect(result.bindings).toMatchObject({
+      visualProofs: {
+        service: { issue: expect.any(Function) },
+        check: expect.any(Function),
+      },
+      proposals: {
+        service: { decideWithVisualProof: expect.any(Function) },
+        check: expect.any(Function),
+      },
+    });
+    await expect(result.bindings.visualProofs!.check()).resolves.toBe(true);
+    await expect(result.bindings.proposals!.check()).resolves.toBe(true);
+
+    await result.close?.();
+    expect(apiDatabase.close).toHaveBeenCalledOnce();
+    expect(decisionDatabase.close).toHaveBeenCalledOnce();
+  });
+
+  it('does not open the decision pool for malformed visual authority configuration', async () => {
+    const adapters = dependencies();
+    const result = await createProductionDurableServiceBindings(
+      {
+        EMDO_API_DATABASE_URL: databaseUrl,
+        EMDO_VISUAL_DECISION_DATABASE_URL: visualDecisionDatabaseUrl,
+        EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL: `${visualProofKeyring}=`,
+      },
+      adapters,
+    );
+
+    expect(adapters.createDatabaseClient).toHaveBeenCalledOnce();
+    expect(adapters.createVisualProofIssuanceGateway).not.toHaveBeenCalled();
+    expect(adapters.createVisualProposalDecisionGateway).not.toHaveBeenCalled();
+    expect(result.bindings).not.toHaveProperty('visualProofs');
+    expect(result.bindings).not.toHaveProperty('proposals');
+  });
+
+  it('does not reuse the broad workflow login for the public visual-decision path', async () => {
+    const adapters = dependencies();
+    const result = await createProductionDurableServiceBindings(
+      {
+        EMDO_API_DATABASE_URL: databaseUrl,
+        EMDO_WORKFLOW_DATABASE_URL:
+          'postgresql://emdo_workflow_login:secret@postgres:5432/emdo_app?sslmode=disable',
+        EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL: visualProofKeyring,
+      },
+      adapters,
+    );
+
+    expect(adapters.createDatabaseClient).toHaveBeenCalledOnce();
+    expect(adapters.createVisualProofIssuanceGateway).not.toHaveBeenCalled();
+    expect(adapters.createVisualProposalDecisionGateway).not.toHaveBeenCalled();
+    expect(result.bindings).not.toHaveProperty('visualProofs');
+    expect(result.bindings).not.toHaveProperty('proposals');
+  });
+
+  it('retains a failed partial workflow close for the process-level cleanup retry', async () => {
+    const adapters = dependencies();
+    const apiDatabase = {
+      scopedPool: Object.freeze({ connect: vi.fn() }) as never,
+      close: vi.fn(async () => undefined),
+    };
+    const decisionClose = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error('decision close interrupted'))
+      .mockResolvedValueOnce(undefined);
+    const decisionDatabase = {
+      scopedPool: Object.freeze({ connect: vi.fn() }) as never,
+      close: decisionClose,
+    };
+    vi.mocked(adapters.createDatabaseClient)
+      .mockReturnValueOnce(apiDatabase)
+      .mockReturnValueOnce(decisionDatabase);
+    vi.mocked(
+      adapters.createVisualProposalDecisionGateway,
+    ).mockImplementationOnce(() => {
+      throw new Error('visual decision adapter unavailable');
+    });
+
+    const result = await createProductionDurableServiceBindings(
+      {
+        EMDO_API_DATABASE_URL: databaseUrl,
+        EMDO_VISUAL_DECISION_DATABASE_URL: visualDecisionDatabaseUrl,
+        EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL: visualProofKeyring,
+      },
+      adapters,
+    );
+
+    expect(decisionClose).toHaveBeenCalledOnce();
+    expect(result.bindings).not.toHaveProperty('visualProofs');
+    expect(result.bindings).not.toHaveProperty('proposals');
+    await result.close?.();
+    expect(decisionClose).toHaveBeenCalledTimes(2);
+    expect(apiDatabase.close).toHaveBeenCalledOnce();
   });
 
   it('binds household administration only with a valid public delivery key', async () => {

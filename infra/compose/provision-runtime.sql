@@ -50,6 +50,14 @@ SELECT format(
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles WHERE rolname = 'emdo_workflow_login'
 ) \gexec
+SELECT format(
+  'CREATE ROLE emdo_visual_decision_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
+  trim(pg_read_file('/run/secrets/visual_decision_database_password'))
+)
+WHERE NOT EXISTS (
+  SELECT FROM pg_catalog.pg_roles
+  WHERE rolname = 'emdo_visual_decision_login'
+) \gexec
 
 ALTER ROLE emdo_api_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
   INHERIT NOBYPASSRLS NOREPLICATION;
@@ -68,6 +76,8 @@ ALTER ROLE emdo_audio_reconciliation_login LOGIN NOSUPERUSER NOCREATEDB NOCREATE
 -- The workflow login has no data-plane role membership. It receives only the
 -- phase-specific aggregate entrypoints regranted below after blanket revocation.
 ALTER ROLE emdo_workflow_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+  NOINHERIT NOBYPASSRLS NOREPLICATION;
+ALTER ROLE emdo_visual_decision_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
   NOINHERIT NOBYPASSRLS NOREPLICATION;
 -- Provisioning never leaves the deployment-only principal able to log in.
 -- The protected owner-bootstrap wrapper enables it only for the bounded
@@ -112,6 +122,10 @@ SELECT format(
   trim(pg_read_file('/run/secrets/workflow_database_password'))
 ) \gexec
 SELECT format(
+  'ALTER ROLE emdo_visual_decision_login PASSWORD %L',
+  trim(pg_read_file('/run/secrets/visual_decision_database_password'))
+) \gexec
+SELECT format(
   'ALTER ROLE emdo_owner_bootstrap_login PASSWORD %L',
   trim(pg_read_file('/run/secrets/owner_bootstrap_database_password'))
 ) \gexec
@@ -133,6 +147,7 @@ REVOKE CONNECT ON DATABASE emdo_app FROM
   emdo_worker_login,
   emdo_worker_executor_login, emdo_worker_dispatcher_login,
   emdo_audio_reconciliation_login, emdo_workflow_login,
+  emdo_visual_decision_login,
   emdo_powersync_replication,
   emdo_owner_bootstrap_login, emdo_powersync_storage;
 GRANT CONNECT ON DATABASE emdo_app TO
@@ -140,6 +155,7 @@ GRANT CONNECT ON DATABASE emdo_app TO
   emdo_worker_login,
   emdo_worker_executor_login, emdo_worker_dispatcher_login,
   emdo_audio_reconciliation_login, emdo_workflow_login,
+  emdo_visual_decision_login,
   emdo_powersync_replication,
   emdo_owner_bootstrap_login;
 
@@ -149,6 +165,7 @@ REVOKE CONNECT ON DATABASE emdo_powersync FROM
   emdo_worker_login,
   emdo_worker_executor_login, emdo_worker_dispatcher_login,
   emdo_audio_reconciliation_login, emdo_workflow_login,
+  emdo_visual_decision_login,
   emdo_powersync_replication,
   emdo_powersync_storage, emdo_owner_bootstrap_login;
 GRANT CONNECT ON DATABASE emdo_powersync TO emdo_powersync_storage;
@@ -162,6 +179,7 @@ REVOKE ALL PRIVILEGES ON SCHEMA emdo FROM
   emdo_worker_login,
   emdo_worker_executor_login, emdo_worker_dispatcher_login,
   emdo_audio_reconciliation_login, emdo_workflow_login,
+  emdo_visual_decision_login,
   emdo_powersync_replication,
   emdo_owner_bootstrap_login;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA emdo FROM
@@ -169,6 +187,7 @@ REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA emdo FROM
   emdo_worker_login,
   emdo_worker_executor_login, emdo_worker_dispatcher_login,
   emdo_audio_reconciliation_login, emdo_workflow_login,
+  emdo_visual_decision_login,
   emdo_owner_bootstrap_login,
   emdo_powersync_replication;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA emdo FROM
@@ -176,6 +195,7 @@ REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA emdo FROM
   emdo_worker_login,
   emdo_worker_executor_login, emdo_worker_dispatcher_login,
   emdo_audio_reconciliation_login, emdo_workflow_login,
+  emdo_visual_decision_login,
   emdo_owner_bootstrap_login,
   emdo_powersync_replication;
 REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA emdo FROM
@@ -183,6 +203,7 @@ REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA emdo FROM
   emdo_worker_login,
   emdo_worker_executor_login, emdo_worker_dispatcher_login,
   emdo_audio_reconciliation_login, emdo_workflow_login,
+  emdo_visual_decision_login,
   emdo_owner_bootstrap_login,
   emdo_powersync_replication;
 
@@ -205,6 +226,7 @@ BEGIN
       'emdo_worker_dispatcher_login',
       'emdo_audio_reconciliation_login',
       'emdo_workflow_login',
+      'emdo_visual_decision_login',
       'emdo_owner_bootstrap_login',
       'emdo_powersync_replication',
       'emdo_powersync_storage'
@@ -217,6 +239,8 @@ $memberships$;
 
 REVOKE emdo_workflow FROM emdo_workflow_login;
 REVOKE emdo_workflow_executor FROM emdo_workflow_login;
+REVOKE emdo_workflow FROM emdo_visual_decision_login;
+REVOKE emdo_workflow_executor FROM emdo_visual_decision_login;
 
 GRANT emdo_app TO emdo_api_login
   WITH INHERIT TRUE, SET TRUE, ADMIN FALSE;
@@ -243,6 +267,11 @@ GRANT EXECUTE ON FUNCTION
   emdo.commit_provider_proposal_transition(jsonb),
   emdo.commit_provider_proposal_completion(jsonb)
 TO emdo_workflow_login;
+
+GRANT USAGE ON SCHEMA emdo TO emdo_visual_decision_login;
+GRANT EXECUTE ON FUNCTION
+  emdo.commit_provider_proposal_decision(text, jsonb)
+TO emdo_visual_decision_login;
 
 REVOKE ALL PRIVILEGES ON SCHEMA pgboss FROM
   emdo_worker_executor_login, emdo_worker_dispatcher_login,

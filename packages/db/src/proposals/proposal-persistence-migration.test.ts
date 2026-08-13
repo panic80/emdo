@@ -197,6 +197,40 @@ describe('durable proposal persistence migration', () => {
     );
   });
 
+  it('gives the public visual-decision login exactly one aggregate and no data-plane membership', async () => {
+    const sql = await readMigration();
+
+    expect(sql).toContain('create role emdo_visual_decision_login login');
+    expect(sql).toMatch(
+      /alter role emdo_visual_decision_login login nosuperuser nocreatedb nocreaterole\s+noinherit nobypassrls noreplication/,
+    );
+    expect(sql).toMatch(
+      /grant execute on function\s+emdo\.commit_provider_proposal_decision\(text, jsonb\)\s+to emdo_visual_decision_login/,
+    );
+    expect(sql).not.toMatch(
+      /grant execute on function[^;]+commit_provider_proposal_create[^;]+to emdo_visual_decision_login/,
+    );
+    expect(sql).not.toMatch(
+      /grant (?:select|insert|update|delete)[^;]+to emdo_visual_decision_login/,
+    );
+    expect(sql).not.toMatch(
+      /grant [^;]+ to emdo_visual_decision_login with (?:inherit|set|admin)/,
+    );
+    const finalFunctionRevoke = sql.lastIndexOf(
+      'revoke all privileges on all functions in schema emdo\n\tfrom emdo_visual_decision_login',
+    );
+    const finalDecisionGrant = sql.lastIndexOf(
+      'emdo.commit_provider_proposal_decision(text, jsonb)\n\tto emdo_visual_decision_login',
+    );
+    expect(finalFunctionRevoke).toBeGreaterThan(
+      sql.indexOf('create or replace function emdo.manager_turn_store_ready'),
+    );
+    expect(finalDecisionGrant).toBeGreaterThan(finalFunctionRevoke);
+    expect(sql).toMatch(
+      /revoke all on function[^;]+provider_proposal_mutation_hash[^;]+canonical_json_hash[^;]+enforce_manager_turn_transition[^;]+from public,[^;]+emdo_visual_decision_login/,
+    );
+  });
+
   it('binds every post-approval commit to an exact claim or terminal authority and isolates reconciliation', async () => {
     const sql = await readMigration();
     const abandonment = extractFunction(

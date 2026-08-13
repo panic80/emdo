@@ -5,7 +5,9 @@ import {
   PostgresAudioRequestCoordinator,
   PostgresHouseholdAdministrationService,
   PostgresProposalQueryRepository,
+  PostgresVisualDecisionProofStore,
   ProposalQueryCursorCodec,
+  type VisualDecisionProofTokenCodec,
   createDatabaseClient,
   createPostgresExperienceReadGateways,
   createPostgresExperienceReadinessChecks,
@@ -26,6 +28,8 @@ import { parseProductionExperienceCursorKeyring } from './experience-cursor-keyr
 import { parseProductionProposalCursorKeyring } from './proposal-cursor-keyring.js';
 import { parseProductionSyncJwtKeyring } from './sync-keyring.js';
 import type { ProductionApiServiceBindings } from './unavailable-services.js';
+import { PostgresVisualProposalDecisionGateway } from './visual-approval-services.js';
+import { createProductionVisualProofTokenCodec } from './visual-proof-keyring.js';
 
 type DatabaseRuntime = Pick<EmdoDatabaseClient, 'scopedPool' | 'close'>;
 type ExperienceReadGateways = Pick<
@@ -46,6 +50,12 @@ type ReadyHouseholdAdministration = ApiServices['householdAdministration'] & {
 };
 type ReadyProposalQueryRepository = ApiServices['proposalQueries'] & {
   check(): Promise<boolean>;
+};
+type ReadyVisualProofIssuanceGateway = ApiServices['visualProofs'] & {
+  check(): Promise<boolean>;
+};
+type ReadyVisualProposalDecisionGateway = ApiServices['proposals'] & {
+  checkReady(): Promise<boolean>;
 };
 
 export interface ProductionDurableServiceDependencies {
@@ -71,6 +81,14 @@ export interface ProductionDurableServiceDependencies {
     pool: DatabaseRuntime['scopedPool'],
     cursorCodec: ProposalQueryCursorCodec,
   ) => ReadyProposalQueryRepository;
+  readonly createVisualProofIssuanceGateway: (
+    pool: DatabaseRuntime['scopedPool'],
+    tokenCodec: VisualDecisionProofTokenCodec,
+  ) => ReadyVisualProofIssuanceGateway;
+  readonly createVisualProposalDecisionGateway: (input: {
+    readonly readPool: DatabaseRuntime['scopedPool'];
+    readonly decisionPool: DatabaseRuntime['scopedPool'];
+  }) => ReadyVisualProposalDecisionGateway;
   readonly createSyncGatewayRuntime: (input: {
     readonly pool: DatabaseRuntime['scopedPool'];
     readonly publicOrigin: string;
@@ -101,6 +119,14 @@ const defaultDependencies: ProductionDurableServiceDependencies = Object.freeze(
       pool: DatabaseRuntime['scopedPool'],
       cursorCodec: ProposalQueryCursorCodec,
     ) => new PostgresProposalQueryRepository(pool, cursorCodec),
+    createVisualProofIssuanceGateway: (
+      pool: DatabaseRuntime['scopedPool'],
+      tokenCodec: VisualDecisionProofTokenCodec,
+    ) => new PostgresVisualDecisionProofStore(pool, tokenCodec),
+    createVisualProposalDecisionGateway: (input: {
+      readonly readPool: DatabaseRuntime['scopedPool'];
+      readonly decisionPool: DatabaseRuntime['scopedPool'];
+    }) => new PostgresVisualProposalDecisionGateway(input),
     createSyncGatewayRuntime: (input: {
       readonly pool: DatabaseRuntime['scopedPool'];
       readonly publicOrigin: string;
@@ -116,6 +142,16 @@ const DatabaseUrlSchema = z
   .refine((value) =>
     ['postgres:', 'postgresql:'].includes(new URL(value).protocol),
   );
+const VisualDecisionDatabaseUrlSchema = DatabaseUrlSchema.refine((value) => {
+  const url = new URL(value);
+  return (
+    url.username === 'emdo_visual_decision_login' &&
+    url.password.length > 0 &&
+    url.hostname.length > 0 &&
+    url.pathname === '/emdo_app' &&
+    url.hash === ''
+  );
+});
 const InvitationDeliveryKeyIdSchema = z
   .string()
   .min(1)
@@ -192,6 +228,29 @@ const coalesceProbe = (probe: () => Promise<boolean>) => {
   };
 };
 
+const createDatabaseClose = (databases: readonly DatabaseRuntime[]) => {
+  let closePromise: Promise<void> | undefined;
+  return (): Promise<void> => {
+    closePromise ??= (async () => {
+      const outcomes = await Promise.allSettled(
+        [...databases]
+          .reverse()
+          .map((database) => Promise.resolve().then(() => database.close())),
+      );
+      const failures = outcomes.flatMap((outcome) =>
+        outcome.status === 'rejected' ? [outcome.reason] : [],
+      );
+      if (failures.length > 0) {
+        throw new AggregateError(
+          failures,
+          'Production durable databases could not all close',
+        );
+      }
+    })();
+    return closePromise;
+  };
+};
+
 export interface ProductionDurableEnvironmentComposition {
   readonly bindings: ProductionApiServiceBindings;
   readonly close?: () => Promise<void>;
@@ -219,6 +278,7 @@ export const createProductionDurableServiceBindings = async (
   }
 
   const bindings: ProductionApiServiceBindings = {};
+  const databases: DatabaseRuntime[] = [database];
   try {
     const encodedExperienceCursorKeyring =
       environment.EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL;
@@ -322,6 +382,59 @@ export const createProductionDurableServiceBindings = async (
     // Proposal reads remain fail-closed without a valid independent key ring.
   }
 
+  let unusedDecisionDatabase: DatabaseRuntime | undefined;
+  try {
+    const encodedVisualProofKeyring =
+      environment.EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL;
+    const decisionDatabaseUrl = VisualDecisionDatabaseUrlSchema.safeParse(
+      environment.EMDO_VISUAL_DECISION_DATABASE_URL,
+    );
+    if (
+      encodedVisualProofKeyring === undefined ||
+      !decisionDatabaseUrl.success
+    ) {
+      throw new Error('api-visual-approval-configuration-missing');
+    }
+    const tokenCodec = createProductionVisualProofTokenCodec(
+      encodedVisualProofKeyring,
+    );
+    const decisionDatabase = dependencies.createDatabaseClient({
+      connectionString: decisionDatabaseUrl.data,
+      applicationName: 'emdo-api-visual-decision',
+    });
+    unusedDecisionDatabase = decisionDatabase;
+    const visualProofs = dependencies.createVisualProofIssuanceGateway(
+      database.scopedPool,
+      tokenCodec,
+    );
+    const proposals = dependencies.createVisualProposalDecisionGateway({
+      readPool: database.scopedPool,
+      decisionPool: decisionDatabase.scopedPool,
+    });
+    Object.assign(bindings, {
+      visualProofs: {
+        service: visualProofs,
+        check: coalesceProbe(() => visualProofs.check()),
+      },
+      proposals: {
+        service: proposals,
+        check: coalesceProbe(() => proposals.checkReady()),
+      },
+    } satisfies ProductionApiServiceBindings);
+    databases.push(decisionDatabase);
+    unusedDecisionDatabase = undefined;
+  } catch {
+    if (unusedDecisionDatabase !== undefined) {
+      try {
+        await unusedDecisionDatabase.close();
+      } catch {
+        databases.push(unusedDecisionDatabase);
+      }
+      unusedDecisionDatabase = undefined;
+    }
+    // Proof issuance and decision persistence activate only as one authority graph.
+  }
+
   try {
     const sealer = await createInvitationDeliverySealer(environment);
     if (sealer !== undefined) {
@@ -370,11 +483,12 @@ export const createProductionDurableServiceBindings = async (
   }
 
   if (Object.keys(bindings).length === 0) {
-    await database.close().catch(() => undefined);
+    await createDatabaseClose(databases)().catch(() => undefined);
     return Object.freeze({ bindings: Object.freeze({}) });
   }
+  const close = createDatabaseClose(databases);
   return Object.freeze({
     bindings: Object.freeze(bindings),
-    close: () => database.close(),
+    close,
   });
 };

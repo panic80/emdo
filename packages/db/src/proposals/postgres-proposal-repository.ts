@@ -735,6 +735,258 @@ const PROPOSAL_WORKFLOW_FUNCTIONS = Object.freeze([
   'emdo.commit_provider_proposal_completion(jsonb)',
 ]);
 
+export const checkPostgresProposalWorkflowReadiness = (
+  pool: DatabasePool,
+): Promise<boolean> =>
+  checkFunctionPrivileges(pool, PROPOSAL_WORKFLOW_FUNCTIONS);
+
+const checkBooleanReadiness = async (
+  pool: DatabasePool,
+  sql: string,
+): Promise<boolean> => {
+  let client: DatabaseClient | undefined;
+  let ready = false;
+  try {
+    client = await pool.connect();
+    ready = firstResultRow(await client.query(sql))?.ready === true;
+  } catch {
+    ready = false;
+  } finally {
+    try {
+      client?.release();
+    } catch {
+      ready = false;
+    }
+  }
+  return ready;
+};
+
+const VISUAL_DECISION_API_READINESS_SQL = `
+/* visual_decision_api_readiness */
+select (
+  session_user = 'emdo_api_login'
+  and current_user = session_user
+  and pg_catalog.pg_has_role(session_user, 'emdo_app', 'USAGE')
+  and exists (
+    select 1
+      from pg_catalog.pg_roles as login
+     where login.rolname = session_user
+       and login.rolcanlogin
+       and login.rolinherit
+       and not login.rolsuper
+       and not login.rolcreatedb
+       and not login.rolcreaterole
+       and not login.rolbypassrls
+       and not login.rolreplication
+  )
+  and exists (
+    select 1
+      from pg_catalog.pg_auth_members as membership
+      join pg_catalog.pg_roles as child on child.oid = membership.member
+      join pg_catalog.pg_roles as parent on parent.oid = membership.roleid
+     where child.rolname = session_user
+       and parent.rolname = 'emdo_app'
+       and membership.inherit_option
+       and membership.set_option
+       and not membership.admin_option
+  )
+  and not exists (
+    select 1
+      from pg_catalog.pg_auth_members as membership
+      join pg_catalog.pg_roles as child on child.oid = membership.member
+      join pg_catalog.pg_roles as parent on parent.oid = membership.roleid
+     where (child.rolname = session_user and parent.rolname <> 'emdo_app')
+        or parent.rolname = session_user
+  )
+  and pg_catalog.has_schema_privilege(session_user, 'emdo', 'USAGE')
+  and not pg_catalog.has_schema_privilege(session_user, 'emdo', 'CREATE')
+  and pg_catalog.to_regprocedure(
+    'emdo.resolve_provider_proposal_decision_replay(uuid,uuid,text,text,uuid)'
+  ) is not null
+  and pg_catalog.has_function_privilege(
+    session_user,
+    'emdo.resolve_provider_proposal_decision_replay(uuid,uuid,text,text,uuid)',
+    'EXECUTE'
+  )
+  and exists (
+    select 1
+      from pg_catalog.pg_proc as routine
+      join pg_catalog.pg_roles as owner on owner.oid = routine.proowner
+     where routine.oid = pg_catalog.to_regprocedure(
+       'emdo.resolve_provider_proposal_decision_replay(uuid,uuid,text,text,uuid)'
+     )
+       and routine.prosecdef
+       and owner.rolname = 'emdo_visual_proof_executor'
+       and not owner.rolcanlogin
+       and not owner.rolinherit
+       and not owner.rolsuper
+       and not owner.rolcreatedb
+       and not owner.rolcreaterole
+       and not owner.rolbypassrls
+       and not owner.rolreplication
+       and pg_catalog.coalesce(routine.proconfig, array[]::text[])
+             @> array['search_path=pg_catalog, emdo', 'row_security=on']::text[]
+       and not exists (
+         select 1
+           from pg_catalog.pg_auth_members as membership
+          where membership.member = owner.oid
+             or membership.roleid = owner.oid
+       )
+       and not exists (
+         select 1
+           from pg_catalog.aclexplode(
+             pg_catalog.coalesce(
+               routine.proacl,
+               pg_catalog.acldefault('f', routine.proowner)
+             )
+           ) as acl
+          where acl.grantee = 0
+            and acl.privilege_type = 'EXECUTE'
+       )
+  )
+  and not exists (
+    select 1
+      from pg_catalog.unnest(array[
+        'emdo.action_proposals',
+        'emdo.proposal_states',
+        'emdo.proposal_preparations',
+        'emdo.action_decisions'
+      ]::text[]) as required(name)
+      left join pg_catalog.pg_class as relation
+        on relation.oid = pg_catalog.to_regclass(required.name)
+     where relation.oid is null
+        or not relation.relrowsecurity
+        or not relation.relforcerowsecurity
+        or not pg_catalog.has_table_privilege(
+          session_user, relation.oid, 'SELECT'
+        )
+  )
+) as ready`;
+
+const VISUAL_DECISION_COMMIT_READINESS_SQL = `
+/* visual_decision_commit_readiness */
+select (
+  session_user = 'emdo_visual_decision_login'
+  and current_user = session_user
+  and exists (
+    select 1
+      from pg_catalog.pg_roles as login
+     where login.rolname = session_user
+       and login.rolcanlogin
+       and not login.rolinherit
+       and not login.rolsuper
+       and not login.rolcreatedb
+       and not login.rolcreaterole
+       and not login.rolbypassrls
+       and not login.rolreplication
+  )
+  and not exists (
+    select 1
+      from pg_catalog.pg_auth_members as membership
+      join pg_catalog.pg_roles as child on child.oid = membership.member
+      join pg_catalog.pg_roles as parent on parent.oid = membership.roleid
+     where child.rolname = session_user
+        or parent.rolname = session_user
+  )
+  and pg_catalog.has_schema_privilege(session_user, 'emdo', 'USAGE')
+  and not pg_catalog.has_schema_privilege(session_user, 'emdo', 'CREATE')
+  and pg_catalog.to_regprocedure(
+    'emdo.commit_provider_proposal_decision(text,jsonb)'
+  ) is not null
+  and pg_catalog.has_function_privilege(
+    session_user, 'emdo.commit_provider_proposal_decision(text,jsonb)',
+    'EXECUTE'
+  )
+  and exists (
+    select 1
+      from pg_catalog.pg_proc as routine
+      join pg_catalog.pg_roles as owner on owner.oid = routine.proowner
+     where routine.oid = pg_catalog.to_regprocedure(
+       'emdo.commit_provider_proposal_decision(text,jsonb)'
+     )
+       and routine.prosecdef
+       and owner.rolname = 'emdo_workflow_executor'
+       and not owner.rolcanlogin
+       and not owner.rolinherit
+       and not owner.rolsuper
+       and not owner.rolcreatedb
+       and not owner.rolcreaterole
+       and not owner.rolbypassrls
+       and not owner.rolreplication
+       and pg_catalog.coalesce(routine.proconfig, array[]::text[])
+             @> array['search_path=pg_catalog, emdo', 'row_security=on']::text[]
+       and not exists (
+         select 1
+           from pg_catalog.pg_auth_members as membership
+          where membership.member = owner.oid
+             or membership.roleid = owner.oid
+       )
+       and not exists (
+         select 1
+           from pg_catalog.aclexplode(
+             pg_catalog.coalesce(
+               routine.proacl,
+               pg_catalog.acldefault('f', routine.proowner)
+             )
+           ) as acl
+          where acl.grantee = 0
+            and acl.privilege_type = 'EXECUTE'
+       )
+  )
+  and not exists (
+    select 1
+      from pg_catalog.pg_proc as routine
+      join pg_catalog.pg_namespace as namespace
+        on namespace.oid = routine.pronamespace
+     where namespace.nspname = 'emdo'
+       and routine.oid <> pg_catalog.to_regprocedure(
+         'emdo.commit_provider_proposal_decision(text,jsonb)'
+       )
+       and pg_catalog.has_function_privilege(
+         session_user, routine.oid, 'EXECUTE'
+       )
+  )
+  and not exists (
+    select 1
+      from pg_catalog.pg_class as relation
+      join pg_catalog.pg_namespace as namespace
+        on namespace.oid = relation.relnamespace
+     where namespace.nspname = 'emdo'
+       and relation.relkind in ('r', 'p', 'v', 'm', 'S', 'f')
+       and (
+         (
+           relation.relkind = 'S'
+           and pg_catalog.has_sequence_privilege(
+             session_user, relation.oid, 'USAGE,SELECT,UPDATE'
+           )
+         )
+         or (
+           relation.relkind <> 'S'
+           and (
+             pg_catalog.has_table_privilege(
+               session_user, relation.oid,
+               'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+             )
+             or pg_catalog.has_any_column_privilege(
+               session_user, relation.oid, 'SELECT,INSERT,UPDATE,REFERENCES'
+             )
+           )
+         )
+       )
+  )
+) as ready`;
+
+export const checkPostgresVisualDecisionReadiness = async (
+  readPool: DatabasePool,
+  decisionPool: DatabasePool,
+): Promise<boolean> => {
+  const [readReady, decisionReady] = await Promise.all([
+    checkBooleanReadiness(readPool, VISUAL_DECISION_API_READINESS_SQL),
+    checkBooleanReadiness(decisionPool, VISUAL_DECISION_COMMIT_READINESS_SQL),
+  ]);
+  return readReady && decisionReady;
+};
+
 const writeResultFrom = (row: Record<string, unknown> | undefined) => {
   const parsed = WriteResultSchema.safeParse(row?.write_result);
   if (!parsed.success) {
@@ -828,10 +1080,7 @@ export class PostgresProposalRepository implements ProposalRepository {
   }
 
   async check(): Promise<boolean> {
-    return checkFunctionPrivileges(
-      this.#workflowPool,
-      PROPOSAL_WORKFLOW_FUNCTIONS,
-    );
+    return checkPostgresProposalWorkflowReadiness(this.#workflowPool);
   }
 
   async getProposal(id: string): Promise<ActionProposal | undefined> {

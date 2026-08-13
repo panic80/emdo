@@ -51,12 +51,20 @@ describe('production API service assembly', () => {
     });
   });
 
-  it('keeps proposal reads unavailable until trusted authentication is composed', async () => {
+  it('keeps proposal reads and visual decisions unavailable until trusted authentication is composed', async () => {
     mocks.createDurable.mockResolvedValue({
       bindings: {
         proposalQueries: {
           check: vi.fn(async () => true),
           service: { getDetail: vi.fn(), list: vi.fn() },
+        },
+        visualProofs: {
+          check: vi.fn(async () => true),
+          service: { issue: vi.fn() },
+        },
+        proposals: {
+          check: vi.fn(async () => true),
+          service: { decideWithVisualProof: vi.fn() },
         },
       },
     });
@@ -64,7 +72,39 @@ describe('production API service assembly', () => {
     const services = await assembleProductionApiServices({});
 
     await expect(services.readiness.check()).resolves.toMatchObject({
-      checks: { 'authority.proposal-queries': 'unavailable' },
+      checks: {
+        'authority.proposal-queries': 'unavailable',
+        'authority.visual-decisions': 'unavailable',
+        'authority.visual-proof-issuance': 'unavailable',
+      },
+    });
+  });
+
+  it('selects the complete visual decision pair only with trusted authentication', async () => {
+    const auth = authBoundary();
+    mocks.createAuthentication.mockResolvedValue({
+      binding: { service: auth, check: vi.fn(async () => true) },
+    });
+    mocks.createDurable.mockResolvedValue({
+      bindings: {
+        visualProofs: {
+          check: vi.fn(async () => true),
+          service: { issue: vi.fn() },
+        },
+        proposals: {
+          check: vi.fn(async () => true),
+          service: { decideWithVisualProof: vi.fn() },
+        },
+      },
+    });
+
+    const services = await assembleProductionApiServices({});
+
+    await expect(services.readiness.check()).resolves.toMatchObject({
+      checks: {
+        'authority.visual-decisions': 'ok',
+        'authority.visual-proof-issuance': 'ok',
+      },
     });
   });
 

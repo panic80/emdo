@@ -240,7 +240,7 @@ jobs:
         run: |
           secret_dir="$(mktemp -d)"
           trap 'find "$secret_dir" -type f -delete; rmdir "$secret_dir"' EXIT
-          for file in postgres_superuser_password api_database_password auth_database_password onboarding_database_password worker_database_password worker_executor_database_password worker_dispatcher_database_password audio_reconciliation_database_password workflow_database_password powersync_replication_password powersync_storage_password owner_bootstrap_database_password; do
+          for file in postgres_superuser_password api_database_password auth_database_password onboarding_database_password worker_database_password worker_executor_database_password worker_dispatcher_database_password audio_reconciliation_database_password workflow_database_password visual_decision_database_password powersync_replication_password powersync_storage_password owner_bootstrap_database_password; do
             printf 'ci-only-placeholder\n' > "$secret_dir/$file"
           done
           for file in migration.env api.env worker.env powersync.env synthetic.env synthetic-bootstrap.env; do

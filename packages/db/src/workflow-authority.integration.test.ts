@@ -923,6 +923,104 @@ describeDatabase(
       });
     });
 
+    it('isolates the public visual-decision login to one aggregate', async () => {
+      const result = await client.query<{
+        can_create_schema_objects: boolean;
+        can_execute_decision: boolean;
+        can_use_schema: boolean;
+        has_membership: boolean;
+        other_functions: string[];
+        rolbypassrls: boolean;
+        rolcanlogin: boolean;
+        rolcreatedb: boolean;
+        rolcreaterole: boolean;
+        rolinherit: boolean;
+        rolreplication: boolean;
+        rolsuper: boolean;
+        table_access: boolean;
+      }>(`select
+        login.rolcanlogin,
+        login.rolsuper,
+        login.rolcreatedb,
+        login.rolcreaterole,
+        login.rolinherit,
+        login.rolbypassrls,
+        login.rolreplication,
+        pg_catalog.has_schema_privilege(
+          login.rolname, 'emdo', 'USAGE'
+        ) as can_use_schema,
+        pg_catalog.has_schema_privilege(
+          login.rolname, 'emdo', 'CREATE'
+        ) as can_create_schema_objects,
+        pg_catalog.has_function_privilege(
+          login.rolname,
+          'emdo.commit_provider_proposal_decision(text,jsonb)',
+          'EXECUTE'
+        ) as can_execute_decision,
+        exists (
+          select 1
+            from pg_catalog.pg_auth_members as membership
+           where membership.member = login.oid
+              or membership.roleid = login.oid
+        ) as has_membership,
+        array(
+          select routine.oid::pg_catalog.regprocedure::text
+            from pg_catalog.pg_proc as routine
+            join pg_catalog.pg_namespace as namespace
+              on namespace.oid = routine.pronamespace
+           where namespace.nspname = 'emdo'
+             and routine.oid <> pg_catalog.to_regprocedure(
+               'emdo.commit_provider_proposal_decision(text,jsonb)'
+             )
+             and pg_catalog.has_function_privilege(
+               login.rolname, routine.oid, 'EXECUTE'
+             )
+           order by routine.oid::pg_catalog.regprocedure::text
+        ) as other_functions,
+        exists (
+          select 1
+            from pg_catalog.pg_class as relation
+            join pg_catalog.pg_namespace as namespace
+              on namespace.oid = relation.relnamespace
+           where namespace.nspname = 'emdo'
+             and relation.relkind in ('r', 'p', 'v', 'm', 'S', 'f')
+             and (
+               case when relation.relkind = 'S'
+                 then pg_catalog.has_sequence_privilege(
+                   login.rolname, relation.oid, 'USAGE,SELECT,UPDATE'
+                 )
+                 else pg_catalog.has_table_privilege(
+                   login.rolname, relation.oid,
+                   'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+                 ) or pg_catalog.has_any_column_privilege(
+                   login.rolname, relation.oid,
+                   'SELECT,INSERT,UPDATE,REFERENCES'
+                 )
+               end
+             )
+        ) as table_access
+      from pg_catalog.pg_roles as login
+      where login.rolname = 'emdo_visual_decision_login'`);
+
+      expect(result.rows).toEqual([
+        {
+          can_create_schema_objects: false,
+          can_execute_decision: true,
+          can_use_schema: true,
+          has_membership: false,
+          other_functions: [],
+          rolbypassrls: false,
+          rolcanlogin: true,
+          rolcreatedb: false,
+          rolcreaterole: false,
+          rolinherit: false,
+          rolreplication: false,
+          rolsuper: false,
+          table_access: false,
+        },
+      ]);
+    });
+
     it('keeps raw claim insertion and both private primitives unavailable to workflow principals', async () => {
       await client.query('begin');
       await client.query('set local role emdo_app');

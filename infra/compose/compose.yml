@@ -46,6 +46,7 @@ services:
       - worker_dispatcher_database_password
       - audio_reconciliation_database_password
       - workflow_database_password
+      - visual_decision_database_password
       - powersync_replication_password
       - powersync_storage_password
       - owner_bootstrap_database_password
@@ -190,6 +191,7 @@ services:
       - worker_dispatcher_database_password
       - audio_reconciliation_database_password
       - workflow_database_password
+      - visual_decision_database_password
       - powersync_replication_password
       - powersync_storage_password
       - owner_bootstrap_database_password
@@ -477,6 +479,8 @@ secrets:
     file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/audio_reconciliation_database_password'
   workflow_database_password:
     file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/workflow_database_password'
+  visual_decision_database_password:
+    file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/visual_decision_database_password'
   powersync_replication_password:
     file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/powersync_replication_password'
   powersync_storage_password:

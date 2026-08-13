@@ -15,6 +15,7 @@ Keep configuration outside the checkout:
     worker_dispatcher_database_password
     audio_reconciliation_database_password
     workflow_database_password
+    visual_decision_database_password
     powersync_replication_password
     powersync_storage_password
     owner_bootstrap_database_password
@@ -67,7 +68,7 @@ Expected private env-file boundaries are:
   `EMDO_JOB_MIGRATION_DATABASE_URL` admin/migration DSN used only by the
   pg-boss installation one-shot;
 - `api.env`: distinct application, Better Auth, invitation-onboarding, and
-  workflow database URIs,
+  decision-only database URIs,
   application/session keys, encrypted-vault keyring, and provider settings.
   Sync signing uses only `EMDO_SYNC_JWT_KEYRING_B64URL`: canonical unpadded
   base64url of strict version-1 JSON with one current RSA PKCS#8 private key and
@@ -82,7 +83,19 @@ Expected private env-file boundaries are:
   unique lowercase segmented identifiers. Authenticated proposal-list cursors
   use the same strict rotation envelope under the independent
   `EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL`; their keys must not be reused for
-  experience cursors, visual proofs, or Sync JWTs. The
+  experience cursors, visual proofs, or Sync JWTs. Authenticated visual proofs
+  use a third independent strict rotation envelope under
+  `EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL`. Its current key alone issues new
+  bearer material; at most two previous keys may reproduce eligible durable
+  replays through exact `issueUntil` and `verifyUntil` instants. Every key is
+  32–64 bytes, key IDs and key material are unique, and a previous key's drain
+  window is at least the two-minute proof lifetime plus 30 seconds of clock
+  skew. `EMDO_VISUAL_DECISION_DATABASE_URL` must name the membership-free
+  `emdo_visual_decision_login` in `emdo_app`; it receives schema usage and
+  execute permission on only `commit_provider_proposal_decision(text,jsonb)`.
+  The broader workflow credential is not admitted to `api.env`; it remains
+  reserved for a future isolated manager/provider runtime and is never exposed
+  to the public decision route. The
   former raw-PEM/key-ID pair is unsupported. Invitation issuance
   uses only `EMDO_INVITATION_DELIVERY_KEY_ID` and
   `EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL`; the API receives the

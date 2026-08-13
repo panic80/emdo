@@ -39,6 +39,7 @@ describe('domain package subpath exports', () => {
     expect(conflicts).toHaveProperty('guardOfflineSyncOperation');
     expect(conflicts).toHaveProperty('mergeSchedulerConflict');
     expect(conflicts).toHaveProperty('resolveDeterministicSyncOperation');
+    expect(providerProposals).toHaveProperty('ProposalDecisionService');
     expect(providerProposals).toHaveProperty('ProposalService');
     expect(providerProposals).toHaveProperty('hashActionProposalApproval');
     expect(providerProposals).not.toHaveProperty('InMemoryProposalRepository');

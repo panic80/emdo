@@ -1,5 +1,7 @@
 export {
   createProviderWriteReconciliationService,
+  ProposalDecisionService,
+  ProposalError,
   ProposalService,
   ProposalPreparationBindingSchema,
   hashActionProposalApproval,

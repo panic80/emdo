@@ -72,6 +72,15 @@ WHERE NOT EXISTS (
 ) \gexec
 
 SELECT format(
+  'CREATE ROLE emdo_visual_decision_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
+  trim(pg_read_file('/run/secrets/visual_decision_database_password'))
+)
+WHERE NOT EXISTS (
+  SELECT FROM pg_catalog.pg_roles
+  WHERE rolname = 'emdo_visual_decision_login'
+) \gexec
+
+SELECT format(
   'CREATE ROLE emdo_owner_bootstrap_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
   trim(pg_read_file('/run/secrets/owner_bootstrap_database_password'))
 )
@@ -108,13 +117,14 @@ REVOKE CONNECT ON DATABASE emdo_powersync
   FROM emdo_api_login, emdo_auth_login, emdo_onboarding_login,
      emdo_worker_login, emdo_worker_executor_login,
      emdo_worker_dispatcher_login, emdo_audio_reconciliation_login,
-     emdo_workflow_login,
+     emdo_workflow_login, emdo_visual_decision_login,
      emdo_powersync_replication, emdo_owner_bootstrap_login;
 GRANT CONNECT ON DATABASE emdo_app
   TO emdo_api_login, emdo_auth_login, emdo_onboarding_login,
      emdo_worker_login,
      emdo_worker_executor_login, emdo_worker_dispatcher_login,
      emdo_audio_reconciliation_login, emdo_workflow_login,
+     emdo_visual_decision_login,
      emdo_powersync_replication,
      emdo_owner_bootstrap_login;
 GRANT CONNECT ON DATABASE emdo_powersync TO emdo_powersync_storage;

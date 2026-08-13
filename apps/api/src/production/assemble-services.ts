@@ -15,11 +15,13 @@ const CURRENT_DURABLE_SERVICE_NAMES = Object.freeze([
   'householdAdministration',
   'notificationPreferences',
   'proposalQueries',
+  'proposals',
   'scheduleRead',
   'settingsRead',
   'shoppingRead',
   'sync',
   'todayRead',
+  'visualProofs',
   'jwks',
 ] as const satisfies readonly (keyof ProductionApiServiceBindings)[]);
 
@@ -32,7 +34,14 @@ const selectCurrentDurableBindings = (
   Object.freeze(
     Object.fromEntries(
       CURRENT_DURABLE_SERVICE_NAMES.flatMap((name) => {
-        if (name === 'proposalQueries' && !hasTrustedAuthentication) return [];
+        if (
+          !hasTrustedAuthentication &&
+          (name === 'proposalQueries' ||
+            name === 'proposals' ||
+            name === 'visualProofs')
+        ) {
+          return [];
+        }
         const binding = bindings[name];
         return binding === undefined ? [] : [[name, binding] as const];
       }),

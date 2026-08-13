@@ -2356,7 +2356,9 @@ export class ProposalService {
     });
   }
 
-  async decide(
+  static async decideWithRepository(
+    repository: ProposalRepository,
+    currentTime: () => Date,
     rawRequest: ActionDecisionRequest,
     context: AuthenticatedVisualDecisionContext,
   ): Promise<ActionDecision> {
@@ -2385,7 +2387,7 @@ export class ProposalService {
       channel: context.channel,
       decidedAt: context.now.toISOString(),
     });
-    const outcome = await this.repository.transaction(async (transaction) => {
+    const outcome = await repository.transaction(async (transaction) => {
       const replay = await transaction.findDecisionByIdempotencyKey(
         decisionLookupFor(decision),
       );
@@ -2412,7 +2414,7 @@ export class ProposalService {
       if (nowMs < Date.parse(proposal.createdAt)) {
         return { kind: 'invalid-time' } as const;
       }
-      const transactionNow = this.currentTime();
+      const transactionNow = currentTime();
       const transactionObservedAt = transactionNow.getTime();
       if (!Number.isFinite(transactionObservedAt)) {
         return { kind: 'invalid-time' } as const;
@@ -2517,5 +2519,45 @@ export class ProposalService {
           'Proposal decision conflicted with persisted state',
         );
     }
+  }
+
+  async decide(
+    rawRequest: ActionDecisionRequest,
+    context: AuthenticatedVisualDecisionContext,
+  ): Promise<ActionDecision> {
+    return ProposalService.decideWithRepository(
+      this.repository,
+      this.currentTime,
+      rawRequest,
+      context,
+    );
+  }
+}
+
+/**
+ * Narrow visual-decision aggregate. It deliberately excludes proposal
+ * materialization and disclosure-resolution capabilities that are irrelevant
+ * once a proposal and its staged resume job are already durable.
+ */
+export class ProposalDecisionService {
+  private readonly currentTime: () => Date;
+
+  constructor(
+    private readonly repository: ProposalRepository,
+    now: () => Date = () => new Date(),
+  ) {
+    this.currentTime = now.bind(undefined);
+  }
+
+  decide(
+    rawRequest: ActionDecisionRequest,
+    context: AuthenticatedVisualDecisionContext,
+  ): Promise<ActionDecision> {
+    return ProposalService.decideWithRepository(
+      this.repository,
+      this.currentTime,
+      rawRequest,
+      context,
+    );
   }
 }

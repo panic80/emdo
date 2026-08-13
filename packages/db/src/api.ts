@@ -152,6 +152,8 @@ export type {
 } from './audio/postgres-audio-request-coordinator.js';
 
 export {
+  checkPostgresProposalWorkflowReadiness,
+  checkPostgresVisualDecisionReadiness,
   PostgresProposalRepository,
   ProposalPersistenceError,
 } from './proposals/postgres-proposal-repository.js';
