@@ -8,6 +8,7 @@ import {
   POSTGRES_INTEGRATION_SUITES,
   readPostgresSuiteFailureSummary,
   runPostgresIntegrationSuites,
+  summarizePostgresProcessFailure,
   summarizePostgresSuiteFailure,
   type PostgresIntegrationDependencies,
 } from './postgres-integration-orchestrator.js';
@@ -104,6 +105,20 @@ describe('PostgreSQL integration orchestrator', () => {
     expect(summary).toContain('permission denied for role setup');
     expect(summary).toContain('[database-url]');
     expect(summary).not.toContain('user:secret');
+  });
+
+  it('redacts and bounds a verbose child-process failure', () => {
+    const summary = summarizePostgresProcessFailure(
+      `${'ordinary test output '.repeat(400)}\n` +
+        '\u001B[31mError: role activation failed\u001B[39m\n' +
+        'postgresql://user:secret@database.example/emdo',
+    );
+
+    expect(summary).toContain('role activation failed');
+    expect(summary).toContain('[database-url]');
+    expect(summary).not.toContain('user:secret');
+    expect(summary).not.toContain('\u001B');
+    expect(summary.length).toBeLessThanOrEqual(4_000);
   });
 
   it('waits briefly for a child JSON failure report to finish flushing', async () => {

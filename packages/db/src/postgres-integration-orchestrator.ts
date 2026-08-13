@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 
 import { Client } from 'pg';
 
@@ -288,21 +289,50 @@ const createDatabase = async ({
   return { databaseName, databaseUrl: databaseUrl.toString() };
 };
 
+const redactSensitivePostgresText = (value: string): string =>
+  stripVTControlCharacters(value)
+    .replace(/\bpostgres(?:ql)?:\/\/[^\s"'`]+/giu, '[database-url]')
+    .replace(/\b(password|secret|token)=([^\s"'`]+)/giu, '$1=[redacted]');
+
+export const summarizePostgresProcessFailure = (value: string): string =>
+  redactSensitivePostgresText(value).replace(/\s+/gu, ' ').trim().slice(-4_000);
+
+class PostgresIntegrationProcessError extends Error {
+  constructor(readonly summary: string | undefined) {
+    super('PostgreSQL integration suite failed.');
+  }
+}
+
 const runCommand = async (
   command: string,
   arguments_: readonly string[],
   environment: NodeJS.ProcessEnv,
 ): Promise<void> =>
   new Promise((resolvePromise, rejectPromise) => {
+    let output = '';
+    const appendOutput = (chunk: string): void => {
+      output = `${output}${chunk}`.slice(-64_000);
+    };
     const child = spawn(command, [...arguments_], {
       cwd: repositoryRoot,
       env: environment,
-      stdio: 'inherit',
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
+    child.stdout?.setEncoding('utf8');
+    child.stderr?.setEncoding('utf8');
+    child.stdout?.on('data', appendOutput);
+    child.stderr?.on('data', appendOutput);
     child.once('error', rejectPromise);
     child.once('exit', (code, signal) => {
       if (code === 0 && signal === null) resolvePromise();
-      else rejectPromise(new Error('PostgreSQL integration suite failed.'));
+      else {
+        const summary = summarizePostgresProcessFailure(output);
+        rejectPromise(
+          new PostgresIntegrationProcessError(
+            summary.length === 0 ? undefined : summary,
+          ),
+        );
+      }
     });
   });
 
@@ -333,8 +363,7 @@ const parseSuiteResult = (value: unknown): PostgresSuiteResult => {
 };
 
 const safeFailureText = (value: string): string =>
-  value
-    .replace(/\bpostgres(?:ql)?:\/\/[^\s"'`]+/giu, '[database-url]')
+  redactSensitivePostgresText(value)
     .replace(/\s+/gu, ' ')
     .trim()
     .slice(0, 1_500);
@@ -493,14 +522,20 @@ const runSuite = async ({
           suite.file,
           '--no-file-parallelism',
           '--cache=false',
+          '--reporter=verbose',
           '--reporter=json',
-          '--outputFile',
-          vitestResultPath,
+          `--outputFile.json=${vitestResultPath}`,
         ],
         environment,
       );
     } catch (cause) {
-      const summary = await readPostgresSuiteFailureSummary(vitestResultPath);
+      const reportSummary =
+        await readPostgresSuiteFailureSummary(vitestResultPath);
+      const summary =
+        reportSummary ??
+        (cause instanceof PostgresIntegrationProcessError
+          ? cause.summary
+          : undefined);
       throw new Error(
         `PostgreSQL integration suite ${suite.id} failed${
           summary === undefined ? '.' : `: ${summary}`
