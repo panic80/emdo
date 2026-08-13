@@ -261,6 +261,8 @@ jobs:
           export ACME_EMAIL=ci@invalid.example
           export POWERSYNC_JWKS_URI=https://ci.invalid/.well-known/jwks.json
           export STAGING_RUN_ID=1
+          export EMDO_STAGING_SOURCE_SHA="$SOURCE_SHA"
+          export EMDO_STAGING_WORKFLOW_RUN_ID="$STAGING_RUN_ID"
           export STAGING_HTTP_PORT=18080
           docker compose -f infra/compose/compose.yml config --quiet
           docker compose -f infra/compose/compose.yml -f infra/compose/compose.staging.yml config --quiet

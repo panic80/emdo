@@ -745,6 +745,10 @@ describe('GitHub delivery policy', () => {
     expect(ci).toContain('owner_bootstrap_database_password');
     expect(ci).toContain('onboarding_database_password');
     expect(ci).toContain('synthetic-bootstrap.env');
+    expect(ci).toContain('export EMDO_STAGING_SOURCE_SHA="$SOURCE_SHA"');
+    expect(ci).toContain(
+      'export EMDO_STAGING_WORKFLOW_RUN_ID="$STAGING_RUN_ID"',
+    );
     expect(ci).toContain('pnpm --filter @emdo/agent-core test:package');
     expect(publish).toMatch(/push:\n\s+branches: \[main\]/);
     expect(publish).not.toContain('pull_request:');
