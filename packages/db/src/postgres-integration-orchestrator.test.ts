@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   POSTGRES_INTEGRATION_SUITES,
   runPostgresIntegrationSuites,
+  summarizePostgresSuiteFailure,
   type PostgresIntegrationDependencies,
 } from './postgres-integration-orchestrator.js';
 
@@ -58,6 +59,29 @@ const createDependencies = (
 };
 
 describe('PostgreSQL integration orchestrator', () => {
+  it('surfaces a bounded suite failure without leaking a database URL', () => {
+    const summary = summarizePostgresSuiteFailure({
+      testResults: [
+        {
+          assertionResults: [
+            {
+              fullName: 'grant replay denies a stale request',
+              status: 'failed',
+              failureMessages: [
+                'AssertionError: expected true to be false\npostgresql://user:secret@database.example/emdo',
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(summary).toContain('grant replay denies a stale request');
+    expect(summary).toContain('expected true to be false');
+    expect(summary).toContain('[database-url]');
+    expect(summary).not.toContain('user:secret');
+  });
+
   it('enrolls every dedicated live database authority suite', () => {
     expect(POSTGRES_INTEGRATION_SUITES).toEqual(
       expect.arrayContaining([
@@ -160,6 +184,14 @@ describe('PostgreSQL integration orchestrator', () => {
       ]),
       `report:${POSTGRES_INTEGRATION_SUITES.length}`,
     ]);
+  });
+
+  it('keeps every generated suite database name within the PostgreSQL identifier limit', () => {
+    for (const suite of POSTGRES_INTEGRATION_SUITES) {
+      const normalizedSuite = suite.id.replaceAll('-', '_').slice(0, 36);
+      const generatedName = `emdo_ci_${normalizedSuite}_${'a'.repeat(12)}`;
+      expect(Buffer.byteLength(generatedName, 'utf8')).toBeLessThanOrEqual(63);
+    }
   });
 
   it('rejects a silently skipped suite, cleans its database, and emits no report', async () => {

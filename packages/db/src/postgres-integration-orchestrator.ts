@@ -332,6 +332,61 @@ const parseSuiteResult = (value: unknown): PostgresSuiteResult => {
   };
 };
 
+const safeFailureText = (value: string): string =>
+  value
+    .replace(/\bpostgres(?:ql)?:\/\/[^\s"'`]+/giu, '[database-url]')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, 1_500);
+
+export const summarizePostgresSuiteFailure = (
+  value: unknown,
+): string | undefined => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const testResults = (value as Record<string, unknown>).testResults;
+  if (!Array.isArray(testResults)) return undefined;
+  const failures: string[] = [];
+  for (const testResult of testResults) {
+    if (
+      testResult === null ||
+      typeof testResult !== 'object' ||
+      Array.isArray(testResult)
+    ) {
+      continue;
+    }
+    const assertions = (testResult as Record<string, unknown>).assertionResults;
+    if (!Array.isArray(assertions)) continue;
+    for (const assertion of assertions) {
+      if (
+        assertion === null ||
+        typeof assertion !== 'object' ||
+        Array.isArray(assertion)
+      ) {
+        continue;
+      }
+      const record = assertion as Record<string, unknown>;
+      if (record.status !== 'failed') continue;
+      const title =
+        typeof record.fullName === 'string'
+          ? safeFailureText(record.fullName)
+          : 'unnamed PostgreSQL assertion';
+      const messages = Array.isArray(record.failureMessages)
+        ? record.failureMessages.filter(
+            (message): message is string => typeof message === 'string',
+          )
+        : [];
+      const detail = safeFailureText(messages[0] ?? 'failed without a message');
+      failures.push(`${title}: ${detail}`);
+      if (failures.length === 3) break;
+    }
+    if (failures.length === 3) break;
+  }
+  if (failures.length === 0) return undefined;
+  return failures.join(' | ').slice(0, 4_000);
+};
+
 const parseAttackProof = (value: unknown): RlsCrossHouseholdAttackProof => {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('RLS attack probe result is invalid.');
@@ -384,21 +439,38 @@ const runSuite = async ({
     environment.RLS_ATTACK_PROBE_WORKFLOW = probeContext.workflow;
   }
   try {
-    await runCommand(
-      process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
-      [
-        'exec',
-        'vitest',
-        'run',
-        suite.file,
-        '--no-file-parallelism',
-        '--cache=false',
-        '--reporter=json',
-        '--outputFile',
-        vitestResultPath,
-      ],
-      environment,
-    );
+    try {
+      await runCommand(
+        process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+        [
+          'exec',
+          'vitest',
+          'run',
+          suite.file,
+          '--no-file-parallelism',
+          '--cache=false',
+          '--reporter=json',
+          '--outputFile',
+          vitestResultPath,
+        ],
+        environment,
+      );
+    } catch (cause) {
+      let summary: string | undefined;
+      try {
+        summary = summarizePostgresSuiteFailure(
+          JSON.parse(await readFile(vitestResultPath, 'utf8')),
+        );
+      } catch {
+        // The child can fail before Vitest creates a report.
+      }
+      throw new Error(
+        `PostgreSQL integration suite ${suite.id} failed${
+          summary === undefined ? '.' : `: ${summary}`
+        }`,
+        { cause },
+      );
+    }
     const result = parseSuiteResult(
       JSON.parse(await readFile(vitestResultPath, 'utf8')),
     );
