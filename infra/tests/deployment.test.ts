@@ -237,7 +237,13 @@ describe('container and edge configuration', () => {
     expect(common).toContain('EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL');
     expect(staging.match(/restart: 'no'/g)).toHaveLength(6);
     expect(staging).toMatch(/api:[\s\S]*?ports: !override \[\]/);
+    expect(staging).toMatch(
+      /api:[\s\S]*?networks: !override\n\s+- backend\n\s+- edge\n\s+- auth-egress/,
+    );
     expect(staging).toMatch(/edge:[\s\S]*?internal: true/);
+    expect(staging).toContain(
+      'emdo-staging-${STAGING_RUN_ID:?STAGING_RUN_ID is required}-auth-egress',
+    );
     expect(staging).toMatch(/egress:[\s\S]*?internal: true/);
     expect(
       staging.match(/limits:\n\s+memory:/g)?.length,
@@ -598,15 +604,23 @@ describe('host deployment and recovery scripts', () => {
   });
 
   it('uses exact locks, persists staging expiry, gates snapshots and supports rollback', async () => {
-    const [common, staging, sweeper, acceptance, production, rollback] =
-      await Promise.all([
-        read('infra/scripts/_common.sh'),
-        read('infra/scripts/deploy-staging.sh'),
-        read('infra/scripts/cleanup-expired-staging.sh'),
-        read('infra/scripts/run-staging-acceptance.sh'),
-        read('infra/scripts/deploy-production.sh'),
-        read('infra/scripts/rollback.sh'),
-      ]);
+    const [
+      common,
+      staging,
+      stagingCompose,
+      sweeper,
+      acceptance,
+      production,
+      rollback,
+    ] = await Promise.all([
+      read('infra/scripts/_common.sh'),
+      read('infra/scripts/deploy-staging.sh'),
+      read('infra/compose/compose.staging.yml'),
+      read('infra/scripts/cleanup-expired-staging.sh'),
+      read('infra/scripts/run-staging-acceptance.sh'),
+      read('infra/scripts/deploy-production.sh'),
+      read('infra/scripts/rollback.sh'),
+    ]);
 
     expect(common).toContain('@sha256:');
     expect(common).toContain('assert_digest_lock');
@@ -626,9 +640,11 @@ describe('host deployment and recovery scripts', () => {
       'EMDO_STAGING_SOURCE_SHA="$IMAGE_LOCK_SOURCE_SHA"',
     );
     expect(acceptance).toContain('EMDO_STAGING_WORKFLOW_RUN_ID="$run_id"');
+    expect(stagingCompose).toContain('--forbid-worker-provider-execution');
     expect(acceptance).not.toContain('"gate":"http-api-subset"');
     expect(common).toContain('assert_env_file_allowed_keys');
     expect(common).toContain('assert_internal_postgres_uri');
+    expect(common).toContain('assert_staging_auth_provider_config');
     expect(staging).toContain('assert_isolated_project_absent');
     expect(staging.indexOf('expires-at-epoch')).toBeLessThan(
       staging.indexOf('staging_compose pull'),

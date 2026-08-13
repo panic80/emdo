@@ -58,8 +58,11 @@ This is source composition, not credentialed evidence. Production remains
 unready until the exact database roles and a verified Resend domain pass the
 built artifact's probe, Google identity and email flows are exercised, and the
 result is captured through protected staging/production gates. The current
-staging secret allowlist deliberately rejects provider credentials, so it
-cannot yet prove this binding and must not substitute no-op callbacks.
+staging contract admits only unrelated Google identity and Resend credentials
+for this auth graph, on an API-only authentication egress network. It continues
+to reject Calendar OAuth, OpenAI, push, and commerce credentials, keeps worker
+provider execution disabled, and never substitutes no-op callbacks. A real
+staging run remains pending.
 
 ## Intentionally unavailable capabilities
 

@@ -17,7 +17,6 @@ services:
     environment:
       EMDO_ENVIRONMENT: staging
       EMDO_SYNTHETIC_DATA_ONLY: 'true'
-      EMDO_EXTERNAL_PROVIDERS_ENABLED: 'false'
       EMDO_STAGING_SOURCE_SHA: ${EMDO_STAGING_SOURCE_SHA:?EMDO_STAGING_SOURCE_SHA is required}
       EMDO_STAGING_WORKFLOW_RUN_ID: ${EMDO_STAGING_WORKFLOW_RUN_ID:?EMDO_STAGING_WORKFLOW_RUN_ID is required}
     deploy:
@@ -37,7 +36,6 @@ services:
     environment:
       EMDO_ENVIRONMENT: staging
       EMDO_SYNTHETIC_DATA_ONLY: 'true'
-      EMDO_EXTERNAL_PROVIDERS_ENABLED: 'false'
     deploy:
       resources:
         limits:
@@ -51,7 +49,10 @@ services:
       EMDO_ENVIRONMENT: staging
       EMDO_ALLOW_LOOPBACK_API_INGRESS: 'true'
       EMDO_SYNTHETIC_DATA_ONLY: 'true'
-      EMDO_EXTERNAL_PROVIDERS_ENABLED: 'false'
+    networks: !override
+      - backend
+      - edge
+      - auth-egress
     deploy:
       resources:
         limits:
@@ -161,7 +162,7 @@ services:
       - dist/cli/staging-acceptance.js
       - --all-mvp-gates
       - --require-synthetic
-      - --forbid-external-providers
+      - --forbid-worker-provider-execution
     tmpfs:
       - /tmp:size=64m,noexec,nosuid,nodev
     depends_on:
@@ -185,6 +186,10 @@ networks:
   egress:
     name: emdo-staging-${STAGING_RUN_ID:?STAGING_RUN_ID is required}-egress
     internal: true
+  # Only the API joins this network. It is needed for bounded readiness and
+  # authentication email delivery using isolated staging-only credentials.
+  auth-egress:
+    name: emdo-staging-${STAGING_RUN_ID:?STAGING_RUN_ID is required}-auth-egress
   backend:
     name: emdo-staging-${STAGING_RUN_ID:?STAGING_RUN_ID is required}-backend
     internal: true

@@ -259,6 +259,41 @@ describe('deployment script trust boundaries', () => {
     ).toBe(0);
   });
 
+  it('requires isolated staging Google identity and Resend auth configuration', async () => {
+    const apiEnvironment = join(directory, 'api.env');
+    const valid = [
+      'EMDO_TRANSACTIONAL_EMAIL_PROVIDER=resend',
+      'EMDO_GOOGLE_IDENTITY_CLIENT_ID=123456789012-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com',
+      'EMDO_GOOGLE_IDENTITY_CLIENT_SECRET=staging-google-client-secret',
+      'EMDO_RESEND_AUTH_API_KEY=re_staging_auth_provider_key_0123456789',
+      'EMDO_RESEND_FROM_EMAIL=auth@staging.emdo.invalid',
+    ];
+    await writeFile(apiEnvironment, `${valid.join('\n')}\n`);
+
+    expect(
+      runCommon('assert_staging_auth_provider_config "$2"', apiEnvironment)
+        .status,
+    ).toBe(0);
+
+    for (const invalidLine of [
+      'EMDO_TRANSACTIONAL_EMAIL_PROVIDER=disabled',
+      'EMDO_GOOGLE_IDENTITY_CLIENT_ID=production-client',
+      'EMDO_GOOGLE_IDENTITY_CLIENT_SECRET=contains whitespace',
+      'EMDO_RESEND_AUTH_API_KEY=not-a-resend-key',
+      'EMDO_RESEND_FROM_EMAIL=Auth@staging.emdo.invalid',
+    ]) {
+      const key = invalidLine.slice(0, invalidLine.indexOf('='));
+      await writeFile(
+        apiEnvironment,
+        `${valid.map((line) => (line.startsWith(`${key}=`) ? invalidLine : line)).join('\n')}\n`,
+      );
+      expect(
+        runCommon('assert_staging_auth_provider_config "$2"', apiEnvironment)
+          .status,
+      ).not.toBe(0);
+    }
+  });
+
   it('requires one high-entropy edge-proxy proof secret', async () => {
     const edgeProxyEnvironment = join(directory, 'edge-proxy.env');
     await writeFile(

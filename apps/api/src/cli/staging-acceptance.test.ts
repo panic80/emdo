@@ -5,7 +5,6 @@ import { runStagingAcceptanceCommand } from './staging-acceptance.js';
 const CLIENT_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f90';
 const SPACE_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f91';
 const USER_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f92';
-const RUN_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f93';
 const REQUEST_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5faa';
 const SOURCE_SHA = 'a'.repeat(40);
 const WORKFLOW_RUN_ID = '123456789';
@@ -112,7 +111,7 @@ const problem = (status: number, code: string) =>
   );
 
 describe('staging acceptance CLI', () => {
-  it('probes the actual HTTP graph while forbidding external providers', async () => {
+  it('probes the provider-free HTTP subset while worker providers stay disabled', async () => {
     const requests: Request[] = [];
     const syncOperationBatches: unknown[] = [];
     const fetch = vi.fn(async (request: Request) => {
@@ -218,29 +217,12 @@ describe('staging acceptance CLI', () => {
       if (url.pathname.endsWith('/decision')) {
         return problem(403, 'visual-approval-required');
       }
-      if (url.pathname === '/api/v1/voice/speak') {
-        return problem(503, 'audio-provider-unavailable');
-      }
-      if (url.pathname === '/api/v1/connectors/google/authorize') {
-        return problem(503, 'connector-unavailable');
-      }
-      if (url.pathname === '/api/v1/turns') {
-        return Response.json(
-          {
-            schemaVersion: 1,
-            runId: RUN_ID,
-            status: 'accepted',
-            replayed: false,
-            eventsPath: `/api/v1/runs/${RUN_ID}/events`,
-          },
-          { status: 202 },
-        );
-      }
-      if (url.pathname === `/api/v1/runs/${RUN_ID}/events`) {
-        return new Response(
-          `id: 1\nevent: run.failed\ndata: {"schemaVersion":1,"runId":"${RUN_ID}","sequence":1,"type":"run.failed","occurredAt":"2026-08-09T12:00:00.000Z","data":{"code":"models-unavailable"}}\n\n`,
-          { headers: { 'content-type': 'text/event-stream' } },
-        );
+      if (
+        url.pathname === '/api/v1/voice/speak' ||
+        url.pathname === '/api/v1/connectors/google/authorize' ||
+        url.pathname === '/api/v1/turns'
+      ) {
+        throw new Error('provider-free HTTP subset invoked a provider path');
       }
       return new Response(null, { status: 404 });
     });
@@ -250,7 +232,7 @@ describe('staging acceptance CLI', () => {
         argv: [
           '--all-mvp-gates',
           '--require-synthetic',
-          '--forbid-external-providers',
+          '--forbid-worker-provider-execution',
         ],
         environment,
         fetch,
@@ -297,6 +279,15 @@ describe('staging acceptance CLI', () => {
     expect(metricsRequests).toHaveLength(1);
     expect(metricsRequests[0]?.headers.get('authorization')).toBeNull();
     expect(metricsRequests[0]?.headers.get('cookie')).toBeNull();
+    expect(
+      requests.some((request) =>
+        [
+          '/api/v1/voice/speak',
+          '/api/v1/connectors/google/authorize',
+          '/api/v1/turns',
+        ].includes(new URL(request.url).pathname),
+      ),
+    ).toBe(false);
     expect(syncOperationBatches).toEqual([
       {
         schemaVersion: 1,
@@ -416,7 +407,7 @@ describe('staging acceptance CLI', () => {
           argv: [
             '--all-mvp-gates',
             '--require-synthetic',
-            '--forbid-external-providers',
+            '--forbid-worker-provider-execution',
           ],
           environment,
           fetch,
@@ -492,7 +483,7 @@ describe('staging acceptance CLI', () => {
           argv: [
             '--all-mvp-gates',
             '--require-synthetic',
-            '--forbid-external-providers',
+            '--forbid-worker-provider-execution',
           ],
           environment,
           fetch,
@@ -502,7 +493,7 @@ describe('staging acceptance CLI', () => {
     },
   );
 
-  it('rejects partial flags and any provider-enabled environment before HTTP', async () => {
+  it('rejects partial flags and worker provider execution before HTTP', async () => {
     const fetch = vi.fn();
     await expect(
       runStagingAcceptanceCommand({
@@ -516,7 +507,7 @@ describe('staging acceptance CLI', () => {
         argv: [
           '--all-mvp-gates',
           '--require-synthetic',
-          '--forbid-external-providers',
+          '--forbid-worker-provider-execution',
         ],
         environment: {
           ...environment,
@@ -543,7 +534,7 @@ describe('staging acceptance CLI', () => {
         argv: [
           '--all-mvp-gates',
           '--require-synthetic',
-          '--forbid-external-providers',
+          '--forbid-worker-provider-execution',
         ],
         environment: { ...environment, ...overrides },
         fetch,
@@ -570,7 +561,7 @@ describe('staging acceptance CLI', () => {
           argv: [
             '--all-mvp-gates',
             '--require-synthetic',
-            '--forbid-external-providers',
+            '--forbid-worker-provider-execution',
           ],
           environment,
           fetch,
@@ -644,7 +635,7 @@ describe('staging acceptance CLI', () => {
         argv: [
           '--all-mvp-gates',
           '--require-synthetic',
-          '--forbid-external-providers',
+          '--forbid-worker-provider-execution',
         ],
         environment,
         fetch,

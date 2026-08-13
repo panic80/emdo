@@ -39,7 +39,10 @@ noncanonical, or unsigned evidence is rejected.
 
 The API `staging-acceptance` executable contributes only the
 `http-api-subset` receipt. It cannot satisfy browser, PowerSync, provider,
-database-security, domain, eval, or recovery gates.
+database-security, domain, eval, or recovery gates. It does not invoke agent,
+voice, Calendar, or email-delivery provider operations; those require their
+own credentialed receipts even though the API readiness contract requires
+their production bindings and bounded probes to be healthy first.
 
 Before any authenticated HTTP fixture, the executable requires the exact
 version-1 API readiness response documented in `docs/deployment/README.md`;

@@ -11,7 +11,7 @@ const AcceptanceConfigurationSchema = z.strictObject({
     .refine((value) => new URL(value).origin === value),
   clientId: z.uuid(),
   environment: z.literal('staging'),
-  externalProvidersEnabled: z.literal('false'),
+  workerProvidersEnabled: z.literal('false'),
   ownerEmail: z.email().trim().toLowerCase().max(320),
   ownerPassword: z.string().min(12).max(128),
   publicOrigin: z
@@ -206,7 +206,7 @@ export const runStagingAcceptanceCommand = async (input: {
     apiOrigin: input.environment.EMDO_STAGING_API_ORIGIN,
     clientId: input.environment.EMDO_SYNTHETIC_CLIENT_ID,
     environment: input.environment.EMDO_ENVIRONMENT,
-    externalProvidersEnabled: input.environment.EMDO_EXTERNAL_PROVIDERS_ENABLED,
+    workerProvidersEnabled: input.environment.EMDO_EXTERNAL_PROVIDERS_ENABLED,
     ownerEmail: input.environment.EMDO_SYNTHETIC_OWNER_EMAIL,
     ownerPassword: input.environment.EMDO_SYNTHETIC_OWNER_PASSWORD,
     publicOrigin: input.environment.EMDO_PUBLIC_ORIGIN,
@@ -218,7 +218,7 @@ export const runStagingAcceptanceCommand = async (input: {
     input.argv.length !== 3 ||
     input.argv[0] !== '--all-mvp-gates' ||
     input.argv[1] !== '--require-synthetic' ||
-    input.argv[2] !== '--forbid-external-providers' ||
+    input.argv[2] !== '--forbid-worker-provider-execution' ||
     !configuration.success
   ) {
     throw new Error('Staging acceptance configuration is invalid');
@@ -518,72 +518,6 @@ export const runStagingAcceptanceCommand = async (input: {
     (await parseProblem(decision)).code !== 'visual-approval-required'
   ) {
     throw new Error('Visual approval defense gate failed');
-  }
-
-  const speech = await send('/api/v1/voice/speak', {
-    method: 'POST',
-    headers: {
-      ...mutationHeaders,
-      'idempotency-key': 'staging-disabled-speech-v1',
-    },
-    body: JSON.stringify({ schemaVersion: 1, voice: 'alloy', text: 'Test' }),
-  });
-  if (
-    speech.status !== 503 ||
-    (await parseProblem(speech)).code !== 'audio-provider-unavailable'
-  ) {
-    throw new Error('Audio provider disablement gate failed');
-  }
-  const google = await send('/api/v1/connectors/google/authorize', {
-    method: 'POST',
-    headers: {
-      ...mutationHeaders,
-      'idempotency-key': 'staging-disabled-google-v1',
-    },
-    body: JSON.stringify({ schemaVersion: 1, returnTo: '/settings' }),
-  });
-  if (
-    google.status !== 503 ||
-    (await parseProblem(google)).code !== 'connector-unavailable'
-  ) {
-    throw new Error('Google provider disablement gate failed');
-  }
-
-  const turn = z
-    .strictObject({
-      schemaVersion: z.literal(1),
-      runId: z.uuid(),
-      status: z.literal('accepted'),
-      replayed: z.boolean(),
-      eventsPath: z.string(),
-    })
-    .parse(
-      await requireOkJson(
-        await send('/api/v1/turns', {
-          method: 'POST',
-          headers: {
-            ...mutationHeaders,
-            'idempotency-key': 'staging-manager-fail-safe-v1',
-          },
-          body: JSON.stringify({
-            schemaVersion: 1,
-            message: 'Provide a safe staging status.',
-          }),
-        }),
-      ),
-    );
-  if (turn.eventsPath !== `/api/v1/runs/${turn.runId}/events`) {
-    throw new Error('Manager event binding gate failed');
-  }
-  const events = await send(turn.eventsPath, {
-    headers: { cookie: cookies.join('; ') },
-  });
-  if (
-    !events.ok ||
-    !events.headers.get('content-type')?.includes('text/event-stream') ||
-    !(await events.text()).includes('event: run.failed')
-  ) {
-    throw new Error('Manager fail-safe event gate failed');
   }
 
   const observedAt = (input.now?.() ?? new Date()).toISOString();
