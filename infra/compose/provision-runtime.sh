@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-export PGPASSWORD="$(tr -d '\r\n' < /run/secrets/postgres_superuser_password)"
+PGPASSWORD="$(tr -d '\r\n' < /run/secrets/postgres_superuser_password)"
+export PGPASSWORD
 exec psql \
   --host postgres \
   --username postgres \
