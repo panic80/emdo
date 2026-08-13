@@ -356,7 +356,9 @@ export const summarizePostgresSuiteFailure = (
     ) {
       continue;
     }
-    const assertions = (testResult as Record<string, unknown>).assertionResults;
+    const testResultRecord = testResult as Record<string, unknown>;
+    const failuresBeforeAssertions = failures.length;
+    const assertions = testResultRecord.assertionResults;
     if (!Array.isArray(assertions)) continue;
     for (const assertion of assertions) {
       if (
@@ -380,6 +382,20 @@ export const summarizePostgresSuiteFailure = (
       const detail = safeFailureText(messages[0] ?? 'failed without a message');
       failures.push(`${title}: ${detail}`);
       if (failures.length === 3) break;
+    }
+    if (
+      failures.length === failuresBeforeAssertions &&
+      testResultRecord.status === 'failed'
+    ) {
+      const name =
+        typeof testResultRecord.name === 'string'
+          ? safeFailureText(testResultRecord.name)
+          : 'unnamed PostgreSQL test file';
+      const message =
+        typeof testResultRecord.message === 'string'
+          ? safeFailureText(testResultRecord.message)
+          : 'failed during setup or teardown without a message';
+      failures.push(`${name}: ${message}`);
     }
     if (failures.length === 3) break;
   }

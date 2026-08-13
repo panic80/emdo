@@ -87,6 +87,25 @@ describe('PostgreSQL integration orchestrator', () => {
     expect(summary).not.toContain('user:secret');
   });
 
+  it('surfaces a setup or teardown failure reported at file level', () => {
+    const summary = summarizePostgresSuiteFailure({
+      testResults: [
+        {
+          assertionResults: [],
+          message:
+            'permission denied for role setup at postgresql://user:secret@database.example/emdo',
+          name: '/workspace/packages/db/src/agent/run-event-source.integration.test.ts',
+          status: 'failed',
+        },
+      ],
+    });
+
+    expect(summary).toContain('run-event-source.integration.test.ts');
+    expect(summary).toContain('permission denied for role setup');
+    expect(summary).toContain('[database-url]');
+    expect(summary).not.toContain('user:secret');
+  });
+
   it('waits briefly for a child JSON failure report to finish flushing', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'emdo-postgres-report-'));
     const resultPath = join(directory, 'vitest.json');
