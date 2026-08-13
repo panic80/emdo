@@ -349,7 +349,7 @@ describe('durable worker PostgreSQL runtime', () => {
     expect(statements.at(-1)).toBe('commit');
   });
 
-  it('loads canonical notification content but persists only sanitized external channel outcomes', async () => {
+  it('loads only current notification delivery preferences and suppresses disabled external channels', async () => {
     const { pool, query } = poolFor((sql) => {
       if (sql.includes('claim_worker_operation_scope')) {
         return [{ authorized: true }];
@@ -357,17 +357,22 @@ describe('durable worker PostgreSQL runtime', () => {
       if (sql.includes('insert into emdo.notification_deliveries')) {
         return [{ delivery_id: 'notification:abc' }];
       }
-      if (sql.includes('from emdo.notifications')) {
+      if (sql.includes('read_worker_notification_delivery_preferences')) {
         return [
           {
-            notification_id: ids.notification,
-            revision: 3,
-            sensitivity: 'sensitive',
-            title: 'Private title',
-            body: 'Private body',
-            in_app: true,
-            email_recipient: 'member@example.ca',
-            push_subscription_reference: null,
+            delivery_preferences: {
+              schemaVersion: 1,
+              notificationId: ids.notification,
+              revision: 3,
+              sensitivity: 'sensitive',
+              title: 'Private title',
+              body: 'Private body',
+              channels: {
+                inApp: true,
+                email: { enabled: false, recipient: null },
+                push: { enabled: false, subscriptionReference: null },
+              },
+            },
             email_outcome: null,
             push_outcome: null,
           },
@@ -392,8 +397,17 @@ describe('durable worker PostgreSQL runtime', () => {
       schemaVersion: 1,
       notificationId: ids.notification,
       title: 'Private title',
+      channels: { inApp: true, email: null, push: null },
       externalOutcomes: { email: null, push: null },
     });
+
+    const preferenceRead = query.mock.calls.find(([sql]) =>
+      sql.includes('read_worker_notification_delivery_preferences'),
+    );
+    expect(preferenceRead?.[0]).not.toMatch(
+      /\b(?:email_recipient|push_subscription_reference)\b/u,
+    );
+    expect(preferenceRead?.[0]).not.toContain('from emdo.notifications');
     await repository.recordExternalOutcome(
       {
         operationId: 'notification-operation:0001',

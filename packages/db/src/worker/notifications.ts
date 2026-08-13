@@ -34,6 +34,49 @@ const ExternalOutcomeSchema = z.strictObject({
   status: z.enum(['sent', 'duplicate', 'gone', 'not-applied', 'indeterminate']),
 });
 
+const DeliveryPreferencesSchema = z
+  .strictObject({
+    schemaVersion: z.literal(1),
+    notificationId: WorkerReferenceSchema,
+    revision: z.number().int().safe().positive(),
+    sensitivity: z.enum(['standard', 'sensitive']),
+    title: z.string().trim().min(1).max(200),
+    body: z.string().trim().min(1).max(4_000),
+    channels: z.strictObject({
+      inApp: z.boolean(),
+      email: z.strictObject({
+        enabled: z.boolean(),
+        recipient: z.email().max(320).nullable(),
+      }),
+      push: z.strictObject({
+        enabled: z.boolean(),
+        subscriptionReference: WorkerReferenceSchema.nullable(),
+      }),
+    }),
+  })
+  .superRefine((value, context) => {
+    if (
+      value.channels.email.enabled !==
+      (value.channels.email.recipient !== null)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['channels', 'email'],
+        message: 'Email delivery preference is inconsistent',
+      });
+    }
+    if (
+      value.channels.push.enabled !==
+      (value.channels.push.subscriptionReference !== null)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['channels', 'push'],
+        message: 'Push delivery preference is inconsistent',
+      });
+    }
+  });
+
 export interface PostgresNotificationDeliveryRecord {
   readonly schemaVersion: 1;
   readonly notificationId: string;
@@ -58,14 +101,7 @@ const parseRecord = (
 ): PostgresNotificationDeliveryRecord => {
   const parsed = z
     .strictObject({
-      notification_id: WorkerReferenceSchema,
-      revision: z.number().int().safe().positive(),
-      sensitivity: z.enum(['standard', 'sensitive']),
-      title: z.string().trim().min(1).max(200),
-      body: z.string().trim().min(1).max(4_000),
-      in_app: z.boolean(),
-      email_recipient: z.email().max(320).nullable(),
-      push_subscription_reference: WorkerReferenceSchema.nullable(),
+      delivery_preferences: DeliveryPreferencesSchema,
       email_outcome: z
         .enum(['sent', 'duplicate', 'not-applied', 'indeterminate'])
         .nullable(),
@@ -81,23 +117,25 @@ const parseRecord = (
     );
   }
   const value = parsed.data;
+  const preferences = value.delivery_preferences;
   return deepFreeze({
     schemaVersion: 1 as const,
-    notificationId: value.notification_id,
-    revision: value.revision,
-    sensitivity: value.sensitivity,
-    title: value.title,
-    body: value.body,
+    notificationId: preferences.notificationId,
+    revision: preferences.revision,
+    sensitivity: preferences.sensitivity,
+    title: preferences.title,
+    body: preferences.body,
     channels: {
-      inApp: value.in_app,
-      email:
-        value.email_recipient === null
-          ? null
-          : { recipient: value.email_recipient },
-      push:
-        value.push_subscription_reference === null
-          ? null
-          : { subscriptionReference: value.push_subscription_reference },
+      inApp: preferences.channels.inApp,
+      email: !preferences.channels.email.enabled
+        ? null
+        : { recipient: preferences.channels.email.recipient! },
+      push: !preferences.channels.push.enabled
+        ? null
+        : {
+            subscriptionReference:
+              preferences.channels.push.subscriptionReference!,
+          },
     },
     externalOutcomes: {
       email: value.email_outcome,
@@ -129,16 +167,16 @@ export class PostgresNotificationDeliveryRepository {
       async (client) => {
         const row = firstResultRow(
           await client.query(
-            `select notification.notification_id, notification.revision,
-                    notification.sensitivity, notification.title,
-                    notification.body, notification.in_app,
-                    notification.email_recipient,
-                    notification.push_subscription_reference,
+            `select preferences.delivery_preferences,
                     (
                       select delivery.status
                         from emdo.notification_deliveries as delivery
-                       where delivery.notification_id = notification.notification_id
-                         and delivery.revision = notification.revision
+                       where delivery.notification_id =
+                               (preferences.delivery_preferences
+                                  ->> 'notificationId')::uuid
+                         and delivery.revision =
+                               (preferences.delivery_preferences
+                                  ->> 'revision')::integer
                          and delivery.channel = 'email'
                        order by delivery.updated_at desc, delivery.delivery_id
                        limit 1
@@ -146,16 +184,22 @@ export class PostgresNotificationDeliveryRepository {
                     (
                       select delivery.status
                         from emdo.notification_deliveries as delivery
-                       where delivery.notification_id = notification.notification_id
-                         and delivery.revision = notification.revision
+                       where delivery.notification_id =
+                               (preferences.delivery_preferences
+                                  ->> 'notificationId')::uuid
+                         and delivery.revision =
+                               (preferences.delivery_preferences
+                                  ->> 'revision')::integer
                          and delivery.channel = 'push'
                        order by delivery.updated_at desc, delivery.delivery_id
                        limit 1
                     ) as push_outcome
-               from emdo.notifications as notification
-              where notification.notification_id = $1
-                and notification.revision = emdo.current_worker_target_revision()
-                and notification.tombstoned_at is null`,
+               from (
+                 select emdo.read_worker_notification_delivery_preferences(
+                   $1::uuid
+                 ) as delivery_preferences
+               ) as preferences
+              where preferences.delivery_preferences is not null`,
             [request.notificationId],
           ),
         );

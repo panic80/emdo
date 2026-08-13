@@ -181,6 +181,8 @@ describe('experience notification preferences migration', () => {
     expect(sql).toMatch(/coalesce\(preference\.push,\s*false\)/u);
     expect(sql).toContain("'recipient', case");
     expect(sql).toContain('then account_user.email');
+    expect(sql).toContain('and account_user.email_verified is true');
+    expect(sql).toContain('else null');
     expect(sql).toContain("'subscriptionreference', null::text");
     expect(sql).toContain(
       "'enabled', false and coalesce(preference.push, false)",
@@ -190,6 +192,16 @@ describe('experience notification preferences migration', () => {
     );
     expect(sql).not.toMatch(
       /grant (?:select|insert|update|delete)[^;]+notification_preferences[^;]+to emdo_worker_executor/u,
+    );
+    expect(sql).toMatch(
+      /revoke select on emdo\.notifications from emdo_worker_executor;/u,
+    );
+    const notificationColumns = sql.match(
+      /grant select \(([^)]+)\) on emdo\.notifications to emdo_worker_executor;/u,
+    )?.[1];
+    expect(notificationColumns).toBeDefined();
+    expect(notificationColumns).not.toMatch(
+      /(?:email_recipient|push_subscription_reference)/u,
     );
   });
 });

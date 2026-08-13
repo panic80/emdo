@@ -443,6 +443,7 @@ REVOKE ALL ON emdo.notification_preferences,
 REVOKE ALL ON emdo.notifications, emdo.notification_preferences,
 	emdo.auth_users
 	FROM emdo_notification_preferences_worker_executor;
+REVOKE SELECT ON emdo.notifications FROM emdo_worker_executor;
 GRANT USAGE ON SCHEMA emdo TO emdo_experience_preferences_executor;
 GRANT USAGE ON SCHEMA emdo
 	TO emdo_notification_preferences_worker_executor;
@@ -478,6 +479,11 @@ GRANT SELECT (household_id, user_id, in_app, email, push)
 	TO emdo_notification_preferences_worker_executor;
 GRANT SELECT (id, email, email_verified) ON emdo.auth_users
 	TO emdo_notification_preferences_worker_executor;
+GRANT SELECT (
+	notification_id, household_id, space_id, original_owner_user_id,
+	source_type, source_id, source_revision, revision, sensitivity, title,
+	body, in_app, tombstoned_at
+) ON emdo.notifications TO emdo_worker_executor;
 REVOKE ALL ON FUNCTION
 	emdo.read_experience_notification_preferences(uuid),
 	emdo.update_experience_notification_preferences(
