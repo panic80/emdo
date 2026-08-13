@@ -1,7 +1,12 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import {
   POSTGRES_INTEGRATION_SUITES,
+  readPostgresSuiteFailureSummary,
   runPostgresIntegrationSuites,
   summarizePostgresSuiteFailure,
   type PostgresIntegrationDependencies,
@@ -80,6 +85,42 @@ describe('PostgreSQL integration orchestrator', () => {
     expect(summary).toContain('expected true to be false');
     expect(summary).toContain('[database-url]');
     expect(summary).not.toContain('user:secret');
+  });
+
+  it('waits briefly for a child JSON failure report to finish flushing', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'emdo-postgres-report-'));
+    const resultPath = join(directory, 'vitest.json');
+    try {
+      const pendingSummary = readPostgresSuiteFailureSummary(resultPath, {
+        attempts: 10,
+        delayMs: 5,
+      });
+      setTimeout(() => {
+        void writeFile(
+          resultPath,
+          JSON.stringify({
+            testResults: [
+              {
+                assertionResults: [
+                  {
+                    fullName: 'fresh grant denies stale replay',
+                    status: 'failed',
+                    failureMessages: ['expected true to be false'],
+                  },
+                ],
+              },
+            ],
+          }),
+          'utf8',
+        );
+      }, 10);
+
+      await expect(pendingSummary).resolves.toContain(
+        'fresh grant denies stale replay',
+      );
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
   });
 
   it('enrolls every dedicated live database authority suite', () => {

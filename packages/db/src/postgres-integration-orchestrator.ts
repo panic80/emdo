@@ -387,6 +387,34 @@ export const summarizePostgresSuiteFailure = (
   return failures.join(' | ').slice(0, 4_000);
 };
 
+export const readPostgresSuiteFailureSummary = async (
+  resultPath: string,
+  {
+    attempts = 20,
+    delayMs = 25,
+  }: {
+    readonly attempts?: number;
+    readonly delayMs?: number;
+  } = {},
+): Promise<string | undefined> => {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const summary = summarizePostgresSuiteFailure(
+        JSON.parse(await readFile(resultPath, 'utf8')),
+      );
+      if (summary !== undefined) return summary;
+    } catch {
+      // Vitest can exit while its JSON reporter is still flushing the file.
+    }
+    if (attempt + 1 < attempts) {
+      await new Promise<void>((resolvePromise) => {
+        setTimeout(resolvePromise, delayMs);
+      });
+    }
+  }
+  return undefined;
+};
+
 const parseAttackProof = (value: unknown): RlsCrossHouseholdAttackProof => {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('RLS attack probe result is invalid.');
@@ -456,14 +484,7 @@ const runSuite = async ({
         environment,
       );
     } catch (cause) {
-      let summary: string | undefined;
-      try {
-        summary = summarizePostgresSuiteFailure(
-          JSON.parse(await readFile(vitestResultPath, 'utf8')),
-        );
-      } catch {
-        // The child can fail before Vitest creates a report.
-      }
+      const summary = await readPostgresSuiteFailureSummary(vitestResultPath);
       throw new Error(
         `PostgreSQL integration suite ${suite.id} failed${
           summary === undefined ? '.' : `: ${summary}`
