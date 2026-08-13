@@ -8853,7 +8853,7 @@ BEGIN
 			SELECT '{' || COALESCE(pg_catalog.string_agg(
 				pg_catalog.to_json(entry.key)::text || ':' ||
 				emdo.canonical_json_text(entry.value),
-				',' ORDER BY entry.key
+				',' ORDER BY entry.key COLLATE "C"
 			), '') || '}'
 			INTO v_canonical
 			FROM pg_catalog.jsonb_each(p_value) AS entry(key, value);

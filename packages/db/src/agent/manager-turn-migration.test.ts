@@ -11,6 +11,15 @@ const readMigration = async () =>
   (await readFile(migrationUrl, 'utf8')).toLowerCase().replaceAll('"', '');
 
 describe('durable manager turn aggregate migration', () => {
+  it('hashes canonical JSON with locale-independent bytewise key ordering', async () => {
+    const sql = await readMigration();
+    const canonicalJson = sql.match(
+      /create or replace function emdo\.canonical_json_text[\s\S]+?end\s*\$function\$/u,
+    )?.[0];
+
+    expect(canonicalJson).toContain('order by entry.key collate c');
+  });
+
   it('stores exact request, origin authority, terminal result, and readback lineage', async () => {
     const sql = await readMigration();
 
