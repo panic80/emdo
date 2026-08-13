@@ -143,4 +143,24 @@ describe('durable manager turn aggregate migration', () => {
       /not\s+pg_catalog\.has_function_privilege[\s\S]+?record_manager_turn_operation/u,
     );
   });
+
+  it('exposes bounded run-event replay only through a fresh-grant aggregate', async () => {
+    const sql = await readMigration();
+    const readEvents = sql.match(
+      /create or replace function emdo\.read_agent_run_events[\s\S]+?end\s*\$function\$/u,
+    )?.[0];
+
+    expect(readEvents).toContain('p_space_access_grant_id');
+    expect(readEvents).toContain('lock_current_authorization_scope');
+    expect(readEvents).toContain('p_space_access_grant_id, null, p_run_id');
+    expect(readEvents).toContain('sequence > p_after_sequence');
+    expect(readEvents).toContain('limit p_limit');
+    expect(readEvents).not.toContain("'id', event.id");
+    expect(sql).toMatch(
+      /alter function emdo\.read_agent_run_events[\s\S]+?owner to emdo_manager_turn_executor/u,
+    );
+    expect(sql).toMatch(
+      /grant execute on function[\s\S]+?read_agent_run_events[\s\S]+?to emdo_app/u,
+    );
+  });
 });

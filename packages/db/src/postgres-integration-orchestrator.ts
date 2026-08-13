@@ -31,6 +31,7 @@ const knownDatabaseEnvironmentNames = Object.freeze([
   'TEST_HOUSEHOLD_ADMIN_DATABASE_URL',
   'TEST_PROPOSAL_DATABASE_URL',
   'TEST_RLS_ATTACK_DATABASE_URL',
+  'TEST_RUN_EVENT_DATABASE_URL',
   'TEST_SYNC_CONFLICT_DATABASE_URL',
   'TEST_WORKER_ROLE_DATABASE_URL',
 ]);
@@ -93,6 +94,11 @@ export const POSTGRES_INTEGRATION_SUITES = Object.freeze([
     id: 'google-oauth-authority',
     file: 'packages/db/src/google/oauth-authority.integration.test.ts',
     databaseEnvironment: 'TEST_GOOGLE_OAUTH_AUTHORITY_DATABASE_URL',
+  }),
+  Object.freeze({
+    id: 'manager-run-event-replay',
+    file: 'packages/db/src/agent/run-event-source.integration.test.ts',
+    databaseEnvironment: 'TEST_RUN_EVENT_DATABASE_URL',
   }),
   Object.freeze({
     id: 'worker-fixed-roles',

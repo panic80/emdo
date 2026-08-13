@@ -86,6 +86,7 @@ export type {
 } from './agent/manager-turn-store.js';
 export { PostgresAgentMemoryRepository } from './agent/memory-repository.js';
 export type { AgentRunRecord } from './agent/memory-repository.js';
+export { PostgresRunEventSource } from './agent/run-event-source.js';
 export { PostgresSpendLedger } from './agent/spend-ledger.js';
 export type {
   PostgresSpendReservationRequest,

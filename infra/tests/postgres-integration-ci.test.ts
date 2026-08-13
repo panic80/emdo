@@ -51,6 +51,7 @@ describe('live PostgreSQL CI evidence boundary', () => {
       'household-administration',
       'disclosure-authority',
       'google-oauth-authority',
+      'manager-run-event-replay',
       'worker-fixed-roles',
       'proposal-lifecycle',
       'sync-conflict-runtime',

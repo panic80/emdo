@@ -13884,6 +13884,89 @@ BEGIN
 END
 $function$;
 --> statement-breakpoint
+CREATE OR REPLACE FUNCTION "emdo"."read_agent_run_events"(
+	p_space_access_grant_id uuid,
+	p_run_id uuid,
+	p_after_sequence bigint,
+	p_limit integer
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, emdo
+SET row_security = on
+AS $function$
+DECLARE
+	v_scope record;
+	v_events jsonb;
+BEGIN
+	IF p_space_access_grant_id IS NULL
+		OR p_run_id IS NULL
+		OR p_after_sequence IS NULL OR p_after_sequence < 0
+		OR p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 250
+	THEN
+		RETURN NULL;
+	END IF;
+
+	SELECT scope.* INTO v_scope
+	FROM emdo.lock_current_authorization_scope(
+		p_space_access_grant_id, NULL, p_run_id
+	) AS scope;
+	IF NOT FOUND OR v_scope.proposal_space_id IS NULL THEN
+		RETURN NULL;
+	END IF;
+
+	PERFORM 1
+	FROM emdo.manager_turns AS turn
+	WHERE turn.run_id = p_run_id
+		AND turn.household_id = v_scope.household_id
+		AND turn.space_id = v_scope.proposal_space_id
+		AND turn.user_id = v_scope.user_id
+		AND turn.origin_session_id = v_scope.session_id
+		AND turn.origin_operation_authorization_scope_fingerprint =
+			v_scope.authorization_scope_fingerprint
+	FOR SHARE OF turn;
+	IF NOT FOUND THEN
+		RETURN NULL;
+	END IF;
+
+	WITH bounded AS MATERIALIZED (
+		SELECT event.sequence, event.event_type, event.payload,
+			event.occurred_at
+		FROM emdo.agent_run_events AS event
+		WHERE event.run_id = p_run_id
+			AND event.household_id = v_scope.household_id
+			AND event.space_id = v_scope.proposal_space_id
+			AND event.original_owner_user_id = v_scope.user_id
+			AND event.sequence > p_after_sequence
+		ORDER BY event.sequence
+		LIMIT p_limit
+	), projected AS (
+		SELECT pg_catalog.jsonb_build_object(
+			'schemaVersion', 1,
+			'runId', p_run_id,
+			'sequence', bounded.sequence,
+			'type', bounded.event_type,
+			'occurredAt', bounded.occurred_at,
+			'data', bounded.payload
+		) AS event,
+		bounded.sequence
+		FROM bounded
+	)
+	SELECT COALESCE(
+		pg_catalog.jsonb_agg(event ORDER BY sequence), '[]'::jsonb
+	)
+	INTO v_events
+	FROM projected;
+
+	RETURN pg_catalog.jsonb_build_object(
+		'schemaVersion', 1,
+		'events', v_events
+	);
+END
+$function$;
+--> statement-breakpoint
 CREATE OR REPLACE FUNCTION "emdo"."manager_turn_store_ready"()
 RETURNS boolean
 LANGUAGE plpgsql
@@ -14014,6 +14097,9 @@ ALTER FUNCTION "emdo"."mark_manager_turn_indeterminate"(
 ALTER FUNCTION "emdo"."read_manager_turn_operation"(
 	uuid, text, uuid, text
 ) OWNER TO emdo_manager_turn_executor;
+ALTER FUNCTION "emdo"."read_agent_run_events"(
+	uuid, uuid, bigint, integer
+) OWNER TO emdo_manager_turn_executor;
 ALTER FUNCTION "emdo"."manager_turn_store_ready"()
 	OWNER TO emdo_manager_turn_executor;
 
@@ -14071,6 +14157,7 @@ REVOKE ALL ON FUNCTION
 		uuid, text, uuid, text, uuid, text
 	),
 	"emdo"."read_manager_turn_operation"(uuid, text, uuid, text),
+	"emdo"."read_agent_run_events"(uuid, uuid, bigint, integer),
 	"emdo"."manager_turn_store_ready"()
 	FROM PUBLIC, emdo_app, emdo_auth, emdo_worker, emdo_workflow,
 	emdo_policy_reader, emdo_metering_executor, emdo_worker_executor,
@@ -14098,6 +14185,9 @@ GRANT EXECUTE ON FUNCTION
 	),
 	"emdo"."read_manager_turn_operation"(uuid, text, uuid, text),
 	"emdo"."manager_turn_store_ready"()
+	TO emdo_app;
+GRANT EXECUTE ON FUNCTION
+	"emdo"."read_agent_run_events"(uuid, uuid, bigint, integer)
 	TO emdo_app;
 --> statement-breakpoint
 

@@ -20,6 +20,7 @@ describe('@emdo/db production export boundaries', () => {
         'PostgresModelDisclosureGateway',
         'CanonicalRecordEnvelopeDisclosureFilter',
         'PostgresAgentMemoryRepository',
+        'PostgresRunEventSource',
         'PostgresApprovalCheckpointRepository',
         'PostgresApprovalResumeBoundary',
         'PostgresSpendLedger',

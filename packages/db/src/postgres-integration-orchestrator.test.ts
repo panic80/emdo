@@ -77,6 +77,11 @@ describe('PostgreSQL integration orchestrator', () => {
           databaseEnvironment: 'TEST_GOOGLE_OAUTH_AUTHORITY_DATABASE_URL',
         },
         {
+          id: 'manager-run-event-replay',
+          file: 'packages/db/src/agent/run-event-source.integration.test.ts',
+          databaseEnvironment: 'TEST_RUN_EVENT_DATABASE_URL',
+        },
+        {
           id: 'household-administration',
           file: 'packages/db/src/household-administration.integration.test.ts',
           databaseEnvironment: 'TEST_HOUSEHOLD_ADMIN_DATABASE_URL',
