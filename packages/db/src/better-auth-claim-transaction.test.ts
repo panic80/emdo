@@ -136,6 +136,71 @@ const harness = (input?: {
 };
 
 describe('PostgreSQL Better Auth organization claim bridge', () => {
+  it('re-probes the dedicated auth login without opening a claim transaction', async () => {
+    const test = harness();
+    const bridge = await createPostgresBetterAuthOrganizationClaimBridge(
+      test.pool as never,
+      {
+        createDatabaseAdapter: test.createDatabaseAdapter,
+        createRequestId: test.createRequestId,
+        createTransactionAdapter: test.createTransactionAdapter,
+      },
+    );
+
+    await expect(bridge.checkReady()).resolves.toBe(true);
+    expect(test.events).toEqual([
+      'preflight:connect',
+      'preflight:verify-role',
+      'preflight:release',
+      'transaction:connect',
+      'transaction:verify-role',
+      'transaction:release',
+    ]);
+    expect(test.runClient.query).not.toHaveBeenCalledWith('begin');
+  });
+
+  it('reports auth readiness false if the checked-out login drifts', async () => {
+    const events: string[] = [];
+    const runClient = fakeClient({
+      events,
+      label: 'transaction',
+      role: { ...validRole, rolsuper: true },
+    });
+    const test = harness({ runClient });
+    const bridge = await createPostgresBetterAuthOrganizationClaimBridge(
+      test.pool as never,
+      {
+        createDatabaseAdapter: test.createDatabaseAdapter,
+        createRequestId: test.createRequestId,
+        createTransactionAdapter: test.createTransactionAdapter,
+      },
+    );
+
+    await expect(bridge.checkReady()).resolves.toBe(false);
+    expect(runClient.release).toHaveBeenCalledOnce();
+  });
+
+  it('destroys a readiness connection whose otherwise-safe login identity changed', async () => {
+    const events: string[] = [];
+    const runClient = fakeClient({
+      events,
+      label: 'transaction',
+      role: { ...validRole, login_role: 'emdo_auth_rotated_login' },
+    });
+    const test = harness({ runClient });
+    const bridge = await createPostgresBetterAuthOrganizationClaimBridge(
+      test.pool as never,
+      {
+        createDatabaseAdapter: test.createDatabaseAdapter,
+        createRequestId: test.createRequestId,
+        createTransactionAdapter: test.createTransactionAdapter,
+      },
+    );
+
+    await expect(bridge.checkReady()).resolves.toBe(false);
+    expect(runClient.release).toHaveBeenCalledWith(true);
+  });
+
   it('pins role, adapter, revalidation, claims, and work to one transaction', async () => {
     const test = harness();
     const bridge = await createPostgresBetterAuthOrganizationClaimBridge(

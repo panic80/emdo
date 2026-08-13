@@ -179,6 +179,7 @@ export interface PostgresBetterAuthOrganizationClaimTransaction {
  */
 export interface PostgresBetterAuthOrganizationClaimBridge {
   readonly database: DBAdapterInstance;
+  readonly checkReady: () => Promise<boolean>;
   readonly run: <Result>(
     options: BetterAuthOptions,
     work: (
@@ -349,6 +350,23 @@ export const createPostgresBetterAuthOrganizationClaimBridge = async (
     createDatabaseAdapter(pool)(options),
   );
 
+  const checkReady = async (): Promise<boolean> => {
+    const client = await connect().catch(() => undefined);
+    if (client === undefined) return false;
+    let destroy = false;
+    try {
+      const ready =
+        (await inspectDedicatedLogin(client)).login_role === loginRole;
+      destroy = !ready;
+      return ready;
+    } catch {
+      destroy = true;
+      return false;
+    } finally {
+      client.release(destroy ? true : undefined);
+    }
+  };
+
   const run = async <Result>(
     options: BetterAuthOptions,
     work: (
@@ -512,5 +530,5 @@ export const createPostgresBetterAuthOrganizationClaimBridge = async (
     }
   };
 
-  return Object.freeze({ database, run });
+  return Object.freeze({ checkReady, database, run });
 };

@@ -205,5 +205,6 @@ describe('PostgresInvitationRedemptionCoordinator', () => {
     expect(client.query).toHaveBeenCalledWith(
       'select emdo.invitation_redemption_ready() as ready',
     );
+    expect(client.release).toHaveBeenCalledWith(true);
   });
 });

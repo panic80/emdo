@@ -239,10 +239,11 @@ export class PostgresInvitationRedemptionCoordinator {
       const result = await client.query(
         'select emdo.invitation_redemption_ready() as ready',
       );
-      return (
+      const ready =
         result.rows.length === 1 &&
-        ReadinessRowSchema.parse(result.rows[0]).ready
-      );
+        ReadinessRowSchema.parse(result.rows[0]).ready;
+      destroy = !ready;
+      return ready;
     } catch {
       destroy = true;
       return false;

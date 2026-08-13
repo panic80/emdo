@@ -34,21 +34,28 @@ export type EmailTransportMessage = DeepReadonly<
   z.output<typeof EmailTransportMessageSchema>
 >;
 
-export type TransactionalEmailMessage = DeepReadonly<{
-  readonly schemaVersion: 1;
-  readonly deliveryId: string;
-  readonly recipient: string;
-  readonly subject: string;
-  readonly text: string;
-  readonly contentClassification:
-    'redacted-notification-preview' | 'invitation-redemption-link';
-}>;
+export const TransactionalEmailMessageSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  deliveryId: IdempotencyKeySchema,
+  recipient: z.email().max(320),
+  subject: z.string().trim().min(1).max(200),
+  text: z.string().min(1).max(4_096),
+  contentClassification: z.enum([
+    'authentication-action-link',
+    'invitation-redemption-link',
+    'redacted-notification-preview',
+  ]),
+});
+
+export type TransactionalEmailMessage = DeepReadonly<
+  z.output<typeof TransactionalEmailMessageSchema>
+>;
 
 export interface TransactionalEmailTransport {
   /**
-   * Provider-specific worker implementation point. Callers receive a bounded,
+   * Provider-specific server implementation point. Callers receive a bounded,
    * validated message and must use deliveryId as the provider idempotency key.
-   * Invitation messages contain a redemption credential and must never be
+   * Action and invitation messages contain credentials and must never be
    * logged, persisted outside the provider request, or copied into outcomes.
    */
   send(

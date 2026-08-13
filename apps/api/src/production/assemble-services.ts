@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { AuthenticationBoundary } from '../services/contracts.js';
+import { createProductionAuthenticationServiceBinding } from './auth-services.js';
 import { createProductionDurableServiceBindings } from './durable-services.js';
 import {
   createFailClosedApiServices,
@@ -26,10 +27,12 @@ type CurrentDurableServiceName = (typeof CURRENT_DURABLE_SERVICE_NAMES)[number];
 
 const selectCurrentDurableBindings = (
   bindings: ProductionApiServiceBindings,
+  hasTrustedAuthentication: boolean,
 ): Pick<ProductionApiServiceBindings, CurrentDurableServiceName> =>
   Object.freeze(
     Object.fromEntries(
       CURRENT_DURABLE_SERVICE_NAMES.flatMap((name) => {
+        if (name === 'proposalQueries' && !hasTrustedAuthentication) return [];
         const binding = bindings[name];
         return binding === undefined ? [] : [[name, binding] as const];
       }),
@@ -79,21 +82,77 @@ const unavailableAuthenticationBoundary: AuthenticationBoundary = Object.freeze(
   },
 );
 
+const combineCloses = (
+  closes: readonly (undefined | (() => Promise<void>))[],
+): (() => Promise<void>) | undefined => {
+  const selected = closes.filter(
+    (close): close is () => Promise<void> => close !== undefined,
+  );
+  if (selected.length === 0) return undefined;
+  let closePromise: Promise<void> | undefined;
+  return (): Promise<void> => {
+    closePromise ??= (async () => {
+      const outcomes = await Promise.allSettled(
+        selected.map((close) => Promise.resolve().then(close)),
+      );
+      const failures = outcomes.flatMap((outcome) =>
+        outcome.status === 'rejected' ? [outcome.reason] : [],
+      );
+      if (failures.length > 0) {
+        throw new AggregateError(
+          failures,
+          'Production API resources could not all close',
+        );
+      }
+    })();
+    return closePromise;
+  };
+};
+
 /** Bundled assembly with no caller-selected executable dependency seam. */
 export const assembleProductionApiServices = async (
   environment: Readonly<Record<string, string | undefined>>,
 ) => {
   const frozenEnvironment = Object.freeze({ ...environment });
-  const durableComposition =
-    await createProductionDurableServiceBindings(frozenEnvironment);
-  return createFailClosedApiServices({
-    auth: unavailableAuthenticationBoundary,
-    bindings: selectCurrentDurableBindings(durableComposition.bindings),
-    metricsToken: OptionalMetricsTokenSchema.parse(
-      frozenEnvironment.EMDO_METRICS_TOKEN,
-    ),
-    ...(durableComposition.close === undefined
-      ? {}
-      : { close: durableComposition.close }),
-  });
+  const metricsToken = OptionalMetricsTokenSchema.parse(
+    frozenEnvironment.EMDO_METRICS_TOKEN,
+  );
+  let durableComposition:
+    | Awaited<ReturnType<typeof createProductionDurableServiceBindings>>
+    | undefined;
+  let authenticationComposition:
+    | Awaited<ReturnType<typeof createProductionAuthenticationServiceBinding>>
+    | undefined;
+  try {
+    durableComposition =
+      await createProductionDurableServiceBindings(frozenEnvironment);
+    authenticationComposition =
+      await createProductionAuthenticationServiceBinding(frozenEnvironment);
+    const bindings = Object.freeze({
+      ...selectCurrentDurableBindings(
+        durableComposition.bindings,
+        authenticationComposition.binding !== undefined,
+      ),
+      ...(authenticationComposition.binding === undefined
+        ? {}
+        : { auth: authenticationComposition.binding }),
+    });
+    const close = combineCloses([
+      authenticationComposition.close,
+      durableComposition.close,
+    ]);
+    return createFailClosedApiServices({
+      auth: unavailableAuthenticationBoundary,
+      bindings,
+      metricsToken,
+      ...(close === undefined ? {} : { close }),
+    });
+  } catch (error) {
+    const close = combineCloses([
+      authenticationComposition?.close,
+      durableComposition?.close,
+    ]);
+    await close?.().catch(() => undefined);
+    throw error;
+  }
 };

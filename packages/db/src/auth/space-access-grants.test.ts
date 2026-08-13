@@ -47,6 +47,59 @@ const poolFor = (
 };
 
 describe('PostgresSpaceAccessGrantService', () => {
+  it('probes the exact API login and grant routines without issuing a grant', async () => {
+    const { pool, query, client } = poolFor((sql) =>
+      sql.includes('space_access_grant_ready') ? [{ ready: true }] : [],
+    );
+
+    await expect(
+      new PostgresSpaceAccessGrantService(pool).checkReady(),
+    ).resolves.toBe(true);
+    const readinessSql = query.mock.calls.find(([sql]) =>
+      sql.includes('space_access_grant_ready'),
+    )?.[0];
+    expect(readinessSql).toContain("session_user = 'emdo_api_login'");
+    expect(readinessSql).toContain('current_user = session_user');
+    expect(readinessSql).toContain("session_user, 'emdo_app', 'USAGE'");
+    expect(readinessSql).toContain(
+      'emdo.issue_active_principal_scope(uuid,uuid,text)',
+    );
+    expect(readinessSql).toContain(
+      'emdo.resolve_space_access_grant(uuid,uuid,uuid,uuid,uuid,uuid)',
+    );
+    expect(readinessSql).toContain(
+      'emdo.lock_active_request_scope(uuid,uuid,uuid)',
+    );
+    expect(client.release).toHaveBeenCalledWith(undefined);
+    expect(
+      query.mock.calls.some(([sql]) =>
+        sql.includes('issue_active_principal_scope($1'),
+      ),
+    ).toBe(false);
+  });
+
+  it('reports scope readiness false and destroys a failed connection', async () => {
+    const query = vi.fn(async () => {
+      throw new Error('private database detail');
+    });
+    const client: DatabaseClient = { query, release: vi.fn() };
+    const pool: DatabasePool = { connect: vi.fn(async () => client) };
+
+    await expect(
+      new PostgresSpaceAccessGrantService(pool).checkReady(),
+    ).resolves.toBe(false);
+    expect(client.release).toHaveBeenCalledWith(true);
+  });
+
+  it('destroys a connection whose exact scope privileges report unready', async () => {
+    const { pool, client } = poolFor(() => [{ ready: false }]);
+
+    await expect(
+      new PostgresSpaceAccessGrantService(pool).checkReady(),
+    ).resolves.toBe(false);
+    expect(client.release).toHaveBeenCalledWith(true);
+  });
+
   it('issues an opaque request-current grant and DB-derived collection scope', async () => {
     const { pool, query } = poolFor((sql) =>
       sql.includes('issue_active_principal_scope')

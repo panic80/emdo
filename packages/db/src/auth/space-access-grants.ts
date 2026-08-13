@@ -42,6 +42,7 @@ const ActivePrincipalScopeRowSchema = z.strictObject({
   collection_authorization_scope_fingerprint:
     EffectiveAuthorizationScopeFingerprintSchema,
 });
+const ReadinessRowSchema = z.strictObject({ ready: z.boolean() });
 const GrantRowSchema = z
   .strictObject({
     schema_version: z.literal(1),
@@ -195,6 +196,71 @@ const assertExactBinding = (
 
 export class PostgresSpaceAccessGrantService implements SpaceAccessGrantVerifier {
   constructor(private readonly pool: DatabasePool) {}
+
+  async checkReady(): Promise<boolean> {
+    const client = await this.pool.connect().catch(() => undefined);
+    if (client === undefined) return false;
+    let destroy = false;
+    try {
+      const result = await client.query(
+        `/* space_access_grant_ready */
+         select (
+           session_user = 'emdo_api_login'
+           and current_user = session_user
+           and pg_catalog.pg_has_role(session_user, 'emdo_app', 'USAGE')
+           and not pg_catalog.pg_has_role(
+             session_user, 'emdo_space_grant_executor', 'USAGE'
+           )
+           and exists (
+             select 1
+               from pg_catalog.pg_roles as role
+              where role.rolname = session_user
+                and role.rolcanlogin is true
+                and role.rolinherit is true
+                and role.rolsuper is false
+                and role.rolbypassrls is false
+                and role.rolcreatedb is false
+                and role.rolcreaterole is false
+                and role.rolreplication is false
+           )
+           and pg_catalog.has_schema_privilege(
+             session_user, 'emdo', 'USAGE'
+           )
+           and pg_catalog.has_function_privilege(
+             session_user,
+             pg_catalog.to_regprocedure(
+               'emdo.issue_active_principal_scope(uuid,uuid,text)'
+             ),
+             'EXECUTE'
+           )
+           and pg_catalog.has_function_privilege(
+             session_user,
+             pg_catalog.to_regprocedure(
+               'emdo.resolve_space_access_grant(uuid,uuid,uuid,uuid,uuid,uuid)'
+             ),
+             'EXECUTE'
+           )
+           and pg_catalog.has_function_privilege(
+             session_user,
+             pg_catalog.to_regprocedure(
+               'emdo.lock_active_request_scope(uuid,uuid,uuid)'
+             ),
+             'EXECUTE'
+           )
+         ) as ready`,
+      );
+      const ready =
+        result.rows.length === 1 &&
+        ReadinessRowSchema.safeParse(result.rows[0]).data?.ready === true;
+      destroy = !ready;
+      return ready;
+    } catch {
+      destroy = true;
+      return false;
+    } finally {
+      client.release(destroy ? true : undefined);
+    }
+  }
 
   async resolveActivePrincipalScope(input: {
     readonly activeMembershipId: string;

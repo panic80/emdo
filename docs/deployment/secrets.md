@@ -87,7 +87,18 @@ Expected private env-file boundaries are:
   `EMDO_ONBOARDING_DATABASE_URL` uses only `emdo_onboarding_login`, a
   non-superuser, non-bypass login with exactly the `emdo_onboarding` role. It
   can invoke the atomic invitation-redemption aggregate but cannot read Better
-  Auth tables or invoke the lower-level account provisioner directly;
+  Auth tables or invoke the lower-level account provisioner directly. The
+  conditional production authentication binding additionally requires:
+  `EMDO_PUBLIC_ORIGIN`; distinct canonical unpadded base64url
+  `EMDO_API_AUTH_SECRET` and `EMDO_SESSION_SECRET` values containing 32–64
+  bytes each; identity-only `EMDO_GOOGLE_IDENTITY_CLIENT_ID` and
+  `EMDO_GOOGLE_IDENTITY_CLIENT_SECRET`; exact
+  `EMDO_TRANSACTIONAL_EMAIL_PROVIDER=resend`; and
+  `EMDO_RESEND_AUTH_API_KEY` plus a lowercase
+  `EMDO_RESEND_FROM_EMAIL` on a verified sending domain. These identity
+  credentials are not Calendar OAuth credentials, and the Resend key is not
+  mounted into the worker. Missing or malformed values keep authentication
+  unavailable and open no auth database pool;
 - `edge-proxy.env`: exactly one 43-128 character base64url
   `EMDO_EDGE_PROXY_SECRET`, generated from at least 32 random bytes and shared
   only with the API and Caddy;
