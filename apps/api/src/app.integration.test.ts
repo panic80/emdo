@@ -17,6 +17,7 @@ import {
   API_READINESS_SCHEMA_VERSION,
   type ApiReadinessStatus,
 } from './readiness-contract.js';
+import { DEFAULT_API_LIMITS } from './config.js';
 
 const USER_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f60';
 const SESSION_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f61';
@@ -1365,6 +1366,49 @@ describe('Fastify API boundary', () => {
       },
     });
     expect(invalidRetiredModel.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('caps speech text at the provider-supported boundary before provider dispatch', async () => {
+    const services = buildServices();
+    const app = await createApp({ services });
+    const textAtLimit = 'x'.repeat(4_096);
+
+    expect(DEFAULT_API_LIMITS.maximumSpeechCharacters).toBe(4_096);
+
+    const accepted = await app.inject({
+      method: 'POST',
+      url: '/api/v1/voice/speak',
+      headers: {
+        ...authenticatedHeaders,
+        'idempotency-key': 'request:018f1f5e:speech-at-provider-limit',
+      },
+      payload: {
+        schemaVersion: 1,
+        voice: 'alloy',
+        text: textAtLimit,
+      },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(services.voice.speak).toHaveBeenCalledOnce();
+
+    const rejected = await app.inject({
+      method: 'POST',
+      url: '/api/v1/voice/speak',
+      headers: {
+        ...authenticatedHeaders,
+        'idempotency-key': 'request:018f1f5e:speech-over-provider-limit',
+      },
+      payload: {
+        schemaVersion: 1,
+        voice: 'alloy',
+        text: `${textAtLimit}x`,
+      },
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(services.voice.getSpeechConfiguration).toHaveBeenCalledOnce();
+    expect(services.voice.speak).toHaveBeenCalledOnce();
+
     await app.close();
   });
 

@@ -223,7 +223,7 @@ export async function speakSummary(
 ): Promise<Response> {
   assertRequestAuthority(request);
   const text = request.text.trim();
-  if (!text || text.length > 6_000) {
+  if (!text || text.length > 4_096) {
     throw new VoiceApiError(
       'invalid-request',
       'There is no valid summary to speak.',

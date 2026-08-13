@@ -212,6 +212,28 @@ describe('voice API client', () => {
     ).rejects.toThrow('EMDO rejected an unsafe speech response.');
   });
 
+  it('rejects speech text beyond the shared 4096-character provider limit before fetching', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(new Blob(['audio']), {
+          status: 200,
+          headers: { ...safeHeaders, 'content-type': 'audio/mpeg' },
+        }),
+    );
+
+    await expect(
+      speakSummary(
+        {
+          text: 'x'.repeat(4_097),
+          csrfToken: 'csrf-speech-limit',
+          idempotencyKey: 'speech-over-provider-limit',
+        },
+        { fetcher },
+      ),
+    ).rejects.toMatchObject({ code: 'invalid-request' });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it('sends only the versioned speech fields and keeps the response model header opaque', async () => {
     const fetcher = vi.fn(
       async () =>
