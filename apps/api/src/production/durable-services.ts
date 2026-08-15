@@ -6,6 +6,7 @@ import {
   PostgresAudioRequestCoordinator,
   PostgresHouseholdAdministrationService,
   PostgresProposalQueryRepository,
+  PostgresRunEventSource,
   PostgresVisualDecisionProofStore,
   ProposalQueryCursorCodec,
   type VisualDecisionProofTokenCodec,
@@ -55,6 +56,9 @@ type ReadyHouseholdAdministration = ApiServices['householdAdministration'] & {
 type ReadyProposalQueryRepository = ApiServices['proposalQueries'] & {
   check(): Promise<boolean>;
 };
+type ReadyRunEventSource = ApiServices['runEvents'] & {
+  check(): Promise<boolean>;
+};
 type ReadyVisualProofIssuanceGateway = ApiServices['visualProofs'] & {
   check(): Promise<boolean>;
 };
@@ -88,6 +92,9 @@ export interface ProductionDurableServiceDependencies {
     pool: DatabaseRuntime['scopedPool'],
     cursorCodec: ProposalQueryCursorCodec,
   ) => ReadyProposalQueryRepository;
+  readonly createRunEventSource: (
+    pool: DatabaseRuntime['scopedPool'],
+  ) => ReadyRunEventSource;
   readonly createVisualProofIssuanceGateway: (
     pool: DatabaseRuntime['scopedPool'],
     tokenCodec: VisualDecisionProofTokenCodec,
@@ -128,6 +135,8 @@ const defaultDependencies: ProductionDurableServiceDependencies = Object.freeze(
       pool: DatabaseRuntime['scopedPool'],
       cursorCodec: ProposalQueryCursorCodec,
     ) => new PostgresProposalQueryRepository(pool, cursorCodec),
+    createRunEventSource: (pool: DatabaseRuntime['scopedPool']) =>
+      new PostgresRunEventSource(pool),
     createVisualProofIssuanceGateway: (
       pool: DatabaseRuntime['scopedPool'],
       tokenCodec: VisualDecisionProofTokenCodec,
@@ -371,6 +380,16 @@ export const createProductionDurableServiceBindings = async (
     };
   } catch {
     // Import mutations remain fail-closed while the receipt boundary is unavailable.
+  }
+
+  try {
+    const runEvents = dependencies.createRunEventSource(database.scopedPool);
+    bindings.runEvents = {
+      service: runEvents,
+      check: coalesceProbe(() => runEvents.check()),
+    };
+  } catch {
+    // Persisted replay remains unavailable without its grant-aware aggregate.
   }
 
   try {

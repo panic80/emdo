@@ -108,6 +108,36 @@ describe('production API service assembly', () => {
     });
   });
 
+  it('selects durable run-event replay only with trusted authentication', async () => {
+    const open = vi.fn();
+    mocks.createDurable.mockResolvedValue({
+      bindings: {
+        runEvents: {
+          check: vi.fn(async () => true),
+          service: { open },
+        },
+      },
+    });
+
+    const unavailable = await assembleProductionApiServices({});
+    await expect(unavailable.readiness.check()).resolves.toMatchObject({
+      checks: { 'agents.run-events': 'unavailable' },
+    });
+
+    const auth = authBoundary();
+    mocks.createAuthentication.mockResolvedValue({
+      binding: { service: auth, check: vi.fn(async () => true) },
+    });
+    const available = await assembleProductionApiServices({});
+    await expect(
+      available.runEvents.open({} as never),
+    ).resolves.toBeUndefined();
+    expect(open).toHaveBeenCalledOnce();
+    await expect(available.readiness.check()).resolves.toMatchObject({
+      checks: { 'agents.run-events': 'ok' },
+    });
+  });
+
   it('selects the current checked finance import boundary from durable composition', async () => {
     const auth = authBoundary();
     const listDestinations = vi.fn(async () => ({

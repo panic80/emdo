@@ -17,6 +17,7 @@ const CURRENT_DURABLE_SERVICE_NAMES = Object.freeze([
   'notificationPreferences',
   'proposalQueries',
   'proposals',
+  'runEvents',
   'scheduleRead',
   'settingsRead',
   'shoppingRead',
@@ -39,6 +40,7 @@ const selectCurrentDurableBindings = (
           !hasTrustedAuthentication &&
           (name === 'proposalQueries' ||
             name === 'proposals' ||
+            name === 'runEvents' ||
             name === 'visualProofs')
         ) {
           return [];

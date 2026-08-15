@@ -115,6 +115,15 @@ const dependencies = (): ProductionDurableServiceDependencies => {
           check(): Promise<boolean>;
         },
     ),
+    createRunEventSource: vi.fn(
+      () =>
+        ({
+          open: vi.fn(),
+          check: vi.fn(async () => true),
+        }) as unknown as ApiServices['runEvents'] & {
+          check(): Promise<boolean>;
+        },
+    ),
     createVisualProofIssuanceGateway: vi.fn(
       () =>
         ({
@@ -237,6 +246,29 @@ describe('production durable API service composition', () => {
     expect(imports.checkReady).toHaveBeenCalledOnce();
 
     await result.close?.();
+    await result.close?.();
+    expect(database.close).toHaveBeenCalledOnce();
+  });
+
+  it('binds authenticated run-event replay to the existing API scoped pool', async () => {
+    const adapters = dependencies();
+    const result = await createProductionDurableServiceBindings(
+      { EMDO_API_DATABASE_URL: databaseUrl },
+      adapters,
+    );
+
+    const database = vi.mocked(adapters.createDatabaseClient).mock.results[0]!
+      .value;
+    expect(adapters.createRunEventSource).toHaveBeenCalledOnce();
+    expect(adapters.createRunEventSource).toHaveBeenCalledWith(
+      database.scopedPool,
+    );
+    expect(result.bindings.runEvents).toMatchObject({
+      service: { open: expect.any(Function) },
+      check: expect.any(Function),
+    });
+    await expect(result.bindings.runEvents!.check()).resolves.toBe(true);
+
     await result.close?.();
     expect(database.close).toHaveBeenCalledOnce();
   });
