@@ -193,10 +193,26 @@ jobs:
         run: |
           mkdir -p output
           pnpm --filter @emdo/web run test:e2e:production
+      - name: Run notification preference source contracts
+        env:
+          NOTIFICATION_PREFERENCES_REPORT: ${{ github.workspace }}/output/notification-preferences-vitest.json
+        run: |
+          pnpm exec vitest run \
+            packages/db/src/experience/notification-preferences-migration.test.ts \
+            packages/db/src/experience/postgres-experience-read.test.ts \
+            packages/db/src/worker/postgres-runtime.test.ts \
+            packages/integrations/src/push/notification-push.test.ts \
+            packages/integrations/src/email/notification-email.test.ts \
+            --pool=forks \
+            --poolOptions.forks.minForks=1 \
+            --poolOptions.forks.maxForks=1 \
+            --reporter=json \
+            --outputFile="$NOTIFICATION_PREFERENCES_REPORT"
       - name: Record production-preview browser evidence
         if: github.event_name == 'push' && success()
         env:
           BROWSER_REPORT: ${{ github.workspace }}/output/playwright-production.json
+          NOTIFICATION_PREFERENCES_REPORT: ${{ github.workspace }}/output/notification-preferences-vitest.json
         run: |
           observed_at="$(date --utc +%Y-%m-%dT%H:%M:%S.000Z)"
           node scripts/release/write-provider-free-ci-evidence.mjs \
@@ -205,7 +221,8 @@ jobs:
             --source-sha '${{ github.sha }}' \
             --run-id '${{ github.run_id }}' \
             --observed-at "$observed_at" \
-            --browser-report "$BROWSER_REPORT"
+            --browser-report "$BROWSER_REPORT" \
+            --notification-preferences-report "$NOTIFICATION_PREFERENCES_REPORT"
       - name: Upload production-preview browser evidence
         if: github.event_name == 'push' && success()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -372,7 +389,7 @@ jobs:
             test -f "release/acceptance-evidence/artifacts/ci/$id.json"
             test -f "release/acceptance-evidence/descriptors/ci/$id.json"
           done
-          for id in production-preview-browser voice-ptt-storage-playback service-worker-safe-update agent-evals-provider-free agent-evals-production-runtime; do
+          for id in production-preview-browser voice-ptt-storage-playback service-worker-safe-update web-push-preferences agent-evals-provider-free agent-evals-production-runtime; do
             test -f "release/acceptance-evidence/artifacts/gates/$id.json"
             test -f "release/acceptance-evidence/descriptors/gates/$id.json"
           done

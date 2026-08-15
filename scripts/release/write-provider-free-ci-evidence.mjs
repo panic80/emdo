@@ -21,6 +21,7 @@ const BASE_FLAGS = Object.freeze([
 ]);
 const PROFILE_FLAGS = Object.freeze([
   '--browser-report',
+  '--notification-preferences-report',
   '--eval-case-report',
   '--eval-runtime-report',
   '--eval-budget-report',
@@ -71,6 +72,11 @@ const requiredBrowserTests = Object.freeze([
     file: 'powersync.production.spec.ts',
     title:
       'production preview boots the pinned encrypted PowerSync OPFS runtime',
+  }),
+  Object.freeze({
+    file: 'notification-preferences.production.spec.ts',
+    title:
+      'persists all notification preferences through the production bundle and rehydrates them after reload',
   }),
   Object.freeze({
     file: 'service-worker-update.production.spec.ts',
@@ -196,6 +202,39 @@ const requiredEvalBudgetTests = Object.freeze([
     file: 'packages/agent-core/src/runner.sdk.test.ts',
     fullName:
       'OpenAI Agents SDK boundary enforces capability-call and wall-clock budgets inside the SDK boundary',
+  }),
+]);
+
+const requiredNotificationPreferenceTests = Object.freeze([
+  Object.freeze({
+    file: 'packages/db/src/experience/notification-preferences-migration.test.ts',
+    fullName:
+      'experience notification preferences migration provides request-scoped reads and atomic CAS/idempotency updates',
+  }),
+  Object.freeze({
+    file: 'packages/db/src/experience/notification-preferences-migration.test.ts',
+    fullName:
+      'experience notification preferences migration re-checks current consent inside the exact active notification delivery operation',
+  }),
+  Object.freeze({
+    file: 'packages/db/src/experience/postgres-experience-read.test.ts',
+    fullName:
+      'PostgreSQL experience read gateways reads and CAS-updates durable notification preferences through narrow routines',
+  }),
+  Object.freeze({
+    file: 'packages/db/src/worker/postgres-runtime.test.ts',
+    fullName:
+      'durable worker PostgreSQL runtime loads only current notification delivery preferences and suppresses disabled external channels',
+  }),
+  Object.freeze({
+    file: 'packages/integrations/src/push/notification-push.test.ts',
+    fullName:
+      'PushNotificationSender sends only a fixed non-sensitive preview and never receives endpoint credentials',
+  }),
+  Object.freeze({
+    file: 'packages/integrations/src/email/notification-email.test.ts',
+    fullName:
+      'EmailNotificationSender sends only a fixed non-sensitive preview with a stable idempotency key',
   }),
 ]);
 
@@ -453,11 +492,17 @@ const validateVitestEvidenceReport = async (
   path,
   requiredTests,
   missingLabel,
+  options = {},
 ) => {
+  const {
+    reportLabel = 'agent eval',
+    invalidMessage = 'Provider-free agent eval evidence report is invalid.',
+    requiredMessage = `Required agent ${missingLabel} test did not pass.`,
+  } = options;
   const invalid = () => {
-    throw new Error('Provider-free agent eval evidence report is invalid.');
+    throw new Error(invalidMessage);
   };
-  const report = await readEvidenceReport(path, 'agent eval');
+  const report = await readEvidenceReport(path, reportLabel);
   if (
     !isRecord(report) ||
     report.success !== true ||
@@ -519,10 +564,24 @@ const validateVitestEvidenceReport = async (
   if (assertionCount !== report.numTotalTests) invalid();
   for (const required of requiredTests) {
     if (!observed.has(browserTestKey(required.file, required.fullName))) {
-      throw new Error(`Required agent ${missingLabel} test did not pass.`);
+      throw new Error(requiredMessage);
     }
   }
 };
+
+const validateNotificationPreferenceEvidenceReport = (path) =>
+  validateVitestEvidenceReport(
+    path,
+    requiredNotificationPreferenceTests,
+    'notification-preference',
+    {
+      reportLabel: 'notification preference',
+      invalidMessage:
+        'Provider-free notification preference evidence report is invalid.',
+      requiredMessage:
+        'Required notification preference evidence test did not pass.',
+    },
+  );
 
 const validateAgentEvidenceReports = async (values) => {
   const [evalCaseCount] = await Promise.all([
@@ -568,7 +627,7 @@ const parseArguments = (argv) => {
   }
   const requiredProfileFlags =
     profile === 'browser-production-preview'
-      ? ['--browser-report']
+      ? ['--browser-report', '--notification-preferences-report']
       : profile === 'agent-evals'
         ? [
             '--eval-case-report',
@@ -710,9 +769,12 @@ const profileReceipts = async (profile, binding, values) => {
       ];
     }
     case 'browser-production-preview': {
-      const browserTestCount = await validateBrowserEvidenceReport(
-        values.get('--browser-report'),
-      );
+      const [browserTestCount] = await Promise.all([
+        validateBrowserEvidenceReport(values.get('--browser-report')),
+        validateNotificationPreferenceEvidenceReport(
+          values.get('--notification-preferences-report'),
+        ),
+      ]);
       return [
         receipt({
           ...binding,
@@ -755,6 +817,17 @@ const profileReceipts = async (profile, binding, values) => {
             pendingChangesPreserved: true,
             activationDeferred: true,
             reloadRecovery: 'passed',
+          },
+        }),
+        receipt({
+          ...binding,
+          category: 'gates',
+          id: 'web-push-preferences',
+          proof: {
+            inAppNotifications: 'passed',
+            webPushPreferences: 'passed',
+            emailPreferences: 'passed',
+            sensitivePreviewOmitted: true,
           },
         }),
       ];

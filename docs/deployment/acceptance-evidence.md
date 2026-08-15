@@ -118,15 +118,28 @@ lifecycle. One preserves an actual queued offline finance edit while the new
 worker remains waiting and the update action remains disabled; the other starts
 from a clean client, explicitly activates the waiting worker, reloads, and
 recovers under that worker. Unit-only coordinator or synthetic Workbox events
-cannot emit `service-worker-safe-update`. A downstream aggregation job only
-merges already-validated receipts; it does not create or relabel evidence.
+cannot emit `service-worker-safe-update`. The notification-preference gate
+requires one exact production-Chromium identity that loads, changes, saves, and
+reloads all four preference values with the production bundle, including the
+CSRF token, version, and idempotency-key request contract. It also requires an
+exact source-test report covering the request-scoped CAS routine contract, the
+current-preference worker routine and adapter boundary, and the fixed redacted
+Web Push and email previews. Only the combination can emit
+`web-push-preferences`. The browser test uses authenticated HTTP fixtures, the
+database tests are static or mocked source-contract checks, and the transports
+are provider-free. This receipt therefore does not prove authenticated
+PostgreSQL execution, browser subscription enrollment, provider acceptance,
+external delivery, acknowledgement, or readback. Those remain separate live
+database, credentialed provider, and staging contracts. A downstream
+aggregation job only merges already-validated receipts; it does not create or
+relabel evidence.
 
 The remaining PWA-installation, staging, PowerSync
 cross-device, provider, database-security, domain, recovery, rollback,
-and notification-preference receipts stay absent until their real suites run.
-The assembler therefore continues to fail closed when any required evidence is
-missing. Adding dummy receipt files or setting success labels is not an
-acceptable release change.
+and external notification-delivery receipts stay absent until their real suites
+run. The assembler therefore continues to fail closed when any required
+evidence is missing. Adding dummy receipt files or setting success labels is
+not an acceptable release change.
 
 ## Semantic receipt envelope
 

@@ -97,6 +97,10 @@ const browserEvidenceSpecs = [
     'production preview boots the pinned encrypted PowerSync OPFS runtime',
   ],
   [
+    'notification-preferences.production.spec.ts',
+    'persists all notification preferences through the production bundle and rehydrates them after reload',
+  ],
+  [
     'service-worker-update.production.spec.ts',
     'defers a real service worker update while an offline edit is pending',
   ],
@@ -347,6 +351,39 @@ const requiredBudgetTests = [
     file: 'packages/agent-core/src/runner.sdk.test.ts',
     fullName:
       'OpenAI Agents SDK boundary enforces capability-call and wall-clock budgets inside the SDK boundary',
+  },
+] as const;
+
+const requiredNotificationPreferenceTests = [
+  {
+    file: 'packages/db/src/experience/notification-preferences-migration.test.ts',
+    fullName:
+      'experience notification preferences migration provides request-scoped reads and atomic CAS/idempotency updates',
+  },
+  {
+    file: 'packages/db/src/experience/notification-preferences-migration.test.ts',
+    fullName:
+      'experience notification preferences migration re-checks current consent inside the exact active notification delivery operation',
+  },
+  {
+    file: 'packages/db/src/experience/postgres-experience-read.test.ts',
+    fullName:
+      'PostgreSQL experience read gateways reads and CAS-updates durable notification preferences through narrow routines',
+  },
+  {
+    file: 'packages/db/src/worker/postgres-runtime.test.ts',
+    fullName:
+      'durable worker PostgreSQL runtime loads only current notification delivery preferences and suppresses disabled external channels',
+  },
+  {
+    file: 'packages/integrations/src/push/notification-push.test.ts',
+    fullName:
+      'PushNotificationSender sends only a fixed non-sensitive preview and never receives endpoint credentials',
+  },
+  {
+    file: 'packages/integrations/src/email/notification-email.test.ts',
+    fullName:
+      'EmailNotificationSender sends only a fixed non-sensitive preview with a stable idempotency key',
   },
 ] as const;
 
@@ -984,6 +1021,10 @@ describe('provider-free CI evidence profiles', () => {
     const producer = await loadProviderFreeProducer();
     const root = outputRoot('browser');
     const report = await writeBrowserReport('complete');
+    const notificationReport = await writeVitestReport(
+      'notification-preferences-complete',
+      requiredNotificationPreferenceTests,
+    );
     await expect(
       producer.runProviderFreeCiEvidenceWrite(
         producerArguments(
@@ -991,15 +1032,18 @@ describe('provider-free CI evidence profiles', () => {
           root,
           '--browser-report',
           report,
+          '--notification-preferences-report',
+          notificationReport,
         ),
       ),
-    ).resolves.toEqual({ receiptCount: 4 });
+    ).resolves.toEqual({ receiptCount: 5 });
 
     for (const [category, id] of [
       ['ci', 'browser-production-preview'],
       ['gates', 'production-preview-browser'],
       ['gates', 'voice-ptt-storage-playback'],
       ['gates', 'service-worker-safe-update'],
+      ['gates', 'web-push-preferences'],
     ] as const) {
       const source = await readFile(
         join(root, `artifacts/${category}/${id}.json`),
@@ -1034,10 +1078,21 @@ describe('provider-free CI evidence profiles', () => {
         },
       },
     });
+    await expect(
+      readJson(join(root, 'artifacts/gates/web-push-preferences.json')),
+    ).resolves.toMatchObject({
+      result: {
+        proof: {
+          inAppNotifications: 'passed',
+          webPushPreferences: 'passed',
+          emailPreferences: 'passed',
+          sensitivePreviewOmitted: true,
+        },
+      },
+    });
     for (const absent of [
       'wcag-2.2-aa',
       'pwa-install-offline-reopen',
-      'web-push-preferences',
       'powersync-browser-connect-sync-entities-roundtrip',
     ]) {
       await expect(
@@ -1048,6 +1103,10 @@ describe('provider-free CI evidence profiles', () => {
 
   it('rejects an aggregate-green browser report that omits or replaces a required semantic test', async () => {
     const producer = await loadProviderFreeProducer();
+    const notificationReport = await writeVitestReport(
+      'notification-preferences-browser-negative',
+      requiredNotificationPreferenceTests,
+    );
     const report = await writeBrowserReport('missing-responsive', (value) => {
       const suites = value.suites as Array<{
         specs: Array<{ title: string }>;
@@ -1068,6 +1127,8 @@ describe('provider-free CI evidence profiles', () => {
           outputRoot('missing-browser-claim'),
           '--browser-report',
           report,
+          '--notification-preferences-report',
+          notificationReport,
         ),
       ),
     ).rejects.toThrow(/required browser evidence test/iu);
@@ -1075,6 +1136,10 @@ describe('provider-free CI evidence profiles', () => {
 
   it('requires every exact test identity from the official production suite', async () => {
     const producer = await loadProviderFreeProducer();
+    const notificationReport = await writeVitestReport(
+      'notification-preferences-browser-identities',
+      requiredNotificationPreferenceTests,
+    );
     for (const [index, [file, title]] of browserEvidenceSpecs.entries()) {
       const report = await writeBrowserReport(
         `replaced-required-${index}`,
@@ -1099,6 +1164,8 @@ describe('provider-free CI evidence profiles', () => {
             outputRoot(`missing-required-${index}`),
             '--browser-report',
             report,
+            '--notification-preferences-report',
+            notificationReport,
           ),
         ),
         `${file} :: ${title}`,
@@ -1108,6 +1175,10 @@ describe('provider-free CI evidence profiles', () => {
 
   it('rejects a browser report with a failed, flaky, skipped, or non-production project', async () => {
     const producer = await loadProviderFreeProducer();
+    const notificationReport = await writeVitestReport(
+      'notification-preferences-browser-status',
+      requiredNotificationPreferenceTests,
+    );
     for (const [name, mutate] of [
       [
         'failed',
@@ -1141,6 +1212,8 @@ describe('provider-free CI evidence profiles', () => {
             outputRoot(`invalid-browser-${name}`),
             '--browser-report',
             report,
+            '--notification-preferences-report',
+            notificationReport,
           ),
         ),
       ).rejects.toThrow(/browser evidence report/iu);
@@ -1150,6 +1223,10 @@ describe('provider-free CI evidence profiles', () => {
   it('refuses symlinked execution reports instead of following caller-controlled paths', async () => {
     const producer = await loadProviderFreeProducer();
     const report = await writeBrowserReport('symlink-target');
+    const notificationReport = await writeVitestReport(
+      'notification-preferences-browser-symlink',
+      requiredNotificationPreferenceTests,
+    );
     const linkRoot = outputRoot('browser-report-symlink');
     const linkedReport = join(linkRoot, 'playwright.json');
     await mkdir(linkRoot, { recursive: true });
@@ -1162,9 +1239,71 @@ describe('provider-free CI evidence profiles', () => {
           outputRoot('browser-report-symlink-receipts'),
           '--browser-report',
           linkedReport,
+          '--notification-preferences-report',
+          notificationReport,
         ),
       ),
     ).rejects.toThrow(/browser evidence report/iu);
+  });
+
+  it('requires every exact notification-preference source contract before emitting the gate', async () => {
+    const producer = await loadProviderFreeProducer();
+    const browserReport = await writeBrowserReport(
+      'notification-preferences-source-identities',
+    );
+    const missingSourceReport = await writeVitestReport(
+      'notification-preferences-missing-source',
+      requiredNotificationPreferenceTests.slice(1),
+    );
+    await expect(
+      producer.runProviderFreeCiEvidenceWrite(
+        producerArguments(
+          'browser-production-preview',
+          outputRoot('missing-notification-preference-source'),
+          '--browser-report',
+          browserReport,
+          '--notification-preferences-report',
+          missingSourceReport,
+        ),
+      ),
+    ).rejects.toThrow(/required notification preference evidence test/iu);
+
+    for (const [
+      index,
+      required,
+    ] of requiredNotificationPreferenceTests.entries()) {
+      const sourceReport = await writeVitestReport(
+        `notification-preferences-replaced-${index}`,
+        requiredNotificationPreferenceTests,
+        (value) => {
+          const result = (
+            value.testResults as Array<{
+              name: string;
+              assertionResults: Array<{ fullName: string }>;
+            }>
+          ).find(({ name }) => name.endsWith(required.file));
+          const assertion = result?.assertionResults.find(
+            ({ fullName }) => fullName === required.fullName,
+          );
+          if (!assertion) throw new Error('invalid Vitest fixture');
+          assertion.fullName = `unrelated replacement for ${required.fullName}`;
+        },
+      );
+
+      await expect(
+        producer.runProviderFreeCiEvidenceWrite(
+          producerArguments(
+            'browser-production-preview',
+            outputRoot(`missing-notification-preference-source-${index}`),
+            '--browser-report',
+            browserReport,
+            '--notification-preferences-report',
+            sourceReport,
+          ),
+        ),
+        `${required.file} :: ${required.fullName}`,
+      ).rejects.toThrow(/required notification preference evidence test/iu);
+    }
   });
 
   it('rejects unknown profiles, invalid counts, and extra arguments', async () => {
@@ -1210,6 +1349,10 @@ describe('provider-free receipt workflow wiring', () => {
     }
     expect(ci).toContain('write-provider-free-ci-evidence.mjs');
     expect(ci).toContain('--browser-report "$BROWSER_REPORT"');
+    expect(ci).toContain(
+      '--notification-preferences-report "$NOTIFICATION_PREFERENCES_REPORT"',
+    );
+    expect(ci).toContain('output/notification-preferences-vitest.json');
     expect(ci).not.toContain('--browser-test-count');
     expect(ci).toContain('--eval-case-report "$EVAL_CASE_REPORT"');
     expect(ci).toContain('--eval-runtime-report "$EVAL_RUNTIME_REPORT"');
@@ -1297,5 +1440,6 @@ describe('provider-free receipt workflow wiring', () => {
     expect(aggregation).not.toContain('pwa-install-offline-reopen');
     expect(aggregation).toContain('voice-ptt-storage-playback');
     expect(aggregation).toContain('service-worker-safe-update');
+    expect(aggregation).toContain('web-push-preferences');
   });
 });
