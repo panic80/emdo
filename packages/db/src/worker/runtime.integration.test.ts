@@ -157,10 +157,10 @@ describeDatabase(
               'operationId', $6::text,
               'notificationId', $7::text
             ),
-            $8, 'enqueued', pg_catalog.clock_timestamp(), $9,
-            'integration-worker', pg_catalog.clock_timestamp() + interval '5 minutes',
-            $10, pg_catalog.clock_timestamp(), pg_catalog.clock_timestamp(),
-            pg_catalog.clock_timestamp() + interval '90 days')`,
+            $8, 'enqueued', pg_catalog.statement_timestamp(), $9,
+            'integration-worker', pg_catalog.statement_timestamp() + interval '5 minutes',
+            $10, pg_catalog.statement_timestamp(), pg_catalog.statement_timestamp(),
+            pg_catalog.statement_timestamp() + interval '90 days')`,
         [
           notificationFixture.outbox,
           notificationFixture.household,
@@ -183,9 +183,9 @@ describeDatabase(
          values
            ($1, $2, $3, $4, $5, 'emdo.notification.delivery.v1', $6,
             $7, 'leased', 1, $8,
-            pg_catalog.clock_timestamp() + interval '5 minutes',
-            pg_catalog.clock_timestamp(), pg_catalog.clock_timestamp(),
-            pg_catalog.clock_timestamp() + interval '90 days')`,
+            pg_catalog.statement_timestamp() + interval '5 minutes',
+            pg_catalog.statement_timestamp(), pg_catalog.statement_timestamp(),
+            pg_catalog.statement_timestamp() + interval '90 days')`,
         [
           notificationFixture.outbox,
           notificationFixture.household,
