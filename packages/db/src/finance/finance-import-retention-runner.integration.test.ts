@@ -59,9 +59,9 @@ describeDatabase(
       }
 
       const migrations = await loadOrderedMigrations();
-      expect(migrations).toHaveLength(12);
+      expect(migrations).toHaveLength(13);
       expect(migrations.at(-1)?.id).toBe(
-        '0011_finance_import_retention_runner',
+        '0012_google_oauth_disconnect_reconciliation_runner',
       );
       for (const migration of migrations) await admin.query(migration.sql);
 
