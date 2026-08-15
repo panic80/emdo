@@ -70,8 +70,10 @@ describe('API production package', () => {
       '/api/v1/experience/notification-preferences',
     );
     expect(stagingAcceptanceSource).toContain(
-      'Readiness checks do not match API readiness contract version 1',
+      'Readiness checks do not match synthetic HTTP subset contract version 1',
     );
+    expect(stagingAcceptanceSource).toContain('/synthetic-staging/readyz');
+    expect(stagingAcceptanceSource).toContain('syntheticHttpSubsetReadiness');
     expect(stagingAcceptanceSource).not.toContain('Core readiness gate failed');
 
     for (const entrypoint of [
