@@ -50,10 +50,10 @@ const providerReferenceB = 'gcal-provider-reference-integration-b';
 const payload = {
   algorithm: 'aes-256-gcm' as const,
   aadVersion: 1 as const,
-  ciphertext: 'ciphertext',
-  nonce: 'nonce',
-  authenticationTag: 'tag',
-  wrappedKey: 'wrapped-key',
+  ciphertext: Buffer.from('encrypted-calendar-token').toString('base64url'),
+  nonce: Buffer.alloc(12, 1).toString('base64url'),
+  authenticationTag: Buffer.alloc(16, 2).toString('base64url'),
+  wrappedKey: Buffer.alloc(60, 3).toString('base64url'),
   keyVersion: 'oauth-integration-key-v1',
 };
 
@@ -289,6 +289,42 @@ describeDatabase(
         }),
       ).resolves.toEqual({ status: 'stored', revision: 1 });
 
+      const invalidPayloads = [
+        'null',
+        '[]',
+        { ...payload, unexpected: true },
+        { ...payload, keyVersion: ' Calendar Vault V1 ' },
+        { ...payload, nonce: 'not-a-12-byte-nonce' },
+      ];
+      await admin.query('begin');
+      try {
+        await admin.query('set local role emdo_app');
+        await admin.query(
+          `select pg_catalog.set_config('emdo.user_id', $1, true),
+                  pg_catalog.set_config('emdo.session_id', $2, true),
+                  pg_catalog.set_config('emdo.request_id', $3, true)`,
+          [ids.user, ids.session, ids.request],
+        );
+        for (const [index, invalidPayload] of invalidPayloads.entries()) {
+          const rejected = await admin.query(
+            `select emdo.compare_and_set_encrypted_google_calendar_grant(
+               $1, $2, $3, $4, 1, 0, $5, $6::jsonb
+             ) as revision`,
+            [
+              recordId,
+              ids.household,
+              ids.space,
+              ids.user,
+              `gcal-invalid-provider-reference-${index}`,
+              invalidPayload,
+            ],
+          );
+          expect(rejected.rows[0]).toEqual({ revision: null });
+        }
+      } finally {
+        await admin.query('rollback');
+      }
+
       const resolver = new PostgresGoogleCalendarProviderAuthorityResolver(
         runtime.scopedPool,
         principal,
@@ -424,6 +460,10 @@ describeDatabase(
         'select * from emdo.encrypted_google_calendar_grants',
       );
       await expectAppDenied(
+        'select emdo.is_valid_encrypted_google_calendar_grant_payload($1::jsonb)',
+        [payload],
+      );
+      await expectAppDenied(
         `insert into emdo.encrypted_google_calendar_grants(
                record_id, household_id, private_space_id,
                original_owner_user_id, provider, grant_type, revision,
@@ -482,6 +522,22 @@ describeDatabase(
            emdo.commit_google_oauth_authorization_start(
              uuid, uuid, uuid, uuid, text, text, text, jsonb, jsonb
            ) to emdo_app`,
+      );
+      await expect(
+        checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),
+      ).resolves.toBe(true);
+      await admin.query(
+        `grant execute on function
+           emdo.is_valid_encrypted_google_calendar_grant_payload(jsonb)
+         to emdo_app`,
+      );
+      await expect(
+        checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),
+      ).resolves.toBe(false);
+      await admin.query(
+        `revoke execute on function
+           emdo.is_valid_encrypted_google_calendar_grant_payload(jsonb)
+         from emdo_app`,
       );
       await expect(
         checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),

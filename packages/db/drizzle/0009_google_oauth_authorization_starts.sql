@@ -479,6 +479,27 @@ AS $function$
 					'row_security=on', 'search_path=pg_catalog, emdo'
 				]
 		)
+		AND EXISTS (
+			SELECT 1
+			FROM pg_catalog.pg_proc AS proc
+			WHERE proc.oid =
+				'emdo.is_valid_encrypted_google_calendar_grant_payload(jsonb)'::regprocedure
+				AND NOT proc.prosecdef
+				AND proc.provolatile = 'i'
+				AND proc.proparallel = 's'
+				AND proc.proowner = 'emdo_oauth_grant_executor'::regrole
+				AND proc.proconfig @> ARRAY['search_path=pg_catalog']
+		)
+		AND pg_catalog.has_function_privilege(
+			'emdo_oauth_grant_executor',
+			'emdo.is_valid_encrypted_google_calendar_grant_payload(jsonb)',
+			'EXECUTE'
+		)
+		AND NOT pg_catalog.has_function_privilege(
+			session_user,
+			'emdo.is_valid_encrypted_google_calendar_grant_payload(jsonb)',
+			'EXECUTE'
+		)
 		AND NOT EXISTS (
 			SELECT 1
 			FROM pg_catalog.unnest(ARRAY[
@@ -519,6 +540,7 @@ AS $function$
 				'emdo.load_encrypted_google_calendar_grant(text,uuid,uuid,uuid)'::regprocedure,
 				'emdo.compare_and_set_encrypted_google_calendar_grant(text,uuid,uuid,uuid,integer,integer,text,jsonb)'::regprocedure,
 				'emdo.delete_encrypted_google_calendar_grant(text,uuid,uuid,uuid,integer)'::regprocedure,
+				'emdo.is_valid_encrypted_google_calendar_grant_payload(jsonb)'::regprocedure,
 				'emdo.purge_expired_google_oauth_state(integer)'::regprocedure,
 				'emdo.google_oauth_runtime_ready()'::regprocedure
 			)

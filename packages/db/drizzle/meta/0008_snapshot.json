@@ -3611,6 +3611,10 @@
         "encrypted_google_calendar_grants_payload_size_check": {
           "name": "encrypted_google_calendar_grants_payload_size_check",
           "value": "pg_catalog.octet_length(\"emdo\".\"encrypted_google_calendar_grants\".\"encrypted_payload\"::text) between 1 and 65536"
+        },
+        "encrypted_google_calendar_grants_payload_shape_check": {
+          "name": "encrypted_google_calendar_grants_payload_shape_check",
+          "value": "emdo.is_valid_encrypted_google_calendar_grant_payload(\"emdo\".\"encrypted_google_calendar_grants\".\"encrypted_payload\") is true"
         }
       },
       "isRLSEnabled": false

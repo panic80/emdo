@@ -4,6 +4,7 @@ import { getTableConfig } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 
 import {
+  encryptedGoogleCalendarGrants,
   financeImportFingerprints,
   financeImportPlans,
   financeImportReceipts,
@@ -239,5 +240,22 @@ describe('ordered migration snapshot chain', () => {
     expect(Object.keys(stored.checkConstraints).sort()).toEqual(
       config.checks.map((check) => check.name).sort(),
     );
+  });
+
+  it('keeps the encrypted Calendar grant checks aligned from their 0003 owner onward', async () => {
+    const expectedChecks = getTableConfig(encryptedGoogleCalendarGrants)
+      .checks.map((check) => check.name)
+      .sort();
+    for (let index = 3; index <= 9; index += 1) {
+      const snapshot = await readSnapshot(index);
+      const stored = snapshot.tables[
+        'emdo.encrypted_google_calendar_grants'
+      ] as {
+        readonly checkConstraints: Readonly<Record<string, unknown>>;
+      };
+      expect(Object.keys(stored.checkConstraints).sort()).toEqual(
+        expectedChecks,
+      );
+    }
   });
 });

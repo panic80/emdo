@@ -126,6 +126,21 @@ describe('durable runtime repository migration', () => {
     expect(sql).toContain(
       'create or replace function emdo.advance_google_oauth_authorization_epoch',
     );
+    expect(sql).toContain(
+      'create or replace function emdo.is_valid_encrypted_google_calendar_grant_payload',
+    );
+    expect(sql).toContain(
+      'encrypted_google_calendar_grants_payload_shape_check',
+    );
+    expect(sql).toMatch(
+      /p_payload \?& array\[[\s\S]+?'algorithm'[\s\S]+?'aadversion'[\s\S]+?'ciphertext'[\s\S]+?'nonce'[\s\S]+?'authenticationtag'[\s\S]+?'wrappedkey'[\s\S]+?'keyversion'[\s\S]+?\][\s\S]+?p_payload - array\[[\s\S]+?'keyversion'[\s\S]+?\]::text\[\] = '\{\}'::jsonb/,
+    );
+    expect(sql).toMatch(
+      /is_valid_encrypted_google_calendar_grant_payload\(\s*p_encrypted_payload\s*\) is not true/,
+    );
+    expect(sql).toMatch(
+      /revoke all on function[\s\S]+?emdo\.is_valid_encrypted_google_calendar_grant_payload\(jsonb\)[\s\S]+?from public, emdo_app/,
+    );
     const verifier = sql.match(
       /create or replace function emdo\.lock_current_google_calendar_authority[\s\S]+?end\s*\$function\$/,
     )?.[0];

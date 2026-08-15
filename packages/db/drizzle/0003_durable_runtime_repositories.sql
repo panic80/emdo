@@ -1253,6 +1253,62 @@ CREATE TABLE "emdo"."calendar_sync_states" (
 	CONSTRAINT "calendar_sync_states_hash_check" CHECK ("emdo"."calendar_sync_states"."last_evidence_hash" is null or "emdo"."calendar_sync_states"."last_evidence_hash" ~ '^[a-f0-9]{64}$')
 );
 --> statement-breakpoint
+CREATE OR REPLACE FUNCTION "emdo"."is_valid_encrypted_google_calendar_grant_payload"(
+	p_payload jsonb
+)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+SET search_path = pg_catalog
+AS $function$
+	SELECT CASE
+		WHEN pg_catalog.jsonb_typeof(p_payload) IS DISTINCT FROM 'object'
+			THEN false
+		ELSE COALESCE(
+			p_payload ?& ARRAY[
+				'algorithm', 'aadVersion', 'ciphertext', 'nonce',
+				'authenticationTag', 'wrappedKey', 'keyVersion'
+			]
+			AND p_payload - ARRAY[
+				'algorithm', 'aadVersion', 'ciphertext', 'nonce',
+				'authenticationTag', 'wrappedKey', 'keyVersion'
+			]::text[] = '{}'::jsonb
+			AND pg_catalog.jsonb_typeof(p_payload -> 'algorithm') = 'string'
+			AND p_payload ->> 'algorithm' = 'aes-256-gcm'
+			AND pg_catalog.jsonb_typeof(p_payload -> 'aadVersion') = 'number'
+			AND p_payload -> 'aadVersion' = '1'::jsonb
+			AND pg_catalog.jsonb_typeof(p_payload -> 'ciphertext') = 'string'
+			AND p_payload ->> 'ciphertext' ~ '^[A-Za-z0-9_-]*$'
+			AND pg_catalog.length(p_payload ->> 'ciphertext') % 4 <> 1
+			AND (
+				pg_catalog.length(p_payload ->> 'ciphertext') % 4 = 0
+				OR (
+					pg_catalog.length(p_payload ->> 'ciphertext') % 4 = 2
+					AND pg_catalog.right(p_payload ->> 'ciphertext', 1) ~ '^[AQgw]$'
+				)
+				OR (
+					pg_catalog.length(p_payload ->> 'ciphertext') % 4 = 3
+					AND pg_catalog.right(p_payload ->> 'ciphertext', 1)
+						~ '^[AEIMQUYcgkosw048]$'
+				)
+			)
+			AND pg_catalog.jsonb_typeof(p_payload -> 'nonce') = 'string'
+			AND p_payload ->> 'nonce' ~ '^[A-Za-z0-9_-]{16}$'
+			AND pg_catalog.jsonb_typeof(p_payload -> 'authenticationTag') = 'string'
+			AND p_payload ->> 'authenticationTag'
+				~ '^[A-Za-z0-9_-]{21}[AQgw]$'
+			AND pg_catalog.jsonb_typeof(p_payload -> 'wrappedKey') = 'string'
+			AND p_payload ->> 'wrappedKey' ~ '^[A-Za-z0-9_-]{80}$'
+			AND pg_catalog.jsonb_typeof(p_payload -> 'keyVersion') = 'string'
+			AND pg_catalog.length(p_payload ->> 'keyVersion') BETWEEN 2 AND 64
+			AND p_payload ->> 'keyVersion'
+				~ '^[a-z0-9]+([._-][a-z0-9]+)*$',
+			false
+		)
+	END
+$function$;
+--> statement-breakpoint
 CREATE TABLE "emdo"."encrypted_google_calendar_grants" (
 	"record_id" text PRIMARY KEY NOT NULL,
 	"household_id" uuid NOT NULL,
@@ -1269,7 +1325,8 @@ CREATE TABLE "emdo"."encrypted_google_calendar_grants" (
 	CONSTRAINT "encrypted_google_calendar_grants_scope_unique" UNIQUE("household_id","private_space_id","original_owner_user_id","provider","grant_type"),
 	CONSTRAINT "encrypted_google_calendar_grants_reference_unique" UNIQUE("provider","provider_grant_reference"),
 	CONSTRAINT "encrypted_google_calendar_grants_binding_check" CHECK ("emdo"."encrypted_google_calendar_grants"."provider" = 'google' and "emdo"."encrypted_google_calendar_grants"."grant_type" = 'calendar-authorization' and "emdo"."encrypted_google_calendar_grants"."revision" > 0 and "emdo"."encrypted_google_calendar_grants"."authorization_epoch" >= 0 and pg_catalog.length("emdo"."encrypted_google_calendar_grants"."provider_grant_reference") between 16 and 160 and pg_catalog.btrim("emdo"."encrypted_google_calendar_grants"."provider_grant_reference") = "emdo"."encrypted_google_calendar_grants"."provider_grant_reference" and "emdo"."encrypted_google_calendar_grants"."provider_grant_reference" !~ '[[:cntrl:]]'),
-	CONSTRAINT "encrypted_google_calendar_grants_payload_size_check" CHECK (pg_catalog.octet_length("emdo"."encrypted_google_calendar_grants"."encrypted_payload"::text) between 1 and 65536)
+	CONSTRAINT "encrypted_google_calendar_grants_payload_size_check" CHECK (pg_catalog.octet_length("emdo"."encrypted_google_calendar_grants"."encrypted_payload"::text) between 1 and 65536),
+	CONSTRAINT "encrypted_google_calendar_grants_payload_shape_check" CHECK ("emdo"."is_valid_encrypted_google_calendar_grant_payload"("emdo"."encrypted_google_calendar_grants"."encrypted_payload") IS TRUE)
 );
 --> statement-breakpoint
 CREATE TABLE "emdo"."google_oauth_authorization_epochs" (
@@ -2893,7 +2950,9 @@ BEGIN
 			IS DISTINCT FROM p_provider_grant_reference
 		OR p_provider_grant_reference ~ '[[:cntrl:]]'
 		OR p_encrypted_payload IS NULL
-		OR pg_catalog.jsonb_typeof(p_encrypted_payload) <> 'object'
+		OR emdo.is_valid_encrypted_google_calendar_grant_payload(
+			p_encrypted_payload
+		) IS NOT TRUE
 		OR pg_catalog.octet_length(p_encrypted_payload::text)
 			NOT BETWEEN 1 AND 65536
 		OR NOT emdo.lock_active_request_scope(
@@ -3002,6 +3061,8 @@ ALTER FUNCTION "emdo"."load_google_oauth_authorization_epoch"(uuid, uuid, uuid)
 	OWNER TO emdo_oauth_grant_executor;
 ALTER FUNCTION "emdo"."advance_google_oauth_authorization_epoch"(uuid, uuid, uuid, integer)
 	OWNER TO emdo_oauth_grant_executor;
+ALTER FUNCTION "emdo"."is_valid_encrypted_google_calendar_grant_payload"(jsonb)
+	OWNER TO emdo_oauth_grant_executor;
 ALTER FUNCTION "emdo"."load_encrypted_google_calendar_grant"(text, uuid, uuid, uuid)
 	OWNER TO emdo_oauth_grant_executor;
 ALTER FUNCTION "emdo"."compare_and_set_encrypted_google_calendar_grant"(text, uuid, uuid, uuid, integer, integer, text, jsonb)
@@ -3030,12 +3091,16 @@ REVOKE ALL ON FUNCTION
 	"emdo"."invalidate_google_oauth_flows"(uuid, uuid, uuid),
 	"emdo"."load_google_oauth_authorization_epoch"(uuid, uuid, uuid),
 	"emdo"."advance_google_oauth_authorization_epoch"(uuid, uuid, uuid, integer),
+	"emdo"."is_valid_encrypted_google_calendar_grant_payload"(jsonb),
 	"emdo"."load_encrypted_google_calendar_grant"(text, uuid, uuid, uuid),
 	"emdo"."compare_and_set_encrypted_google_calendar_grant"(text, uuid, uuid, uuid, integer, integer, text, jsonb),
 	"emdo"."delete_encrypted_google_calendar_grant"(text, uuid, uuid, uuid, integer)
 	FROM PUBLIC, emdo_app, emdo_auth, emdo_worker, emdo_workflow, emdo_policy_reader,
 	emdo_metering_executor, emdo_worker_executor, emdo_worker_scope_executor,
 	emdo_oauth_flow_executor, emdo_oauth_grant_executor;
+GRANT EXECUTE ON FUNCTION
+	"emdo"."is_valid_encrypted_google_calendar_grant_payload"(jsonb)
+	TO emdo_oauth_grant_executor;
 GRANT EXECUTE ON FUNCTION
 	"emdo"."consume_google_oauth_flow"(text, uuid, uuid, uuid, uuid),
 	"emdo"."invalidate_google_oauth_flows"(uuid, uuid, uuid),

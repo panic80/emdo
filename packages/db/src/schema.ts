@@ -4167,6 +4167,10 @@ export const encryptedGoogleCalendarGrants = emdoSchema.table(
       'encrypted_google_calendar_grants_payload_size_check',
       sql`pg_catalog.octet_length(${table.encryptedPayload}::text) between 1 and 65536`,
     ),
+    check(
+      'encrypted_google_calendar_grants_payload_shape_check',
+      sql`emdo.is_valid_encrypted_google_calendar_grant_payload(${table.encryptedPayload}) is true`,
+    ),
   ],
 );
 

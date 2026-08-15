@@ -113,5 +113,14 @@ describe('Google OAuth authorization-start receipts migration', () => {
     expect(sql).toContain(
       "'emdo.delete_encrypted_google_calendar_grant(text,uuid,uuid,uuid,integer)'::regprocedure",
     );
+    expect(sql).toContain(
+      "'emdo.is_valid_encrypted_google_calendar_grant_payload(jsonb)'::regprocedure",
+    );
+    expect(sql).toMatch(
+      /not pg_catalog\.has_function_privilege\(\s*session_user,\s*'emdo\.is_valid_encrypted_google_calendar_grant_payload\(jsonb\)',\s*'execute'\s*\)/u,
+    );
+    expect(sql).toMatch(
+      /pg_catalog\.has_function_privilege\(\s*'emdo_oauth_grant_executor',\s*'emdo\.is_valid_encrypted_google_calendar_grant_payload\(jsonb\)',\s*'execute'\s*\)/u,
+    );
   });
 });
