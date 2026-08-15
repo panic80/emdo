@@ -103,6 +103,9 @@ describe('canonical effective authorization scope migration', () => {
     expect(wrapper).toContain('request_id');
     expect(wrapper).toContain('membership_id');
     expect(wrapper).toContain('collection_authorization_scope_fingerprint');
+    expect(wrapper).toMatch(
+      /returns table \([\s\S]*private_space_id uuid[\s\S]*collection_authorization_scope_fingerprint text[\s\S]*\)/u,
+    );
     expect(sql).toContain(
       'alter function emdo.issue_active_principal_scope(uuid, uuid, text)\n\towner to emdo_space_grant_executor',
     );

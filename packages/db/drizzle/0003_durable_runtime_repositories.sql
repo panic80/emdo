@@ -5130,6 +5130,7 @@ RETURNS TABLE (
 	membership_id uuid,
 	role text,
 	email_verified boolean,
+	private_space_id uuid,
 	space_access_grant_id uuid,
 	collection_authorization_scope_fingerprint text
 )
@@ -5180,6 +5181,7 @@ BEGIN
 		v_authority.membership_id,
 		v_grant.role,
 		true,
+		v_authority.private_space_id,
 		v_grant.grant_id,
 		v_authority.authorization_scope_fingerprint;
 END

@@ -10,6 +10,7 @@ const HOUSEHOLD_ID = '018f1f5e-2000-7000-8000-000000000003';
 const MEMBERSHIP_ID = '018f1f5e-2000-7000-8000-000000000004';
 const SPACE_GRANT_ID = '018f1f5e-2000-7000-8000-000000000005';
 const REQUEST_ID = '018f1f5e-2000-7000-8000-000000000006';
+const PRIVATE_SPACE_ID = '018f1f5e-2000-7000-8000-000000000007';
 const COLLECTION_SCOPE_FINGERPRINT =
   EffectiveAuthorizationScopeFingerprintSchema.parse('c'.repeat(64));
 
@@ -70,6 +71,7 @@ describe('production Better Auth boundary', () => {
             collectionAuthorizationScopeFingerprint:
               COLLECTION_SCOPE_FINGERPRINT,
             householdId: HOUSEHOLD_ID,
+            privateSpaceId: PRIVATE_SPACE_ID,
             role: 'owner',
             spaceAccessGrantId: SPACE_GRANT_ID,
           };
@@ -89,6 +91,7 @@ describe('production Better Auth boundary', () => {
       userId: USER_ID,
       sessionId: SESSION_ID,
       householdId: HOUSEHOLD_ID,
+      privateSpaceId: PRIVATE_SPACE_ID,
       role: 'owner',
       emailVerified: true,
       spaceAccessGrantId: SPACE_GRANT_ID,
@@ -149,6 +152,7 @@ describe('production Better Auth boundary', () => {
               ? {}
               : { collectionAuthorizationScopeFingerprint }),
             householdId: HOUSEHOLD_ID,
+            privateSpaceId: PRIVATE_SPACE_ID,
             role: 'owner',
             spaceAccessGrantId: SPACE_GRANT_ID,
           }),
@@ -212,6 +216,7 @@ describe('production Better Auth boundary', () => {
             collectionAuthorizationScopeFingerprint:
               COLLECTION_SCOPE_FINGERPRINT,
             householdId: HOUSEHOLD_ID,
+            privateSpaceId: PRIVATE_SPACE_ID,
             role: 'owner',
             spaceAccessGrantId: SPACE_GRANT_ID,
           };
@@ -610,6 +615,7 @@ describe('production Better Auth boundary', () => {
         resolveActivePrincipalScope: async () => ({
           collectionAuthorizationScopeFingerprint: COLLECTION_SCOPE_FINGERPRINT,
           householdId: HOUSEHOLD_ID,
+          privateSpaceId: PRIVATE_SPACE_ID,
           role: 'member',
           spaceAccessGrantId: SPACE_GRANT_ID,
         }),

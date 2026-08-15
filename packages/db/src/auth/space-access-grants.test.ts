@@ -112,6 +112,7 @@ describe('PostgresSpaceAccessGrantService', () => {
               membership_id: ids.membershipId,
               role: 'member',
               email_verified: true,
+              private_space_id: ids.privateSpaceId,
               space_access_grant_id: ids.grantId,
               collection_authorization_scope_fingerprint:
                 collectionAuthorizationScopeFingerprint,
@@ -134,6 +135,7 @@ describe('PostgresSpaceAccessGrantService', () => {
       emailVerified: true,
       householdId: ids.householdId,
       membershipId: ids.membershipId,
+      privateSpaceId: ids.privateSpaceId,
       requestId: ids.requestId,
       role: 'member',
       sessionId: ids.sessionId,

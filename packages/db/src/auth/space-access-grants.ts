@@ -38,6 +38,7 @@ const ActivePrincipalScopeRowSchema = z.strictObject({
   membership_id: UuidSchema,
   role: RoleSchema,
   email_verified: z.literal(true),
+  private_space_id: UuidSchema,
   space_access_grant_id: UuidSchema,
   collection_authorization_scope_fingerprint:
     EffectiveAuthorizationScopeFingerprintSchema,
@@ -274,6 +275,7 @@ export class PostgresSpaceAccessGrantService implements SpaceAccessGrantVerifier
     readonly emailVerified: true;
     readonly householdId: string;
     readonly membershipId: string;
+    readonly privateSpaceId: string;
     readonly requestId: string;
     readonly role: 'owner' | 'member';
     readonly sessionId: string;
@@ -292,7 +294,8 @@ export class PostgresSpaceAccessGrantService implements SpaceAccessGrantVerifier
       const row = firstResultRow(
         await client.query(
           `select user_id, session_id, request_id, household_id,
-                  membership_id, role, email_verified, space_access_grant_id,
+                  membership_id, role, email_verified, private_space_id,
+                  space_access_grant_id,
                   collection_authorization_scope_fingerprint
              from emdo.issue_active_principal_scope($1, $2, $3)`,
           [
@@ -334,6 +337,7 @@ export class PostgresSpaceAccessGrantService implements SpaceAccessGrantVerifier
         emailVerified: scope.data.email_verified,
         householdId: scope.data.household_id,
         membershipId: scope.data.membership_id,
+        privateSpaceId: scope.data.private_space_id,
         requestId: scope.data.request_id,
         role: scope.data.role,
         sessionId: scope.data.session_id,

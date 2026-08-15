@@ -37,6 +37,7 @@ const ActiveMemberSchema = z.object({
 
 const ActivePrincipalScopeSchema = z.strictObject({
   householdId: z.uuid(),
+  privateSpaceId: z.uuid(),
   role: z.enum(['owner', 'member']),
   spaceAccessGrantId: z.uuid(),
   collectionAuthorizationScopeFingerprint:
@@ -278,6 +279,7 @@ export const createProductionAuthenticationBoundary = (
           scope.data.collectionAuthorizationScopeFingerprint,
         emailVerified: true,
         householdId: scope.data.householdId,
+        privateSpaceId: scope.data.privateSpaceId,
         role: scope.data.role,
         sessionId: session.data.session.id,
         spaceAccessGrantId: scope.data.spaceAccessGrantId,

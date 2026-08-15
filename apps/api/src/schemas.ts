@@ -215,6 +215,7 @@ export const AuthenticatedPrincipalSchema = z.strictObject({
   userId: UuidSchema,
   sessionId: UuidSchema,
   householdId: UuidSchema,
+  privateSpaceId: UuidSchema.optional(),
   role: z.enum(['owner', 'member']),
   emailVerified: z.literal(true),
   spaceAccessGrantId: UuidSchema,

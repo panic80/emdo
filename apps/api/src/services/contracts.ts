@@ -28,6 +28,12 @@ export interface AuthenticatedPrincipal {
   readonly userId: string;
   readonly sessionId: string;
   readonly householdId: string;
+  /**
+   * Built-in production authentication supplies the DB-derived private space.
+   * Capability-specific ports that require it must reject principals where it
+   * is absent; it is never accepted from a client request.
+   */
+  readonly privateSpaceId?: string;
   readonly role: 'owner' | 'member';
   readonly emailVerified: true;
   /**
