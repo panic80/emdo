@@ -114,6 +114,7 @@ export type {
   PostgresGoogleOAuthActor,
   PostgresGoogleOAuthFlowConsumeResult,
   PostgresGoogleOAuthFlowRecord,
+  PostgresGoogleOAuthRequestAuthority,
 } from './google/oauth-persistence.js';
 
 export type { DurableRepositoryPrincipal } from './durable/scoped-transaction.js';

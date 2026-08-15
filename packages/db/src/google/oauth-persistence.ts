@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import {
   OpaqueReferenceSchema,
   Sha256Schema,
@@ -26,6 +24,9 @@ const ActorSchema = z.strictObject({
   householdId: UuidSchema,
   privateSpaceId: UuidSchema,
   sessionId: UuidSchema,
+});
+const RequestAuthoritySchema = ActorSchema.extend({
+  requestId: UuidSchema,
 });
 const StateIdSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
 const CalendarScopeSchema = z.enum([
@@ -119,6 +120,9 @@ const ProviderAuthorityResolverInputSchema = z.strictObject({
 });
 
 export type PostgresGoogleOAuthActor = Readonly<z.output<typeof ActorSchema>>;
+export type PostgresGoogleOAuthRequestAuthority = Readonly<
+  z.output<typeof RequestAuthoritySchema>
+>;
 export type PostgresGoogleOAuthFlowRecord = DeepReadonly<
   z.output<typeof FlowSchema>
 >;
@@ -129,14 +133,31 @@ export type PostgresGoogleCalendarVaultScope = Readonly<
   z.output<typeof VaultScopeSchema>
 >;
 
-const principalForActor = (
-  actor: PostgresGoogleOAuthActor,
-): DurableRepositoryPrincipal => ({
-  userId: actor.userId,
-  householdId: actor.householdId,
-  sessionId: actor.sessionId,
-  requestId: randomUUID(),
-});
+const principalForAuthority = (
+  authority: PostgresGoogleOAuthRequestAuthority,
+): Readonly<DurableRepositoryPrincipal> =>
+  parseDurablePrincipal({
+    userId: authority.userId,
+    householdId: authority.householdId,
+    sessionId: authority.sessionId,
+    requestId: authority.requestId,
+  });
+
+const assertActorAuthority = (
+  authority: PostgresGoogleOAuthRequestAuthority,
+  actorInput: PostgresGoogleOAuthActor,
+): PostgresGoogleOAuthActor => {
+  const actor = ActorSchema.parse(actorInput);
+  if (
+    actor.userId !== authority.userId ||
+    actor.householdId !== authority.householdId ||
+    actor.privateSpaceId !== authority.privateSpaceId ||
+    actor.sessionId !== authority.sessionId
+  ) {
+    throw new Error('OAuth actor authority mismatch');
+  }
+  return deepFreeze(actor);
+};
 
 const parseFlowRow = (
   row: Record<string, unknown>,
@@ -173,13 +194,23 @@ export type PostgresGoogleOAuthFlowConsumeResult =
 
 /** Atomic, single-use PKCE flow persistence. */
 export class PostgresGoogleOAuthFlowStore {
-  constructor(private readonly pool: DatabasePool) {}
+  readonly #authority: PostgresGoogleOAuthRequestAuthority;
+  readonly #principal: Readonly<DurableRepositoryPrincipal>;
+
+  constructor(
+    private readonly pool: DatabasePool,
+    authorityInput: PostgresGoogleOAuthRequestAuthority,
+  ) {
+    this.#authority = deepFreeze(RequestAuthoritySchema.parse(authorityInput));
+    this.#principal = principalForAuthority(this.#authority);
+  }
 
   async put(recordInput: PostgresGoogleOAuthFlowRecord): Promise<boolean> {
     const record = FlowSchema.parse(recordInput);
+    assertActorAuthority(this.#authority, record.actor);
     return withDurableTransaction(
       this.pool,
-      principalForActor(record.actor),
+      this.#principal,
       {
         householdId: record.actor.householdId,
         spaceId: record.actor.privateSpaceId,
@@ -223,9 +254,10 @@ export class PostgresGoogleOAuthFlowStore {
     const request = z
       .strictObject({ id: StateIdSchema, actor: ActorSchema })
       .parse(input);
+    assertActorAuthority(this.#authority, request.actor);
     return withDurableTransaction(
       this.pool,
-      principalForActor(request.actor),
+      this.#principal,
       {
         householdId: request.actor.householdId,
         spaceId: request.actor.privateSpaceId,
@@ -255,10 +287,10 @@ export class PostgresGoogleOAuthFlowStore {
   }
 
   async invalidateActor(actorInput: PostgresGoogleOAuthActor): Promise<number> {
-    const actor = ActorSchema.parse(actorInput);
+    const actor = assertActorAuthority(this.#authority, actorInput);
     return withDurableTransaction(
       this.pool,
-      principalForActor(actor),
+      this.#principal,
       { householdId: actor.householdId, spaceId: actor.privateSpaceId },
       async (client) => {
         const row = firstResultRow(
@@ -275,13 +307,22 @@ export class PostgresGoogleOAuthFlowStore {
 
 /** Durable monotonic tombstone, independent of credential row lifetime. */
 export class PostgresGoogleOAuthAuthorizationEpochStore {
-  constructor(private readonly pool: DatabasePool) {}
+  readonly #authority: PostgresGoogleOAuthRequestAuthority;
+  readonly #principal: Readonly<DurableRepositoryPrincipal>;
+
+  constructor(
+    private readonly pool: DatabasePool,
+    authorityInput: PostgresGoogleOAuthRequestAuthority,
+  ) {
+    this.#authority = deepFreeze(RequestAuthoritySchema.parse(authorityInput));
+    this.#principal = principalForAuthority(this.#authority);
+  }
 
   async load(actorInput: PostgresGoogleOAuthActor): Promise<number> {
-    const actor = ActorSchema.parse(actorInput);
+    const actor = assertActorAuthority(this.#authority, actorInput);
     return withDurableTransaction(
       this.pool,
-      principalForActor(actor),
+      this.#principal,
       { householdId: actor.householdId, spaceId: actor.privateSpaceId },
       async (client) => {
         const row = firstResultRow(
@@ -310,9 +351,10 @@ export class PostgresGoogleOAuthAuthorizationEpochStore {
     | Readonly<{ status: 'conflict' }>
   > {
     const request = EpochAdvanceSchema.parse(input);
+    assertActorAuthority(this.#authority, request.actor);
     return withDurableTransaction(
       this.pool,
-      principalForActor(request.actor),
+      this.#principal,
       {
         householdId: request.actor.householdId,
         spaceId: request.actor.privateSpaceId,
@@ -361,13 +403,15 @@ export interface PostgresEncryptedGoogleCalendarGrantRecord {
 
 /** Encrypted payload store; token material is never represented in columns. */
 export class PostgresEncryptedGoogleCalendarGrantStore {
+  readonly #authority: PostgresGoogleOAuthRequestAuthority;
   readonly #principal: DurableRepositoryPrincipal;
 
   constructor(
     private readonly pool: DatabasePool,
-    principal: DurableRepositoryPrincipal,
+    authorityInput: PostgresGoogleOAuthRequestAuthority,
   ) {
-    this.#principal = parseDurablePrincipal(principal);
+    this.#authority = deepFreeze(RequestAuthoritySchema.parse(authorityInput));
+    this.#principal = principalForAuthority(this.#authority);
   }
 
   async load(
@@ -480,6 +524,7 @@ export class PostgresEncryptedGoogleCalendarGrantStore {
   ): void {
     if (
       scope.householdId !== this.#principal.householdId ||
+      scope.spaceId !== this.#authority.privateSpaceId ||
       ownerUserId !== this.#principal.userId
     ) {
       throw new Error('Encrypted Calendar grant scope is unavailable');
@@ -600,17 +645,23 @@ export class PostgresGoogleCalendarProviderAuthorityResolver {
 
 /** Session-level advisory lock held across provider I/O, with scope validation first. */
 export class PostgresGoogleOAuthGrantLease {
-  constructor(private readonly pool: DatabasePool) {}
+  readonly #authority: PostgresGoogleOAuthRequestAuthority;
+  readonly #principal: Readonly<DurableRepositoryPrincipal>;
+
+  constructor(
+    private readonly pool: DatabasePool,
+    authorityInput: PostgresGoogleOAuthRequestAuthority,
+  ) {
+    this.#authority = deepFreeze(RequestAuthoritySchema.parse(authorityInput));
+    this.#principal = principalForAuthority(this.#authority);
+  }
 
   async runExclusive<Value>(
     actorInput: PostgresGoogleOAuthActor,
     operation: () => Promise<Value>,
   ): Promise<Value> {
-    const actor = ActorSchema.parse(actorInput);
-    const client = await beginDurableTransaction(
-      this.pool,
-      principalForActor(actor),
-    );
+    const actor = assertActorAuthority(this.#authority, actorInput);
+    const client = await beginDurableTransaction(this.pool, this.#principal);
     const lockKey = `${actor.userId}:${actor.householdId}:${actor.privateSpaceId}`;
     let locked = false;
     let transactionOpen = true;

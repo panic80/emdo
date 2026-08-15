@@ -31,6 +31,10 @@ const principal = {
   requestId: ids.request,
   householdId: ids.household,
 };
+const requestAuthority = {
+  ...principal,
+  privateSpaceId: ids.space,
+};
 const actor = {
   userId: ids.user,
   sessionId: ids.session,
@@ -182,7 +186,7 @@ describeDatabase(
       };
       const store = new PostgresEncryptedGoogleCalendarGrantStore(
         runtime.scopedPool,
-        principal,
+        requestAuthority,
       );
       await expect(
         store.compareAndSet({
@@ -305,6 +309,7 @@ describeDatabase(
       await expect(
         new PostgresGoogleOAuthAuthorizationEpochStore(
           runtime.scopedPool,
+          requestAuthority,
         ).advance({ actor, expectedEpoch: 0 }),
       ).resolves.toEqual({ status: 'advanced', authorizationEpoch: 1 });
       await expect(resolver.resolve(resolverInput)).resolves.toBeUndefined();

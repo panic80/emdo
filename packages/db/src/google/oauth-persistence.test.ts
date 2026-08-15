@@ -21,6 +21,10 @@ const principal = {
   sessionId: actor.sessionId,
   requestId: '70000000-0000-4000-8000-000000000005',
 };
+const requestAuthority = {
+  ...principal,
+  privateSpaceId: actor.privateSpaceId,
+};
 
 const poolFor = (
   respond: (
@@ -51,7 +55,7 @@ describe('durable Google OAuth persistence', () => {
     const flowId = 'a'.repeat(43);
 
     await expect(
-      new PostgresGoogleOAuthFlowStore(pool).put({
+      new PostgresGoogleOAuthFlowStore(pool, requestAuthority).put({
         id: flowId,
         actor,
         redirectUri: 'https://example.test/oauth/callback',
@@ -73,6 +77,15 @@ describe('durable Google OAuth persistence', () => {
     expect(normalized.match(/credential_revision_at_start/gu)).toHaveLength(1);
     expect(normalized.match(/authorization_epoch_at_start/gu)).toHaveLength(1);
     expect(insert![1]).toHaveLength(13);
+    expect(
+      query.mock.calls.find(([sql]) =>
+        sql.includes("set_config('emdo.user_id'"),
+      )?.[1],
+    ).toEqual([
+      requestAuthority.userId,
+      requestAuthority.sessionId,
+      requestAuthority.requestId,
+    ]);
   });
 
   it('atomically consumes an exact actor-bound PKCE flow through the narrow function', async () => {
@@ -109,7 +122,7 @@ describe('durable Google OAuth persistence', () => {
     });
 
     await expect(
-      new PostgresGoogleOAuthFlowStore(pool).consume({
+      new PostgresGoogleOAuthFlowStore(pool, requestAuthority).consume({
         id: 'a'.repeat(43),
         actor,
       }),
@@ -131,7 +144,9 @@ describe('durable Google OAuth persistence', () => {
     });
 
     await expect(
-      new PostgresGoogleOAuthFlowStore(pool).invalidateActor(actor),
+      new PostgresGoogleOAuthFlowStore(pool, requestAuthority).invalidateActor(
+        actor,
+      ),
     ).resolves.toBe(2);
     expect(
       query.mock.calls.find(([sql]) =>
@@ -151,7 +166,10 @@ describe('durable Google OAuth persistence', () => {
     });
 
     await expect(
-      new PostgresGoogleOAuthAuthorizationEpochStore(pool).advance({
+      new PostgresGoogleOAuthAuthorizationEpochStore(
+        pool,
+        requestAuthority,
+      ).advance({
         actor,
         expectedEpoch: 3,
       }),
@@ -174,7 +192,7 @@ describe('durable Google OAuth persistence', () => {
     });
     const store = new PostgresEncryptedGoogleCalendarGrantStore(
       pool,
-      principal,
+      requestAuthority,
     );
     const payload = {
       algorithm: 'aes-256-gcm' as const,
@@ -216,7 +234,7 @@ describe('durable Google OAuth persistence', () => {
     const { pool, query } = poolFor(() => []);
     const store = new PostgresEncryptedGoogleCalendarGrantStore(
       pool,
-      principal,
+      requestAuthority,
     );
 
     await expect(
@@ -259,7 +277,10 @@ describe('durable Google OAuth persistence', () => {
       }
       return [];
     });
-    const store = new PostgresGoogleOAuthAuthorizationEpochStore(pool);
+    const store = new PostgresGoogleOAuthAuthorizationEpochStore(
+      pool,
+      requestAuthority,
+    );
 
     await expect(store.load(actor)).resolves.toBe(3);
     await expect(store.advance({ actor, expectedEpoch: 3 })).resolves.toEqual({
@@ -362,7 +383,10 @@ describe('durable Google OAuth persistence', () => {
     const operation = vi.fn(async () => 'done');
 
     await expect(
-      new PostgresGoogleOAuthGrantLease(pool).runExclusive(actor, operation),
+      new PostgresGoogleOAuthGrantLease(pool, requestAuthority).runExclusive(
+        actor,
+        operation,
+      ),
     ).resolves.toBe('done');
     const statements = query.mock.calls.map(([sql]) => sql);
     expect(
@@ -372,5 +396,18 @@ describe('durable Google OAuth persistence', () => {
     );
     expect(operation).toHaveBeenCalledOnce();
     expect(client.release).toHaveBeenCalledOnce();
+  });
+
+  it('rejects an OAuth actor that does not exactly match the request authority before SQL', async () => {
+    const { pool, query } = poolFor(() => []);
+    const store = new PostgresGoogleOAuthFlowStore(pool, requestAuthority);
+
+    await expect(
+      store.invalidateActor({
+        ...actor,
+        privateSpaceId: '70000000-0000-4000-8000-000000000099',
+      }),
+    ).rejects.toThrow('OAuth actor authority mismatch');
+    expect(query).not.toHaveBeenCalled();
   });
 });
