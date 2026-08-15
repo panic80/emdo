@@ -259,7 +259,9 @@ describeDatabase(
           'TEST_FINANCE_IMPORT_DATABASE_URL must point at an isolated empty database',
         );
       }
-      const migrations = await loadOrderedMigrations();
+      const migrations = (await loadOrderedMigrations()).filter(
+        ({ index }) => index <= 8,
+      );
       expect(migrations.map((migration) => migration.id)).toEqual([
         '0000_household_foundation',
         '0001_identity_onboarding',

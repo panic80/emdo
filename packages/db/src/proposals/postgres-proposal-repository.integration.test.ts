@@ -593,7 +593,15 @@ describeDatabase(
           actor.space,
           actor.user,
           fixture.providerGrantReference,
-          { ciphertext: `proposal-${label}` },
+          {
+            algorithm: 'aes-256-gcm',
+            aadVersion: 1,
+            ciphertext: Buffer.from(`proposal-${label}`).toString('base64url'),
+            nonce: Buffer.alloc(12, 1).toString('base64url'),
+            authenticationTag: Buffer.alloc(16, 2).toString('base64url'),
+            wrappedKey: Buffer.alloc(60, 3).toString('base64url'),
+            keyVersion: 'proposal-integration-key-v1',
+          },
         ],
       );
       await admin.query(
