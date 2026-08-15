@@ -72,6 +72,15 @@ const requiredBrowserTests = Object.freeze([
     title:
       'production preview boots the pinned encrypted PowerSync OPFS runtime',
   }),
+  Object.freeze({
+    file: 'service-worker-update.production.spec.ts',
+    title:
+      'defers a real service worker update while an offline edit is pending',
+  }),
+  Object.freeze({
+    file: 'service-worker-update.production.spec.ts',
+    title: 'activates a real waiting service worker and reloads a clean client',
+  }),
   ...[
     '/today',
     '/ask',
@@ -736,6 +745,16 @@ const profileReceipts = async (profile, binding, values) => {
             captions: 'passed',
             playbackControls: 'passed',
             objectUrlRevoked: true,
+          },
+        }),
+        receipt({
+          ...binding,
+          category: 'gates',
+          id: 'service-worker-safe-update',
+          proof: {
+            pendingChangesPreserved: true,
+            activationDeferred: true,
+            reloadRecovery: 'passed',
           },
         }),
       ];

@@ -96,6 +96,14 @@ const browserEvidenceSpecs = [
     'powersync.production.spec.ts',
     'production preview boots the pinned encrypted PowerSync OPFS runtime',
   ],
+  [
+    'service-worker-update.production.spec.ts',
+    'defers a real service worker update while an offline edit is pending',
+  ],
+  [
+    'service-worker-update.production.spec.ts',
+    'activates a real waiting service worker and reloads a clean client',
+  ],
   ...[
     '/today',
     '/ask',
@@ -985,12 +993,13 @@ describe('provider-free CI evidence profiles', () => {
           report,
         ),
       ),
-    ).resolves.toEqual({ receiptCount: 3 });
+    ).resolves.toEqual({ receiptCount: 4 });
 
     for (const [category, id] of [
       ['ci', 'browser-production-preview'],
       ['gates', 'production-preview-browser'],
       ['gates', 'voice-ptt-storage-playback'],
+      ['gates', 'service-worker-safe-update'],
     ] as const) {
       const source = await readFile(
         join(root, `artifacts/${category}/${id}.json`),
@@ -1014,10 +1023,20 @@ describe('provider-free CI evidence profiles', () => {
         },
       },
     });
+    await expect(
+      readJson(join(root, 'artifacts/gates/service-worker-safe-update.json')),
+    ).resolves.toMatchObject({
+      result: {
+        proof: {
+          pendingChangesPreserved: true,
+          activationDeferred: true,
+          reloadRecovery: 'passed',
+        },
+      },
+    });
     for (const absent of [
       'wcag-2.2-aa',
       'pwa-install-offline-reopen',
-      'service-worker-safe-update',
       'web-push-preferences',
       'powersync-browser-connect-sync-entities-roundtrip',
     ]) {
@@ -1206,6 +1225,7 @@ describe('provider-free receipt workflow wiring', () => {
     expect(productionConfig).not.toContain(
       'testMatch: /production\\.spec\\.ts/u',
     );
+    expect(productionConfig).toContain('workers: 1');
   });
 
   it('keeps every producer after its successful suite and restricted to push evidence', async () => {
@@ -1276,5 +1296,6 @@ describe('provider-free receipt workflow wiring', () => {
     expect(aggregation).not.toContain('write-provider-free-ci-evidence.mjs');
     expect(aggregation).not.toContain('pwa-install-offline-reopen');
     expect(aggregation).toContain('voice-ptt-storage-playback');
+    expect(aggregation).toContain('service-worker-safe-update');
   });
 });

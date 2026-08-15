@@ -5,6 +5,8 @@ const evidenceReport = process.env.EMDO_PLAYWRIGHT_EVIDENCE_REPORT;
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
+  // The real update evidence atomically swaps the built sw.js during its test.
+  workers: 1,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: evidenceReport

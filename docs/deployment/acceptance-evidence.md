@@ -111,15 +111,22 @@ made no persistence write. Only a report containing both exact passing
 identities can emit `voice-ptt-storage-playback`. This remains provider-free
 browser evidence: the test stubs transcription and speech, so it does not
 satisfy the separate `openai-transcription` or `openai-speech` provider
-receipts. A downstream aggregation job only merges already-validated receipts;
-it does not create or relabel evidence.
+receipts. The service-worker update gate likewise requires two exact
+production-Chromium identities. They install byte-distinct workers derived from
+the generated production worker through the real browser registration
+lifecycle. One preserves an actual queued offline finance edit while the new
+worker remains waiting and the update action remains disabled; the other starts
+from a clean client, explicitly activates the waiting worker, reloads, and
+recovers under that worker. Unit-only coordinator or synthetic Workbox events
+cannot emit `service-worker-safe-update`. A downstream aggregation job only
+merges already-validated receipts; it does not create or relabel evidence.
 
 The remaining PWA-installation, staging, PowerSync
 cross-device, provider, database-security, domain, recovery, rollback,
-service-worker update, and notification-preference receipts stay absent until
-their real suites run. The assembler therefore continues to fail closed when
-any required evidence is missing. Adding dummy receipt files or setting success
-labels is not an acceptable release change.
+and notification-preference receipts stay absent until their real suites run.
+The assembler therefore continues to fail closed when any required evidence is
+missing. Adding dummy receipt files or setting success labels is not an
+acceptable release change.
 
 ## Semantic receipt envelope
 
