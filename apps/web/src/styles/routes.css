@@ -546,6 +546,8 @@
 
 .finance-import-panel__actions {
   display: flex;
+  width: 100%;
+  min-width: 0;
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 8px;
