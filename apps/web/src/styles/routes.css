@@ -1036,6 +1036,11 @@
 }
 
 @media (max-width: 560px) {
+  .section-title-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
   .ask-composer__control {
     min-height: 136px;
     grid-template-columns: 1fr 48px;
