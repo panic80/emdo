@@ -2,7 +2,7 @@ import { pathToFileURL } from 'node:url';
 
 import { z } from 'zod';
 
-import { ApiReadinessHttpSuccessSchema } from '../readiness-contract.js';
+import { ApiSyntheticHttpSubsetReadinessSuccessSchema } from '../readiness-contract.js';
 
 const AcceptanceConfigurationSchema = z.strictObject({
   apiOrigin: z
@@ -196,7 +196,7 @@ export const runStagingAcceptanceCommand = async (input: {
   };
   readonly proof: {
     readonly healthz: 'passed';
-    readonly readyz: 'passed';
+    readonly syntheticHttpSubsetReadiness: 'passed';
     readonly protectedMetrics: 'passed';
     readonly requestIds: 'passed';
     readonly problemJson: 'passed';
@@ -246,14 +246,14 @@ export const runStagingAcceptanceCommand = async (input: {
     .strictObject({ status: z.literal('ok') })
     .parse(await requireOkJson(healthResponse));
   if (health.status !== 'ok') throw new Error('Liveness gate failed');
-  const readinessResponse = await send('/readyz');
+  const readinessResponse = await send('/synthetic-staging/readyz');
   requireResponseRequestId(readinessResponse);
-  const readiness = ApiReadinessHttpSuccessSchema.safeParse(
+  const readiness = ApiSyntheticHttpSubsetReadinessSuccessSchema.safeParse(
     await requireOkJson(readinessResponse),
   );
   if (!readiness.success) {
     throw new Error(
-      'Readiness checks do not match API readiness contract version 1',
+      'Readiness checks do not match synthetic HTTP subset contract version 1',
     );
   }
   const metrics = await send('/metrics');
@@ -535,7 +535,7 @@ export const runStagingAcceptanceCommand = async (input: {
     }),
     proof: Object.freeze({
       healthz: 'passed' as const,
-      readyz: 'passed' as const,
+      syntheticHttpSubsetReadiness: 'passed' as const,
       protectedMetrics: 'passed' as const,
       requestIds: 'passed' as const,
       problemJson: 'passed' as const,

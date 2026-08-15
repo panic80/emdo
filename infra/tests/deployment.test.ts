@@ -221,6 +221,10 @@ describe('container and edge configuration', () => {
     expect(staging).toMatch(
       /api:[\s\S]*?EMDO_ALLOW_LOOPBACK_API_INGRESS: ['"]true['"]/,
     );
+    expect(staging).toContain(
+      "fetch('http://127.0.0.1:3000/synthetic-staging/readyz')",
+    );
+    expect(staging).not.toContain("fetch('http://127.0.0.1:3000/readyz')");
     expect(staging).not.toMatch(
       /staging-acceptance:[\s\S]*?synthetic-bootstrap\.env/,
     );
@@ -653,6 +657,12 @@ describe('host deployment and recovery scripts', () => {
       'assert_staging_secret_manifest "$SECRETS_DIR"',
     );
     expect(acceptance).toContain('acceptance-passed-at');
+    expect(acceptance).toContain(
+      'http://127.0.0.1:$STAGING_HTTP_PORT/synthetic-staging/readyz',
+    );
+    expect(acceptance).not.toContain(
+      'http://127.0.0.1:$STAGING_HTTP_PORT/readyz',
+    );
     expect(acceptance).toContain(
       'EMDO_STAGING_SOURCE_SHA="$IMAGE_LOCK_SOURCE_SHA"',
     );

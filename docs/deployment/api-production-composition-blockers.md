@@ -116,11 +116,13 @@ exact callback is derived from `EMDO_PUBLIC_ORIGIN`, Calendar and identity
 clients must differ, OAuth state and vault keys are independent, and
 construction/readiness performs no Google request. The raw
 `EMDO_CREDENTIAL_VAULT_KEY` has no supported fallback. Synthetic staging
-rejects every Calendar client, state, and vault secret, so its current
-all-components readiness contract cannot report `google.connector: ok`; that
-profile mismatch remains an explicit release blocker rather than a fabricated
-healthy provider. Protected credentialed consent/callback, revocation, and
-Calendar read/write receipts are still required before provider acceptance.
+rejects every Calendar client, state, and vault secret. Its isolated Compose
+healthcheck and HTTP-subset CLI therefore use the staging-only
+`/synthetic-staging/readyz` profile, which requires `google.connector` to remain
+unavailable and is explicitly not release-eligible; production `/readyz`
+continues to require the connector. Protected credentialed consent/callback,
+revocation, and Calendar read/write receipts are still required before provider
+acceptance.
 
 Disconnect uses a durable provider-side-effect fence. One canonical active
 operation is unique per actor regardless of request, idempotency key, session,

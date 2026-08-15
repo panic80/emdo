@@ -36,6 +36,7 @@ export interface CreateAppOptions {
   readonly publicOrigin?: string;
   readonly edgeProxySecret?: string;
   readonly allowLoopbackApiIngress?: boolean;
+  readonly enableSyntheticHttpSubsetReadiness?: boolean;
 }
 
 const requestId = (request: { readonly headers: Record<string, unknown> }) => {
@@ -109,7 +110,11 @@ export const createApp = async (
     options.services,
     limits.maximumJsonBodyBytes,
   );
-  registerHealthRoutes(app, options.services);
+  registerHealthRoutes(
+    app,
+    options.services,
+    options.enableSyntheticHttpSubsetReadiness,
+  );
   registerMetricsRoutes(app, options.services);
   registerTurnRoutes(app, options.services, limits);
   registerRunRoutes(app, options.services);

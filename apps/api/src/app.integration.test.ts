@@ -42,6 +42,13 @@ const readinessChecks = (status: ApiReadinessStatus) =>
       API_READINESS_REQUIRED_CHECKS.map((name) => [name, status]),
     ),
   );
+const syntheticHttpSubsetChecks = Object.freeze({
+  ...readinessChecks('unavailable'),
+  'authority.authentication': 'ok' as const,
+  sync: 'ok' as const,
+  'sync.gateway': 'ok' as const,
+  'sync.jwks': 'ok' as const,
+});
 const EDGE_PROXY_SECRET =
   'edge-proxy-test-secret-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
@@ -1797,6 +1804,92 @@ describe('Fastify API boundary', () => {
     await app.close();
   });
 
+  it('publishes a staging-only, non-release synthetic HTTP subset without weakening readyz', async () => {
+    const services = buildServices();
+    services.readiness.check = vi.fn(async () => ({
+      ready: false,
+      checks: syntheticHttpSubsetChecks,
+    }));
+    const productionApp = await createApp({ services });
+    expect(
+      (
+        await productionApp.inject({
+          method: 'GET',
+          url: '/synthetic-staging/readyz',
+        })
+      ).statusCode,
+    ).toBe(404);
+    await productionApp.close();
+
+    const stagingApp = await createApp({
+      services,
+      enableSyntheticHttpSubsetReadiness: true,
+    } as Parameters<typeof createApp>[0]);
+    const completeReadiness = await stagingApp.inject({
+      method: 'GET',
+      url: '/readyz',
+    });
+    expect(completeReadiness.statusCode).toBe(503);
+
+    const subsetReadiness = await stagingApp.inject({
+      method: 'GET',
+      url: '/synthetic-staging/readyz',
+    });
+    expect(subsetReadiness.statusCode).toBe(200);
+    expect(subsetReadiness.headers['cache-control']).toBe('no-store');
+    expect(subsetReadiness.json()).toEqual({
+      schemaVersion: 1,
+      profile: 'synthetic-http-subset',
+      status: 'ready',
+      releaseEligible: false,
+      checks: syntheticHttpSubsetChecks,
+    });
+    await stagingApp.close();
+  });
+
+  it('fails the synthetic staging subset for unavailable requirements or enabled exclusions', async () => {
+    const services = buildServices();
+    services.readiness.check = vi.fn(async () => ({
+      ready: false,
+      checks: {
+        ...syntheticHttpSubsetChecks,
+        sync: 'unavailable' as const,
+        'sync.jwks': 'unavailable' as const,
+      },
+    }));
+    const app = await createApp({
+      services,
+      enableSyntheticHttpSubsetReadiness: true,
+    } as Parameters<typeof createApp>[0]);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/synthetic-staging/readyz',
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.json()).toMatchObject({
+      code: 'synthetic-http-subset-not-ready',
+    });
+
+    services.readiness.check = vi.fn(async () => ({
+      ready: false,
+      checks: {
+        ...syntheticHttpSubsetChecks,
+        google: 'ok' as const,
+        'google.connector': 'ok' as const,
+      },
+    }));
+    const excludedResponse = await app.inject({
+      method: 'GET',
+      url: '/synthetic-staging/readyz',
+    });
+    expect(excludedResponse.statusCode).toBe(503);
+    expect(excludedResponse.json()).toMatchObject({
+      code: 'synthetic-http-subset-not-ready',
+    });
+    await app.close();
+  });
+
   it('fails closed when an internal readiness result contradicts its components', async () => {
     const services = buildServices();
     services.readiness.check = vi.fn(async () => ({
@@ -2570,6 +2663,7 @@ describe('Fastify API boundary', () => {
       host: '0.0.0.0',
       port: 3100,
       allowLoopbackApiIngress: false,
+      enableSyntheticHttpSubsetReadiness: false,
       edgeProxySecret: EDGE_PROXY_SECRET,
       publicOrigin: 'https://emdo.example',
     });
@@ -2584,10 +2678,22 @@ describe('Fastify API boundary', () => {
       loadApiServerConfig({
         EMDO_ENVIRONMENT: 'staging',
         EMDO_ALLOW_LOOPBACK_API_INGRESS: 'true',
+        EMDO_SYNTHETIC_DATA_ONLY: 'true',
         EMDO_EDGE_PROXY_SECRET: EDGE_PROXY_SECRET,
         EMDO_PUBLIC_ORIGIN: 'https://staging.emdo.example',
       }),
-    ).toMatchObject({ allowLoopbackApiIngress: true });
+    ).toMatchObject({
+      allowLoopbackApiIngress: true,
+      enableSyntheticHttpSubsetReadiness: true,
+    });
+    expect(
+      loadApiServerConfig({
+        EMDO_ENVIRONMENT: 'staging',
+        EMDO_ALLOW_LOOPBACK_API_INGRESS: 'true',
+        EMDO_EDGE_PROXY_SECRET: EDGE_PROXY_SECRET,
+        EMDO_PUBLIC_ORIGIN: 'https://staging.emdo.example',
+      }),
+    ).toMatchObject({ enableSyntheticHttpSubsetReadiness: false });
     expect(() =>
       loadApiServerConfig({
         EMDO_ENVIRONMENT: 'production',

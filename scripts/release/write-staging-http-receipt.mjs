@@ -16,7 +16,7 @@ const STAGING_WORKFLOW_REF =
   'panic80/emdo/.github/workflows/staging.yml@refs/heads/main';
 const PROOF_KEYS = Object.freeze([
   'healthz',
-  'readyz',
+  'syntheticHttpSubsetReadiness',
   'protectedMetrics',
   'requestIds',
   'problemJson',

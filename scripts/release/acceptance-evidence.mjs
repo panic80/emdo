@@ -222,7 +222,7 @@ const GATE_RECEIPT_DEFINITIONS = Object.freeze({
     runner: 'staging',
     proof: {
       healthz: 'passed',
-      readyz: 'passed',
+      syntheticHttpSubsetReadiness: 'passed',
       protectedMetrics: 'passed',
       requestIds: 'passed',
       problemJson: 'passed',

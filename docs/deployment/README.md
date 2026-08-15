@@ -68,6 +68,17 @@ and `readinessSchemaVersion: 1`. Changing the required key set or semantics
 requires an explicit readiness-contract version change and coordinated CLI,
 OpenAPI, package, and deployment updates.
 
+Synthetic staging additionally registers `GET /synthetic-staging/readyz` only
+when `EMDO_ENVIRONMENT=staging`, `EMDO_SYNTHETIC_DATA_ONLY=true`, and loopback
+API ingress is enabled. Its exact version-1 response has profile
+`synthetic-http-subset`, is always `releaseEligible: false`, requires
+`authority.authentication`, `sync.gateway`, and `sync.jwks` to be `ok`, and
+requires `agents.manager-turns`, `google.connector`, and `voice.provider` to be
+`unavailable`. It includes the complete readiness check map for diagnostics.
+The staging Compose healthcheck and HTTP-subset CLI use this path; production
+does not register it, and `/readyz` remains the only complete API readiness
+contract.
+
 `database`, `worker`, and `powersync` are not API readiness keys. The API's
 concrete component probes verify their own database/provider dependencies.
 Worker and PowerSync process health remain mandatory Compose gates and are

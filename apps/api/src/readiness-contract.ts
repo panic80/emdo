@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const API_READINESS_SCHEMA_VERSION = 1 as const;
+export const SYNTHETIC_HTTP_SUBSET_READINESS_SCHEMA_VERSION = 1 as const;
 
 export const API_READINESS_GROUPS = Object.freeze({
   authority: Object.freeze([
@@ -31,6 +32,18 @@ export type ApiReadinessComponentName =
   (typeof API_READINESS_GROUPS)[ApiReadinessGroupName][number];
 export type ApiReadinessCheckName =
   ApiReadinessGroupName | ApiReadinessComponentName;
+
+export const SYNTHETIC_HTTP_SUBSET_REQUIRED_CHECKS = Object.freeze([
+  'authority.authentication',
+  'sync.gateway',
+  'sync.jwks',
+] as const satisfies readonly ApiReadinessComponentName[]);
+
+export const SYNTHETIC_HTTP_SUBSET_EXCLUDED_CHECKS = Object.freeze([
+  'agents.manager-turns',
+  'google.connector',
+  'voice.provider',
+] as const satisfies readonly ApiReadinessComponentName[]);
 
 export const API_READINESS_REQUIRED_CHECKS = Object.freeze([
   ...(Object.keys(API_READINESS_GROUPS) as ApiReadinessGroupName[]),
@@ -101,3 +114,26 @@ export const ApiReadinessHttpUnavailableSchema = z.strictObject({
     checks: ApiReadinessChecksSchema,
   }),
 });
+
+export const ApiSyntheticHttpSubsetReadinessSuccessSchema = z
+  .strictObject({
+    schemaVersion: z.literal(SYNTHETIC_HTTP_SUBSET_READINESS_SCHEMA_VERSION),
+    profile: z.literal('synthetic-http-subset'),
+    status: z.literal('ready'),
+    releaseEligible: z.literal(false),
+    checks: ApiReadinessChecksSchema,
+  })
+  .refine(
+    ({ checks }) =>
+      groupsMatchComponents(checks) &&
+      SYNTHETIC_HTTP_SUBSET_REQUIRED_CHECKS.every(
+        (name) => checks[name] === 'ok',
+      ) &&
+      SYNTHETIC_HTTP_SUBSET_EXCLUDED_CHECKS.every(
+        (name) => checks[name] === 'unavailable',
+      ),
+    {
+      message:
+        'Synthetic HTTP subset readiness does not match its required profile',
+    },
+  );

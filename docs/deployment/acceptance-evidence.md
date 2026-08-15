@@ -41,16 +41,20 @@ The API `staging-acceptance` executable contributes only the
 `http-api-subset` receipt. It cannot satisfy browser, PowerSync, provider,
 database-security, domain, eval, or recovery gates. It does not invoke agent,
 voice, Calendar, or email-delivery provider operations; those require their
-own credentialed receipts even though the API readiness contract requires
-their production bindings and bounded probes to be healthy first.
+own credentialed receipts. The probe is explicitly `releaseEligible: false`.
 
 Before any authenticated HTTP fixture, the executable requires the exact
-version-1 API readiness response documented in `docs/deployment/README.md`;
-legacy `database`/`worker`/`powersync` check maps, missing component checks,
-unknown checks, and other schema versions are rejected. The staging wrapper
-separately requires every Compose service healthy first, including PostgreSQL,
-the worker, and PowerSync. API readiness therefore cannot be used to replace a
-worker, PowerSync, database-security, or replication receipt.
+version-1 `synthetic-http-subset` response documented in
+`docs/deployment/README.md`. That staging-only response requires only the
+authenticated HTTP and Sync components used by the deterministic fixture and
+requires agent, Calendar, and voice providers to remain unavailable. It still
+publishes the complete component map, `releaseEligible: false`, and never
+changes the production `/readyz` contract. Legacy `database`/`worker`/`powersync`
+check maps, missing or unknown checks, enabled excluded providers, and other
+schema versions are rejected. The staging wrapper separately requires every
+Compose service healthy first, including PostgreSQL, the worker, and PowerSync.
+This subset readiness therefore cannot replace full API, worker, PowerSync,
+database-security, replication, or provider evidence.
 
 ## Receipt layout
 

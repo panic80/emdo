@@ -24,32 +24,40 @@ const environment = {
 };
 
 const canonicalReadinessChecks = Object.freeze({
-  authority: 'ok' as const,
+  authority: 'unavailable' as const,
   'authority.authentication': 'ok' as const,
-  'authority.household-administration': 'ok' as const,
-  'authority.proposal-queries': 'ok' as const,
-  'authority.visual-decisions': 'ok' as const,
-  'authority.visual-proof-issuance': 'ok' as const,
-  agents: 'ok' as const,
-  'agents.manager-turns': 'ok' as const,
-  'agents.run-events': 'ok' as const,
-  experience: 'ok' as const,
-  'experience.activity-read': 'ok' as const,
-  'experience.finance-read': 'ok' as const,
-  'experience.finance-imports': 'ok' as const,
-  'experience.notification-preferences': 'ok' as const,
-  'experience.schedule-read': 'ok' as const,
-  'experience.settings-read': 'ok' as const,
-  'experience.shopping-read': 'ok' as const,
-  'experience.today-read': 'ok' as const,
-  google: 'ok' as const,
-  'google.connector': 'ok' as const,
+  'authority.household-administration': 'unavailable' as const,
+  'authority.proposal-queries': 'unavailable' as const,
+  'authority.visual-decisions': 'unavailable' as const,
+  'authority.visual-proof-issuance': 'unavailable' as const,
+  agents: 'unavailable' as const,
+  'agents.manager-turns': 'unavailable' as const,
+  'agents.run-events': 'unavailable' as const,
+  experience: 'unavailable' as const,
+  'experience.activity-read': 'unavailable' as const,
+  'experience.finance-read': 'unavailable' as const,
+  'experience.finance-imports': 'unavailable' as const,
+  'experience.notification-preferences': 'unavailable' as const,
+  'experience.schedule-read': 'unavailable' as const,
+  'experience.settings-read': 'unavailable' as const,
+  'experience.shopping-read': 'unavailable' as const,
+  'experience.today-read': 'unavailable' as const,
+  google: 'unavailable' as const,
+  'google.connector': 'unavailable' as const,
   sync: 'ok' as const,
   'sync.gateway': 'ok' as const,
   'sync.jwks': 'ok' as const,
-  voice: 'ok' as const,
-  'voice.audio-requests': 'ok' as const,
-  'voice.provider': 'ok' as const,
+  voice: 'unavailable' as const,
+  'voice.audio-requests': 'unavailable' as const,
+  'voice.provider': 'unavailable' as const,
+});
+
+const syntheticHttpSubsetReadiness = Object.freeze({
+  schemaVersion: 1,
+  profile: 'synthetic-http-subset',
+  status: 'ready',
+  releaseEligible: false,
+  checks: canonicalReadinessChecks,
 });
 
 const canonicalOpenApiSurface = Object.freeze({
@@ -121,12 +129,8 @@ describe('staging acceptance CLI', () => {
       if (url.pathname === '/healthz') {
         return jsonWithRequestId({ status: 'ok' });
       }
-      if (url.pathname === '/readyz') {
-        return jsonWithRequestId({
-          schemaVersion: 1,
-          status: 'ready',
-          checks: canonicalReadinessChecks,
-        });
+      if (url.pathname === '/synthetic-staging/readyz') {
+        return jsonWithRequestId(syntheticHttpSubsetReadiness);
       }
       if (url.pathname === '/metrics') {
         return problem(401, 'metrics-auth-required');
@@ -253,7 +257,7 @@ describe('staging acceptance CLI', () => {
       },
       proof: {
         healthz: 'passed',
-        readyz: 'passed',
+        syntheticHttpSubsetReadiness: 'passed',
         protectedMetrics: 'passed',
         requestIds: 'passed',
         problemJson: 'passed',
@@ -384,15 +388,11 @@ describe('staging acceptance CLI', () => {
     },
     {
       name: 'readiness',
-      expectedPaths: ['/healthz', '/readyz'],
+      expectedPaths: ['/healthz', '/synthetic-staging/readyz'],
       fetch: async (request: Request) =>
         new URL(request.url).pathname === '/healthz'
           ? jsonWithRequestId({ status: 'ok' })
-          : Response.json({
-              schemaVersion: 1,
-              status: 'ready',
-              checks: canonicalReadinessChecks,
-            }),
+          : Response.json(syntheticHttpSubsetReadiness),
     },
   ])(
     'requires an API-issued request ID on representative $name responses',
@@ -468,12 +468,8 @@ describe('staging acceptance CLI', () => {
         const path = new URL(request.url).pathname;
         paths.push(path);
         if (path === '/healthz') return jsonWithRequestId({ status: 'ok' });
-        if (path === '/readyz') {
-          return jsonWithRequestId({
-            schemaVersion: 1,
-            status: 'ready',
-            checks: canonicalReadinessChecks,
-          });
+        if (path === '/synthetic-staging/readyz') {
+          return jsonWithRequestId(syntheticHttpSubsetReadiness);
         }
         if (path === '/metrics') return response;
         throw new Error(`Unexpected acceptance request: ${path}`);
@@ -490,7 +486,11 @@ describe('staging acceptance CLI', () => {
           fetch,
         }),
       ).rejects.toThrow();
-      expect(paths).toEqual(['/healthz', '/readyz', '/metrics']);
+      expect(paths).toEqual([
+        '/healthz',
+        '/synthetic-staging/readyz',
+        '/metrics',
+      ]);
     },
   );
 
@@ -554,7 +554,9 @@ describe('staging acceptance CLI', () => {
         if (path === '/healthz') {
           return jsonWithRequestId({ status: 'ok' });
         }
-        if (path === '/readyz') return jsonWithRequestId(readiness);
+        if (path === '/synthetic-staging/readyz') {
+          return jsonWithRequestId(readiness);
+        }
         throw new Error('acceptance advanced past readiness');
       });
       await expect(
@@ -568,7 +570,7 @@ describe('staging acceptance CLI', () => {
           fetch,
         }),
       ).rejects.toThrow();
-      expect(paths).toEqual(['/healthz', '/readyz']);
+      expect(paths).toEqual(['/healthz', '/synthetic-staging/readyz']);
     };
 
     await invokeWithReadiness({
@@ -599,6 +601,22 @@ describe('staging acceptance CLI', () => {
         'experience.today-read': 'unavailable',
       },
     });
+    await invokeWithReadiness({
+      ...syntheticHttpSubsetReadiness,
+      checks: {
+        ...canonicalReadinessChecks,
+        sync: 'unavailable',
+        'sync.jwks': 'unavailable',
+      },
+    });
+    await invokeWithReadiness({
+      ...syntheticHttpSubsetReadiness,
+      checks: {
+        ...canonicalReadinessChecks,
+        google: 'ok',
+        'google.connector': 'ok',
+      },
+    });
   });
 
   it('rejects a path that does not publish every required HTTP operation', async () => {
@@ -609,12 +627,8 @@ describe('staging acceptance CLI', () => {
       if (path === '/healthz') {
         return jsonWithRequestId({ status: 'ok' });
       }
-      if (path === '/readyz') {
-        return jsonWithRequestId({
-          schemaVersion: 1,
-          status: 'ready',
-          checks: canonicalReadinessChecks,
-        });
+      if (path === '/synthetic-staging/readyz') {
+        return jsonWithRequestId(syntheticHttpSubsetReadiness);
       }
       if (path === '/metrics') {
         return problem(401, 'metrics-auth-required');
@@ -642,6 +656,11 @@ describe('staging acceptance CLI', () => {
         fetch,
       }),
     ).rejects.toThrow('Browser/API contract gate failed');
-    expect(paths).toEqual(['/healthz', '/readyz', '/metrics', '/openapi.json']);
+    expect(paths).toEqual([
+      '/healthz',
+      '/synthetic-staging/readyz',
+      '/metrics',
+      '/openapi.json',
+    ]);
   });
 });

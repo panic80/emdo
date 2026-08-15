@@ -59,7 +59,7 @@ const environment = Object.freeze({
 });
 const proof = () => ({
   healthz: 'passed',
-  readyz: 'passed',
+  syntheticHttpSubsetReadiness: 'passed',
   protectedMetrics: 'passed',
   requestIds: 'passed',
   problemJson: 'passed',
@@ -244,7 +244,12 @@ describe('staging HTTP receipt writer', () => {
     ],
     [
       'failed HTTP assertion',
-      { probe: { ...probe(), proof: { ...proof(), readyz: 'failed' } } },
+      {
+        probe: {
+          ...probe(),
+          proof: { ...proof(), syntheticHttpSubsetReadiness: 'failed' },
+        },
+      },
     ],
     [
       'missing HTTP assertion',

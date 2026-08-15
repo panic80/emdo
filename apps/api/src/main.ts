@@ -11,6 +11,7 @@ const ApiServerConfigSchema = z
     host: z.union([z.literal('127.0.0.1'), z.literal('0.0.0.0')]),
     port: z.number().int().min(1).max(65_535),
     allowLoopbackApiIngress: z.boolean(),
+    enableSyntheticHttpSubsetReadiness: z.boolean(),
     edgeProxySecret: EdgeProxySecretSchema,
     publicOrigin: CanonicalAppOriginSchema,
   })
@@ -25,6 +26,18 @@ const ApiServerConfigSchema = z
         message: 'loopback API ingress is staging-only',
       });
     }
+    if (
+      value.enableSyntheticHttpSubsetReadiness &&
+      (value.deploymentEnvironment !== 'staging' ||
+        !value.allowLoopbackApiIngress)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['enableSyntheticHttpSubsetReadiness'],
+        message:
+          'synthetic HTTP subset readiness requires staging loopback ingress',
+      });
+    }
   });
 
 export type ApiServerConfig = z.infer<typeof ApiServerConfigSchema>;
@@ -36,12 +49,22 @@ export const loadApiServerConfig = (
     .enum(['true', 'false'])
     .default('false')
     .parse(environment.EMDO_ALLOW_LOOPBACK_API_INGRESS);
+  const syntheticDataOnly = z
+    .enum(['true', 'false'])
+    .default('false')
+    .parse(environment.EMDO_SYNTHETIC_DATA_ONLY);
+  const deploymentEnvironment = environment.EMDO_ENVIRONMENT ?? 'production';
+  const loopbackEnabled = allowLoopbackApiIngress === 'true';
   return Object.freeze(
     ApiServerConfigSchema.parse({
-      deploymentEnvironment: environment.EMDO_ENVIRONMENT ?? 'production',
+      deploymentEnvironment,
       host: environment.EMDO_API_HOST ?? environment.HOST ?? '127.0.0.1',
       port: Number(environment.EMDO_API_PORT ?? environment.PORT ?? '3000'),
-      allowLoopbackApiIngress: allowLoopbackApiIngress === 'true',
+      allowLoopbackApiIngress: loopbackEnabled,
+      enableSyntheticHttpSubsetReadiness:
+        deploymentEnvironment === 'staging' &&
+        loopbackEnabled &&
+        syntheticDataOnly === 'true',
       edgeProxySecret: environment.EMDO_EDGE_PROXY_SECRET,
       publicOrigin: environment.EMDO_PUBLIC_ORIGIN,
     }),
@@ -145,6 +168,8 @@ const startApiServer = async (input: {
     publicOrigin: config.publicOrigin,
     edgeProxySecret: config.edgeProxySecret,
     allowLoopbackApiIngress: config.allowLoopbackApiIngress,
+    enableSyntheticHttpSubsetReadiness:
+      config.enableSyntheticHttpSubsetReadiness,
   });
   const close = (services as ApiServices & { readonly close?: unknown }).close;
   if (typeof close === 'function') {

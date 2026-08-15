@@ -36,7 +36,7 @@ assert_compose_healthy staging_compose
 curl --fail --silent --show-error \
   "http://127.0.0.1:$STAGING_HTTP_PORT/healthz" >/dev/null
 curl --fail --silent --show-error \
-  "http://127.0.0.1:$STAGING_HTTP_PORT/readyz" >/dev/null
+  "http://127.0.0.1:$STAGING_HTTP_PORT/synthetic-staging/readyz" >/dev/null
 
 # This release-image CLI is deliberately only the authenticated HTTP/API subset.
 # It cannot attest browser PowerSync connect(), two-device isolation, provider
