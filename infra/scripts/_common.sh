@@ -25,6 +25,7 @@ readonly -a BASE_SECRET_MANIFEST=(
   worker_executor_database_password
   worker_dispatcher_database_password
   audio_reconciliation_database_password
+  finance_import_retention_database_password
   workflow_database_password
   visual_decision_database_password
   powersync_replication_password
@@ -34,6 +35,7 @@ readonly -a BASE_SECRET_MANIFEST=(
   api.env
   edge-proxy.env
   worker.env
+  finance-import-retention.env
   powersync.env
 )
 readonly -a STAGING_SECRET_MANIFEST=(
@@ -513,9 +515,26 @@ assert_staging_auth_provider_config() {
     die "$path contains an invalid lowercase staging authentication sender"
 }
 
+assert_finance_import_retention_config() {
+  local path="$1"
+  local limit
+  assert_env_file_allowed_keys "$path" \
+    EMDO_FINANCE_IMPORT_RETENTION_DATABASE_URL \
+    EMDO_FINANCE_IMPORT_RETENTION_LIMIT
+  assert_internal_postgres_uri "$path" \
+    EMDO_FINANCE_IMPORT_RETENTION_DATABASE_URL \
+    emdo_finance_import_retention_login emdo_app
+  limit="$(env_file_value "$path" EMDO_FINANCE_IMPORT_RETENTION_LIMIT)"
+  [[ "$limit" =~ ^[1-9][0-9]{0,3}$ ]] ||
+    die "$path retention limit must be an integer from 1 through 1000"
+  ((10#$limit <= 1000)) ||
+    die "$path retention limit must be an integer from 1 through 1000"
+}
+
 assert_base_secret_manifest() {
   assert_secret_file_manifest "$1" "${BASE_SECRET_MANIFEST[@]}"
   assert_edge_proxy_secret_file "$1/edge-proxy.env"
+  assert_finance_import_retention_config "$1/finance-import-retention.env"
 }
 
 assert_staging_secret_manifest() {
@@ -524,6 +543,7 @@ assert_staging_secret_manifest() {
     "${BASE_SECRET_MANIFEST[@]}" \
     "${STAGING_SECRET_MANIFEST[@]}"
   assert_edge_proxy_secret_file "$1/edge-proxy.env"
+  assert_finance_import_retention_config "$1/finance-import-retention.env"
   assert_env_file_allowed_keys "$1/migration.env" \
     EMDO_MIGRATION_DATABASE_URL EMDO_JOB_MIGRATION_DATABASE_URL
   assert_env_file_allowed_keys "$1/api.env" \

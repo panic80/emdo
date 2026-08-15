@@ -50,6 +50,7 @@ describe('live PostgreSQL CI evidence boundary', () => {
       'audio-request-coordinator',
       'household-administration',
       'disclosure-authority',
+      'finance-import-retention-runner',
       'google-oauth-authority',
       'manager-run-event-replay',
       'worker-fixed-roles',
@@ -64,6 +65,7 @@ describe('live PostgreSQL CI evidence boundary', () => {
     expect(runner).toContain(
       "databaseEnvironment: 'TEST_SYNC_CONFLICT_DATABASE_URL'",
     );
+    expect(runner).toContain("canonicalDatabaseName: 'emdo_app'");
     expect(runner).toContain("execution: 'sequential'");
     expect(runner).toContain(
       "databaseIsolation: 'dedicated-database-per-suite'",

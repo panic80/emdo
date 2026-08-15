@@ -14,6 +14,7 @@ Keep configuration outside the checkout:
     worker_executor_database_password
     worker_dispatcher_database_password
     audio_reconciliation_database_password
+    finance_import_retention_database_password
     workflow_database_password
     visual_decision_database_password
     powersync_replication_password
@@ -24,6 +25,7 @@ Keep configuration outside the checkout:
     api.env
     edge-proxy.env
     worker.env
+    finance-import-retention.env
     powersync.env
   staging/
     deployment.env
@@ -67,6 +69,11 @@ Expected private env-file boundaries are:
 - `migration.env`: the application migration URI plus the exact
   `EMDO_JOB_MIGRATION_DATABASE_URL` admin/migration DSN used only by the
   pg-boss installation one-shot;
+- `finance-import-retention.env`: only the dedicated internal
+  `EMDO_FINANCE_IMPORT_RETENTION_DATABASE_URL` and a bounded
+  `EMDO_FINANCE_IMPORT_RETENTION_LIMIT` from 1 through 1000. It is mounted only
+  into the one-shot finance-retention Compose profile, never the API, worker,
+  PowerSync, or provider runtimes;
 - `api.env`: distinct application, Better Auth, invitation-onboarding, and
   decision-only database URIs,
   application/session keys, encrypted-vault keyring, and provider settings.
@@ -229,6 +236,13 @@ credential.
 `emdo_owner_bootstrap_login`, which is non-superuser, non-bypass, and a member
 only of the single-use `emdo_owner_bootstrap` policy role. It is not an admin
 or migration credential.
+
+`finance_import_retention_database_password` belongs only to
+`emdo_finance_import_retention_login`. That login is `NOINHERIT`, has exactly
+one set-only membership in `emdo_finance_import_retention`, and receives no raw
+finance-table privilege or direct purge execution. The one-shot CLI proves the
+role lattice, assumes the policy role inside one transaction, and invokes only
+the bounded expired, receipt-less plan purge.
 
 PowerSync never receives an API, migration, or PostgreSQL owner URI. The API
 never receives the PowerSync storage owner or replication credential. Better

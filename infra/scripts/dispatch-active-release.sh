@@ -6,6 +6,7 @@ case "$operation" in
   backup) relative_entrypoint='infra/scripts/backup-logical.sh' ;;
   check-backup-age) relative_entrypoint='infra/scripts/check-backup-age.sh' ;;
   check-replication-pressure) relative_entrypoint='infra/scripts/check-replication-pressure.sh' ;;
+  purge-finance-imports) relative_entrypoint='infra/scripts/purge-finance-imports.sh' ;;
   *)
     printf '[emdo-dispatch] invalid operation\n' >&2
     exit 64

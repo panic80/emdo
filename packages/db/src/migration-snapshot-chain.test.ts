@@ -60,7 +60,7 @@ describe('ordered migration snapshot chain', () => {
       readdir(metadataUrl),
     ]);
     expect(journal.entries.map(({ idx }) => idx)).toEqual([
-      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
     ]);
     expect(journal.entries.map(({ tag }) => tag)).toEqual([
       '0000_household_foundation',
@@ -74,18 +74,19 @@ describe('ordered migration snapshot chain', () => {
       '0008_finance_import_receipts',
       '0009_google_oauth_authorization_starts',
       '0010_google_oauth_disconnect_operations',
+      '0011_finance_import_retention_runner',
     ]);
     expect(
       files.filter((file) => /^\d{4}_snapshot\.json$/u.test(file)).sort(),
     ).toEqual(
       Array.from(
-        { length: 11 },
+        { length: 12 },
         (_, index) => `${index.toString().padStart(4, '0')}_snapshot.json`,
       ),
     );
 
     const snapshots = await Promise.all(
-      Array.from({ length: 11 }, (_, index) => readSnapshot(index)),
+      Array.from({ length: 12 }, (_, index) => readSnapshot(index)),
     );
     expect(snapshots[0]?.prevId).toBe('00000000-0000-0000-0000-000000000000');
     for (let index = 1; index < snapshots.length; index += 1) {
@@ -160,6 +161,12 @@ describe('ordered migration snapshot chain', () => {
     const snapshot10 = await readSnapshot(10);
     expect(tableDelta(snapshot9, snapshot10)).toEqual({
       added: ['emdo.google_oauth_disconnect_operations'],
+      changed: [],
+      removed: [],
+    });
+    const snapshot11 = await readSnapshot(11);
+    expect(tableDelta(snapshot10, snapshot11)).toEqual({
+      added: [],
       changed: [],
       removed: [],
     });

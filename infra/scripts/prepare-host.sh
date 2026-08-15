@@ -134,6 +134,8 @@ for unit in \
   emdo-backup-age.timer \
   emdo-replication-pressure.service \
   emdo-replication-pressure.timer \
+  emdo-finance-import-retention.service \
+  emdo-finance-import-retention.timer \
   emdo-staging-sweeper.service \
   emdo-staging-sweeper.timer; do
   install -o 0 -g 0 -m 0644 \
@@ -142,4 +144,4 @@ done
 systemctl daemon-reload
 systemctl enable --now emdo-staging-sweeper.timer
 
-printf '[emdo-host-prepare] governed host paths installed; staging expiry is active and production monitoring/backup timers remain disabled until production is healthy\n' >&2
+printf '[emdo-host-prepare] governed host paths installed; staging expiry is active and production monitoring, backup, and finance-retention timers remain disabled until production is healthy\n' >&2

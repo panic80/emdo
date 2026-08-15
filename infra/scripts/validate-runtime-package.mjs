@@ -19,6 +19,7 @@ const requiredArtifacts = {
   api: [
     'dist/index.js',
     'dist/cli/migrate.js',
+    'dist/cli/purge-finance-imports.js',
     'dist/cli/seed-synthetic.js',
     'dist/cli/staging-acceptance.js',
   ],

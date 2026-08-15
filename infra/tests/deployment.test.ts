@@ -130,6 +130,7 @@ describe('container and edge configuration', () => {
       './dist/index.js',
       './dist/cli/migrate.js',
       './dist/cli/bootstrap-owner.js',
+      './dist/cli/purge-finance-imports.js',
       './dist/cli/seed-synthetic.js',
       './dist/cli/staging-acceptance.js',
     ]) {
@@ -312,6 +313,7 @@ describe('container and edge configuration', () => {
       'worker_executor_database_password',
       'worker_dispatcher_database_password',
       'audio_reconciliation_database_password',
+      'finance_import_retention_database_password',
       'workflow_database_password',
       'visual_decision_database_password',
       'powersync_replication_password',
@@ -334,6 +336,7 @@ describe('container and edge configuration', () => {
       'worker_executor_database_password',
       'worker_dispatcher_database_password',
       'audio_reconciliation_database_password',
+      'finance_import_retention_database_password',
       'workflow_database_password',
       'visual_decision_database_password',
       'powersync_replication_password',
@@ -348,6 +351,7 @@ describe('container and edge configuration', () => {
       'emdo_worker_executor_login',
       'emdo_worker_dispatcher_login',
       'emdo_audio_reconciliation_login',
+      'emdo_finance_import_retention_login',
     ]) {
       expect(initialization).toContain(`CREATE ROLE ${login} LOGIN`);
       expect(provision).toContain(`CREATE ROLE ${login} LOGIN`);
@@ -448,6 +452,97 @@ describe('container and edge configuration', () => {
     expect(provision).toMatch(
       /REVOKE CONNECT ON DATABASE emdo_powersync FROM[\s\S]*?emdo_owner_bootstrap_login;/,
     );
+  });
+
+  it('runs finance-import retention through one dedicated disabled-by-default host authority', async () => {
+    const [
+      compose,
+      initialization,
+      provision,
+      common,
+      purge,
+      dispatcher,
+      preparation,
+      service,
+      timer,
+    ] = await Promise.all([
+      read('infra/compose/compose.yml'),
+      read('infra/compose/postgres-init.sql'),
+      read('infra/compose/provision-runtime.sql'),
+      read('infra/scripts/_common.sh'),
+      read('infra/scripts/purge-finance-imports.sh'),
+      read('infra/scripts/dispatch-active-release.sh'),
+      read('infra/scripts/prepare-host.sh'),
+      read('infra/systemd/emdo-finance-import-retention.service'),
+      read('infra/systemd/emdo-finance-import-retention.timer'),
+    ]);
+
+    expect(initialization).toContain(
+      'CREATE ROLE emdo_finance_import_retention_login LOGIN',
+    );
+    expect(initialization).toContain(
+      "pg_read_file('/run/secrets/finance_import_retention_database_password')",
+    );
+    expect(provision).toContain(
+      'ALTER ROLE emdo_finance_import_retention_login LOGIN NOSUPERUSER',
+    );
+    expect(provision).toContain(
+      'GRANT emdo_finance_import_retention TO emdo_finance_import_retention_login\n  WITH INHERIT FALSE, SET TRUE, ADMIN FALSE',
+    );
+    expect(provision).toContain(
+      'emdo.finance_import_retention_runner_ready()\nTO emdo_finance_import_retention_login',
+    );
+    expect(provision).not.toMatch(
+      /purge_expired_finance_import_plans\(integer\)[^;]*to emdo_finance_import_retention_login/iu,
+    );
+
+    expect(common).toContain('finance_import_retention_database_password');
+    expect(common).toContain('finance-import-retention.env');
+    expect(common).toContain('EMDO_FINANCE_IMPORT_RETENTION_DATABASE_URL');
+    expect(common).toContain('emdo_finance_import_retention_login emdo_app');
+    expect(common).toContain('EMDO_FINANCE_IMPORT_RETENTION_LIMIT');
+
+    const retentionService = compose.match(
+      /\n {2}finance-import-retention:\n[\s\S]+?\n {2}api:\n/u,
+    )?.[0];
+    expect(retentionService).toBeDefined();
+    expect(retentionService).toContain('profiles: [finance-import-retention]');
+    expect(retentionService).toContain('finance-import-retention.env');
+    expect(retentionService).toContain('dist/cli/purge-finance-imports.js');
+    expect(retentionService).not.toContain('api.env');
+    expect(retentionService).not.toContain('worker.env');
+    const apiService = compose.match(
+      /\n {2}api:\n[\s\S]+?\n {2}worker:\n/u,
+    )?.[0];
+    const workerService = compose.match(
+      /\n {2}worker:\n[\s\S]+?\n {2}web:\n/u,
+    )?.[0];
+    expect(apiService).not.toContain('finance-import-retention.env');
+    expect(workerService).not.toContain('finance-import-retention.env');
+
+    expect(purge).toContain(
+      'finance-import retention must execute the assets bound to current production state',
+    );
+    expect(purge).toContain('assert_base_secret_manifest "$SECRETS_DIR"');
+    expect(purge).toContain(
+      'production_compose --profile finance-import-retention run --rm --no-deps finance-import-retention',
+    );
+    expect(dispatcher).toContain(
+      "purge-finance-imports) relative_entrypoint='infra/scripts/purge-finance-imports.sh'",
+    );
+    expect(preparation).toContain('emdo-finance-import-retention.service');
+    expect(preparation).toContain('emdo-finance-import-retention.timer');
+    expect(preparation).not.toContain(
+      'systemctl enable --now emdo-finance-import-retention.timer',
+    );
+    expect(service).toContain(
+      'ExecStart=/usr/local/sbin/emdo-dispatch-active-release purge-finance-imports',
+    );
+    expect(service).toContain('ReadOnlyPaths=/var/lib/emdo /etc/emdo');
+    expect(service).toContain('ReadWritePaths=/var/lib/emdo/locks');
+    expect(timer).toContain('OnCalendar=hourly');
+    expect(timer).toContain('RandomizedDelaySec=10m');
+    expect(timer).toContain('Persistent=true');
   });
 
   it('publishes canonical offline entities through claim-scoped private and shared streams', async () => {

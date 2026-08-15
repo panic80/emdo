@@ -40,8 +40,11 @@ fresh/upgrade PostgreSQL and authenticated-browser release gates.
 
 ## Finance-import retention scheduler
 
-`emdo_finance_import_retention` remains a `NOLOGIN` deployment role. No API
-request path invokes `purge_expired_finance_import_plans`, and `emdo_app` has
-no EXECUTE grant for it. A separately controlled scheduler deployment is still
-required to purge expired receipt-less plans; this is a deployment blocker, not
-an API request-readiness dependency.
+`emdo_finance_import_retention` remains a `NOLOGIN` deployment role. A
+dedicated `NOINHERIT` login and one-shot CLI now prove the exact set-only role
+lattice before invoking the bounded expired, receipt-less plan purge. The
+active-release host timer is installed but deliberately not enabled by host
+preparation. No API request path or worker/provider runtime receives the
+credential or purge authority, and no host execution or production deletion
+is claimed until an operator enables and observes the timer after production
+health acceptance.

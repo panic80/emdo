@@ -33,6 +33,7 @@ describe('database migration runner', () => {
       '0008_finance_import_receipts',
       '0009_google_oauth_authorization_starts',
       '0010_google_oauth_disconnect_operations',
+      '0011_finance_import_retention_runner',
     ]);
     expect(migrations.map(({ index }) => index)).toEqual(
       migrations.map((_, index) => index),
@@ -64,6 +65,9 @@ describe('database migration runner', () => {
     );
     expect(migrations[10]?.sql).toContain(
       'CREATE TABLE "emdo"."google_oauth_disconnect_operations"',
+    );
+    expect(migrations[11]?.sql).toContain(
+      'CREATE OR REPLACE FUNCTION emdo.finance_import_retention_runner_ready',
     );
   });
 

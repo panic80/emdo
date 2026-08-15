@@ -176,6 +176,12 @@ describe('PostgreSQL integration orchestrator', () => {
           databaseEnvironment: 'TEST_FINANCE_IMPORT_DATABASE_URL',
         },
         {
+          id: 'finance-import-retention-runner',
+          file: 'packages/db/src/finance/finance-import-retention-runner.integration.test.ts',
+          databaseEnvironment: 'TEST_FINANCE_RETENTION_DATABASE_URL',
+          canonicalDatabaseName: 'emdo_app',
+        },
+        {
           id: 'google-oauth-authority',
           file: 'packages/db/src/google/oauth-authority.integration.test.ts',
           databaseEnvironment: 'TEST_GOOGLE_OAUTH_AUTHORITY_DATABASE_URL',

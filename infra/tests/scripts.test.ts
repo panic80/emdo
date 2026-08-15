@@ -234,6 +234,39 @@ describe('deployment script trust boundaries', () => {
     ).toBe(0);
   });
 
+  it('requires the dedicated bounded finance-import retention environment', async () => {
+    const environment = join(directory, 'finance-import-retention.env');
+    const valid = [
+      'EMDO_FINANCE_IMPORT_RETENTION_DATABASE_URL=postgresql://emdo_finance_import_retention_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+      'EMDO_FINANCE_IMPORT_RETENTION_LIMIT=100',
+      '',
+    ].join('\n');
+    await writeFile(environment, valid);
+    expect(
+      runCommon('assert_finance_import_retention_config "$2"', environment)
+        .status,
+    ).toBe(0);
+
+    for (const invalid of [
+      valid.replace('emdo_finance_import_retention_login', 'emdo_api_login'),
+      valid.replace(
+        'EMDO_FINANCE_IMPORT_RETENTION_LIMIT=100',
+        'EMDO_FINANCE_IMPORT_RETENTION_LIMIT=0',
+      ),
+      valid.replace(
+        'EMDO_FINANCE_IMPORT_RETENTION_LIMIT=100',
+        'EMDO_FINANCE_IMPORT_RETENTION_LIMIT=1001',
+      ),
+      `${valid}EMDO_API_DATABASE_URL=postgresql://forbidden\n`,
+    ]) {
+      await writeFile(environment, invalid);
+      expect(
+        runCommon('assert_finance_import_retention_config "$2"', environment)
+          .status,
+      ).not.toBe(0);
+    }
+  });
+
   it('requires the dedicated internal invitation-onboarding login', async () => {
     const apiEnvironment = join(directory, 'api.env');
     await writeFile(
@@ -555,6 +588,7 @@ describe('deployment script trust boundaries', () => {
     await writeFile(join(packageRoot, 'package.json'), '{"type":"module"}\n');
     for (const path of [
       'cli/migrate.js',
+      'cli/purge-finance-imports.js',
       'cli/seed-synthetic.js',
       'cli/staging-acceptance.js',
     ]) {

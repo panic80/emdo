@@ -45,6 +45,7 @@ services:
       - worker_executor_database_password
       - worker_dispatcher_database_password
       - audio_reconciliation_database_password
+      - finance_import_retention_database_password
       - workflow_database_password
       - visual_decision_database_password
       - powersync_replication_password
@@ -190,6 +191,7 @@ services:
       - worker_executor_database_password
       - worker_dispatcher_database_password
       - audio_reconciliation_database_password
+      - finance_import_retention_database_password
       - workflow_database_password
       - visual_decision_database_password
       - powersync_replication_password
@@ -211,6 +213,34 @@ services:
           cpus: '0.25'
           pids: 64
     pids_limit: 64
+    logging: *default-logging
+
+  finance-import-retention:
+    <<: *runtime-security
+    image: '${API_IMAGE:?API_IMAGE must be an immutable application image reference}'
+    profiles: [finance-import-retention]
+    env_file:
+      - '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/finance-import-retention.env'
+    environment:
+      EMDO_ENVIRONMENT: production
+    command:
+      - node
+      - dist/cli/purge-finance-imports.js
+      - --purge-expired-plans
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+          pids: 48
+    pids_limit: 48
     logging: *default-logging
 
   api:
@@ -477,6 +507,8 @@ secrets:
     file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/worker_dispatcher_database_password'
   audio_reconciliation_database_password:
     file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/audio_reconciliation_database_password'
+  finance_import_retention_database_password:
+    file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/finance_import_retention_database_password'
   workflow_database_password:
     file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/workflow_database_password'
   visual_decision_database_password:

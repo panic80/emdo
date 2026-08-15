@@ -29,6 +29,7 @@ const knownDatabaseEnvironmentNames = Object.freeze([
   'TEST_DISCLOSURE_DATABASE_URL',
   'TEST_DURABLE_DATABASE_URL',
   'TEST_FINANCE_IMPORT_DATABASE_URL',
+  'TEST_FINANCE_RETENTION_DATABASE_URL',
   'TEST_GOOGLE_OAUTH_AUTHORITY_DATABASE_URL',
   'TEST_HOUSEHOLD_ADMIN_DATABASE_URL',
   'TEST_PROPOSAL_DATABASE_URL',
@@ -96,6 +97,12 @@ export const POSTGRES_INTEGRATION_SUITES = Object.freeze([
     id: 'finance-import-receipts',
     file: 'packages/db/src/finance/postgres-finance-import-repository.integration.test.ts',
     databaseEnvironment: 'TEST_FINANCE_IMPORT_DATABASE_URL',
+  }),
+  Object.freeze({
+    id: 'finance-import-retention-runner',
+    file: 'packages/db/src/finance/finance-import-retention-runner.integration.test.ts',
+    databaseEnvironment: 'TEST_FINANCE_RETENTION_DATABASE_URL',
+    canonicalDatabaseName: 'emdo_app',
   }),
   Object.freeze({
     id: 'google-oauth-authority',
@@ -202,7 +209,7 @@ export interface PostgresIntegrationDependencies {
 }
 
 const quoteGeneratedDatabaseIdentifier = (value: string): string => {
-  if (!/^emdo_ci_[a-z0-9_]{1,52}$/u.test(value)) {
+  if (value !== 'emdo_app' && !/^emdo_ci_[a-z0-9_]{1,52}$/u.test(value)) {
     throw new Error(
       'Generated PostgreSQL integration database name is unsafe.',
     );
@@ -270,7 +277,10 @@ const createDatabase = async ({
 }) => {
   const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
   const normalizedSuite = suite.id.replaceAll('-', '_').slice(0, 36);
-  const databaseName = `emdo_ci_${normalizedSuite}_${suffix}`;
+  const databaseName =
+    'canonicalDatabaseName' in suite
+      ? suite.canonicalDatabaseName
+      : `emdo_ci_${normalizedSuite}_${suffix}`;
   const identifier = quoteGeneratedDatabaseIdentifier(databaseName);
   const client = adminClient(adminUrl);
   await client.connect();
