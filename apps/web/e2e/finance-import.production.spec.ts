@@ -225,6 +225,23 @@ test('commits a reviewed CSV import against the production browser contract', as
   await page.setViewportSize({ width: 320, height: 700 });
   const horizontalOverflow = await page.evaluate(() => {
     const viewportWidth = window.innerWidth;
+    const describeLayout = (element: HTMLElement) => {
+      const bounds = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return {
+        tag: element.tagName.toLowerCase(),
+        id: element.id,
+        className: element.className,
+        left: bounds.left,
+        right: bounds.right,
+        width: bounds.width,
+        display: style.display,
+        minWidth: style.minWidth,
+        overflowX: style.overflowX,
+        flexWrap: style.flexWrap,
+        gridTemplateColumns: style.gridTemplateColumns,
+      };
+    };
     const offenders = Array.from(
       document.body.querySelectorAll<HTMLElement>('*'),
     )
@@ -234,6 +251,12 @@ test('commits a reviewed CSV import against the production browser contract', as
           return [];
         }
         const style = window.getComputedStyle(element);
+        const ancestors: ReturnType<typeof describeLayout>[] = [];
+        let ancestor = element.parentElement;
+        while (ancestor && ancestors.length < 5) {
+          ancestors.push(describeLayout(ancestor));
+          ancestor = ancestor.parentElement;
+        }
         return [
           {
             tag: element.tagName.toLowerCase(),
@@ -246,6 +269,10 @@ test('commits a reviewed CSV import against the production browser contract', as
             width: bounds.width,
             minWidth: style.minWidth,
             overflowX: style.overflowX,
+            inFinanceImportActions: element.matches(
+              '.finance-import-panel__actions *',
+            ),
+            ancestors,
           },
         ];
       })
