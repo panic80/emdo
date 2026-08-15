@@ -432,8 +432,8 @@ describe(
         screen.getByText('No transactions have been saved yet.'),
       ).toBeVisible();
       expect(
-        screen.queryByRole('button', { name: 'Import statement' }),
-      ).not.toBeInTheDocument();
+        screen.getByRole('button', { name: 'Import statement' }),
+      ).toBeVisible();
       expect(screen.queryByText('No Frills')).not.toBeInTheDocument();
     });
 

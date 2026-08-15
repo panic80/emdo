@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import {
+  createFinanceImportPlan,
   InMemoryFinanceImportPlanningService,
   previewFinanceImport,
 } from './imports.js';
@@ -381,6 +382,78 @@ DATA:OFXSGML
 });
 
 describe('atomic finance import plan and result', () => {
+  it('creates a canonical plan from a safe preview without retaining source text', () => {
+    const preview = previewCsv();
+    if (preview.status !== 'ready') throw new Error('expected preview');
+
+    const result = createFinanceImportPlan({
+      planId: 'finance-import-plan-exported',
+      idempotencyKey: 'finance-import:2026-08:exported',
+      preview,
+    });
+
+    expect(result).toMatchObject({
+      status: 'planned',
+      plan: {
+        planId: 'finance-import-plan-exported',
+        transactionCount: 2,
+        sourceHash: sha256(csvSource),
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain(csvSource);
+  });
+
+  it('derives public transaction IDs from the canonical fingerprint for mixed-case Unicode imports', () => {
+    const source = [
+      'Date,Description,Amount,Reference,Category',
+      '2026-08-11,Café ÉLAN,-12.34,unicode-1,',
+    ].join('\n');
+    const preview = previewFinanceImport({
+      ...csvInput(),
+      sourceText: source,
+      sourceHash: sha256(source),
+    });
+    if (preview.status !== 'ready') throw new Error('expected preview');
+    const result = createFinanceImportPlan({
+      planId: 'finance-import-plan-unicode',
+      idempotencyKey: 'finance-import:2026-08:unicode',
+      preview,
+    });
+    if (result.status !== 'planned') throw new Error('expected plan');
+    const transaction = result.plan.transactions[0];
+    if (transaction?.source.kind !== 'import')
+      throw new Error('expected import');
+    expect(transaction.id).toBe(
+      `finance-import-${transaction.source.fingerprint.slice(0, 40)}`,
+    );
+  });
+
+  it('enforces the shared UTF-8 account and category identifier ceiling', () => {
+    const oversized = 'é'.repeat(257);
+    const account = previewFinanceImport({
+      ...csvInput(),
+      accountId: oversized,
+    });
+    expect(account).toMatchObject({
+      status: 'rejected',
+      safeError: { code: 'finance-import-input-invalid' },
+    });
+
+    const source = [
+      'Date,Description,Amount,Reference,Category',
+      `2026-08-11,Groceries,-12.34,reference-1,${oversized}`,
+    ].join('\n');
+    const category = previewFinanceImport({
+      ...csvInput(),
+      sourceText: source,
+      sourceHash: sha256(source),
+    });
+    expect(category).toMatchObject({
+      status: 'ready',
+      summary: { accepted: 0, rejected: 1, duplicates: 0 },
+    });
+  });
+
   it('commits all normalized transactions once and authorizes source deletion', async () => {
     const service = new InMemoryFinanceImportPlanningService();
     const registered = service.preview(csvInput());

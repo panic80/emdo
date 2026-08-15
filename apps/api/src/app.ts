@@ -7,6 +7,7 @@ import { createOpenApiDocument } from './openapi.js';
 import { installProblemHandler } from './problem.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerExperienceRoutes } from './routes/experience.js';
+import { registerFinanceImportRoutes } from './routes/finance-imports.js';
 import { registerGoogleRoutes } from './routes/google.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerHouseholdAdministrationRoutes } from './routes/household-admin.js';
@@ -103,6 +104,11 @@ export const createApp = async (
     options.allowLoopbackApiIngress,
   );
   registerExperienceRoutes(app, options.services, limits.maximumJsonBodyBytes);
+  registerFinanceImportRoutes(
+    app,
+    options.services,
+    limits.maximumJsonBodyBytes,
+  );
   registerHealthRoutes(app, options.services);
   registerMetricsRoutes(app, options.services);
   registerTurnRoutes(app, options.services, limits);

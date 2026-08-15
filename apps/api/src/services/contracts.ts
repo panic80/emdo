@@ -2,6 +2,7 @@ import type {
   ActionDecision,
   ActionDecisionRequest,
   ActivityPage,
+  DeepReadonly,
   EffectiveAuthorizationScopeFingerprint,
   FinancePage,
   JsonValue,
@@ -13,6 +14,15 @@ import type {
   SyncOperation,
   TodayView,
 } from '@emdo/contracts';
+import type { z } from 'zod';
+
+import type {
+  FinanceImportCommitRequestSchema,
+  FinanceImportCommitResponseSchema,
+  FinanceImportDestinationsSchema,
+  FinanceImportPreviewRequestSchema,
+  FinanceImportPreviewResponseSchema,
+} from '../schemas.js';
 
 export interface AuthenticatedPrincipal {
   readonly userId: string;
@@ -770,6 +780,46 @@ export interface FinanceReadGateway {
   }): Promise<FinancePage>;
 }
 
+type FinanceImportPreviewResponse = DeepReadonly<
+  z.output<typeof FinanceImportPreviewResponseSchema>
+>;
+
+type FinanceImportCommitResponse = DeepReadonly<
+  z.output<typeof FinanceImportCommitResponseSchema>
+>;
+type FinanceImportDestinations = DeepReadonly<
+  z.output<typeof FinanceImportDestinationsSchema>
+>;
+
+export interface FinanceImportGateway {
+  listDestinations(input: {
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<FinanceImportDestinations>;
+  preview(input: {
+    readonly accountId: z.output<
+      typeof FinanceImportPreviewRequestSchema
+    >['accountId'];
+    readonly format: z.output<
+      typeof FinanceImportPreviewRequestSchema
+    >['format'];
+    readonly mapping: z.output<
+      typeof FinanceImportPreviewRequestSchema
+    >['mapping'];
+    readonly sourceText: string;
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<FinanceImportPreviewResponse>;
+  commit(input: {
+    readonly planId: z.output<
+      typeof FinanceImportCommitRequestSchema
+    >['planId'];
+    readonly idempotencyKey: string;
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<FinanceImportCommitResponse>;
+}
+
 export interface ShoppingReadGateway {
   list(input: {
     readonly cursor?: string;
@@ -819,6 +869,7 @@ export interface ApiServices {
   readonly auth: AuthenticationBoundary;
   readonly activityRead: ActivityReadGateway;
   readonly financeRead: FinanceReadGateway;
+  readonly financeImports: FinanceImportGateway;
   readonly managerTurns: ManagerTurnGateway;
   readonly notificationPreferences: NotificationPreferencesGateway;
   readonly runEvents: PersistedRunEventGateway;

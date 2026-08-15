@@ -211,7 +211,7 @@ const CI_RECEIPT_DEFINITIONS = Object.freeze({
       pgvectorExtension: 'passed',
       isolatedDatabases: true,
       sequentialSuites: 'passed',
-      suiteCount: POSITIVE_INTEGER,
+      suiteCount: 15,
       attackCaseCount: POSITIVE_INTEGER,
     },
   }),

@@ -12,6 +12,9 @@ describe('browser-safe contracts boundary', () => {
     expect(Object.keys(browserContracts).sort()).toEqual(
       [
         'ActivityPageSchema',
+        'FinanceImportDestinationAccountSchema',
+        'FinanceImportDestinationCategorySchema',
+        'FinanceImportDestinationsSchema',
         'FinancePageSchema',
         'IdentifierSchema',
         'IsoDateTimeSchema',

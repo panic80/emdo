@@ -76,6 +76,13 @@ const householdService = () => ({
   checkReady: vi.fn(async () => true),
 });
 
+const financeImportService = () => ({
+  listDestinations: vi.fn(),
+  preview: vi.fn(),
+  commit: vi.fn(),
+  checkReady: vi.fn(async () => true),
+});
+
 const dependencies = (): ProductionDurableServiceDependencies => {
   const services = experienceServices();
   const readinessChecks = experienceReadinessChecks();
@@ -94,6 +101,7 @@ const dependencies = (): ProductionDurableServiceDependencies => {
           checkReady(): Promise<boolean>;
         },
     ),
+    createFinanceImportRepository: vi.fn(() => financeImportService() as never),
     createHouseholdAdministrationService: vi.fn(
       () => householdService() as never,
     ),
@@ -202,6 +210,52 @@ describe('production durable API service composition', () => {
     const database = vi.mocked(adapters.createDatabaseClient).mock.results[0]!
       .value;
     expect(database.close).toHaveBeenCalledOnce();
+  });
+
+  it('binds finance imports to the existing API scoped pool through its exact readiness probe', async () => {
+    const adapters = dependencies();
+    const imports = financeImportService();
+    const createFinanceImportRepository = vi.fn(() => imports);
+    Object.assign(adapters, { createFinanceImportRepository });
+
+    const result = await createProductionDurableServiceBindings(
+      { EMDO_API_DATABASE_URL: databaseUrl },
+      adapters,
+    );
+
+    const database = vi.mocked(adapters.createDatabaseClient).mock.results[0]!
+      .value;
+    expect(createFinanceImportRepository).toHaveBeenCalledOnce();
+    expect(createFinanceImportRepository).toHaveBeenCalledWith(
+      database.scopedPool,
+    );
+    expect(result.bindings.financeImports).toMatchObject({
+      service: imports,
+      check: expect.any(Function),
+    });
+    await expect(result.bindings.financeImports!.check()).resolves.toBe(true);
+    expect(imports.checkReady).toHaveBeenCalledOnce();
+
+    await result.close?.();
+    await result.close?.();
+    expect(database.close).toHaveBeenCalledOnce();
+  });
+
+  it('maps a false finance import repository probe to an unavailable binding result', async () => {
+    const adapters = dependencies();
+    const imports = financeImportService();
+    imports.checkReady.mockResolvedValue(false);
+    const createFinanceImportRepository = vi.fn(() => imports);
+    Object.assign(adapters, { createFinanceImportRepository });
+
+    const result = await createProductionDurableServiceBindings(
+      { EMDO_API_DATABASE_URL: databaseUrl },
+      adapters,
+    );
+
+    await expect(result.bindings.financeImports!.check()).resolves.toBe(false);
+    expect(createFinanceImportRepository).toHaveBeenCalledOnce();
+    expect(imports.checkReady).toHaveBeenCalledOnce();
   });
 
   it('keeps each experience readiness component isolated to its own exact probe', async () => {

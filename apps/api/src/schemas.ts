@@ -3,6 +3,8 @@ import {
   ActionDecisionSchema,
   ActivityPageSchema,
   EffectiveAuthorizationScopeFingerprintSchema,
+  FinanceImportDestinationsSchema,
+  FinanceImportReferenceSchema,
   FinancePageSchema,
   IdentifierSchema,
   IdempotencyKeySchema,
@@ -26,6 +28,7 @@ import { DEFAULT_API_LIMITS } from './config.js';
 export { ActionDecisionRequestSchema, ActionDecisionSchema };
 export {
   ActivityPageSchema,
+  FinanceImportDestinationsSchema,
   FinancePageSchema,
   NotificationPreferencesUpdateRequestSchema,
   NotificationPreferencesViewSchema,
@@ -51,6 +54,113 @@ export const ActivityReadQuerySchema = z.strictObject({
 });
 
 export const ExperiencePageQuerySchema = ActivityReadQuerySchema;
+
+const FinanceImportSourceTextSchema = z
+  .string()
+  .min(1)
+  .max(DEFAULT_API_LIMITS.maximumJsonBodyBytes);
+const FinanceImportCsvMappingSchema = z.strictObject({
+  dateFormat: z.enum(['yyyy-mm-dd', 'mm/dd/yyyy', 'dd/mm/yyyy']),
+  defaultCategoryId: FinanceImportReferenceSchema.nullable(),
+  columns: z
+    .strictObject({
+      postedOn: z.string().trim().min(1).max(200),
+      description: z.string().trim().min(1).max(200),
+      amount: z.string().trim().min(1).max(200).optional(),
+      debit: z.string().trim().min(1).max(200).optional(),
+      credit: z.string().trim().min(1).max(200).optional(),
+      externalId: z.string().trim().min(1).max(200).optional(),
+      categoryId: z.string().trim().min(1).max(200).optional(),
+    })
+    .superRefine((columns, context) => {
+      const signed = columns.amount !== undefined;
+      const split = columns.debit !== undefined && columns.credit !== undefined;
+      if (
+        signed === split ||
+        (signed &&
+          (columns.debit !== undefined || columns.credit !== undefined))
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message:
+            'Map one signed amount column or both debit and credit columns',
+        });
+      }
+    }),
+});
+
+export const FinanceImportPreviewRequestSchema = z.discriminatedUnion(
+  'format',
+  [
+    z.strictObject({
+      schemaVersion: z.literal(1),
+      format: z.literal('csv'),
+      sourceText: FinanceImportSourceTextSchema,
+      accountId: FinanceImportReferenceSchema,
+      mapping: FinanceImportCsvMappingSchema,
+    }),
+    z.strictObject({
+      schemaVersion: z.literal(1),
+      format: z.literal('ofx'),
+      sourceText: FinanceImportSourceTextSchema,
+      accountId: FinanceImportReferenceSchema,
+      mapping: z.strictObject({
+        defaultCategoryId: FinanceImportReferenceSchema.nullable(),
+      }),
+    }),
+  ],
+);
+
+const FinanceImportDiagnosticsSchema = z
+  .array(
+    z.strictObject({
+      sourceRow: z.number().int().positive().max(100_001),
+      code: z.string().trim().min(1).max(160),
+    }),
+  )
+  .max(100_000);
+
+const FinanceImportPlanViewSchema = z.strictObject({
+  id: OpaqueReferenceSchema,
+  sourceHash: Sha256Schema,
+  expiresAt: IsoDateTimeSchema,
+  summary: z.strictObject({
+    accepted: z.number().int().nonnegative().max(100_000),
+    rejected: z.number().int().nonnegative().max(100_000),
+    duplicates: z.number().int().nonnegative().max(100_000),
+  }),
+  rejectedRows: FinanceImportDiagnosticsSchema,
+  duplicateRows: z
+    .array(
+      z.strictObject({
+        sourceRow: z.number().int().positive().max(100_001),
+        reason: z.enum(['existing', 'within-source']),
+      }),
+    )
+    .max(100_000),
+});
+
+export const FinanceImportPreviewResponseSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  plan: FinanceImportPlanViewSchema,
+});
+
+export const FinanceImportCommitRequestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  planId: OpaqueReferenceSchema,
+});
+
+export const FinanceImportCommitResponseSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  status: z.enum(['committed', 'replayed']),
+  receipt: z.strictObject({
+    id: OpaqueReferenceSchema,
+    planId: OpaqueReferenceSchema,
+    transactionCount: z.number().int().positive().max(100_000),
+    verified: z.literal(true),
+  }),
+  sourceDeletionAuthorized: z.literal(true),
+});
 
 export const ScheduleReadQuerySchema = z
   .strictObject({

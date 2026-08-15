@@ -54,9 +54,10 @@ group and component below to be `ok`:
   `authority.visual-decisions`, and `authority.visual-proof-issuance`;
 - `agents`: `agents.manager-turns` and `agents.run-events`;
 - `experience`: `experience.activity-read`,
-  `experience.finance-read`, `experience.notification-preferences`,
-  `experience.schedule-read`, `experience.settings-read`,
-  `experience.shopping-read`, and `experience.today-read`;
+  `experience.finance-imports`, `experience.finance-read`,
+  `experience.notification-preferences`, `experience.schedule-read`,
+  `experience.settings-read`, `experience.shopping-read`, and
+  `experience.today-read`;
 - `google`: `google.connector`;
 - `sync`: `sync.gateway` and `sync.jwks`; and
 - `voice`: `voice.audio-requests` and `voice.provider`.

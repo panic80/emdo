@@ -4,5 +4,6 @@ export * from './capability.js';
 export * from './commerce.js';
 export * from './disclosure.js';
 export * from './experience.js';
+export * from './finance-imports.js';
 export * from './http.js';
 export * from './sync.js';

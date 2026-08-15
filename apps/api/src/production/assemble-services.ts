@@ -12,6 +12,7 @@ const CURRENT_DURABLE_SERVICE_NAMES = Object.freeze([
   'activityRead',
   'audioRequests',
   'financeRead',
+  'financeImports',
   'householdAdministration',
   'notificationPreferences',
   'proposalQueries',

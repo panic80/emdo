@@ -29,10 +29,14 @@ describe('experience notification preferences migration', () => {
       readNormalized(snapshotUrl),
     ]);
 
-    expect(migrations.at(-1)?.id).toBe(
-      '0007_experience_notification_preferences',
-    );
-    expect(migrations.at(-1)?.index).toBe(7);
+    expect(migrations[7]).toMatchObject({
+      id: '0007_experience_notification_preferences',
+      index: 7,
+    });
+    expect(migrations[8]).toMatchObject({
+      id: '0008_finance_import_receipts',
+      index: 8,
+    });
     expect(schema).toContain("'notification_preferences'");
     expect(schema).toContain("'notification_preference_commands'");
     expect(snapshot).toContain('emdo.notification_preferences');

@@ -36,6 +36,7 @@ const canonicalReadinessChecks = Object.freeze({
   experience: 'ok' as const,
   'experience.activity-read': 'ok' as const,
   'experience.finance-read': 'ok' as const,
+  'experience.finance-imports': 'ok' as const,
   'experience.notification-preferences': 'ok' as const,
   'experience.schedule-read': 'ok' as const,
   'experience.settings-read': 'ok' as const,

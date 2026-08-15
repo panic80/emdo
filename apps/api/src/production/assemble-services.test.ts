@@ -108,6 +108,51 @@ describe('production API service assembly', () => {
     });
   });
 
+  it('selects the current checked finance import boundary from durable composition', async () => {
+    const auth = authBoundary();
+    const listDestinations = vi.fn(async () => ({
+      schemaVersion: 1 as const,
+      accounts: [],
+      categories: [],
+    }));
+    const preview = vi.fn(async () => ({ status: 'previewed' }));
+    const commit = vi.fn(async () => ({ status: 'committed' }));
+    const check = vi.fn(async () => true);
+    mocks.createAuthentication.mockResolvedValue({
+      binding: { service: auth, check: vi.fn(async () => true) },
+    });
+    mocks.createDurable.mockResolvedValue({
+      bindings: {
+        financeImports: {
+          service: { listDestinations, preview, commit },
+          check,
+        },
+      },
+    });
+
+    const services = await assembleProductionApiServices({});
+
+    await expect(
+      services.financeImports.listDestinations({} as never),
+    ).resolves.toEqual({
+      schemaVersion: 1,
+      accounts: [],
+      categories: [],
+    });
+    await expect(services.financeImports.preview({} as never)).resolves.toEqual(
+      { status: 'previewed' },
+    );
+    await expect(services.financeImports.commit({} as never)).resolves.toEqual({
+      status: 'committed',
+    });
+    expect(preview).toHaveBeenCalledOnce();
+    expect(listDestinations).toHaveBeenCalledOnce();
+    expect(commit).toHaveBeenCalledOnce();
+    await expect(services.readiness.check()).resolves.toMatchObject({
+      checks: { 'experience.finance-imports': 'ok' },
+    });
+  });
+
   it('closes auth and durable resources exactly once', async () => {
     const closeAuth = vi.fn(async () => undefined);
     const closeDurable = vi.fn(async () => undefined);

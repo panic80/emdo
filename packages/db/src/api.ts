@@ -119,6 +119,11 @@ export type {
 export type { DurableRepositoryPrincipal } from './durable/scoped-transaction.js';
 
 export {
+  FinanceImportPersistenceError,
+  PostgresFinanceImportRepository,
+} from './finance/postgres-finance-import-repository.js';
+
+export {
   checkPostgresExperienceReadiness,
   createPostgresExperienceReadGateways,
   createPostgresExperienceReadinessChecks,

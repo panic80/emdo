@@ -22,6 +22,13 @@ const SUITE_IDS = Object.freeze([
   'rls-foundation',
   'workflow-authority',
   'durable-repositories',
+  'audio-request-coordinator',
+  'household-administration',
+  'disclosure-authority',
+  'finance-import-receipts',
+  'google-oauth-authority',
+  'manager-run-event-replay',
+  'worker-fixed-roles',
   'proposal-lifecycle',
   'sync-conflict-runtime',
 ]);

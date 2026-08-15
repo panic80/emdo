@@ -5,7 +5,11 @@ export * from './records.js';
 export { financeSafeError } from './guard.js';
 export type { FinanceSafeError } from './guard.js';
 
-export { FinanceImportPlanSchema, previewFinanceImport } from './imports.js';
+export {
+  createFinanceImportPlan,
+  FinanceImportPlanSchema,
+  previewFinanceImport,
+} from './imports.js';
 export type {
   FinanceImportCommitResult,
   FinanceImportPlan,

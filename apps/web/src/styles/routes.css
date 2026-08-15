@@ -514,6 +514,47 @@
   margin: 18px 0;
 }
 
+.finance-import-panel {
+  display: grid;
+  max-width: 680px;
+  gap: 10px;
+}
+
+.finance-import-panel select,
+.finance-import-panel input[type='file'] {
+  width: 100%;
+  max-width: 480px;
+  min-height: 42px;
+}
+
+.finance-import-panel__mapping,
+.finance-import-panel__preview {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--color-divider);
+}
+
+.finance-import-panel__mapping legend,
+.finance-import-panel__preview h3 {
+  font-weight: 650;
+}
+
+.finance-import-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.finance-import-panel__review {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--color-ink);
+}
+
 .finance-budgets {
   padding: 28px 0;
   border-bottom: 1px solid var(--color-divider);

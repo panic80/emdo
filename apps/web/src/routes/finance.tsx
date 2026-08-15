@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -9,9 +9,12 @@ import { Button } from '../components/button.js';
 import { Page, PageHeader } from '../components/page.js';
 import { AskComposer } from '../features/chat/ask-composer.js';
 import { useConversation } from '../features/chat/conversation.js';
+import { useAuth } from '../features/auth/auth-context.js';
 import { useDomainData } from '../features/domains/domain-data.js';
 import { DomainSyncStatus } from '../features/domains/domain-status.js';
 import { useExperienceApi } from '../features/experience/experience-api.js';
+import { createFinanceImportApi } from '../features/finance/finance-import-api.js';
+import { FinanceImportPanel } from '../features/finance/finance-import-panel.js';
 
 const ManualTransactionSchema = z.object({
   description: z.string().trim().min(1, 'Enter a description.').max(160),
@@ -77,6 +80,8 @@ function formatCadMinor(value: number): string {
 
 export function FinanceRoute() {
   const api = useExperienceApi();
+  const auth = useAuth();
+  const financeImportApi = useMemo(() => createFinanceImportApi(), []);
   const conversation = useConversation();
   const domain = useDomainData();
   const financeController = useRef<AbortController | undefined>(undefined);
@@ -213,6 +218,12 @@ export function FinanceRoute() {
         }}
       />
       <DomainSyncStatus />
+      <FinanceImportPanel
+        api={financeImportApi}
+        csrfToken={auth.csrfToken}
+        online={auth.state === 'authenticated'}
+        onCommitted={() => loadFinance()}
+      />
       {financeState === 'unavailable' && !recordsReady ? (
         <p className="inline-error" role="status">
           Finance data is unavailable.

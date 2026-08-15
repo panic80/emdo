@@ -30,6 +30,8 @@ describe('@emdo/db production export boundaries', () => {
         'PostgresAudioRequestCoordinator',
         'PostgresAudioRequestReconciliationStore',
         'AudioRequestCoordinatorError',
+        'PostgresFinanceImportRepository',
+        'FinanceImportPersistenceError',
       ]),
     );
     expect(api).not.toHaveProperty('PostgresDeterministicJobExecutionStore');

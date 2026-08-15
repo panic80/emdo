@@ -30,6 +30,7 @@ describe('database migration runner', () => {
       '0005_household_administration',
       '0006_sync_conflict_outcomes',
       '0007_experience_notification_preferences',
+      '0008_finance_import_receipts',
     ]);
     expect(migrations.map(({ index }) => index)).toEqual(
       migrations.map((_, index) => index),
@@ -52,6 +53,9 @@ describe('database migration runner', () => {
     );
     expect(migrations[7]?.sql).toContain(
       'CREATE TABLE "emdo"."notification_preferences"',
+    );
+    expect(migrations[8]?.sql).toContain(
+      'CREATE TABLE emdo.finance_import_receipts',
     );
   });
 

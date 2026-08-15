@@ -57,6 +57,13 @@
       "when": 1786375847710,
       "tag": "0007_experience_notification_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786380000000,
+      "tag": "0008_finance_import_receipts",
+      "breakpoints": true
     }
   ]
 }

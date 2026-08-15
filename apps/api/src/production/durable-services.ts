@@ -2,6 +2,7 @@ import { webcrypto } from 'node:crypto';
 
 import {
   ExperienceQueryCursorCodec,
+  PostgresFinanceImportRepository,
   PostgresAudioRequestCoordinator,
   PostgresHouseholdAdministrationService,
   PostgresProposalQueryRepository,
@@ -45,6 +46,9 @@ type ExperienceReadGateways = Pick<
 type ReadyAudioCoordinator = ApiServices['audioRequests'] & {
   checkReady(): Promise<boolean>;
 };
+type ReadyFinanceImportRepository = ApiServices['financeImports'] & {
+  checkReady(): Promise<boolean>;
+};
 type ReadyHouseholdAdministration = ApiServices['householdAdministration'] & {
   checkReady(): Promise<boolean>;
 };
@@ -73,6 +77,9 @@ export interface ProductionDurableServiceDependencies {
   readonly createAudioRequestCoordinator: (
     pool: DatabaseRuntime['scopedPool'],
   ) => ReadyAudioCoordinator;
+  readonly createFinanceImportRepository: (
+    pool: DatabaseRuntime['scopedPool'],
+  ) => ReadyFinanceImportRepository;
   readonly createHouseholdAdministrationService: (
     pool: DatabaseRuntime['scopedPool'],
     sealer: HouseholdInvitationSecretSealer,
@@ -111,6 +118,8 @@ const defaultDependencies: ProductionDurableServiceDependencies = Object.freeze(
       createPostgresExperienceReadinessChecks(pool),
     createAudioRequestCoordinator: (pool: DatabaseRuntime['scopedPool']) =>
       new PostgresAudioRequestCoordinator(pool),
+    createFinanceImportRepository: (pool: DatabaseRuntime['scopedPool']) =>
+      new PostgresFinanceImportRepository(pool),
     createHouseholdAdministrationService: (
       pool: DatabaseRuntime['scopedPool'],
       sealer: HouseholdInvitationSecretSealer,
@@ -350,6 +359,18 @@ export const createProductionDurableServiceBindings = async (
     };
   } catch {
     // Voice remains fail-closed while other independently healthy ports load.
+  }
+
+  try {
+    const financeImports = dependencies.createFinanceImportRepository(
+      database.scopedPool,
+    );
+    bindings.financeImports = {
+      service: financeImports,
+      check: coalesceProbe(() => financeImports.checkReady()),
+    };
+  } catch {
+    // Import mutations remain fail-closed while the receipt boundary is unavailable.
   }
 
   try {

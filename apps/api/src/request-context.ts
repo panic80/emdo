@@ -19,10 +19,17 @@ interface PreparedMutationContext {
   readonly principal: AuthenticatedPrincipal;
   readonly idempotencyKey: string;
 }
+interface PreparedMutationProofContext {
+  readonly principal: AuthenticatedPrincipal;
+}
 
 const preparedMutationContexts = new WeakMap<
   FastifyRequest,
   PreparedMutationContext
+>();
+const preparedMutationProofContexts = new WeakMap<
+  FastifyRequest,
+  PreparedMutationProofContext
 >();
 
 const optionalHeader = (
@@ -145,6 +152,32 @@ export const prepareAuthenticatedMutation = async (
     request,
     Object.freeze({ principal, idempotencyKey }),
   );
+};
+
+/** Runs before body parsing for a state change that deliberately has no idempotency key. */
+export const prepareAuthenticatedMutationProof = async (
+  request: FastifyRequest,
+  services: ApiServices,
+): Promise<void> => {
+  const principal = await requirePrincipal(request, services);
+  await requireMutationProof(request, services, principal);
+  preparedMutationProofContexts.set(request, Object.freeze({ principal }));
+};
+
+export const takePreparedMutationProof = (
+  request: FastifyRequest,
+): PreparedMutationProofContext => {
+  const context = preparedMutationProofContexts.get(request);
+  preparedMutationProofContexts.delete(request);
+  if (context === undefined) {
+    throw new ApiProblem({
+      status: 500,
+      code: 'mutation-context-missing',
+      title: 'Request verification missing',
+      detail: 'The request could not be completed safely.',
+    });
+  }
+  return context;
 };
 
 export const takePreparedMutation = (

@@ -61,6 +61,20 @@ export const OpaqueReferenceSchema = z
     'Opaque reference contains control characters',
   );
 
+/** Finance account/category identifiers are storage-bounded opaque UTF-8 values. */
+export const FinanceImportReferenceSchema = z
+  .string()
+  .min(1)
+  .max(512)
+  .refine(
+    (value) => new TextEncoder().encode(value).byteLength <= 512,
+    'Finance import reference exceeds 512 UTF-8 bytes',
+  )
+  .refine(
+    (value) => !/\p{Cc}/u.test(value),
+    'Finance import reference contains control characters',
+  );
+
 export const SemanticVersionSchema = z
   .string()
   .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, 'Expected a semantic version');

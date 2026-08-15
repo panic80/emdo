@@ -11,6 +11,11 @@ import {
   ActionDecisionRequestSchema,
   ActivityPageSchema,
   EmailSignInRequestSchema,
+  FinanceImportCommitRequestSchema,
+  FinanceImportCommitResponseSchema,
+  FinanceImportDestinationsSchema,
+  FinanceImportPreviewRequestSchema,
+  FinanceImportPreviewResponseSchema,
   FinancePageSchema,
   GoogleAuthorizeRequestSchema,
   GoogleCallbackQuerySchema,
@@ -638,6 +643,43 @@ export const createOpenApiDocument = () =>
             '200',
             'Principal-scoped finance page',
             FinancePageSchema,
+          ),
+        },
+      },
+      '/api/v1/finance/imports/preview': {
+        post: {
+          operationId: 'previewFinanceImport',
+          security: authenticated,
+          parameters: [originParameter, csrfParameter],
+          requestBody: jsonBody(FinanceImportPreviewRequestSchema),
+          responses: standardJsonResponses(
+            '200',
+            'Authenticated finance statement preview',
+            FinanceImportPreviewResponseSchema,
+          ),
+        },
+      },
+      '/api/v1/finance/imports/options': {
+        get: {
+          operationId: 'listFinanceImportDestinations',
+          security: authenticated,
+          responses: standardJsonResponses(
+            '200',
+            'Authenticated finance import account and category destinations',
+            FinanceImportDestinationsSchema,
+          ),
+        },
+      },
+      '/api/v1/finance/imports/commit': {
+        post: {
+          operationId: 'commitFinanceImport',
+          security: authenticated,
+          parameters: mutationParameters,
+          requestBody: jsonBody(FinanceImportCommitRequestSchema),
+          responses: standardJsonResponses(
+            '200',
+            'Committed or exactly replayed finance import',
+            FinanceImportCommitResponseSchema,
           ),
         },
       },

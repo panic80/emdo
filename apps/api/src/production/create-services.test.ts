@@ -29,6 +29,35 @@ const configuredServices = (): Omit<ApiServices, 'metrics' | 'readiness'> => ({
   financeRead: {
     list: async () => ({ schemaVersion: 1, items: [] }),
   },
+  financeImports: {
+    listDestinations: async () => ({
+      schemaVersion: 1 as const,
+      accounts: [],
+      categories: [],
+    }),
+    preview: async () => ({
+      schemaVersion: 1,
+      plan: {
+        id: 'finance-import-plan',
+        sourceHash: '0'.repeat(64),
+        expiresAt: '2026-08-13T15:10:00.000Z',
+        summary: { accepted: 1, rejected: 0, duplicates: 0 },
+        rejectedRows: [],
+        duplicateRows: [],
+      },
+    }),
+    commit: async () => ({
+      schemaVersion: 1,
+      status: 'committed',
+      receipt: {
+        id: 'finance-import-receipt',
+        planId: 'finance-import-plan',
+        transactionCount: 1,
+        verified: true,
+      },
+      sourceDeletionAuthorized: true,
+    }),
+  },
   managerTurns: {
     start: async () => ({
       schemaVersion: 1,
@@ -261,6 +290,7 @@ describe('bundled production API composition', () => {
         experience: 'unavailable',
         'experience.activity-read': 'unavailable',
         'experience.finance-read': 'unavailable',
+        'experience.finance-imports': 'unavailable',
         'experience.notification-preferences': 'unavailable',
         'experience.schedule-read': 'unavailable',
         'experience.settings-read': 'unavailable',
@@ -346,6 +376,7 @@ describe('bundled production API composition', () => {
         experience: 'ok',
         'experience.activity-read': 'ok',
         'experience.finance-read': 'ok',
+        'experience.finance-imports': 'ok',
         'experience.notification-preferences': 'ok',
         'experience.schedule-read': 'ok',
         'experience.settings-read': 'ok',
@@ -360,7 +391,7 @@ describe('bundled production API composition', () => {
       'emdo_api_ready 1',
     );
 
-    for (const binding of Object.values(bindings)) {
+    for (const [, binding] of Object.entries(bindings)) {
       expect(binding?.check).toHaveBeenCalled();
     }
     await services.close?.();

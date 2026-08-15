@@ -239,6 +239,35 @@ const buildServices = () => {
     financeRead: {
       list: vi.fn(async () => ({ schemaVersion: 1 as const, items: [] })),
     },
+    financeImports: {
+      listDestinations: vi.fn(async () => ({
+        schemaVersion: 1 as const,
+        accounts: [],
+        categories: [],
+      })),
+      preview: vi.fn(async () => ({
+        schemaVersion: 1 as const,
+        plan: {
+          id: 'finance-import-plan',
+          sourceHash: '0'.repeat(64),
+          expiresAt: '2026-08-13T15:10:00.000Z',
+          summary: { accepted: 1, rejected: 0, duplicates: 0 },
+          rejectedRows: [],
+          duplicateRows: [],
+        },
+      })),
+      commit: vi.fn(async () => ({
+        schemaVersion: 1 as const,
+        status: 'committed' as const,
+        receipt: {
+          id: 'finance-import-receipt',
+          planId: 'finance-import-plan',
+          transactionCount: 1,
+          verified: true as const,
+        },
+        sourceDeletionAuthorized: true as const,
+      })),
+    },
     managerTurns: {
       start: vi.fn(async () => ({
         schemaVersion: 1 as const,

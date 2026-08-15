@@ -24,6 +24,9 @@ import {
   deploymentBootstraps,
   disclosureGrants,
   encryptedGoogleCalendarGrants,
+  financeImportFingerprints,
+  financeImportPlans,
+  financeImportReceipts,
   foundationTables,
   householdAdministrationCommands,
   householdMemberships,
@@ -89,6 +92,9 @@ describe('Drizzle household schema', () => {
         deploymentBootstraps,
         disclosureGrants,
         encryptedGoogleCalendarGrants,
+        financeImportFingerprints,
+        financeImportPlans,
+        financeImportReceipts,
         householdAdministrationCommands,
         householdMemberships,
         households,
@@ -155,6 +161,57 @@ describe('Drizzle household schema', () => {
           foreignColumns: ['household_id', 'user_id'],
           foreignTable: 'household_memberships',
         },
+      ]),
+    );
+  });
+
+  it('keeps the finance import snapshot tables aligned to their migration-owned keys and checks', () => {
+    const planConfig = getTableConfig(financeImportPlans);
+    const planReferences = planConfig.foreignKeys.map((foreignKey) => {
+      const reference = foreignKey.reference();
+      return {
+        columns: reference.columns.map((column) => column.name),
+        foreignColumns: reference.foreignColumns.map((column) => column.name),
+        foreignTable: getTableName(reference.foreignTable),
+      };
+    });
+    expect(planReferences).toEqual(
+      expect.arrayContaining([
+        {
+          columns: ['household_id', 'space_id'],
+          foreignColumns: ['household_id', 'id'],
+          foreignTable: 'spaces',
+        },
+        {
+          columns: ['household_id', 'owner_user_id'],
+          foreignColumns: ['household_id', 'user_id'],
+          foreignTable: 'household_memberships',
+        },
+      ]),
+    );
+    expect(planConfig.checks.map((constraint) => constraint.name)).toEqual(
+      expect.arrayContaining([
+        'finance_import_plans_source_hash_check',
+        'finance_import_plans_plan_hash_check',
+        'finance_import_plans_scope_hash_check',
+        'finance_import_plans_account_id_check',
+        'finance_import_plans_expiry_check',
+        'finance_import_plans_plan_size_check',
+        'finance_import_plans_diagnostics_size_check',
+        'finance_import_plans_mapping_size_check',
+      ]),
+    );
+    expect(
+      getTableConfig(financeImportReceipts).checks.map(
+        (constraint) => constraint.name,
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        'finance_import_receipts_plan_hash_check',
+        'finance_import_receipts_scope_hash_check',
+        'finance_import_receipts_account_id_check',
+        'finance_import_receipts_key_check',
+        'finance_import_receipts_transaction_count_check',
       ]),
     );
   });

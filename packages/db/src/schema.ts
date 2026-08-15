@@ -2751,6 +2751,174 @@ export const syncEntities = emdoSchema.table(
   ],
 );
 
+/** Server-owned, short-lived canonical plan; imported statement bytes are never stored. */
+export const financeImportPlans = emdoSchema.table(
+  'finance_import_plans',
+  {
+    planId: uuid('plan_id').primaryKey(),
+    householdId: uuid('household_id').notNull(),
+    spaceId: uuid('space_id').notNull(),
+    ownerUserId: uuid('owner_user_id').notNull(),
+    accountId: text('account_id').notNull(),
+    sourceHash: text('source_hash').notNull(),
+    planHash: text('plan_hash').notNull(),
+    canonicalPlan: jsonb('canonical_plan').$type<JsonValue>().notNull(),
+    diagnostics: jsonb('diagnostics').$type<JsonValue>().notNull(),
+    mappingMetadata: jsonb('mapping_metadata').$type<JsonValue>().notNull(),
+    scopeFingerprint: text('scope_fingerprint').notNull(),
+    originSessionId: uuid('origin_session_id').notNull(),
+    originRequestId: uuid('origin_request_id').notNull(),
+    originSpaceAccessGrantId: uuid('origin_space_access_grant_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    redactedAt: timestamp('redacted_at', { withTimezone: true }),
+  },
+  (table) => [
+    foreignKey({
+      name: 'finance_import_plans_household_space_fk',
+      columns: [table.householdId, table.spaceId],
+      foreignColumns: [spaces.householdId, spaces.id],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    foreignKey({
+      name: 'finance_import_plans_owner_membership_fk',
+      columns: [table.householdId, table.ownerUserId],
+      foreignColumns: [
+        householdMemberships.householdId,
+        householdMemberships.userId,
+      ],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    index('finance_import_plans_scope_expiry_idx').on(
+      table.householdId,
+      table.ownerUserId,
+      table.expiresAt,
+    ),
+    unique('finance_import_plans_scope_hash_unique').on(
+      table.householdId,
+      table.ownerUserId,
+      table.planHash,
+    ),
+    check(
+      'finance_import_plans_source_hash_check',
+      sql`${table.sourceHash} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'finance_import_plans_plan_hash_check',
+      sql`${table.planHash} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'finance_import_plans_scope_hash_check',
+      sql`${table.scopeFingerprint} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'finance_import_plans_account_id_check',
+      sql`octet_length(${table.accountId}) between 1 and 512 and ${table.accountId} !~ '[[:cntrl:]]'`,
+    ),
+    check(
+      'finance_import_plans_expiry_check',
+      sql`${table.expiresAt} > ${table.createdAt} and ${table.expiresAt} <= ${table.createdAt} + interval '30 minutes'`,
+    ),
+    check(
+      'finance_import_plans_plan_size_check',
+      sql`octet_length(${table.canonicalPlan}::text) between 2 and 1048576`,
+    ),
+    check(
+      'finance_import_plans_diagnostics_size_check',
+      sql`octet_length(${table.diagnostics}::text) between 2 and 1048576`,
+    ),
+    check(
+      'finance_import_plans_mapping_size_check',
+      sql`octet_length(${table.mappingMetadata}::text) between 2 and 4096`,
+    ),
+  ],
+);
+
+/** Uniqueness boundary for imported transaction fingerprints within an account. */
+export const financeImportFingerprints = emdoSchema.table(
+  'finance_import_fingerprints',
+  {
+    householdId: uuid('household_id').notNull(),
+    spaceId: uuid('space_id').notNull(),
+    ownerUserId: uuid('owner_user_id').notNull(),
+    accountId: text('account_id').notNull(),
+    fingerprint: text('fingerprint').notNull(),
+    transactionEntityId: uuid('transaction_entity_id').notNull(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'finance_import_fingerprints_scope_primary',
+      columns: [
+        table.householdId,
+        table.spaceId,
+        table.accountId,
+        table.fingerprint,
+      ],
+    }),
+    unique('finance_import_fingerprints_transaction_unique').on(
+      table.transactionEntityId,
+    ),
+    check(
+      'finance_import_fingerprints_hash_check',
+      sql`${table.fingerprint} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'finance_import_fingerprints_account_id_check',
+      sql`octet_length(${table.accountId}) between 1 and 512 and ${table.accountId} !~ '[[:cntrl:]]'`,
+    ),
+  ],
+);
+
+/** Immutable receipt for exactly one server-held plan and client idempotency key. */
+export const financeImportReceipts = emdoSchema.table(
+  'finance_import_receipts',
+  {
+    receiptId: uuid('receipt_id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').notNull(),
+    spaceId: uuid('space_id').notNull(),
+    ownerUserId: uuid('owner_user_id').notNull(),
+    accountId: text('account_id').notNull(),
+    planId: uuid('plan_id').notNull(),
+    planHash: text('plan_hash').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    scopeFingerprint: text('scope_fingerprint').notNull(),
+    originSpaceAccessGrantId: uuid('origin_space_access_grant_id').notNull(),
+    transactionCount: integer('transaction_count').notNull(),
+    committedAt: timestamp('committed_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    unique('finance_import_receipts_owner_idempotency_unique').on(
+      table.householdId,
+      table.ownerUserId,
+      table.idempotencyKey,
+    ),
+    unique('finance_import_receipts_plan_unique').on(table.planId),
+    check(
+      'finance_import_receipts_plan_hash_check',
+      sql`${table.planHash} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'finance_import_receipts_scope_hash_check',
+      sql`${table.scopeFingerprint} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'finance_import_receipts_account_id_check',
+      sql`octet_length(${table.accountId}) between 1 and 512 and ${table.accountId} !~ '[[:cntrl:]]'`,
+    ),
+    check(
+      'finance_import_receipts_key_check',
+      sql`length(${table.idempotencyKey}) between 16 and 200 and ${table.idempotencyKey} ~ '^[A-Za-z0-9:._-]+$'`,
+    ),
+    check(
+      'finance_import_receipts_transaction_count_check',
+      sql`${table.transactionCount} between 1 and 100000`,
+    ),
+  ],
+);
+
 /** Append-only, exact canonical snapshots captured from sync entity writes. */
 export const syncEntityRevisions = emdoSchema.table(
   'sync_entity_revisions',
@@ -4028,6 +4196,9 @@ export const foundationTables = Object.freeze({
   conversation_events: conversationEvents,
   disclosure_grants: disclosureGrants,
   encrypted_google_calendar_grants: encryptedGoogleCalendarGrants,
+  finance_import_fingerprints: financeImportFingerprints,
+  finance_import_plans: financeImportPlans,
+  finance_import_receipts: financeImportReceipts,
   deployment_bootstraps: deploymentBootstraps,
   household_memberships: householdMemberships,
   households,

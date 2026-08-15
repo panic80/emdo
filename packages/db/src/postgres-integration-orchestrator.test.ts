@@ -171,6 +171,11 @@ describe('PostgreSQL integration orchestrator', () => {
           databaseEnvironment: 'TEST_DISCLOSURE_DATABASE_URL',
         },
         {
+          id: 'finance-import-receipts',
+          file: 'packages/db/src/finance/postgres-finance-import-repository.integration.test.ts',
+          databaseEnvironment: 'TEST_FINANCE_IMPORT_DATABASE_URL',
+        },
+        {
           id: 'google-oauth-authority',
           file: 'packages/db/src/google/oauth-authority.integration.test.ts',
           databaseEnvironment: 'TEST_GOOGLE_OAUTH_AUTHORITY_DATABASE_URL',

@@ -55,6 +55,57 @@ export const serviceContractProblem = () =>
 const normalizeError = (error: unknown): ApiProblem => {
   if (error instanceof ApiProblem) return error;
   if (error instanceof z.ZodError) return validationProblem(error);
+  if (
+    error !== null &&
+    typeof error === 'object' &&
+    'name' in error &&
+    error.name === 'FinanceImportPersistenceError' &&
+    'code' in error
+  ) {
+    const financeCode = String(error.code);
+    const mapped: Readonly<Record<string, readonly [number, string, string]>> =
+      {
+        'authorization-revoked': [
+          403,
+          'Finance import authorization revoked',
+          'The current finance import access is no longer valid.',
+        ],
+        'plan-not-found': [
+          404,
+          'Finance import plan not found',
+          'The finance import plan is not available.',
+        ],
+        'plan-expired': [
+          410,
+          'Finance import plan expired',
+          'The finance import plan is no longer available.',
+        ],
+        'idempotency-conflict': [
+          409,
+          'Finance import conflict',
+          'This idempotency key is already bound to another finance import.',
+        ],
+        'plan-conflict': [
+          409,
+          'Finance import conflict',
+          'The finance import could not be completed safely.',
+        ],
+        'invalid-input': [
+          400,
+          'Invalid finance import',
+          'The finance import request is invalid.',
+        ],
+      };
+    const selected = mapped[financeCode];
+    if (selected !== undefined) {
+      return new ApiProblem({
+        status: selected[0],
+        code: financeCode,
+        title: selected[1],
+        detail: selected[2],
+      });
+    }
+  }
   const fastifyCode =
     error !== null && typeof error === 'object' && 'code' in error
       ? error.code

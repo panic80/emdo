@@ -28,6 +28,7 @@ const knownDatabaseEnvironmentNames = Object.freeze([
   'TEST_DATABASE_URL',
   'TEST_DISCLOSURE_DATABASE_URL',
   'TEST_DURABLE_DATABASE_URL',
+  'TEST_FINANCE_IMPORT_DATABASE_URL',
   'TEST_GOOGLE_OAUTH_AUTHORITY_DATABASE_URL',
   'TEST_HOUSEHOLD_ADMIN_DATABASE_URL',
   'TEST_PROPOSAL_DATABASE_URL',
@@ -90,6 +91,11 @@ export const POSTGRES_INTEGRATION_SUITES = Object.freeze([
     id: 'disclosure-authority',
     file: 'packages/db/src/agent/disclosure-gateway.integration.test.ts',
     databaseEnvironment: 'TEST_DISCLOSURE_DATABASE_URL',
+  }),
+  Object.freeze({
+    id: 'finance-import-receipts',
+    file: 'packages/db/src/finance/postgres-finance-import-repository.integration.test.ts',
+    databaseEnvironment: 'TEST_FINANCE_IMPORT_DATABASE_URL',
   }),
   Object.freeze({
     id: 'google-oauth-authority',

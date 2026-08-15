@@ -59,6 +59,7 @@ const REQUIRED_SERVICE_METHODS = Object.freeze({
   ],
   activityRead: ['list'],
   financeRead: ['list'],
+  financeImports: ['listDestinations', 'preview', 'commit'],
   managerTurns: ['start'],
   notificationPreferences: ['get', 'update'],
   runEvents: ['open'],

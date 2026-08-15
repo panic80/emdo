@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import {
   IdempotencyKeySchema,
+  FinanceImportReferenceSchema,
   IsoDateTimeSchema,
   OpaqueReferenceSchema,
   SchemaVersionSchema,
@@ -38,7 +39,7 @@ const MAX_CELL_CHARACTERS = 10_000;
 const ImportCommonFields = {
   sourceText: z.string().min(1).max(MAX_SOURCE_CHARACTERS),
   sourceHash: Sha256Schema,
-  accountId: OpaqueReferenceSchema,
+  accountId: FinanceImportReferenceSchema,
   spaceId: OpaqueReferenceSchema,
   ownerUserId: OpaqueReferenceSchema,
   previewedAt: IsoDateTimeSchema,
@@ -48,7 +49,7 @@ const ImportCommonFields = {
 const CsvMappingSchema = z
   .strictObject({
     dateFormat: z.enum(['yyyy-mm-dd', 'mm/dd/yyyy', 'dd/mm/yyyy']),
-    defaultCategoryId: OpaqueReferenceSchema.nullable(),
+    defaultCategoryId: FinanceImportReferenceSchema.nullable(),
     columns: z.strictObject({
       postedOn: z.string().trim().min(1).max(200),
       description: z.string().trim().min(1).max(200),
@@ -89,7 +90,7 @@ const ImportInputSchema = z.discriminatedUnion('format', [
     ...ImportCommonFields,
     format: z.literal('ofx'),
     mapping: z.strictObject({
-      defaultCategoryId: OpaqueReferenceSchema.nullable(),
+      defaultCategoryId: FinanceImportReferenceSchema.nullable(),
     }),
   }),
 ]);
@@ -123,7 +124,7 @@ const FinanceImportPreviewReadySchema = z
     status: z.literal('ready'),
     format: z.enum(['csv', 'ofx']),
     sourceHash: Sha256Schema,
-    accountId: OpaqueReferenceSchema,
+    accountId: FinanceImportReferenceSchema,
     spaceId: OpaqueReferenceSchema,
     ownerUserId: OpaqueReferenceSchema,
     previewedAt: IsoDateTimeSchema,
@@ -573,7 +574,7 @@ const fingerprintCandidate = (input: {
             input.accountId,
             input.postedOn,
             String(input.amountCadMinor),
-            input.description.toLocaleLowerCase('en-CA'),
+            input.description,
           ]
         : [
             'finance-import-fingerprint-v2',
@@ -651,7 +652,9 @@ const previewFinanceImportAgainst = (
       postedOn === undefined ||
       parsedAmount.status !== 'parsed' ||
       description.length === 0 ||
-      description.length > 2_000
+      description.length > 2_000 ||
+      (categoryId !== null &&
+        !FinanceImportReferenceSchema.safeParse(categoryId).success)
     ) {
       rejected.push(invalidRow(candidate.sourceRow));
       continue;
@@ -749,7 +752,9 @@ const canonicalJson = (value: unknown): string => {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   return `{${Object.entries(value)
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) =>
+      Buffer.compare(Buffer.from(left, 'utf8'), Buffer.from(right, 'utf8')),
+    )
     .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalJson(nested)}`)
     .join(',')}}`;
 };
@@ -788,7 +793,7 @@ const FinanceImportPlanBaseSchema = z.strictObject({
   idempotencyKey: IdempotencyKeySchema,
   sourceHash: Sha256Schema,
   createdAt: IsoDateTimeSchema,
-  accountId: OpaqueReferenceSchema,
+  accountId: FinanceImportReferenceSchema,
   spaceId: OpaqueReferenceSchema,
   ownerUserId: OpaqueReferenceSchema,
   transactionCount: z.number().int().positive().max(MAX_IMPORT_ROWS),
@@ -868,7 +873,7 @@ export type FinanceImportPlanResult =
   | DeepReadonly<{ status: 'planned'; plan: FinanceImportPlan }>
   | DeepReadonly<{ status: 'rejected'; safeError: FinanceSafeError }>;
 
-const createTrustedFinanceImportPlan = (
+export const createFinanceImportPlan = (
   input: Readonly<{
     planId: string;
     idempotencyKey: string;
@@ -1412,7 +1417,7 @@ export class InMemoryFinanceImportPlanningService {
         'The verified finance import preview is unavailable.',
       );
     }
-    const planned = createTrustedFinanceImportPlan({
+    const planned = createFinanceImportPlan({
       planId: envelope.data.planId,
       idempotencyKey: envelope.data.idempotencyKey,
       preview: retainedPreview.preview,

@@ -1,6 +1,13 @@
 import { readdir, readFile } from 'node:fs/promises';
 
+import { getTableConfig } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
+
+import {
+  financeImportFingerprints,
+  financeImportPlans,
+  financeImportReceipts,
+} from './schema.js';
 
 const metadataUrl = new URL('../drizzle/meta/', import.meta.url);
 
@@ -50,7 +57,7 @@ describe('ordered migration snapshot chain', () => {
       readdir(metadataUrl),
     ]);
     expect(journal.entries.map(({ idx }) => idx)).toEqual([
-      0, 1, 2, 3, 4, 5, 6, 7,
+      0, 1, 2, 3, 4, 5, 6, 7, 8,
     ]);
     expect(journal.entries.map(({ tag }) => tag)).toEqual([
       '0000_household_foundation',
@@ -61,18 +68,19 @@ describe('ordered migration snapshot chain', () => {
       '0005_household_administration',
       '0006_sync_conflict_outcomes',
       '0007_experience_notification_preferences',
+      '0008_finance_import_receipts',
     ]);
     expect(
       files.filter((file) => /^\d{4}_snapshot\.json$/u.test(file)).sort(),
     ).toEqual(
       Array.from(
-        { length: 8 },
+        { length: 9 },
         (_, index) => `${index.toString().padStart(4, '0')}_snapshot.json`,
       ),
     );
 
     const snapshots = await Promise.all(
-      Array.from({ length: 8 }, (_, index) => readSnapshot(index)),
+      Array.from({ length: 9 }, (_, index) => readSnapshot(index)),
     );
     expect(snapshots[0]?.prevId).toBe('00000000-0000-0000-0000-000000000000');
     for (let index = 1; index < snapshots.length; index += 1) {
@@ -81,8 +89,15 @@ describe('ordered migration snapshot chain', () => {
   });
 
   it('keeps audio, household, sync, and preference structures in their owned boundary', async () => {
-    const [snapshot2, snapshot3, snapshot4, snapshot5, snapshot6, snapshot7] =
-      await Promise.all([2, 3, 4, 5, 6, 7].map(readSnapshot));
+    const [
+      snapshot2,
+      snapshot3,
+      snapshot4,
+      snapshot5,
+      snapshot6,
+      snapshot7,
+      snapshot8,
+    ] = await Promise.all([2, 3, 4, 5, 6, 7, 8].map(readSnapshot));
 
     expect(tableDelta(snapshot2, snapshot3).added).toEqual(
       expect.arrayContaining([
@@ -122,5 +137,53 @@ describe('ordered migration snapshot chain', () => {
       changed: [],
       removed: [],
     });
+    expect(tableDelta(snapshot7, snapshot8)).toEqual({
+      added: [
+        'emdo.finance_import_fingerprints',
+        'emdo.finance_import_plans',
+        'emdo.finance_import_receipts',
+      ],
+      changed: [],
+      removed: [],
+    });
+  });
+
+  it('keeps 0008 finance foreign keys and checks fully represented without a synthetic follow-up snapshot', async () => {
+    const [snapshot8, files] = await Promise.all([
+      readSnapshot(8),
+      readdir(metadataUrl),
+    ]);
+    const plans = snapshot8.tables['emdo.finance_import_plans'] as {
+      readonly foreignKeys: Readonly<Record<string, unknown>>;
+      readonly checkConstraints: Readonly<Record<string, unknown>>;
+    };
+    const receipts = snapshot8.tables['emdo.finance_import_receipts'] as {
+      readonly checkConstraints: Readonly<Record<string, unknown>>;
+    };
+    expect(Object.keys(plans.foreignKeys).sort()).toEqual([
+      'finance_import_plans_household_space_fk',
+      'finance_import_plans_owner_membership_fk',
+    ]);
+    const fingerprintChecks = (
+      snapshot8.tables['emdo.finance_import_fingerprints'] as {
+        readonly checkConstraints: Readonly<Record<string, unknown>>;
+      }
+    ).checkConstraints;
+    expect(Object.keys(plans.checkConstraints).sort()).toEqual(
+      getTableConfig(financeImportPlans)
+        .checks.map((check) => check.name)
+        .sort(),
+    );
+    expect(Object.keys(fingerprintChecks).sort()).toEqual(
+      getTableConfig(financeImportFingerprints)
+        .checks.map((check) => check.name)
+        .sort(),
+    );
+    expect(Object.keys(receipts.checkConstraints).sort()).toEqual(
+      getTableConfig(financeImportReceipts)
+        .checks.map((check) => check.name)
+        .sort(),
+    );
+    expect(files).not.toContain('0009_snapshot.json');
   });
 });

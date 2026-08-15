@@ -40,6 +40,7 @@ const REQUIRED_SERVICE_METHODS = Object.freeze({
   ],
   activityRead: ['list'],
   financeRead: ['list'],
+  financeImports: ['listDestinations', 'preview', 'commit'],
   managerTurns: ['start'],
   notificationPreferences: ['get', 'update'],
   runEvents: ['open'],
@@ -82,6 +83,7 @@ const COMPONENT_BINDINGS = Object.freeze({
   'agents.run-events': 'runEvents',
   'experience.activity-read': 'activityRead',
   'experience.finance-read': 'financeRead',
+  'experience.finance-imports': 'financeImports',
   'experience.notification-preferences': 'notificationPreferences',
   'experience.schedule-read': 'scheduleRead',
   'experience.settings-read': 'settingsRead',
@@ -169,6 +171,17 @@ export const createFailClosedApiServices = (input: {
       financeRead: {
         list: async () => {
           throw unavailable('finance-read-unavailable', 'Finance view');
+        },
+      },
+      financeImports: {
+        listDestinations: async () => {
+          throw unavailable('finance-import-unavailable', 'Finance import');
+        },
+        preview: async () => {
+          throw unavailable('finance-import-unavailable', 'Finance import');
+        },
+        commit: async () => {
+          throw unavailable('finance-import-unavailable', 'Finance import');
         },
       },
       managerTurns: {
@@ -450,6 +463,10 @@ export const createFailClosedApiServices = (input: {
       fallbackServices.activityRead,
     ),
     financeRead: selectedService('financeRead', fallbackServices.financeRead),
+    financeImports: selectedService(
+      'financeImports',
+      fallbackServices.financeImports,
+    ),
     managerTurns: selectedService(
       'managerTurns',
       fallbackServices.managerTurns,
