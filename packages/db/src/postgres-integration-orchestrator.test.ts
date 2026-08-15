@@ -185,6 +185,7 @@ describe('PostgreSQL integration orchestrator', () => {
           id: 'google-oauth-authority',
           file: 'packages/db/src/google/oauth-authority.integration.test.ts',
           databaseEnvironment: 'TEST_GOOGLE_OAUTH_AUTHORITY_DATABASE_URL',
+          canonicalDatabaseName: 'emdo_app',
         },
         {
           id: 'manager-run-event-replay',

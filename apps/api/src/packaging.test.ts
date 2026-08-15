@@ -37,6 +37,7 @@ describe('API production package', () => {
       'cli/bootstrap-owner.js',
       'cli/migrate.js',
       'cli/purge-finance-imports.js',
+      'cli/reconcile-google-oauth-disconnects.js',
       'cli/seed-synthetic.js',
       'cli/staging-acceptance.js',
       'drizzle/meta/_journal.json',
@@ -82,6 +83,7 @@ describe('API production package', () => {
       './dist/cli/bootstrap-owner.js',
       './dist/cli/migrate.js',
       './dist/cli/purge-finance-imports.js',
+      './dist/cli/reconcile-google-oauth-disconnects.js',
       './dist/cli/seed-synthetic.js',
       './dist/cli/staging-acceptance.js',
     ]) {
@@ -140,6 +142,12 @@ describe('API production package', () => {
         './dist/cli/purge-finance-imports.js',
         ['--purge-expired-plans'],
         'Finance import retention failed.',
+        1,
+      ],
+      [
+        './dist/cli/reconcile-google-oauth-disconnects.js',
+        ['--reconcile-stranded-disconnects'],
+        'Google OAuth disconnect reconciliation failed.',
         1,
       ],
       [

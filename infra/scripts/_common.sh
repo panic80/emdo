@@ -26,6 +26,7 @@ readonly -a BASE_SECRET_MANIFEST=(
   worker_dispatcher_database_password
   audio_reconciliation_database_password
   finance_import_retention_database_password
+  google_oauth_disconnect_reconciliation_database_password
   workflow_database_password
   visual_decision_database_password
   powersync_replication_password
@@ -36,6 +37,7 @@ readonly -a BASE_SECRET_MANIFEST=(
   edge-proxy.env
   worker.env
   finance-import-retention.env
+  google-oauth-disconnect-reconciliation.env
   powersync.env
 )
 readonly -a STAGING_SECRET_MANIFEST=(
@@ -531,10 +533,28 @@ assert_finance_import_retention_config() {
     die "$path retention limit must be an integer from 1 through 1000"
 }
 
+assert_google_oauth_disconnect_reconciliation_config() {
+  local path="$1"
+  local limit
+  assert_env_file_allowed_keys "$path" \
+    EMDO_GOOGLE_OAUTH_DISCONNECT_RECONCILIATION_DATABASE_URL \
+    EMDO_GOOGLE_OAUTH_DISCONNECT_RECONCILIATION_LIMIT
+  assert_internal_postgres_uri "$path" \
+    EMDO_GOOGLE_OAUTH_DISCONNECT_RECONCILIATION_DATABASE_URL \
+    emdo_google_oauth_disconnect_reconciliation_login emdo_app
+  limit="$(env_file_value "$path" EMDO_GOOGLE_OAUTH_DISCONNECT_RECONCILIATION_LIMIT)"
+  [[ "$limit" =~ ^[1-9][0-9]{0,2}$ ]] ||
+    die "$path reconciliation limit must be an integer from 1 through 100"
+  ((10#$limit <= 100)) ||
+    die "$path reconciliation limit must be an integer from 1 through 100"
+}
+
 assert_base_secret_manifest() {
   assert_secret_file_manifest "$1" "${BASE_SECRET_MANIFEST[@]}"
   assert_edge_proxy_secret_file "$1/edge-proxy.env"
   assert_finance_import_retention_config "$1/finance-import-retention.env"
+  assert_google_oauth_disconnect_reconciliation_config \
+    "$1/google-oauth-disconnect-reconciliation.env"
 }
 
 assert_staging_secret_manifest() {
@@ -544,6 +564,8 @@ assert_staging_secret_manifest() {
     "${STAGING_SECRET_MANIFEST[@]}"
   assert_edge_proxy_secret_file "$1/edge-proxy.env"
   assert_finance_import_retention_config "$1/finance-import-retention.env"
+  assert_google_oauth_disconnect_reconciliation_config \
+    "$1/google-oauth-disconnect-reconciliation.env"
   assert_env_file_allowed_keys "$1/migration.env" \
     EMDO_MIGRATION_DATABASE_URL EMDO_JOB_MIGRATION_DATABASE_URL
   assert_env_file_allowed_keys "$1/api.env" \

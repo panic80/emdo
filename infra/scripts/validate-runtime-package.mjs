@@ -20,6 +20,7 @@ const requiredArtifacts = {
     'dist/index.js',
     'dist/cli/migrate.js',
     'dist/cli/purge-finance-imports.js',
+    'dist/cli/reconcile-google-oauth-disconnects.js',
     'dist/cli/seed-synthetic.js',
     'dist/cli/staging-acceptance.js',
   ],

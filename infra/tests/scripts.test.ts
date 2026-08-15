@@ -267,6 +267,49 @@ describe('deployment script trust boundaries', () => {
     }
   });
 
+  it('requires the dedicated bounded Google OAuth disconnect reconciliation environment', async () => {
+    const environment = join(
+      directory,
+      'google-oauth-disconnect-reconciliation.env',
+    );
+    const valid = [
+      'EMDO_GOOGLE_OAUTH_DISCONNECT_RECONCILIATION_DATABASE_URL=postgresql://emdo_google_oauth_disconnect_reconciliation_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+      'EMDO_GOOGLE_OAUTH_DISCONNECT_RECONCILIATION_LIMIT=25',
+      '',
+    ].join('\n');
+    await writeFile(environment, valid);
+    expect(
+      runCommon(
+        'assert_google_oauth_disconnect_reconciliation_config "$2"',
+        environment,
+      ).status,
+    ).toBe(0);
+
+    for (const invalid of [
+      valid.replace(
+        'emdo_google_oauth_disconnect_reconciliation_login',
+        'emdo_api_login',
+      ),
+      valid.replace(
+        'EMDO_GOOGLE_OAUTH_DISCONNECT_RECONCILIATION_LIMIT=25',
+        'EMDO_GOOGLE_OAUTH_DISCONNECT_RECONCILIATION_LIMIT=0',
+      ),
+      valid.replace(
+        'EMDO_GOOGLE_OAUTH_DISCONNECT_RECONCILIATION_LIMIT=25',
+        'EMDO_GOOGLE_OAUTH_DISCONNECT_RECONCILIATION_LIMIT=101',
+      ),
+      `${valid}EMDO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET=forbidden\n`,
+    ]) {
+      await writeFile(environment, invalid);
+      expect(
+        runCommon(
+          'assert_google_oauth_disconnect_reconciliation_config "$2"',
+          environment,
+        ).status,
+      ).not.toBe(0);
+    }
+  });
+
   it('requires the dedicated internal invitation-onboarding login', async () => {
     const apiEnvironment = join(directory, 'api.env');
     await writeFile(
@@ -589,6 +632,7 @@ describe('deployment script trust boundaries', () => {
     for (const path of [
       'cli/migrate.js',
       'cli/purge-finance-imports.js',
+      'cli/reconcile-google-oauth-disconnects.js',
       'cli/seed-synthetic.js',
       'cli/staging-acceptance.js',
     ]) {

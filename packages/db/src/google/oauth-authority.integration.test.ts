@@ -48,6 +48,8 @@ const actor = {
 };
 const loginRole = 'emdo_api_login';
 const loginPassword = `emdo-test-${randomUUID()}`;
+const reconciliationLogin = 'emdo_google_oauth_disconnect_reconciliation_login';
+const reconciliationPassword = `emdo-reconciliation-${randomUUID()}`;
 const providerReferenceA = 'gcal-provider-reference-integration-a';
 const providerReferenceB = 'gcal-provider-reference-integration-b';
 const payload = {
@@ -81,14 +83,16 @@ const hashAuthority = (input: {
     .digest('hex');
 
 describeDatabase(
-  'PostgreSQL 17 Google Calendar authority binding (isolated database only)',
+  'PostgreSQL 17 Google Calendar authority binding (isolated canonical database only)',
   () => {
     let admin: import('pg').Client;
+    let reconciliation: import('pg').Pool;
     let runtime: EmdoDatabaseClient;
     let spaceAccessGrantId: string;
 
     beforeAll(async () => {
       const { Client } = await import('pg');
+      expect(new URL(databaseUrl!).pathname).toBe('/emdo_app');
       admin = new Client({ connectionString: databaseUrl });
       await admin.connect();
       const existingSchema = await admin.query(
@@ -146,12 +150,30 @@ describeDatabase(
         `create role ${loginRole} login nosuperuser nocreatedb nocreaterole inherit nobypassrls noreplication password '${loginPassword}'`,
       );
       await admin.query(`grant emdo_app to ${loginRole}`);
+      await admin.query('revoke connect on database emdo_app from public');
+      await admin.query(`grant connect on database emdo_app to ${loginRole}`);
+      await admin.query(
+        `alter role ${reconciliationLogin} login password '${reconciliationPassword}'`,
+      );
+      await admin.query(
+        `grant connect on database emdo_app to ${reconciliationLogin}`,
+      );
       const runtimeUrl = new URL(databaseUrl!);
       runtimeUrl.username = loginRole;
       runtimeUrl.password = loginPassword;
       runtime = createDatabaseClient({
         connectionString: runtimeUrl.toString(),
         applicationName: 'emdo-oauth-authority-integration',
+      });
+      const reconciliationUrl = new URL(databaseUrl!);
+      reconciliationUrl.username = reconciliationLogin;
+      reconciliationUrl.password = reconciliationPassword;
+      const { Pool } = await import('pg');
+      reconciliation = new Pool({
+        allowExitOnIdle: true,
+        application_name: 'emdo-google-oauth-reconciliation-integration',
+        connectionString: reconciliationUrl.toString(),
+        max: 1,
       });
       const active = await new PostgresSpaceAccessGrantService(
         runtime.scopedPool,
@@ -167,13 +189,20 @@ describeDatabase(
     }, 30_000);
 
     afterAll(async () => {
+      await reconciliation?.end();
       await runtime?.close();
       if (admin !== undefined) {
+        await admin
+          .query(`alter role ${reconciliationLogin} nologin password null`)
+          .catch(() => undefined);
         const login = await admin.query(
           `select 1 from pg_catalog.pg_roles where rolname = $1`,
           [loginRole],
         );
         if (login.rowCount !== 0) {
+          await admin.query(
+            `revoke connect on database emdo_app from ${loginRole}`,
+          );
           await admin.query(`revoke emdo_app from ${loginRole}`);
           await admin.query(`drop role ${loginRole}`);
         }
@@ -719,19 +748,84 @@ describeDatabase(
         );
       }
 
-      await admin.query('begin');
+      await expect(
+        admin.query(
+          'select emdo.google_oauth_disconnect_reconciliation_runner_ready() as ready',
+        ),
+      ).resolves.toMatchObject({ rows: [{ ready: false }] });
+      await expect(
+        reconciliation.query(
+          'select emdo.google_oauth_disconnect_reconciliation_runner_ready() as ready',
+        ),
+      ).resolves.toMatchObject({ rows: [{ ready: true }] });
+      await expect(
+        reconciliation.query(
+          'select emdo.reconcile_stranded_google_oauth_disconnects(10)',
+        ),
+      ).rejects.toMatchObject({ code: '42501' });
+
+      const blocker = new (await import('pg')).Client({
+        connectionString: databaseUrl,
+      });
+      await blocker.connect();
       try {
-        await admin.query(
+        await blocker.query('begin');
+        await blocker.query(
+          `select pg_catalog.pg_advisory_xact_lock(
+             pg_catalog.hashtextextended($1::text || ':' || $2::text || ':' || $3::text, 0)
+           )`,
+          [ids.user, ids.household, ids.space],
+        );
+        const busyClient = await reconciliation.connect();
+        try {
+          await busyClient.query('begin');
+          await busyClient.query(
+            'set local role emdo_google_oauth_disconnect_reconciliation',
+          );
+          await expect(
+            busyClient.query(
+              'select emdo.reconcile_stranded_google_oauth_disconnects(10) as count',
+            ),
+          ).resolves.toMatchObject({ rows: [{ count: 0 }] });
+          await busyClient.query('commit');
+        } catch (error) {
+          await busyClient.query('rollback').catch(() => undefined);
+          throw error;
+        } finally {
+          busyClient.release();
+        }
+        await blocker.query('rollback');
+      } finally {
+        await blocker.query('rollback').catch(() => undefined);
+        await blocker.end();
+      }
+
+      const reconciliationClient = await reconciliation.connect();
+      try {
+        await reconciliationClient.query('begin');
+        await reconciliationClient.query(
           'set local role emdo_google_oauth_disconnect_reconciliation',
         );
-        const reconciled = await admin.query(
+        await expect(
+          reconciliationClient.query(
+            'select emdo.reconcile_stranded_google_oauth_disconnects(0)',
+          ),
+        ).rejects.toMatchObject({ code: '22023' });
+        await reconciliationClient.query('rollback');
+        await reconciliationClient.query('begin');
+        await reconciliationClient.query(
+          'set local role emdo_google_oauth_disconnect_reconciliation',
+        );
+        const reconciled = await reconciliationClient.query(
           'select emdo.reconcile_stranded_google_oauth_disconnects(10) as count',
         );
         expect(reconciled.rows[0]).toEqual({ count: 1 });
-        await admin.query('commit');
+        await reconciliationClient.query('commit');
       } catch (error) {
-        await admin.query('rollback');
+        await reconciliationClient.query('rollback').catch(() => undefined);
         throw error;
+      } finally {
+        reconciliationClient.release();
       }
 
       const persisted = await admin.query(
@@ -762,6 +856,97 @@ describeDatabase(
       } finally {
         await admin.query('rollback');
       }
+    });
+
+    it('fails reconciliation-runner readiness closed under reversible role and ACL drift', async () => {
+      const ready = () =>
+        reconciliation.query<{ ready: boolean }>(
+          'select emdo.google_oauth_disconnect_reconciliation_runner_ready() as ready',
+        );
+      await expect(ready()).resolves.toMatchObject({
+        rows: [{ ready: true }],
+      });
+
+      await admin.query(`grant emdo_app to ${reconciliationLogin}`);
+      await expect(ready()).resolves.toMatchObject({
+        rows: [{ ready: false }],
+      });
+      await admin.query(`revoke emdo_app from ${reconciliationLogin}`);
+
+      await admin.query(`alter role ${reconciliationLogin} bypassrls`);
+      await expect(ready()).resolves.toMatchObject({
+        rows: [{ ready: false }],
+      });
+      await admin.query(`alter role ${reconciliationLogin} nobypassrls`);
+
+      await admin.query(
+        `grant execute on function
+           emdo.reconcile_stranded_google_oauth_disconnects(integer)
+         to ${reconciliationLogin}`,
+      );
+      await expect(ready()).resolves.toMatchObject({
+        rows: [{ ready: false }],
+      });
+      await admin.query(
+        `revoke execute on function
+           emdo.reconcile_stranded_google_oauth_disconnects(integer)
+         from ${reconciliationLogin}`,
+      );
+
+      await admin.query(
+        `grant execute on function
+           emdo.purge_completed_google_oauth_disconnects(integer)
+         to ${reconciliationLogin}`,
+      );
+      await expect(ready()).resolves.toMatchObject({
+        rows: [{ ready: false }],
+      });
+      await admin.query(
+        `revoke execute on function
+           emdo.purge_completed_google_oauth_disconnects(integer)
+         from ${reconciliationLogin}`,
+      );
+
+      await admin.query(
+        `grant select on emdo.google_oauth_disconnect_operations
+         to ${reconciliationLogin}`,
+      );
+      await expect(ready()).resolves.toMatchObject({
+        rows: [{ ready: false }],
+      });
+      await admin.query(
+        `revoke select on emdo.google_oauth_disconnect_operations
+         from ${reconciliationLogin}`,
+      );
+
+      await admin.query(
+        `grant select on emdo.google_oauth_disconnect_operations
+         to emdo_google_oauth_disconnect_reconciliation`,
+      );
+      await expect(ready()).resolves.toMatchObject({
+        rows: [{ ready: false }],
+      });
+      await admin.query(
+        `revoke select on emdo.google_oauth_disconnect_operations
+         from emdo_google_oauth_disconnect_reconciliation`,
+      );
+
+      await admin.query(
+        `grant execute on function
+           emdo.purge_completed_google_oauth_disconnects(integer)
+         to emdo_google_oauth_disconnect_reconciliation`,
+      );
+      await expect(ready()).resolves.toMatchObject({
+        rows: [{ ready: false }],
+      });
+      await admin.query(
+        `revoke execute on function
+           emdo.purge_completed_google_oauth_disconnects(integer)
+         from emdo_google_oauth_disconnect_reconciliation`,
+      );
+      await expect(ready()).resolves.toMatchObject({
+        rows: [{ ready: true }],
+      });
     });
 
     it('denies direct app-role reads and writes to encrypted authority rows', async () => {

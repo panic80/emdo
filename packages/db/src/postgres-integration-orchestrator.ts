@@ -108,6 +108,7 @@ export const POSTGRES_INTEGRATION_SUITES = Object.freeze([
     id: 'google-oauth-authority',
     file: 'packages/db/src/google/oauth-authority.integration.test.ts',
     databaseEnvironment: 'TEST_GOOGLE_OAUTH_AUTHORITY_DATABASE_URL',
+    canonicalDatabaseName: 'emdo_app',
   }),
   Object.freeze({
     id: 'manager-run-event-replay',

@@ -131,6 +131,7 @@ describe('container and edge configuration', () => {
       './dist/cli/migrate.js',
       './dist/cli/bootstrap-owner.js',
       './dist/cli/purge-finance-imports.js',
+      './dist/cli/reconcile-google-oauth-disconnects.js',
       './dist/cli/seed-synthetic.js',
       './dist/cli/staging-acceptance.js',
     ]) {
@@ -314,6 +315,7 @@ describe('container and edge configuration', () => {
       'worker_dispatcher_database_password',
       'audio_reconciliation_database_password',
       'finance_import_retention_database_password',
+      'google_oauth_disconnect_reconciliation_database_password',
       'workflow_database_password',
       'visual_decision_database_password',
       'powersync_replication_password',
@@ -337,6 +339,7 @@ describe('container and edge configuration', () => {
       'worker_dispatcher_database_password',
       'audio_reconciliation_database_password',
       'finance_import_retention_database_password',
+      'google_oauth_disconnect_reconciliation_database_password',
       'workflow_database_password',
       'visual_decision_database_password',
       'powersync_replication_password',
@@ -352,6 +355,7 @@ describe('container and edge configuration', () => {
       'emdo_worker_dispatcher_login',
       'emdo_audio_reconciliation_login',
       'emdo_finance_import_retention_login',
+      'emdo_google_oauth_disconnect_reconciliation_login',
     ]) {
       expect(initialization).toContain(`CREATE ROLE ${login} LOGIN`);
       expect(provision).toContain(`CREATE ROLE ${login} LOGIN`);
@@ -542,6 +546,128 @@ describe('container and edge configuration', () => {
     expect(service).toContain('ReadWritePaths=/var/lib/emdo/locks');
     expect(timer).toContain('OnCalendar=hourly');
     expect(timer).toContain('RandomizedDelaySec=10m');
+    expect(timer).toContain('Persistent=true');
+  });
+
+  it('reconciles stranded Google OAuth disconnects through one provider-free disabled-by-default authority', async () => {
+    const [
+      compose,
+      initialization,
+      provision,
+      common,
+      reconcile,
+      dispatcher,
+      preparation,
+      service,
+      timer,
+    ] = await Promise.all([
+      read('infra/compose/compose.yml'),
+      read('infra/compose/postgres-init.sql'),
+      read('infra/compose/provision-runtime.sql'),
+      read('infra/scripts/_common.sh'),
+      read('infra/scripts/reconcile-google-oauth-disconnects.sh'),
+      read('infra/scripts/dispatch-active-release.sh'),
+      read('infra/scripts/prepare-host.sh'),
+      read('infra/systemd/emdo-google-oauth-disconnect-reconciliation.service'),
+      read('infra/systemd/emdo-google-oauth-disconnect-reconciliation.timer'),
+    ]);
+
+    expect(initialization).toContain(
+      'CREATE ROLE emdo_google_oauth_disconnect_reconciliation_login LOGIN',
+    );
+    expect(initialization).toContain(
+      "pg_read_file('/run/secrets/google_oauth_disconnect_reconciliation_database_password')",
+    );
+    expect(provision).toContain(
+      'ALTER ROLE emdo_google_oauth_disconnect_reconciliation_login LOGIN NOSUPERUSER',
+    );
+    expect(provision).toMatch(
+      /GRANT emdo_google_oauth_disconnect_reconciliation\s+TO emdo_google_oauth_disconnect_reconciliation_login\s+WITH INHERIT FALSE, SET TRUE, ADMIN FALSE/u,
+    );
+    expect(provision).toMatch(
+      /emdo\.google_oauth_disconnect_reconciliation_runner_ready\(\)\s+TO emdo_google_oauth_disconnect_reconciliation_login/u,
+    );
+    expect(provision).not.toMatch(
+      /reconcile_stranded_google_oauth_disconnects\(integer\)[^;]*to emdo_google_oauth_disconnect_reconciliation_login/iu,
+    );
+
+    expect(common).toContain(
+      'google_oauth_disconnect_reconciliation_database_password',
+    );
+    expect(common).toContain('google-oauth-disconnect-reconciliation.env');
+    expect(common).toContain(
+      'EMDO_GOOGLE_OAUTH_DISCONNECT_RECONCILIATION_DATABASE_URL',
+    );
+    expect(common).toContain(
+      'emdo_google_oauth_disconnect_reconciliation_login emdo_app',
+    );
+    expect(common).toContain(
+      'EMDO_GOOGLE_OAUTH_DISCONNECT_RECONCILIATION_LIMIT',
+    );
+
+    const reconciliationService = compose.match(
+      /\n {2}google-oauth-disconnect-reconciliation:\n[\s\S]+?\n {2}api:\n/u,
+    )?.[0];
+    const postgresService = compose.match(
+      /\n {2}postgres:\n[\s\S]+?\n {2}migrate:\n/u,
+    )?.[0];
+    expect(reconciliationService).toBeDefined();
+    expect(postgresService).toBeDefined();
+    expect(reconciliationService).toContain(
+      'profiles: [google-oauth-disconnect-reconciliation]',
+    );
+    expect(reconciliationService).toContain(
+      'google-oauth-disconnect-reconciliation.env',
+    );
+    expect(reconciliationService).toContain(
+      'dist/cli/reconcile-google-oauth-disconnects.js',
+    );
+    expect(reconciliationService).toContain("restart: 'no'");
+    expect(reconciliationService).toContain(
+      '      - google-oauth-reconciliation-db',
+    );
+    expect(reconciliationService).not.toContain('      - backend');
+    expect(postgresService).toContain('      - google-oauth-reconciliation-db');
+    expect(
+      compose.match(/^ {6}- google-oauth-reconciliation-db$/gmu),
+    ).toHaveLength(2);
+    expect(compose).toMatch(
+      /\n {2}google-oauth-reconciliation-db:\n {4}name: [^\n]+\n {4}internal: true/u,
+    );
+    expect(reconciliationService).not.toContain('api.env');
+    expect(reconciliationService).not.toContain('worker.env');
+    expect(reconciliationService).not.toContain(
+      'EMDO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET',
+    );
+
+    expect(reconcile).toContain(
+      'Google OAuth disconnect reconciliation must execute the assets bound to current production state',
+    );
+    expect(reconcile).toContain('assert_base_secret_manifest "$SECRETS_DIR"');
+    expect(reconcile).toContain('capacity.lock');
+    expect(reconcile).toContain('production-mutation.lock');
+    expect(reconcile).toContain(
+      'production_compose --profile google-oauth-disconnect-reconciliation run --rm --no-deps google-oauth-disconnect-reconciliation',
+    );
+    expect(dispatcher).toContain(
+      "reconcile-google-oauth-disconnects) relative_entrypoint='infra/scripts/reconcile-google-oauth-disconnects.sh'",
+    );
+    expect(preparation).toContain(
+      'emdo-google-oauth-disconnect-reconciliation.service',
+    );
+    expect(preparation).toContain(
+      'emdo-google-oauth-disconnect-reconciliation.timer',
+    );
+    expect(preparation).not.toContain(
+      'systemctl enable --now emdo-google-oauth-disconnect-reconciliation.timer',
+    );
+    expect(service).toContain(
+      'ExecStart=/usr/local/sbin/emdo-dispatch-active-release reconcile-google-oauth-disconnects',
+    );
+    expect(service).toContain('ReadOnlyPaths=/var/lib/emdo /etc/emdo');
+    expect(service).toContain('ReadWritePaths=/var/lib/emdo/locks');
+    expect(timer).toContain('OnCalendar=*-*-* *:0/5:00');
+    expect(timer).toContain('RandomizedDelaySec=2m');
     expect(timer).toContain('Persistent=true');
   });
 

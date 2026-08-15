@@ -73,6 +73,15 @@ WHERE NOT EXISTS (
 ) \gexec
 
 SELECT format(
+  'CREATE ROLE emdo_google_oauth_disconnect_reconciliation_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
+  trim(pg_read_file('/run/secrets/google_oauth_disconnect_reconciliation_database_password'))
+)
+WHERE NOT EXISTS (
+  SELECT FROM pg_catalog.pg_roles
+  WHERE rolname = 'emdo_google_oauth_disconnect_reconciliation_login'
+) \gexec
+
+SELECT format(
   'CREATE ROLE emdo_workflow_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
   trim(pg_read_file('/run/secrets/workflow_database_password'))
 )
@@ -127,6 +136,7 @@ REVOKE CONNECT ON DATABASE emdo_powersync
      emdo_worker_login, emdo_worker_executor_login,
      emdo_worker_dispatcher_login, emdo_audio_reconciliation_login,
      emdo_finance_import_retention_login,
+     emdo_google_oauth_disconnect_reconciliation_login,
      emdo_workflow_login, emdo_visual_decision_login,
      emdo_powersync_replication, emdo_owner_bootstrap_login;
 GRANT CONNECT ON DATABASE emdo_app
@@ -135,6 +145,7 @@ GRANT CONNECT ON DATABASE emdo_app
      emdo_worker_executor_login, emdo_worker_dispatcher_login,
      emdo_audio_reconciliation_login, emdo_workflow_login,
      emdo_finance_import_retention_login,
+     emdo_google_oauth_disconnect_reconciliation_login,
      emdo_visual_decision_login,
      emdo_powersync_replication,
      emdo_owner_bootstrap_login;

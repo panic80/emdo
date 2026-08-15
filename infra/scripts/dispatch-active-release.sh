@@ -7,6 +7,7 @@ case "$operation" in
   check-backup-age) relative_entrypoint='infra/scripts/check-backup-age.sh' ;;
   check-replication-pressure) relative_entrypoint='infra/scripts/check-replication-pressure.sh' ;;
   purge-finance-imports) relative_entrypoint='infra/scripts/purge-finance-imports.sh' ;;
+  reconcile-google-oauth-disconnects) relative_entrypoint='infra/scripts/reconcile-google-oauth-disconnects.sh' ;;
   *)
     printf '[emdo-dispatch] invalid operation\n' >&2
     exit 64
