@@ -1,4 +1,5 @@
 import {
+  IdempotencyKeySchema,
   OpaqueReferenceSchema,
   Sha256Schema,
   TrustedProviderWriteAuthorityResolutionSchema,
@@ -69,6 +70,31 @@ const EpochAdvanceSchema = z.strictObject({
   actor: ActorSchema,
   expectedEpoch: z.number().int().safe().nonnegative(),
 });
+const AuthorizationStartResultSchema = z.discriminatedUnion('status', [
+  z.strictObject({
+    status: z.literal('already-authorized'),
+    grantedPurposes: z
+      .array(z.enum(['calendar-read', 'calendar-event-write']))
+      .min(1)
+      .max(2),
+  }),
+  z.strictObject({
+    status: z.literal('authorization-required'),
+    authorizationUrl: z
+      .url()
+      .refine((value) => new URL(value).protocol === 'https:'),
+    expiresAt: z.iso.datetime({ offset: true }),
+  }),
+]);
+const AuthorizationStartInputSchema = z.strictObject({
+  actor: ActorSchema,
+  purpose: z.enum(['calendar-read', 'calendar-event-write']),
+  idempotencyKey: IdempotencyKeySchema,
+  requestFingerprint: Sha256Schema,
+  result: AuthorizationStartResultSchema,
+  flow: FlowSchema.optional(),
+});
+const RuntimeReadinessRowSchema = z.strictObject({ ready: z.boolean() });
 const Base64UrlSchema = z.string().regex(/^[A-Za-z0-9_-]*$/u);
 const ProviderGrantReferenceSchema = OpaqueReferenceSchema.min(16).max(160);
 const EncryptedPayloadSchema = z.strictObject({
@@ -192,6 +218,27 @@ export type PostgresGoogleOAuthFlowConsumeResult =
   | Readonly<{ status: 'consumed'; flow: PostgresGoogleOAuthFlowRecord }>
   | Readonly<{ status: 'missing' | 'expired' | 'binding-mismatch' }>;
 
+export const checkPostgresGoogleOAuthRuntimeReadiness = async (
+  pool: DatabasePool,
+): Promise<boolean> => {
+  const client = await pool.connect().catch(() => undefined);
+  if (client === undefined) return false;
+  let destroy = false;
+  try {
+    const row = firstResultRow(
+      await client.query('select emdo.google_oauth_runtime_ready() as ready'),
+    );
+    const ready = RuntimeReadinessRowSchema.safeParse(row).data?.ready === true;
+    destroy = !ready;
+    return ready;
+  } catch {
+    destroy = true;
+    return false;
+  } finally {
+    client.release(destroy ? true : undefined);
+  }
+};
+
 /** Atomic, single-use PKCE flow persistence. */
 export class PostgresGoogleOAuthFlowStore {
   readonly #authority: PostgresGoogleOAuthRequestAuthority;
@@ -205,46 +252,89 @@ export class PostgresGoogleOAuthFlowStore {
     this.#principal = principalForAuthority(this.#authority);
   }
 
-  async put(recordInput: PostgresGoogleOAuthFlowRecord): Promise<boolean> {
-    const record = FlowSchema.parse(recordInput);
-    assertActorAuthority(this.#authority, record.actor);
-    return withDurableTransaction(
-      this.pool,
-      this.#principal,
-      {
-        householdId: record.actor.householdId,
-        spaceId: record.actor.privateSpaceId,
-      },
-      async (client) => {
+  async storeAuthorizationStart(
+    input: z.input<typeof AuthorizationStartInputSchema>,
+  ): Promise<
+    | Readonly<{
+        status: 'stored' | 'replayed';
+        result: DeepReadonly<z.output<typeof AuthorizationStartResultSchema>>;
+      }>
+    | Readonly<{ status: 'conflict' | 'expired' }>
+  > {
+    const request = AuthorizationStartInputSchema.parse(input);
+    assertActorAuthority(this.#authority, request.actor);
+    const flow =
+      request.flow === undefined
+        ? null
+        : {
+            ...request.flow,
+            createdAt: request.flow.createdAt.toISOString(),
+            expiresAt: request.flow.expiresAt.toISOString(),
+          };
+    const values = [
+      request.actor.userId,
+      request.actor.householdId,
+      request.actor.privateSpaceId,
+      request.actor.sessionId,
+      request.idempotencyKey,
+      request.requestFingerprint,
+      request.purpose,
+      request.result,
+      flow,
+    ] as const;
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const client = await beginDurableTransaction(this.pool, this.#principal);
+      let transactionOpen = true;
+      let committing = false;
+      let destroyClient = false;
+      try {
+        await lockDurableScope(client, {
+          householdId: request.actor.householdId,
+          spaceId: request.actor.privateSpaceId,
+        });
         const row = firstResultRow(
           await client.query(
-            `insert into emdo.google_oauth_flows
-               (id, household_id, private_space_id, original_owner_user_id,
-                session_id, redirect_uri, purpose, requested_scopes,
-                credential_revision_at_start, authorization_epoch_at_start,
-                code_verifier, created_at, expires_at)
-             values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13)
-             on conflict (id) do nothing returning id`,
-            [
-              record.id,
-              record.actor.householdId,
-              record.actor.privateSpaceId,
-              record.actor.userId,
-              record.actor.sessionId,
-              record.redirectUri,
-              record.purpose,
-              record.requestedScopes,
-              record.credentialRevisionAtStart,
-              record.authorizationEpochAtStart,
-              record.codeVerifier,
-              record.createdAt,
-              record.expiresAt,
-            ],
+            `select status, result
+               from emdo.commit_google_oauth_authorization_start(
+                 $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb
+               )`,
+            values,
           ),
         );
-        return row?.id === record.id;
-      },
-    );
+        const status = z
+          .enum(['stored', 'replayed', 'conflict', 'expired'])
+          .parse(row?.status);
+        const result =
+          status === 'stored' || status === 'replayed'
+            ? AuthorizationStartResultSchema.parse(row?.result)
+            : undefined;
+        committing = true;
+        await client.query('commit');
+        transactionOpen = false;
+        if (status === 'conflict' || status === 'expired') {
+          return deepFreeze({ status });
+        }
+        return deepFreeze({ status, result: result! });
+      } catch (error) {
+        if (committing) {
+          destroyClient = true;
+          transactionOpen = false;
+          if (attempt === 0) continue;
+        }
+        throw error;
+      } finally {
+        if (transactionOpen) {
+          try {
+            await client.query('rollback');
+          } catch {
+            destroyClient = true;
+          }
+        }
+        client.release(destroyClient);
+      }
+    }
+    throw new Error('OAuth authorization start acknowledgement unavailable');
   }
 
   async consume(input: {

@@ -64,6 +64,13 @@
       "when": 1786380000000,
       "tag": "0008_finance_import_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786665600000,
+      "tag": "0009_google_oauth_authorization_starts",
+      "breakpoints": true
     }
   ]
 }

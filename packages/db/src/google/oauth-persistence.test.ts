@@ -7,6 +7,7 @@ import {
   PostgresGoogleOAuthAuthorizationEpochStore,
   PostgresGoogleOAuthFlowStore,
   PostgresGoogleOAuthGrantLease,
+  checkPostgresGoogleOAuthRuntimeReadiness,
 } from './oauth-persistence.js';
 
 const actor = {
@@ -42,41 +43,126 @@ const poolFor = (
 };
 
 describe('durable Google OAuth persistence', () => {
-  it('inserts each PKCE flow binding column exactly once', async () => {
-    const { pool, query } = poolFor((sql, values) => {
+  it('fails readiness closed unless the exact database runtime probe returns true', async () => {
+    const ready = poolFor((sql) =>
+      sql.includes('google_oauth_runtime_ready') ? [{ ready: true }] : [],
+    );
+    await expect(
+      checkPostgresGoogleOAuthRuntimeReadiness(ready.pool),
+    ).resolves.toBe(true);
+    expect(ready.query).toHaveBeenCalledWith(
+      'select emdo.google_oauth_runtime_ready() as ready',
+    );
+
+    const malformed = poolFor(() => [{ ready: 'yes' }]);
+    await expect(
+      checkPostgresGoogleOAuthRuntimeReadiness(malformed.pool),
+    ).resolves.toBe(false);
+    expect(malformed.client.release).toHaveBeenCalledWith(true);
+  });
+
+  it('stores an authorization start and PKCE flow through one idempotent aggregate', async () => {
+    const result = {
+      status: 'authorization-required' as const,
+      authorizationUrl: `https://accounts.google.com/o/oauth2/v2/auth?state=v1.${'a'.repeat(43)}.${'s'.repeat(43)}`,
+      expiresAt: '2026-08-10T12:10:00.000Z',
+    };
+    const { pool, query } = poolFor((sql) =>
+      sql.includes('commit_google_oauth_authorization_start')
+        ? [{ status: 'stored', result }]
+        : sql.includes('lock_active_request_scope')
+          ? [{ authorized: true }]
+          : [],
+    );
+    const store = new PostgresGoogleOAuthFlowStore(pool, requestAuthority);
+
+    await expect(
+      store.storeAuthorizationStart({
+        actor,
+        purpose: 'calendar-read',
+        idempotencyKey: 'google-oauth-db-start-0001',
+        requestFingerprint: 'c'.repeat(64),
+        result,
+        flow: {
+          id: 'a'.repeat(43),
+          actor,
+          redirectUri: 'https://example.test/oauth/callback',
+          purpose: 'calendar-read',
+          requestedScopes: [
+            'https://www.googleapis.com/auth/calendar.freebusy',
+          ],
+          credentialRevisionAtStart: null,
+          authorizationEpochAtStart: 0,
+          codeVerifier: 'b'.repeat(43),
+          createdAt: new Date('2026-08-10T12:00:00.000Z'),
+          expiresAt: new Date('2026-08-10T12:10:00.000Z'),
+        },
+      }),
+    ).resolves.toEqual({ status: 'stored', result });
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        sql.includes('commit_google_oauth_authorization_start'),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('passes each PKCE binding only through the atomic start aggregate', async () => {
+    const result = {
+      status: 'authorization-required' as const,
+      authorizationUrl: `https://accounts.google.com/o/oauth2/v2/auth?state=v1.${'a'.repeat(43)}.${'s'.repeat(43)}`,
+      expiresAt: '2026-08-10T12:10:00.000Z',
+    };
+    const { pool, query } = poolFor((sql) => {
       if (sql.includes('lock_active_request_scope')) {
         return [{ authorized: true }];
       }
-      if (sql.includes('insert into emdo.google_oauth_flows')) {
-        return [{ id: values[0] }];
+      if (sql.includes('commit_google_oauth_authorization_start')) {
+        return [{ status: 'stored', result }];
       }
       return [];
     });
     const flowId = 'a'.repeat(43);
 
     await expect(
-      new PostgresGoogleOAuthFlowStore(pool, requestAuthority).put({
-        id: flowId,
+      new PostgresGoogleOAuthFlowStore(
+        pool,
+        requestAuthority,
+      ).storeAuthorizationStart({
         actor,
-        redirectUri: 'https://example.test/oauth/callback',
         purpose: 'calendar-event-write',
-        requestedScopes: ['https://www.googleapis.com/auth/calendar.events'],
-        credentialRevisionAtStart: 2,
-        authorizationEpochAtStart: 3,
-        codeVerifier: 'b'.repeat(43),
-        createdAt: new Date('2026-08-10T12:00:00.000Z'),
-        expiresAt: new Date('2026-08-10T12:10:00.000Z'),
+        idempotencyKey: 'google-oauth-db-start-0002',
+        requestFingerprint: 'd'.repeat(64),
+        result,
+        flow: {
+          id: flowId,
+          actor,
+          redirectUri: 'https://example.test/oauth/callback',
+          purpose: 'calendar-event-write',
+          requestedScopes: ['https://www.googleapis.com/auth/calendar.events'],
+          credentialRevisionAtStart: 2,
+          authorizationEpochAtStart: 3,
+          codeVerifier: 'b'.repeat(43),
+          createdAt: new Date('2026-08-10T12:00:00.000Z'),
+          expiresAt: new Date('2026-08-10T12:10:00.000Z'),
+        },
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ status: 'stored', result });
 
-    const insert = query.mock.calls.find(([sql]) =>
-      sql.includes('insert into emdo.google_oauth_flows'),
+    const aggregate = query.mock.calls.find(([sql]) =>
+      sql.includes('commit_google_oauth_authorization_start'),
     );
-    expect(insert).toBeDefined();
-    const normalized = insert![0].toLowerCase();
-    expect(normalized.match(/credential_revision_at_start/gu)).toHaveLength(1);
-    expect(normalized.match(/authorization_epoch_at_start/gu)).toHaveLength(1);
-    expect(insert![1]).toHaveLength(13);
+    expect(aggregate).toBeDefined();
+    expect(aggregate![1]).toHaveLength(9);
+    expect(aggregate![1]?.[8]).toMatchObject({
+      id: flowId,
+      credentialRevisionAtStart: 2,
+      authorizationEpochAtStart: 3,
+    });
+    expect(
+      query.mock.calls.some(([sql]) =>
+        sql.includes('insert into emdo.google_oauth_flows'),
+      ),
+    ).toBe(false);
     expect(
       query.mock.calls.find(([sql]) =>
         sql.includes("set_config('emdo.user_id'"),

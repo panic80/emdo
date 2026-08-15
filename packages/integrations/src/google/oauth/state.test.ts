@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 
 import { InMemoryGoogleOAuthFlowStore } from './state.js';
@@ -23,13 +25,39 @@ const flow = (): GoogleOAuthFlowRecord => ({
   expiresAt: new Date('2026-08-09T16:10:00.000Z'),
 });
 
+const storeFlow = async (
+  store: InMemoryGoogleOAuthFlowStore,
+  candidate: GoogleOAuthFlowRecord = flow(),
+) =>
+  store.storeAuthorizationStart({
+    actor: candidate.actor,
+    purpose: candidate.purpose,
+    idempotencyKey: `google-oauth-${candidate.id}`,
+    requestFingerprint: createHash('sha256')
+      .update(
+        JSON.stringify({
+          domain: 'emdo.google-calendar.oauth-start.v1',
+          purpose: candidate.purpose,
+        }),
+      )
+      .digest('hex'),
+    result: {
+      status: 'authorization-required',
+      authorizationUrl: `https://accounts.google.com/o/oauth2/v2/auth?state=v1.${candidate.id}.${'s'.repeat(43)}`,
+      expiresAt: candidate.expiresAt.toISOString(),
+    },
+    flow: candidate,
+  });
+
 describe('InMemoryGoogleOAuthFlowStore', () => {
   it('atomically consumes a flow once for the exact authenticated actor', async () => {
     const store = new InMemoryGoogleOAuthFlowStore(
       () => new Date('2026-08-09T16:05:00.000Z'),
     );
-    await expect(store.put(flow())).resolves.toBe(true);
-    await expect(store.put(flow())).resolves.toBe(false);
+    await expect(storeFlow(store)).resolves.toMatchObject({ status: 'stored' });
+    await expect(storeFlow(store)).resolves.toMatchObject({
+      status: 'replayed',
+    });
 
     await expect(
       store.consume({
@@ -50,10 +78,10 @@ describe('InMemoryGoogleOAuthFlowStore', () => {
   });
 
   it('consumes expired flows without returning their PKCE verifier', async () => {
-    const store = new InMemoryGoogleOAuthFlowStore(
-      () => new Date('2026-08-09T16:10:00.000Z'),
-    );
-    await store.put(flow());
+    let now = new Date('2026-08-09T16:05:00.000Z');
+    const store = new InMemoryGoogleOAuthFlowStore(() => now);
+    await storeFlow(store);
+    now = new Date('2026-08-09T16:10:00.000Z');
 
     await expect(store.consume({ id: 'a'.repeat(43), actor })).resolves.toEqual(
       { status: 'expired' },
@@ -67,13 +95,13 @@ describe('InMemoryGoogleOAuthFlowStore', () => {
     const store = new InMemoryGoogleOAuthFlowStore(
       () => new Date('2026-08-09T16:05:00.000Z'),
     );
-    await store.put(flow());
-    await store.put({
+    await storeFlow(store);
+    await storeFlow(store, {
       ...flow(),
       id: 'c'.repeat(43),
       actor: { ...actor, sessionId: 'session-2' },
     });
-    await store.put({
+    await storeFlow(store, {
       ...flow(),
       id: 'd'.repeat(43),
       actor: { ...actor, userId: 'user-2' },
@@ -96,13 +124,13 @@ describe('InMemoryGoogleOAuthFlowStore', () => {
       () => new Date('2026-08-09T16:05:00.000Z'),
     );
     await expect(
-      store.put({
+      storeFlow(store, {
         ...flow(),
         expiresAt: new Date('2026-08-09T16:10:00.001Z'),
       }),
     ).rejects.toThrow(/ten minutes/);
     await expect(
-      store.put({
+      storeFlow(store, {
         ...flow(),
         requestedScopes: ['https://www.googleapis.com/auth/calendar.events'],
       }),
@@ -114,7 +142,7 @@ describe('InMemoryGoogleOAuthFlowStore', () => {
       () => new Date('2026-08-09T16:05:00.000Z'),
     );
     const candidate = flow();
-    await store.put(candidate);
+    await storeFlow(store, candidate);
     candidate.expiresAt.setUTCFullYear(2035);
     const consumed = await store.consume({ id: candidate.id, actor });
     expect(consumed).toMatchObject({ status: 'consumed' });
@@ -129,7 +157,20 @@ describe('InMemoryGoogleOAuthFlowStore', () => {
         throw new Error('getter must not execute');
       },
     });
-    await expect(store.put(hostile as never)).rejects.toThrow(/plain data/);
+    await expect(
+      store.storeAuthorizationStart({
+        actor,
+        purpose: 'calendar-read',
+        idempotencyKey: 'google-oauth-hostile-input',
+        requestFingerprint: 'a'.repeat(64),
+        result: {
+          status: 'authorization-required',
+          authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+          expiresAt: flow().expiresAt.toISOString(),
+        },
+        flow: hostile as never,
+      }),
+    ).rejects.toThrow(/plain data/);
     await expect(
       store.consume({ id: '../not-a-state', actor }),
     ).rejects.toThrow();
@@ -142,7 +183,7 @@ describe('InMemoryGoogleOAuthFlowStore', () => {
       }
     }
     await expect(
-      store.put({
+      storeFlow(store, {
         ...flow(),
         createdAt: new HostileDate('2026-08-09T16:00:00.000Z'),
       }),

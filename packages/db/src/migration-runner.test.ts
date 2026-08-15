@@ -31,6 +31,7 @@ describe('database migration runner', () => {
       '0006_sync_conflict_outcomes',
       '0007_experience_notification_preferences',
       '0008_finance_import_receipts',
+      '0009_google_oauth_authorization_starts',
     ]);
     expect(migrations.map(({ index }) => index)).toEqual(
       migrations.map((_, index) => index),
@@ -56,6 +57,9 @@ describe('database migration runner', () => {
     );
     expect(migrations[8]?.sql).toContain(
       'CREATE TABLE emdo.finance_import_receipts',
+    );
+    expect(migrations[9]?.sql).toContain(
+      'CREATE TABLE "emdo"."google_oauth_authorization_starts"',
     );
   });
 

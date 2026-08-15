@@ -9,6 +9,8 @@ import {
   PostgresEncryptedGoogleCalendarGrantStore,
   PostgresGoogleCalendarProviderAuthorityResolver,
   PostgresGoogleOAuthAuthorizationEpochStore,
+  PostgresGoogleOAuthFlowStore,
+  checkPostgresGoogleOAuthRuntimeReadiness,
 } from './oauth-persistence.js';
 
 const databaseUrl = process.env.TEST_GOOGLE_OAUTH_AUTHORITY_DATABASE_URL;
@@ -41,7 +43,7 @@ const actor = {
   householdId: ids.household,
   privateSpaceId: ids.space,
 };
-const loginRole = 'emdo_oauth_authority_integration_login';
+const loginRole = 'emdo_api_login';
 const loginPassword = `emdo-test-${randomUUID()}`;
 const providerReferenceA = 'gcal-provider-reference-integration-a';
 const providerReferenceB = 'gcal-provider-reference-integration-b';
@@ -171,6 +173,93 @@ describeDatabase(
         }
         await admin.end();
       }
+    });
+
+    it('stores and exactly replays one request-bound authorization start', async () => {
+      await expect(
+        checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),
+      ).resolves.toBe(true);
+
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 10 * 60 * 1_000);
+      const flowId = 'o'.repeat(43);
+      const purpose = 'calendar-read' as const;
+      const result = {
+        status: 'authorization-required' as const,
+        authorizationUrl: `https://accounts.google.com/o/oauth2/v2/auth?state=v1.${flowId}.${'s'.repeat(43)}`,
+        expiresAt: expiresAt.toISOString(),
+      };
+      const requestFingerprint = createHash('sha256')
+        .update(
+          JSON.stringify({
+            domain: 'emdo.google-calendar.oauth-start.v1',
+            purpose,
+          }),
+        )
+        .digest('hex');
+      const input = {
+        actor,
+        purpose,
+        idempotencyKey: 'google-oauth-integration-start-0001',
+        requestFingerprint,
+        result,
+        flow: {
+          id: flowId,
+          actor,
+          redirectUri: 'https://emdo.example/api/v1/connectors/google/callback',
+          purpose,
+          requestedScopes: [
+            'https://www.googleapis.com/auth/calendar.freebusy' as const,
+          ],
+          credentialRevisionAtStart: null,
+          authorizationEpochAtStart: 0,
+          codeVerifier: 'v'.repeat(43),
+          createdAt: now,
+          expiresAt,
+        },
+      };
+      const store = new PostgresGoogleOAuthFlowStore(
+        runtime.scopedPool,
+        requestAuthority,
+      );
+
+      await expect(store.storeAuthorizationStart(input)).resolves.toEqual({
+        status: 'stored',
+        result,
+      });
+      await expect(store.storeAuthorizationStart(input)).resolves.toEqual({
+        status: 'replayed',
+        result,
+      });
+      await expect(
+        store.storeAuthorizationStart({
+          actor,
+          purpose: 'calendar-event-write',
+          idempotencyKey: input.idempotencyKey,
+          requestFingerprint: createHash('sha256')
+            .update(
+              JSON.stringify({
+                domain: 'emdo.google-calendar.oauth-start.v1',
+                purpose: 'calendar-event-write',
+              }),
+            )
+            .digest('hex'),
+          result: {
+            status: 'already-authorized',
+            grantedPurposes: ['calendar-event-write'],
+          },
+        }),
+      ).resolves.toEqual({ status: 'conflict' });
+
+      const persisted = await admin.query(
+        `select
+           (select pg_catalog.count(*)::integer
+              from emdo.google_oauth_authorization_starts) as starts,
+           (select pg_catalog.count(*)::integer
+              from emdo.google_oauth_flows where id = $1) as flows`,
+        [flowId],
+      );
+      expect(persisted.rows[0]).toEqual({ starts: 1, flows: 1 });
     });
 
     it('atomically rotates the public reference and rejects the old same-epoch authority', async () => {
@@ -348,6 +437,55 @@ describeDatabase(
              )`,
         [ids.household, ids.space, ids.user],
       );
+      await expectAppDenied(
+        'select * from emdo.google_oauth_authorization_starts',
+      );
+      await expectAppDenied('select * from emdo.google_oauth_flows');
+      await expectAppDenied(
+        `insert into emdo.google_oauth_flows(
+           id, household_id, private_space_id, original_owner_user_id,
+           session_id, redirect_uri, purpose, requested_scopes,
+           credential_revision_at_start, authorization_epoch_at_start,
+           code_verifier, created_at, expires_at
+         ) values (
+           $1, $2, $3, $4, $5, 'https://attacker.example/callback',
+           'calendar-read', '[]'::jsonb, null, 0, $6,
+           pg_catalog.clock_timestamp(),
+           pg_catalog.clock_timestamp() + interval '10 minutes'
+         )`,
+        [
+          'x'.repeat(43),
+          ids.household,
+          ids.space,
+          ids.user,
+          ids.session,
+          'y'.repeat(43),
+        ],
+      );
+    });
+
+    it('fails readiness closed under reversible aggregate ACL drift', async () => {
+      await expect(
+        checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),
+      ).resolves.toBe(true);
+      await admin.query(
+        `revoke execute on function
+           emdo.commit_google_oauth_authorization_start(
+             uuid, uuid, uuid, uuid, text, text, text, jsonb, jsonb
+           ) from emdo_app`,
+      );
+      await expect(
+        checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),
+      ).resolves.toBe(false);
+      await admin.query(
+        `grant execute on function
+           emdo.commit_google_oauth_authorization_start(
+             uuid, uuid, uuid, uuid, text, text, text, jsonb, jsonb
+           ) to emdo_app`,
+      );
+      await expect(
+        checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),
+      ).resolves.toBe(true);
     });
   },
 );

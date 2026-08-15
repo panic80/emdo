@@ -95,7 +95,10 @@ describe('integration package subpath exports', () => {
         stateSigningKey: new Uint8Array(32).fill(7),
       },
       flowStore: {
-        put: async () => false,
+        storeAuthorizationStart: async (input) => ({
+          status: 'stored' as const,
+          result: input.result,
+        }),
         consume: async () => ({ status: 'missing' as const }),
         invalidateActor: async () => 0,
       },

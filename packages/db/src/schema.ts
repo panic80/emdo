@@ -2796,7 +2796,7 @@ export const financeImportPlans = emdoSchema.table(
       table.ownerUserId,
       table.expiresAt,
     ),
-    unique('finance_import_plans_scope_hash_unique').on(
+    uniqueIndex('finance_import_plans_scope_hash_unique').on(
       table.householdId,
       table.ownerUserId,
       table.planHash,
@@ -3988,6 +3988,79 @@ export const googleOAuthFlows = emdoSchema.table(
   ],
 );
 
+/** Exact replay receipt for one authenticated Google OAuth start command. */
+export const googleOAuthAuthorizationStarts = emdoSchema.table(
+  'google_oauth_authorization_starts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').notNull(),
+    privateSpaceId: uuid('private_space_id').notNull(),
+    originalOwnerUserId: uuid('original_owner_user_id').notNull(),
+    sessionId: uuid('session_id').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    requestFingerprint: text('request_fingerprint').notNull(),
+    purpose: text('purpose').notNull(),
+    result: jsonb('result').$type<JsonValue>().notNull(),
+    flowId: text('flow_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    retainUntil: timestamp('retain_until', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    unique('google_oauth_authorization_starts_scope_key_unique').on(
+      table.householdId,
+      table.privateSpaceId,
+      table.originalOwnerUserId,
+      table.sessionId,
+      table.idempotencyKey,
+    ),
+    foreignKey({
+      name: 'google_oauth_authorization_starts_household_space_fk',
+      columns: [table.householdId, table.privateSpaceId],
+      foreignColumns: [spaces.householdId, spaces.id],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    foreignKey({
+      name: 'google_oauth_authorization_starts_owner_membership_fk',
+      columns: [table.householdId, table.originalOwnerUserId],
+      foreignColumns: [
+        householdMemberships.householdId,
+        householdMemberships.userId,
+      ],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    foreignKey({
+      name: 'google_oauth_authorization_starts_flow_fk',
+      columns: [table.flowId],
+      foreignColumns: [googleOAuthFlows.id],
+    })
+      .onDelete('set null')
+      .onUpdate('restrict'),
+    index('google_oauth_authorization_starts_expiry_idx').on(table.retainUntil),
+    check(
+      'google_oauth_authorization_starts_key_check',
+      sql`pg_catalog.length(${table.idempotencyKey}) between 16 and 200 and ${table.idempotencyKey} ~ '^[A-Za-z0-9:._-]+$'`,
+    ),
+    check(
+      'google_oauth_authorization_starts_fingerprint_check',
+      sql`${table.requestFingerprint} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'google_oauth_authorization_starts_purpose_check',
+      sql`${table.purpose} in ('calendar-read', 'calendar-event-write')`,
+    ),
+    check(
+      'google_oauth_authorization_starts_result_check',
+      sql`pg_catalog.jsonb_typeof(${table.result}) = 'object' and pg_catalog.octet_length(${table.result}::text) between 1 and 8192`,
+    ),
+    check(
+      'google_oauth_authorization_starts_retention_check',
+      sql`${table.retainUntil} > ${table.createdAt} and ${table.retainUntil} <= ${table.createdAt} + interval '24 hours'`,
+    ),
+  ],
+);
+
 /** Monotonic grant tombstone that survives credential deletion/reconnect ABA. */
 export const googleOAuthAuthorizationEpochs = emdoSchema.table(
   'google_oauth_authorization_epochs',
@@ -4203,6 +4276,7 @@ export const foundationTables = Object.freeze({
   household_memberships: householdMemberships,
   households,
   google_oauth_authorization_epochs: googleOAuthAuthorizationEpochs,
+  google_oauth_authorization_starts: googleOAuthAuthorizationStarts,
   google_oauth_flows: googleOAuthFlows,
   household_administration_commands: householdAdministrationCommands,
   invitations,

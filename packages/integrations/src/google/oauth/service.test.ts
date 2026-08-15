@@ -10,6 +10,7 @@ import {
   GoogleOAuthTransportFailure,
   createGoogleCalendarOAuthRouteService,
   createUnavailableGoogleCalendarOAuthRouteService,
+  type GoogleCalendarAuthorizationRouteResult,
   type GoogleCalendarCredential,
   type GoogleCalendarCredentialVault,
   type GoogleOAuthAuthorizationEpochStore,
@@ -51,13 +52,45 @@ describe('GoogleCalendarCredentialSchema', () => {
 class CapturingFlowStore implements GoogleOAuthFlowStore {
   readonly records = new Map<
     string,
-    Parameters<GoogleOAuthFlowStore['put']>[0]
+    NonNullable<
+      Parameters<GoogleOAuthFlowStore['storeAuthorizationStart']>[0]['flow']
+    >
   >();
-
-  async put(record: Parameters<GoogleOAuthFlowStore['put']>[0]) {
-    if (this.records.has(record.id)) return false;
-    this.records.set(record.id, record);
-    return true;
+  readonly starts = new Map<
+    string,
+    Readonly<{
+      requestFingerprint: string;
+      result: GoogleCalendarAuthorizationRouteResult;
+    }>
+  >();
+  async storeAuthorizationStart(
+    input: Parameters<GoogleOAuthFlowStore['storeAuthorizationStart']>[0],
+  ) {
+    const key = [
+      input.actor.userId,
+      input.actor.householdId,
+      input.actor.privateSpaceId,
+      input.actor.sessionId,
+      input.idempotencyKey,
+    ].join(':');
+    const existing = this.starts.get(key);
+    if (existing !== undefined) {
+      if (existing.requestFingerprint !== input.requestFingerprint) {
+        return { status: 'conflict' as const };
+      }
+      return { status: 'replayed' as const, result: existing.result };
+    }
+    if (input.flow !== undefined) {
+      if (this.records.has(input.flow.id)) {
+        return { status: 'conflict' as const };
+      }
+      this.records.set(input.flow.id, input.flow);
+    }
+    this.starts.set(key, {
+      requestFingerprint: input.requestFingerprint,
+      result: input.result,
+    });
+    return { status: 'stored' as const, result: input.result };
   }
 
   async consume() {
@@ -269,12 +302,28 @@ const createService = (options?: {
 };
 
 describe('GoogleCalendarOAuthService authorization start', () => {
+  it('replays the exact authorization start for one idempotency key', async () => {
+    const { service, flowStore } = createService();
+    const input = {
+      actor,
+      purpose: 'calendar-read' as const,
+      idempotencyKey: 'google-oauth-start-replay-0001',
+    };
+
+    const first = await service.beginAuthorization(input);
+    const replay = await service.beginAuthorization(input);
+
+    expect(replay).toEqual(first);
+    expect(flowStore.records.size).toBe(1);
+  });
+
   it('uses the distinct Calendar client, exact redirect, opaque signed state, and PKCE', async () => {
     const { service, flowStore } = createService();
 
     const result = await service.beginAuthorization({
       actor,
       purpose: 'calendar-read',
+      idempotencyKey: 'google-oauth-start-read-0001',
     });
 
     expect(result.status).toBe('authorization-required');
@@ -378,6 +427,7 @@ describe('GoogleCalendarOAuthService authorization start', () => {
     const writeResult = await service.beginAuthorization({
       actor,
       purpose: 'calendar-event-write',
+      idempotencyKey: 'google-oauth-start-write-0001',
     });
 
     expect(writeResult.status).toBe('authorization-required');
@@ -411,6 +461,7 @@ describe('GoogleCalendarOAuthService authorization start', () => {
       complete.service.beginAuthorization({
         actor,
         purpose: 'calendar-event-write',
+        idempotencyKey: 'google-oauth-start-complete-0001',
       }),
     ).resolves.toEqual({
       status: 'already-authorized',
@@ -424,6 +475,7 @@ describe('GoogleCalendarOAuthService authorization start', () => {
       service.beginAuthorization({
         actor,
         purpose: 'calendar-read',
+        idempotencyKey: 'google-oauth-start-hostile-0001',
         scopes: ['https://www.googleapis.com/auth/calendar'],
       }),
     ).rejects.toThrow();
@@ -468,7 +520,11 @@ describe('GoogleCalendarOAuthService authorization start', () => {
       'handleCallback',
     ]);
     await expect(
-      routes.beginAuthorization({ actor, purpose: 'calendar-read' }),
+      routes.beginAuthorization({
+        actor,
+        purpose: 'calendar-read',
+        idempotencyKey: 'google-oauth-start-unavailable-0001',
+      }),
     ).rejects.toEqual(
       expect.objectContaining({
         code: 'connector-unavailable',
@@ -526,6 +582,7 @@ describe('GoogleCalendarOAuthService callback', () => {
     const started = await service.beginAuthorization({
       actor: callbackActor,
       purpose: 'calendar-read',
+      idempotencyKey: `google-oauth-callback-${callbackActor.sessionId}`,
     });
     if (started.status !== 'authorization-required') {
       throw new Error('expected authorization URL');
@@ -824,6 +881,7 @@ describe('GoogleCalendarOAuthService callback', () => {
     const started = await fixture.service.beginAuthorization({
       actor,
       purpose: 'calendar-event-write',
+      idempotencyKey: 'google-oauth-start-aba-0001',
     });
     if (started.status !== 'authorization-required') {
       throw new Error('expected incremental authorization');
@@ -876,6 +934,7 @@ describe('GoogleCalendarOAuthService callback', () => {
     const started = await fixture.service.beginAuthorization({
       actor,
       purpose: 'calendar-event-write',
+      idempotencyKey: 'google-oauth-start-refresh-0001',
     });
     if (started.status !== 'authorization-required') {
       throw new Error('expected incremental authorization');

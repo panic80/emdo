@@ -1,10 +1,17 @@
-import { deepFreeze } from '@emdo/contracts';
+import { createHash } from 'node:crypto';
+
+import {
+  IdempotencyKeySchema,
+  Sha256Schema,
+  deepFreeze,
+} from '@emdo/contracts';
 import { z } from 'zod';
 
 import {
   GOOGLE_CALENDAR_PURPOSE_SCOPES,
   GOOGLE_CALENDAR_SCOPES,
   type GoogleCalendarOAuthActor,
+  type GoogleCalendarAuthorizationRouteResult,
   type GoogleOAuthFlowRecord,
   type GoogleOAuthFlowStore,
   type GoogleOAuthFlowConsumeResult,
@@ -73,6 +80,30 @@ const FlowSchema = z
 const ConsumeInputSchema = z.strictObject({
   id: StateIdSchema,
   actor: ActorSchema,
+});
+
+const AuthorizationRouteResultSchema = z.discriminatedUnion('status', [
+  z.strictObject({
+    status: z.literal('already-authorized'),
+    grantedPurposes: z
+      .array(z.enum(['calendar-read', 'calendar-event-write']))
+      .min(1)
+      .max(2),
+  }),
+  z.strictObject({
+    status: z.literal('authorization-required'),
+    authorizationUrl: z.url(),
+    expiresAt: z.iso.datetime({ offset: true }),
+  }),
+]);
+
+const AuthorizationStartInputSchema = z.strictObject({
+  actor: ActorSchema,
+  purpose: z.enum(['calendar-read', 'calendar-event-write']),
+  idempotencyKey: IdempotencyKeySchema,
+  requestFingerprint: Sha256Schema,
+  result: AuthorizationRouteResultSchema,
+  flow: FlowSchema.optional(),
 });
 
 const isBoundedPlainData = (input: unknown): boolean => {
@@ -154,14 +185,90 @@ const sameActor = (
 
 export class InMemoryGoogleOAuthFlowStore implements GoogleOAuthFlowStore {
   readonly #records = new Map<string, GoogleOAuthFlowRecord>();
+  readonly #starts = new Map<
+    string,
+    Readonly<{
+      requestFingerprint: string;
+      result: GoogleCalendarAuthorizationRouteResult;
+    }>
+  >();
 
   constructor(private readonly clock: () => Date) {}
 
-  async put(record: GoogleOAuthFlowRecord): Promise<boolean> {
-    const candidate = cloneFlow(record);
-    if (this.#records.has(candidate.id)) return false;
-    this.#records.set(candidate.id, candidate);
-    return true;
+  async storeAuthorizationStart(
+    input: Parameters<GoogleOAuthFlowStore['storeAuthorizationStart']>[0],
+  ) {
+    if (!isBoundedPlainData(input)) {
+      throw new Error('OAuth authorization start must be plain data');
+    }
+    const candidate = AuthorizationStartInputSchema.parse(input);
+    const expectedFingerprint = createHash('sha256')
+      .update(
+        JSON.stringify({
+          domain: 'emdo.google-calendar.oauth-start.v1',
+          purpose: candidate.purpose,
+        }),
+      )
+      .digest('hex');
+    if (candidate.requestFingerprint !== expectedFingerprint) {
+      throw new Error('OAuth authorization start fingerprint is invalid');
+    }
+    const key = [
+      candidate.actor.userId,
+      candidate.actor.householdId,
+      candidate.actor.privateSpaceId,
+      candidate.actor.sessionId,
+      candidate.idempotencyKey,
+    ].join(':');
+    const existing = this.#starts.get(key);
+    if (existing !== undefined) {
+      if (existing.requestFingerprint !== candidate.requestFingerprint) {
+        return deepFreeze({ status: 'conflict' as const });
+      }
+      if (
+        existing.result.status === 'authorization-required' &&
+        this.clock().getTime() >= new Date(existing.result.expiresAt).getTime()
+      ) {
+        return deepFreeze({ status: 'expired' as const });
+      }
+      return deepFreeze({
+        status: 'replayed' as const,
+        result: existing.result,
+      });
+    }
+
+    if (
+      (candidate.result.status === 'authorization-required') !==
+        (candidate.flow !== undefined) ||
+      (candidate.flow !== undefined &&
+        !sameActor(candidate.flow.actor, candidate.actor)) ||
+      candidate.flow?.purpose !== candidate.purpose ||
+      (candidate.result.status === 'authorization-required' &&
+        (candidate.result.expiresAt !==
+          candidate.flow?.expiresAt.toISOString() ||
+          new URL(candidate.result.authorizationUrl).searchParams
+            .get('state')
+            ?.startsWith(`v1.${candidate.flow?.id}.`) !== true)) ||
+      (candidate.result.status === 'already-authorized' &&
+        !candidate.result.grantedPurposes.includes(candidate.purpose))
+    ) {
+      throw new Error('OAuth authorization start binding is invalid');
+    }
+    if (candidate.flow !== undefined) {
+      const flow = cloneFlow(candidate.flow);
+      if (this.#records.has(flow.id)) {
+        return deepFreeze({ status: 'conflict' as const });
+      }
+      this.#records.set(flow.id, flow);
+    }
+    const result = deepFreeze(
+      AuthorizationRouteResultSchema.parse(candidate.result),
+    );
+    this.#starts.set(key, {
+      requestFingerprint: candidate.requestFingerprint,
+      result,
+    });
+    return deepFreeze({ status: 'stored' as const, result });
   }
 
   async consume(input: {

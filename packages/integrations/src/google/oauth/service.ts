@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 import {
+  IdempotencyKeySchema,
   OpaqueReferenceSchema,
   deepFreeze,
   type DeepReadonly,
@@ -76,6 +77,7 @@ const ActorSchema = z.strictObject({
 export const GoogleCalendarAuthorizationStartInputSchema = z.strictObject({
   actor: ActorSchema,
   purpose: z.enum(['calendar-read', 'calendar-event-write']),
+  idempotencyKey: IdempotencyKeySchema,
 });
 
 const CONFIGURATION_SCHEMA = z
@@ -208,7 +210,20 @@ export interface GoogleOAuthFlowRecord {
 }
 
 export interface GoogleOAuthFlowStore {
-  put(record: GoogleOAuthFlowRecord): Promise<boolean>;
+  storeAuthorizationStart(input: {
+    readonly actor: GoogleCalendarOAuthActor;
+    readonly purpose: GoogleCalendarAuthorizationPurpose;
+    readonly idempotencyKey: string;
+    readonly requestFingerprint: string;
+    readonly result: GoogleCalendarAuthorizationRouteResult;
+    readonly flow?: GoogleOAuthFlowRecord;
+  }): Promise<
+    | {
+        readonly status: 'stored' | 'replayed';
+        readonly result: GoogleCalendarAuthorizationRouteResult;
+      }
+    | { readonly status: 'conflict' | 'expired' }
+  >;
   consume(input: {
     readonly id: string;
     readonly actor: GoogleCalendarOAuthActor;
@@ -219,6 +234,14 @@ export interface GoogleOAuthFlowStore {
 export type GoogleOAuthFlowConsumeResult =
   | { readonly status: 'consumed'; readonly flow: GoogleOAuthFlowRecord }
   | { readonly status: 'missing' | 'expired' | 'binding-mismatch' };
+
+export class GoogleOAuthAuthorizationStartFailure extends Error {
+  override readonly name = 'GoogleOAuthAuthorizationStartFailure';
+
+  constructor(readonly reason: 'conflict' | 'expired') {
+    super(`Google Calendar OAuth authorization start ${reason}`);
+  }
+}
 
 /**
  * Durable per-private-grant tombstone. Epoch zero represents a grant that has
@@ -470,6 +493,14 @@ export class GoogleCalendarOAuthService {
     assertPlainRouteInput(input);
     const parsed = GoogleCalendarAuthorizationStartInputSchema.parse(input);
     return this.#grantLease.runExclusive(parsed.actor, async () => {
+      const requestFingerprint = createHash('sha256')
+        .update(
+          JSON.stringify({
+            domain: 'emdo.google-calendar.oauth-start.v1',
+            purpose: parsed.purpose,
+          }),
+        )
+        .digest('hex');
       const now = this.#now();
       const authorizationEpoch = await this.#loadAuthorizationEpoch(
         parsed.actor,
@@ -488,10 +519,21 @@ export class GoogleCalendarOAuthService {
         parsed.purpose
       ].filter((scope) => !grantedScopes.has(scope));
       if (requestedScopes.length === 0) {
-        return deepFreeze({
+        const result = deepFreeze({
           status: 'already-authorized' as const,
           grantedPurposes: [parsed.purpose],
         });
+        const stored = await this.#flowStore.storeAuthorizationStart({
+          actor: parsed.actor,
+          purpose: parsed.purpose,
+          idempotencyKey: parsed.idempotencyKey,
+          requestFingerprint,
+          result,
+        });
+        if (!('result' in stored)) {
+          throw new GoogleOAuthAuthorizationStartFailure(stored.status);
+        }
+        return deepFreeze(stored.result);
       }
 
       const stateId = this.#randomBase64Url(32, 'OAuth state');
@@ -510,17 +552,6 @@ export class GoogleCalendarOAuthService {
         createdAt,
         expiresAt,
       });
-      if (!(await this.#flowStore.put(flow))) {
-        throw new Error('Could not allocate OAuth state');
-      }
-      await this.#recordAudit({
-        event: 'google-calendar.oauth-authorization-started',
-        userId: parsed.actor.userId,
-        householdId: parsed.actor.householdId,
-        purpose: parsed.purpose,
-        outcome: 'started',
-      });
-
       const signature = createHmac('sha256', this.#stateSigningKey)
         .update('emdo.google-calendar.oauth-state.v1\0')
         .update(stateId)
@@ -550,11 +581,32 @@ export class GoogleCalendarOAuthService {
       if (grantedScopes.size === 0) {
         authorizationUrl.searchParams.set('prompt', 'consent');
       }
-      return deepFreeze({
+      const result = deepFreeze({
         status: 'authorization-required' as const,
         authorizationUrl: authorizationUrl.toString(),
         expiresAt: expiresAt.toISOString(),
       });
+      const stored = await this.#flowStore.storeAuthorizationStart({
+        actor: parsed.actor,
+        purpose: parsed.purpose,
+        idempotencyKey: parsed.idempotencyKey,
+        requestFingerprint,
+        result,
+        flow,
+      });
+      if (!('result' in stored)) {
+        throw new GoogleOAuthAuthorizationStartFailure(stored.status);
+      }
+      if (stored.status === 'stored') {
+        await this.#recordAudit({
+          event: 'google-calendar.oauth-authorization-started',
+          userId: parsed.actor.userId,
+          householdId: parsed.actor.householdId,
+          purpose: parsed.purpose,
+          outcome: 'started',
+        });
+      }
+      return deepFreeze(stored.result);
     });
   }
 

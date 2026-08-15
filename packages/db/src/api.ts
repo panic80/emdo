@@ -106,6 +106,7 @@ export {
   PostgresGoogleOAuthAuthorizationEpochStore,
   PostgresGoogleOAuthFlowStore,
   PostgresGoogleOAuthGrantLease,
+  checkPostgresGoogleOAuthRuntimeReadiness,
 } from './google/oauth-persistence.js';
 export type {
   PostgresEncryptedGoogleCalendarGrantRecord,

@@ -10811,23 +10811,7 @@
           "notNull": true
         }
       },
-      "indexes": {
-        "finance_import_fingerprints_transaction_unique": {
-          "name": "finance_import_fingerprints_transaction_unique",
-          "columns": [
-            {
-              "expression": "transaction_entity_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "finance_import_fingerprints_scope_primary": {
@@ -10835,7 +10819,13 @@
           "columns": ["household_id", "space_id", "account_id", "fingerprint"]
         }
       },
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "finance_import_fingerprints_transaction_unique": {
+          "name": "finance_import_fingerprints_transaction_unique",
+          "nullsNotDistinct": false,
+          "columns": ["transaction_entity_id"]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "finance_import_fingerprints_hash_check": {
@@ -10927,53 +10917,21 @@
           "notNull": true
         }
       },
-      "indexes": {
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
         "finance_import_receipts_owner_idempotency_unique": {
           "name": "finance_import_receipts_owner_idempotency_unique",
-          "columns": [
-            {
-              "expression": "household_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "idempotency_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
+          "nullsNotDistinct": false,
+          "columns": ["household_id", "owner_user_id", "idempotency_key"]
         },
         "finance_import_receipts_plan_unique": {
           "name": "finance_import_receipts_plan_unique",
-          "columns": [
-            {
-              "expression": "plan_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
+          "nullsNotDistinct": false,
+          "columns": ["plan_id"]
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
         "finance_import_receipts_plan_hash_check": {
