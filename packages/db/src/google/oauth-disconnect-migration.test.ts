@@ -22,11 +22,14 @@ const extractFunction = (sql: string, name: string): string => {
 describe('Google OAuth disconnect operations migration', () => {
   it('is journaled as the narrow 0010 provider-side-effect fence', async () => {
     const migrations = await loadOrderedMigrations();
-
-    expect(migrations.at(-1)?.id).toBe(
-      '0010_google_oauth_disconnect_operations',
+    const migration = migrations.find(
+      ({ id }) => id === '0010_google_oauth_disconnect_operations',
     );
-    expect(migrations.at(-1)?.index).toBe(10);
+
+    expect(migration).toMatchObject({
+      id: '0010_google_oauth_disconnect_operations',
+      index: 10,
+    });
   });
 
   it('stores actor-session-key receipts behind forced RLS without raw app DML', async () => {
