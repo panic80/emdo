@@ -516,6 +516,8 @@
 
 .finance-import-panel {
   display: grid;
+  width: 100%;
+  min-width: 0;
   max-width: 680px;
   gap: 10px;
 }
@@ -523,6 +525,7 @@
 .finance-import-panel select,
 .finance-import-panel input[type='file'] {
   width: 100%;
+  min-width: 0;
   max-width: 480px;
   min-height: 42px;
 }

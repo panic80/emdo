@@ -721,9 +721,13 @@ describeDatabase(
         'alter table emdo.finance_import_plans disable trigger finance_import_plans_redact_once',
       );
       await admin.query(
-        `update emdo.finance_import_plans
-            set created_at = pg_catalog.clock_timestamp() - interval '31 minutes',
-                expires_at = pg_catalog.clock_timestamp() - interval '1 minute'
+        `with expired_plan_time as (
+           select pg_catalog.clock_timestamp() as now
+         )
+         update emdo.finance_import_plans
+            set created_at = expired_plan_time.now - interval '31 minutes',
+                expires_at = expired_plan_time.now - interval '2 minutes'
+           from expired_plan_time
           where plan_id = $1`,
         [ids.plan],
       );
