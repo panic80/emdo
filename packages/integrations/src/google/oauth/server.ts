@@ -3,7 +3,11 @@ import {
   type EffectiveAuthorizationScopeFingerprint,
 } from '@emdo/contracts';
 
-import { VaultCrypto, type VaultKeyProvider } from '../../vault/crypto.js';
+import {
+  RotatingVaultKeyProvider,
+  VaultCrypto,
+  type VaultKeyProvider,
+} from '../../vault/crypto.js';
 import {
   FetchGoogleCalendarConditionalGateway,
   GoogleCalendarFreeBusyClient,
@@ -43,6 +47,7 @@ export {
   GOOGLE_OAUTH_ENDPOINTS,
   GOOGLE_OAUTH_FETCH_LIMITS,
   FetchGoogleOAuthTransport,
+  RotatingVaultKeyProvider,
 };
 export type {
   EncryptedGoogleCalendarGrantStore,

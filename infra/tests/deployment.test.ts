@@ -662,6 +662,14 @@ describe('host deployment and recovery scripts', () => {
     expect(common).toContain('assert_env_file_allowed_keys');
     expect(common).toContain('assert_internal_postgres_uri');
     expect(common).toContain('assert_staging_auth_provider_config');
+    const stagingManifest = common.slice(
+      common.indexOf('assert_staging_secret_manifest()'),
+      common.indexOf('assert_production_secret_manifest()'),
+    );
+    expect(stagingManifest).not.toContain('EMDO_CREDENTIAL_VAULT_KEY');
+    expect(stagingManifest).not.toContain(
+      'EMDO_GOOGLE_CALENDAR_VAULT_KEYRING_B64URL',
+    );
     expect(staging).toContain('assert_isolated_project_absent');
     expect(staging.indexOf('expires-at-epoch')).toBeLessThan(
       staging.indexOf('staging_compose pull'),

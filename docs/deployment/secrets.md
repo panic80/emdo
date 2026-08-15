@@ -90,7 +90,19 @@ Expected private env-file boundaries are:
   replays through exact `issueUntil` and `verifyUntil` instants. Every key is
   32–64 bytes, key IDs and key material are unique, and a previous key's drain
   window is at least the two-minute proof lifetime plus 30 seconds of clock
-  skew. `EMDO_VISUAL_DECISION_DATABASE_URL` must name the membership-free
+  skew. The future production-only Google Calendar connector uses the separate
+  `EMDO_GOOGLE_CALENDAR_VAULT_KEYRING_B64URL`: canonical unpadded base64url of
+  strict version-1 JSON `{schemaVersion,current,previous}`. Each entry is exact
+  `{keyVersion,keyB64url}` with a 32-byte KEK; the current key alone wraps new
+  data keys, while at most two previous keys unwrap only envelopes carrying
+  their exact version. Versions are unique lowercase segmented identifiers,
+  decoded key material must also be unique, and parser-owned bytes are erased
+  after construction. This material is never shared with authentication,
+  Sync, cursor, visual-proof, Google identity, or another provider key. The
+  obsolete `EMDO_CREDENTIAL_VAULT_KEY` is unsupported; neither it nor the
+  Calendar vault keyring is admitted to synthetic staging. Invalid or absent
+  Calendar keyring configuration keeps `google.connector` unavailable.
+  `EMDO_VISUAL_DECISION_DATABASE_URL` must name the membership-free
   `emdo_visual_decision_login` in `emdo_app`; it receives schema usage and
   execute permission on only `commit_provider_proposal_decision(text,jsonb)`.
   The broader workflow credential is not admitted to `api.env`; it remains

@@ -105,10 +105,12 @@ space-access grant is never pinned in the gateway constructor.
 The runtime remains unbound because the final curated environment factory is
 still missing. That factory must return the route gateway and a bounded
 readiness check over the DB-backed flow, encrypted grant, authorization epoch,
-lease, and audit stores; vault key ring; identity and Calendar OAuth client
+lease, and audit stores; the strict production-only
+`EMDO_GOOGLE_CALENDAR_VAULT_KEYRING_B64URL`; identity and Calendar OAuth client
 separation; exact redirect/public origins; and a credentialed live Calendar
-smoke target. Until that complete graph lands, `google.connector` stays
-unavailable.
+smoke target. The raw `EMDO_CREDENTIAL_VAULT_KEY` has no supported fallback,
+and synthetic staging rejects both raw and Calendar provider vault secrets.
+Until that complete graph lands, `google.connector` stays unavailable.
 
 ### Voice provider
 

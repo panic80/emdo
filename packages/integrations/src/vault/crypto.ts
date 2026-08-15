@@ -1,4 +1,9 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import { z } from 'zod';
 
 import {
@@ -36,6 +41,11 @@ export interface VaultKeyProvider {
 }
 
 const Base64UrlSchema = z.string().regex(/^[A-Za-z0-9_-]*$/);
+export const VaultKeyVersionSchema = z
+  .string()
+  .min(2)
+  .max(64)
+  .regex(/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/u);
 
 export const EncryptedVaultPayloadSchema = z
   .strictObject({
@@ -45,7 +55,7 @@ export const EncryptedVaultPayloadSchema = z
     nonce: Base64UrlSchema.min(1),
     authenticationTag: Base64UrlSchema.min(1),
     wrappedKey: Base64UrlSchema.min(1),
-    keyVersion: OpaqueReferenceSchema,
+    keyVersion: VaultKeyVersionSchema,
   })
   .transform(deepFreeze);
 
@@ -158,50 +168,152 @@ export class VaultCrypto {
   }
 }
 
+const VaultKekSchema = z.strictObject({
+  keyVersion: VaultKeyVersionSchema,
+  key: z.instanceof(Uint8Array),
+});
+const RotatingVaultKeyProviderOptionsSchema = z.strictObject({
+  current: VaultKekSchema,
+  previous: z.array(VaultKekSchema).max(2).optional(),
+});
+const WrappedDataKeySchema = z.strictObject({
+  wrappedKey: Base64UrlSchema.min(1),
+  keyVersion: VaultKeyVersionSchema,
+});
+
+const invalidVaultKeyProvider = (): Error =>
+  new Error('Vault key provider unavailable');
+
+export class RotatingVaultKeyProvider implements VaultKeyProvider {
+  readonly #currentKeyVersion: string;
+  readonly #keys = new Map<string, Buffer>();
+  #disposed = false;
+
+  constructor(optionsInput: {
+    readonly current: {
+      readonly keyVersion: string;
+      readonly key: Uint8Array;
+    };
+    readonly previous?: readonly {
+      readonly keyVersion: string;
+      readonly key: Uint8Array;
+    }[];
+  }) {
+    const options =
+      RotatingVaultKeyProviderOptionsSchema.safeParse(optionsInput);
+    if (!options.success) throw invalidVaultKeyProvider();
+    const entries = [options.data.current, ...(options.data.previous ?? [])];
+    if (
+      entries.some(({ key }) => key.byteLength !== 32) ||
+      new Set(entries.map(({ keyVersion }) => keyVersion)).size !==
+        entries.length
+    ) {
+      throw invalidVaultKeyProvider();
+    }
+    for (let left = 0; left < entries.length; left += 1) {
+      for (let right = left + 1; right < entries.length; right += 1) {
+        if (timingSafeEqual(entries[left]!.key, entries[right]!.key)) {
+          throw invalidVaultKeyProvider();
+        }
+      }
+    }
+    try {
+      for (const entry of entries) {
+        this.#keys.set(entry.keyVersion, Buffer.from(entry.key));
+      }
+      this.#currentKeyVersion = options.data.current.keyVersion;
+    } catch {
+      for (const key of this.#keys.values()) key.fill(0);
+      this.#keys.clear();
+      throw invalidVaultKeyProvider();
+    }
+    Object.freeze(this);
+  }
+
+  async wrap(dataKey: Uint8Array): Promise<WrappedDataKey> {
+    const masterKey = this.#keyFor(this.#currentKeyVersion);
+    if (!(dataKey instanceof Uint8Array) || dataKey.byteLength !== 32) {
+      throw invalidVaultKeyProvider();
+    }
+    try {
+      const nonce = randomBytes(12);
+      const cipher = createCipheriv('aes-256-gcm', masterKey, nonce, {
+        authTagLength: 16,
+      });
+      cipher.setAAD(Buffer.from(this.#currentKeyVersion));
+      const ciphertext = Buffer.concat([
+        cipher.update(dataKey),
+        cipher.final(),
+      ]);
+      return Object.freeze({
+        wrappedKey: Buffer.concat([
+          nonce,
+          cipher.getAuthTag(),
+          ciphertext,
+        ]).toString('base64url'),
+        keyVersion: this.#currentKeyVersion,
+      });
+    } catch {
+      throw invalidVaultKeyProvider();
+    }
+  }
+
+  async unwrap(wrappedInput: WrappedDataKey): Promise<Uint8Array> {
+    const wrapped = WrappedDataKeySchema.safeParse(wrappedInput);
+    if (!wrapped.success) throw invalidVaultKeyProvider();
+    const masterKey = this.#keyFor(wrapped.data.keyVersion);
+    let bytes: Buffer | undefined;
+    try {
+      bytes = decodeCanonicalBase64Url(
+        wrapped.data.wrappedKey,
+        'Wrapped vault key',
+        60,
+      );
+      const nonce = bytes.subarray(0, 12);
+      const tag = bytes.subarray(12, 28);
+      const ciphertext = bytes.subarray(28);
+      const decipher = createDecipheriv('aes-256-gcm', masterKey, nonce, {
+        authTagLength: 16,
+      });
+      decipher.setAAD(Buffer.from(wrapped.data.keyVersion));
+      decipher.setAuthTag(tag);
+      return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    } catch {
+      throw invalidVaultKeyProvider();
+    } finally {
+      bytes?.fill(0);
+    }
+  }
+
+  dispose(): void {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    for (const key of this.#keys.values()) key.fill(0);
+    this.#keys.clear();
+  }
+
+  #keyFor(keyVersion: string): Buffer {
+    if (this.#disposed) throw invalidVaultKeyProvider();
+    const key = this.#keys.get(keyVersion);
+    if (key === undefined) throw invalidVaultKeyProvider();
+    return key;
+  }
+}
+
 export class InMemoryVaultKeyProvider implements VaultKeyProvider {
-  private readonly masterKey: Buffer;
-  private readonly keyVersion: string;
+  readonly #provider: RotatingVaultKeyProvider;
 
   constructor(masterKey: Uint8Array, keyVersion: string) {
-    if (masterKey.byteLength !== 32)
-      throw new Error('Vault KEK must be 32 bytes');
-    this.masterKey = Buffer.from(masterKey);
-    this.keyVersion = OpaqueReferenceSchema.parse(keyVersion);
-  }
-
-  async wrap(dataKey: Uint8Array) {
-    const nonce = randomBytes(12);
-    const cipher = createCipheriv('aes-256-gcm', this.masterKey, nonce, {
-      authTagLength: 16,
-    });
-    cipher.setAAD(Buffer.from(this.keyVersion));
-    const ciphertext = Buffer.concat([cipher.update(dataKey), cipher.final()]);
-    return Object.freeze({
-      wrappedKey: Buffer.concat([
-        nonce,
-        cipher.getAuthTag(),
-        ciphertext,
-      ]).toString('base64url'),
-      keyVersion: this.keyVersion,
+    this.#provider = new RotatingVaultKeyProvider({
+      current: { keyVersion, key: masterKey },
     });
   }
 
-  async unwrap(wrapped: WrappedDataKey) {
-    if (wrapped.keyVersion !== this.keyVersion)
-      throw new Error('Unknown vault key');
-    const bytes = decodeCanonicalBase64Url(
-      wrapped.wrappedKey,
-      'Wrapped vault key',
-      60,
-    );
-    const nonce = bytes.subarray(0, 12);
-    const tag = bytes.subarray(12, 28);
-    const ciphertext = bytes.subarray(28);
-    const decipher = createDecipheriv('aes-256-gcm', this.masterKey, nonce, {
-      authTagLength: 16,
-    });
-    decipher.setAAD(Buffer.from(this.keyVersion));
-    decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  wrap(dataKey: Uint8Array): Promise<WrappedDataKey> {
+    return this.#provider.wrap(dataKey);
+  }
+
+  unwrap(wrapped: WrappedDataKey): Promise<Uint8Array> {
+    return this.#provider.unwrap(wrapped);
   }
 }

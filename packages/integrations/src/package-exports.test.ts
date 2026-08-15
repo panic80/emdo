@@ -72,6 +72,7 @@ describe('integration package subpath exports', () => {
 
     expect(server).toHaveProperty('createGoogleCalendarOAuthServerRuntime');
     expect(server).toHaveProperty('FetchGoogleOAuthTransport');
+    expect(server).toHaveProperty('RotatingVaultKeyProvider');
     expect(server).not.toHaveProperty(
       'createGoogleCalendarCredentialedLiveSmokeTarget',
     );
