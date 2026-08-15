@@ -1,10 +1,8 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
 import { mockAuthenticatedSession } from './support.js';
 
-async function installVoiceBrowserMocks(
-  page: import('@playwright/test').Page,
-): Promise<void> {
+async function installVoiceBrowserMocks(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const track = { stop: () => undefined };
     Object.defineProperty(navigator, 'mediaDevices', {
@@ -62,6 +60,531 @@ async function installVoiceBrowserMocks(
       value: () => undefined,
     });
   });
+}
+
+const durableMutationProbeName = '__emdoDurableMutationProbe' as const;
+
+interface DurableMutationProbe {
+  readonly arm: () => readonly string[];
+  readonly stop: () => readonly string[];
+  readonly installed: () => readonly string[];
+}
+
+async function installDurableMutationProbe(page: Page): Promise<void> {
+  await page.addInitScript((probeName) => {
+    const attempts: string[] = [];
+    const installed = new Set<string>();
+    let armed = false;
+    const record = (label: string): void => {
+      if (armed) attempts.push(label);
+    };
+    const wrapMethod = (
+      target: object | undefined,
+      property: string,
+      label: string,
+      shouldRecord: (arguments_: readonly unknown[]) => boolean = () => true,
+    ): void => {
+      if (!target) return;
+      const recordTarget = target as Record<string, unknown>;
+      const original = recordTarget[property];
+      if (typeof original !== 'function') return;
+      Object.defineProperty(target, property, {
+        configurable: true,
+        writable: true,
+        value: function (this: unknown, ...arguments_: readonly unknown[]) {
+          if (shouldRecord(arguments_)) record(label);
+          return Reflect.apply(original, this, arguments_);
+        },
+      });
+      installed.add(label);
+    };
+
+    wrapMethod(Storage.prototype, 'setItem', 'Storage.setItem');
+    wrapMethod(Storage.prototype, 'removeItem', 'Storage.removeItem');
+    wrapMethod(Storage.prototype, 'clear', 'Storage.clear');
+    wrapMethod(Cache.prototype, 'put', 'Cache.put');
+    wrapMethod(Cache.prototype, 'add', 'Cache.add');
+    wrapMethod(Cache.prototype, 'addAll', 'Cache.addAll');
+    wrapMethod(Cache.prototype, 'delete', 'Cache.delete');
+    wrapMethod(CacheStorage.prototype, 'delete', 'CacheStorage.delete');
+    wrapMethod(
+      IDBDatabase.prototype,
+      'createObjectStore',
+      'IDBDatabase.createObjectStore',
+    );
+    wrapMethod(
+      IDBDatabase.prototype,
+      'deleteObjectStore',
+      'IDBDatabase.deleteObjectStore',
+    );
+    wrapMethod(IDBObjectStore.prototype, 'add', 'IDBObjectStore.add');
+    wrapMethod(IDBObjectStore.prototype, 'put', 'IDBObjectStore.put');
+    wrapMethod(IDBObjectStore.prototype, 'delete', 'IDBObjectStore.delete');
+    wrapMethod(IDBObjectStore.prototype, 'clear', 'IDBObjectStore.clear');
+    wrapMethod(IDBCursor.prototype, 'update', 'IDBCursor.update');
+    wrapMethod(IDBCursor.prototype, 'delete', 'IDBCursor.delete');
+    wrapMethod(
+      IDBFactory.prototype,
+      'deleteDatabase',
+      'IDBFactory.deleteDatabase',
+    );
+    wrapMethod(
+      globalThis.FileSystemDirectoryHandle?.prototype,
+      'getDirectoryHandle',
+      'FileSystemDirectoryHandle.getDirectoryHandle(create)',
+      (arguments_) =>
+        (arguments_[1] as { readonly create?: unknown } | undefined)?.create ===
+        true,
+    );
+    wrapMethod(
+      globalThis.FileSystemDirectoryHandle?.prototype,
+      'getFileHandle',
+      'FileSystemDirectoryHandle.getFileHandle(create)',
+      (arguments_) =>
+        (arguments_[1] as { readonly create?: unknown } | undefined)?.create ===
+        true,
+    );
+    wrapMethod(
+      globalThis.FileSystemDirectoryHandle?.prototype,
+      'removeEntry',
+      'FileSystemDirectoryHandle.removeEntry',
+    );
+    wrapMethod(
+      globalThis.FileSystemFileHandle?.prototype,
+      'createWritable',
+      'FileSystemFileHandle.createWritable',
+    );
+    wrapMethod(
+      globalThis.FileSystemHandle?.prototype,
+      'move',
+      'FileSystemHandle.move',
+    );
+    wrapMethod(
+      globalThis.StorageManager?.prototype,
+      'persist',
+      'StorageManager.persist',
+    );
+
+    const cookieOwner = [Document.prototype, HTMLDocument.prototype].find(
+      (candidate) =>
+        Object.getOwnPropertyDescriptor(candidate, 'cookie')?.set !== undefined,
+    );
+    const cookieDescriptor = cookieOwner
+      ? Object.getOwnPropertyDescriptor(cookieOwner, 'cookie')
+      : undefined;
+    if (cookieOwner && cookieDescriptor?.get && cookieDescriptor.set) {
+      Object.defineProperty(cookieOwner, 'cookie', {
+        ...cookieDescriptor,
+        get: cookieDescriptor.get,
+        set(value: string) {
+          record('Document.cookie');
+          cookieDescriptor.set?.call(this, value);
+        },
+      });
+      installed.add('Document.cookie');
+    }
+
+    const cookieStorePrototype = (
+      globalThis as typeof globalThis & {
+        CookieStore?: { readonly prototype?: object };
+      }
+    ).CookieStore?.prototype;
+    wrapMethod(cookieStorePrototype, 'set', 'CookieStore.set');
+    wrapMethod(cookieStorePrototype, 'delete', 'CookieStore.delete');
+
+    const probe: DurableMutationProbe = Object.freeze({
+      arm: () => {
+        attempts.length = 0;
+        armed = true;
+        return Object.freeze([...attempts]);
+      },
+      stop: () => {
+        armed = false;
+        return Object.freeze([...attempts]);
+      },
+      installed: () => Object.freeze([...installed].sort()),
+    });
+    Object.defineProperty(window, probeName, {
+      configurable: false,
+      enumerable: false,
+      value: probe,
+      writable: false,
+    });
+  }, durableMutationProbeName);
+}
+
+async function captureDurableBrowserState(
+  page: Page,
+  context: BrowserContext,
+): Promise<unknown> {
+  const pageState = await page.evaluate(async () => {
+    const digest = async (bytes: BufferSource): Promise<string> =>
+      [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))]
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('');
+    const describeValue = async (
+      value: unknown,
+      seen = new WeakMap<object, number>(),
+      nextReference = { value: 0 },
+    ): Promise<unknown> => {
+      if (value === null) return { type: 'null' };
+      if (value === undefined) return { type: 'undefined' };
+      if (typeof value === 'string') return { type: 'string', value };
+      if (typeof value === 'boolean') return { type: 'boolean', value };
+      if (typeof value === 'number') {
+        return {
+          type: 'number',
+          value: Number.isNaN(value)
+            ? 'NaN'
+            : Object.is(value, -0)
+              ? '-0'
+              : String(value),
+        };
+      }
+      if (typeof value === 'bigint') {
+        return { type: 'bigint', value: value.toString(10) };
+      }
+      if (typeof value !== 'object') {
+        return { type: typeof value };
+      }
+      const reference = seen.get(value);
+      if (reference !== undefined) return { reference };
+      const currentReference = nextReference.value;
+      nextReference.value += 1;
+      seen.set(value, currentReference);
+      if (value instanceof Blob) {
+        return {
+          reference: currentReference,
+          type: value instanceof File ? 'File' : 'Blob',
+          mimeType: value.type,
+          size: value.size,
+          name: value instanceof File ? value.name : null,
+          lastModified: value instanceof File ? value.lastModified : null,
+          sha256: await digest(await value.arrayBuffer()),
+        };
+      }
+      if (value instanceof ArrayBuffer) {
+        return {
+          reference: currentReference,
+          type: 'ArrayBuffer',
+          byteLength: value.byteLength,
+          sha256: await digest(value),
+        };
+      }
+      if (ArrayBuffer.isView(value)) {
+        const bytes = new Uint8Array(
+          value.buffer,
+          value.byteOffset,
+          value.byteLength,
+        );
+        const digestBytes = new Uint8Array(bytes.byteLength);
+        digestBytes.set(bytes);
+        return {
+          reference: currentReference,
+          type: value.constructor.name,
+          byteLength: value.byteLength,
+          sha256: await digest(digestBytes.buffer),
+        };
+      }
+      if (value instanceof Date) {
+        return {
+          reference: currentReference,
+          type: 'Date',
+          value: value.toISOString(),
+        };
+      }
+      if (value instanceof RegExp) {
+        return {
+          reference: currentReference,
+          type: 'RegExp',
+          source: value.source,
+          flags: value.flags,
+        };
+      }
+      if (typeof CryptoKey !== 'undefined' && value instanceof CryptoKey) {
+        return {
+          reference: currentReference,
+          type: 'CryptoKey',
+          algorithm: JSON.parse(JSON.stringify(value.algorithm)) as unknown,
+          extractable: value.extractable,
+          usages: [...value.usages].sort(),
+        };
+      }
+      if (value instanceof Map) {
+        const entries = [];
+        for (const [key, entry] of value.entries()) {
+          entries.push([
+            await describeValue(key, seen, nextReference),
+            await describeValue(entry, seen, nextReference),
+          ]);
+        }
+        return { reference: currentReference, type: 'Map', entries };
+      }
+      if (value instanceof Set) {
+        const entries = [];
+        for (const entry of value.values()) {
+          entries.push(await describeValue(entry, seen, nextReference));
+        }
+        return { reference: currentReference, type: 'Set', entries };
+      }
+      if (Array.isArray(value)) {
+        return {
+          reference: currentReference,
+          type: 'Array',
+          entries: await Promise.all(
+            value.map((entry) => describeValue(entry, seen, nextReference)),
+          ),
+        };
+      }
+      const entries = [];
+      for (const key of Object.keys(value).sort()) {
+        entries.push([
+          key,
+          await describeValue(
+            (value as Record<string, unknown>)[key],
+            seen,
+            nextReference,
+          ),
+        ]);
+      }
+      return {
+        reference: currentReference,
+        type: value.constructor?.name ?? 'Object',
+        entries,
+      };
+    };
+    const storageEntries = (storage: Storage): readonly (readonly string[])[] =>
+      Array.from({ length: storage.length }, (_, index) => storage.key(index))
+        .flatMap((key) =>
+          key === null ? [] : [[key, storage.getItem(key) ?? ''] as const],
+        )
+        .sort(([left], [right]) => left.localeCompare(right, 'en'));
+
+    const cacheEntries = [];
+    for (const cacheName of (await caches.keys()).sort()) {
+      const cache = await caches.open(cacheName);
+      const requests = [...(await cache.keys())];
+      for (const request of requests.sort((left, right) =>
+        `${left.method}\n${left.url}`.localeCompare(
+          `${right.method}\n${right.url}`,
+          'en',
+        ),
+      )) {
+        const response = await cache.match(request);
+        cacheEntries.push({
+          cacheName,
+          request: {
+            headers: [...request.headers.entries()].sort(),
+            method: request.method,
+            url: request.url,
+          },
+          response: response
+            ? {
+                bodySha256: await digest(await response.clone().arrayBuffer()),
+                headers: [...response.headers.entries()].sort(),
+                status: response.status,
+                statusText: response.statusText,
+                type: response.type,
+              }
+            : null,
+        });
+      }
+    }
+
+    if (typeof indexedDB.databases !== 'function') {
+      throw new Error(
+        'IndexedDB enumeration is required for voice persistence evidence',
+      );
+    }
+    const indexedDatabases = [];
+    for (const metadata of (await indexedDB.databases())
+      .filter(
+        (candidate): candidate is IDBDatabaseInfo & { name: string } =>
+          typeof candidate.name === 'string',
+      )
+      .sort((left, right) => left.name.localeCompare(right.name, 'en'))) {
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open(metadata.name);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () =>
+          reject(
+            request.error ??
+              new Error(`Unable to inspect IndexedDB ${metadata.name}`),
+          );
+      });
+      const stores = [];
+      try {
+        for (const storeName of [...database.objectStoreNames].sort()) {
+          const transaction = database.transaction(storeName, 'readonly');
+          const completed = new Promise<void>((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () =>
+              reject(
+                transaction.error ?? new Error('IndexedDB inspection failed'),
+              );
+            transaction.onabort = () =>
+              reject(
+                transaction.error ?? new Error('IndexedDB inspection aborted'),
+              );
+          });
+          const store = transaction.objectStore(storeName);
+          const requestResult = <Value>(
+            request: IDBRequest<Value>,
+          ): Promise<Value> =>
+            new Promise((resolve, reject) => {
+              request.onsuccess = () => resolve(request.result);
+              request.onerror = () =>
+                reject(request.error ?? new Error('IndexedDB read failed'));
+            });
+          const [keys, values] = await Promise.all([
+            requestResult(store.getAllKeys()),
+            requestResult(store.getAll()),
+          ]);
+          await completed;
+          stores.push({
+            autoIncrement: store.autoIncrement,
+            indexes: [...store.indexNames].sort().map((indexName) => {
+              const index = store.index(indexName);
+              return {
+                keyPath: index.keyPath,
+                multiEntry: index.multiEntry,
+                name: index.name,
+                unique: index.unique,
+              };
+            }),
+            keyPath: store.keyPath,
+            name: store.name,
+            records: await Promise.all(
+              values.map(async (value, index) => ({
+                key: await describeValue(keys[index]),
+                value: await describeValue(value),
+              })),
+            ),
+          });
+        }
+      } finally {
+        database.close();
+      }
+      indexedDatabases.push({
+        name: metadata.name,
+        stores,
+        version: database.version,
+      });
+    }
+
+    const opfsEntries: Array<{
+      readonly kind: 'directory' | 'file';
+      readonly lastModified: number | null;
+      readonly mimeType: string | null;
+      readonly path: string;
+      readonly sha256: string | null;
+      readonly size: number | null;
+    }> = [];
+    const isDirectoryHandle = (
+      handle: FileSystemHandle,
+    ): handle is FileSystemDirectoryHandle =>
+      handle.kind === 'directory' && 'entries' in handle;
+    const isFileHandle = (
+      handle: FileSystemHandle,
+    ): handle is FileSystemFileHandle =>
+      handle.kind === 'file' && 'getFile' in handle;
+    const visitDirectory = async (
+      directory: FileSystemDirectoryHandle,
+      prefix = '',
+    ): Promise<void> => {
+      const entries = [];
+      for await (const entry of directory.entries()) entries.push(entry);
+      entries.sort(([left], [right]) => left.localeCompare(right, 'en'));
+      for (const [name, handle] of entries) {
+        const path = `${prefix}/${name}`;
+        if (isDirectoryHandle(handle)) {
+          opfsEntries.push({
+            kind: 'directory',
+            lastModified: null,
+            mimeType: null,
+            path,
+            sha256: null,
+            size: null,
+          });
+          await visitDirectory(handle, path);
+          continue;
+        }
+        if (!isFileHandle(handle)) {
+          throw new Error(`Unsupported OPFS handle: ${path}`);
+        }
+        const file = await handle.getFile();
+        opfsEntries.push({
+          kind: 'file',
+          lastModified: file.lastModified,
+          mimeType: file.type,
+          path,
+          sha256: await digest(await file.arrayBuffer()),
+          size: file.size,
+        });
+      }
+    };
+    await visitDirectory(await navigator.storage.getDirectory());
+
+    return {
+      cacheEntries,
+      indexedDatabases,
+      localStorage: storageEntries(localStorage),
+      opfsEntries,
+      sessionStorage: storageEntries(sessionStorage),
+    };
+  });
+  const cookies = (await context.cookies(page.url()))
+    .map((cookie) => ({
+      domain: cookie.domain,
+      expires: cookie.expires,
+      httpOnly: cookie.httpOnly,
+      name: cookie.name,
+      path: cookie.path,
+      sameSite: cookie.sameSite,
+      secure: cookie.secure,
+      value: cookie.value,
+    }))
+    .sort((left, right) =>
+      `${left.domain}\n${left.path}\n${left.name}`.localeCompare(
+        `${right.domain}\n${right.path}\n${right.name}`,
+        'en',
+      ),
+    );
+  return { cookies, pageState };
+}
+
+async function armDurableMutationProbe(page: Page): Promise<readonly string[]> {
+  return page.evaluate((probeName) => {
+    const probe = (window as unknown as Record<string, DurableMutationProbe>)[
+      probeName
+    ];
+    if (!probe) throw new Error('Durable mutation probe is unavailable');
+    return probe.arm();
+  }, durableMutationProbeName);
+}
+
+async function stopDurableMutationProbe(
+  page: Page,
+): Promise<readonly string[]> {
+  return page.evaluate((probeName) => {
+    const probe = (window as unknown as Record<string, DurableMutationProbe>)[
+      probeName
+    ];
+    if (!probe) throw new Error('Durable mutation probe is unavailable');
+    return probe.stop();
+  }, durableMutationProbeName);
+}
+
+async function installedDurableMutationHooks(
+  page: Page,
+): Promise<readonly string[]> {
+  return page.evaluate((probeName) => {
+    const probe = (window as unknown as Record<string, DurableMutationProbe>)[
+      probeName
+    ];
+    if (!probe) throw new Error('Durable mutation probe is unavailable');
+    return probe.installed();
+  }, durableMutationProbeName);
 }
 
 test.describe('push-to-talk ephemeral lifecycle', () => {
@@ -575,6 +1098,155 @@ test.describe('push-to-talk ephemeral lifecycle', () => {
         expect(cacheParameters[0]?.[1]).toMatch(/^[a-f0-9]{32}$/u);
       }
     }
+  });
+
+  test('leaves no push-to-talk audio or transcript in durable browser storage', async ({
+    context,
+    page,
+  }) => {
+    await installDurableMutationProbe(page);
+    await page.route('**/api/v1/voice/transcribe?*', async (route) => {
+      expect(route.request().postDataBuffer()?.byteLength ?? 0).toBeGreaterThan(
+        0,
+      );
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: {
+          'cache-control': 'no-store, private',
+          pragma: 'no-cache',
+          expires: '0',
+          'x-content-type-options': 'nosniff',
+        },
+        body: JSON.stringify({
+          schemaVersion: 1,
+          transcript: 'Voice persistence canary transcript',
+          model: 'gpt-4o-mini-transcribe',
+          attempt: 'default',
+          spendWarning: false,
+          replayed: false,
+        }),
+      });
+    });
+    await page.route('**/api/v1/turns', async (route) => {
+      await route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        headers: { 'cache-control': 'no-store, private' },
+        body: JSON.stringify({
+          schemaVersion: 1,
+          runId: '22222222-2222-4222-8222-222222222222',
+          status: 'accepted',
+          replayed: false,
+          eventsPath:
+            '/api/v1/runs/22222222-2222-4222-8222-222222222222/events',
+        }),
+      });
+    });
+    await page.route('**/api/v1/runs/*/events', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        headers: { 'cache-control': 'no-store, private' },
+        body: 'id: 1\nevent: assistant.message\ndata: {"schemaVersion":1,"runId":"22222222-2222-4222-8222-222222222222","sequence":1,"type":"assistant.message","occurredAt":"2026-08-09T12:00:00.000Z","data":{"text":"Voice persistence canary reply."}}\n\n',
+      });
+    });
+    await page.route('**/api/v1/voice/speak', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'audio/mpeg',
+        headers: {
+          'cache-control': 'no-store, private',
+          pragma: 'no-cache',
+          expires: '0',
+          'x-content-type-options': 'nosniff',
+        },
+        body: Buffer.from('voice-persistence-canary-spoken-audio'),
+      });
+    });
+
+    await page.goto('/ask');
+    await page.evaluate(async () => {
+      if (location.port === '4173') await navigator.serviceWorker.ready;
+    });
+    await expect(page.getByRole('heading', { name: 'Ask EMDO' })).toBeVisible();
+    expect(await installedDurableMutationHooks(page)).toEqual(
+      expect.arrayContaining([
+        'Cache.add',
+        'Cache.addAll',
+        'Cache.delete',
+        'Cache.put',
+        'CacheStorage.delete',
+        'Document.cookie',
+        'FileSystemDirectoryHandle.getDirectoryHandle(create)',
+        'FileSystemDirectoryHandle.getFileHandle(create)',
+        'FileSystemDirectoryHandle.removeEntry',
+        'FileSystemFileHandle.createWritable',
+        'IDBDatabase.createObjectStore',
+        'IDBDatabase.deleteObjectStore',
+        'IDBFactory.deleteDatabase',
+        'IDBObjectStore.add',
+        'IDBObjectStore.clear',
+        'IDBObjectStore.delete',
+        'IDBObjectStore.put',
+        'Storage.clear',
+        'Storage.removeItem',
+        'Storage.setItem',
+      ]),
+    );
+    const durableStateBefore = await captureDurableBrowserState(page, context);
+    expect(await armDurableMutationProbe(page)).toEqual([]);
+
+    await page.getByRole('button', { name: 'Start push-to-talk' }).click();
+    await page.getByRole('button', { name: 'Start recording' }).click();
+    await expect(page.getByText('Listening…')).toBeVisible();
+    await page.getByRole('button', { name: 'Stop recording' }).click();
+    const transcript = page.getByLabel('Review and correct your transcript');
+    await expect(transcript).toHaveValue('Voice persistence canary transcript');
+    await transcript.fill('Corrected persistence canary transcript');
+    await page.getByRole('button', { name: 'Use transcript' }).click();
+    await expect(
+      page.getByText('Corrected persistence canary transcript'),
+    ).toBeVisible();
+    await expect(
+      page
+        .locator('.conversation-messages .message--assistant')
+        .filter({ hasText: 'Voice persistence canary reply.' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('region', { name: 'Spoken reply' }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Play spoken reply' }).click();
+    await expect(
+      page.getByRole('button', { name: 'Pause spoken reply' }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Stop spoken reply' }).click();
+    await page.getByText('Captions').click();
+    await expect(
+      page
+        .getByRole('region', { name: 'Spoken reply' })
+        .getByText('Voice persistence canary reply.'),
+    ).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as typeof window & { __revokedAudioUrls?: string[] })
+              .__revokedAudioUrls ?? [],
+        ),
+      )
+      .toContain('blob:http://127.0.0.1/spoken-reply');
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }),
+    );
+
+    expect(await stopDurableMutationProbe(page)).toEqual([]);
+    expect(await captureDurableBrowserState(page, context)).toEqual(
+      durableStateBefore,
+    );
   });
 
   test('falls back to typed input when microphone access is unavailable', async ({

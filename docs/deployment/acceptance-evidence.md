@@ -96,14 +96,25 @@ The `wcag-2.2-aa` receipt therefore stays absent until a dedicated producer
 consumes both the required automated results and the dated manual checklist. A
 service-worker-ready offline edit/reopen check is not relabeled as a completed
 PWA installation, so `pwa-install-offline-reopen` stays absent until an actual
-installation suite runs. The browser voice diagnostic checks visible lifecycle
-behavior and known persistence boundaries, but does not make the
-content-agnostic claim that transformed or encrypted audio cannot exist under a
-generic storage key. Therefore `voice-ptt-storage-playback` also stays absent
-until a complete persistence probe runs. A downstream aggregation job only
-merges already-validated receipts; it does not create or relabel evidence.
+installation suite runs. The browser voice gate requires two exact
+production-Chromium identities. The lifecycle identity proves transcript
+correction, captions, playback controls, and object-URL revocation. A separate
+content-agnostic persistence identity arms mutation traps for browser storage,
+Cache Storage, cookies, IndexedDB, and OPFS before the voice lifecycle, then
+requires both zero page-realm write attempts and an exact before/after digest
+of every enumerable durable value and file. The final-state comparison is
+independent of key names and representation, so transformed or encrypted bytes
+cannot remain hidden under a generic key. It does not claim that the separate
+service-worker realm never performed a transient write followed by deletion;
+it proves no voice or transcript state remains durably stored and that the page
+made no persistence write. Only a report containing both exact passing
+identities can emit `voice-ptt-storage-playback`. This remains provider-free
+browser evidence: the test stubs transcription and speech, so it does not
+satisfy the separate `openai-transcription` or `openai-speech` provider
+receipts. A downstream aggregation job only merges already-validated receipts;
+it does not create or relabel evidence.
 
-The remaining PWA-installation, voice-persistence, staging, PowerSync
+The remaining PWA-installation, staging, PowerSync
 cross-device, provider, database-security, domain, recovery, rollback,
 service-worker update, and notification-preference receipts stay absent until
 their real suites run. The assembler therefore continues to fail closed when

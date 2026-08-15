@@ -119,6 +119,10 @@ const browserEvidenceSpecs = [
   ],
   [
     'voice.spec.ts',
+    'leaves no push-to-talk audio or transcript in durable browser storage',
+  ],
+  [
+    'voice.spec.ts',
     'falls back to typed input when microphone access is unavailable',
   ],
 ] as const;
@@ -981,11 +985,12 @@ describe('provider-free CI evidence profiles', () => {
           report,
         ),
       ),
-    ).resolves.toEqual({ receiptCount: 2 });
+    ).resolves.toEqual({ receiptCount: 3 });
 
     for (const [category, id] of [
       ['ci', 'browser-production-preview'],
       ['gates', 'production-preview-browser'],
+      ['gates', 'voice-ptt-storage-playback'],
     ] as const) {
       const source = await readFile(
         join(root, `artifacts/${category}/${id}.json`),
@@ -996,10 +1001,22 @@ describe('provider-free CI evidence profiles', () => {
           .verification.id,
       ).toBe(id);
     }
+    await expect(
+      readJson(join(root, 'artifacts/gates/voice-ptt-storage-playback.json')),
+    ).resolves.toMatchObject({
+      result: {
+        proof: {
+          audioPersisted: false,
+          transcriptCorrection: 'passed',
+          captions: 'passed',
+          playbackControls: 'passed',
+          objectUrlRevoked: true,
+        },
+      },
+    });
     for (const absent of [
       'wcag-2.2-aa',
       'pwa-install-offline-reopen',
-      'voice-ptt-storage-playback',
       'service-worker-safe-update',
       'web-push-preferences',
       'powersync-browser-connect-sync-entities-roundtrip',
@@ -1258,6 +1275,6 @@ describe('provider-free receipt workflow wiring', () => {
     }
     expect(aggregation).not.toContain('write-provider-free-ci-evidence.mjs');
     expect(aggregation).not.toContain('pwa-install-offline-reopen');
-    expect(aggregation).not.toContain('voice-ptt-storage-playback');
+    expect(aggregation).toContain('voice-ptt-storage-playback');
   });
 });

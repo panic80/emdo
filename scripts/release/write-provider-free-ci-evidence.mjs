@@ -99,6 +99,11 @@ const requiredBrowserTests = Object.freeze([
   }),
   Object.freeze({
     file: 'voice.spec.ts',
+    title:
+      'leaves no push-to-talk audio or transcript in durable browser storage',
+  }),
+  Object.freeze({
+    file: 'voice.spec.ts',
     title: 'falls back to typed input when microphone access is unavailable',
   }),
 ]);
@@ -719,6 +724,18 @@ const profileReceipts = async (profile, binding, values) => {
             directRoutes: 'passed',
             responsiveShell: 'passed',
             browserTestCount,
+          },
+        }),
+        receipt({
+          ...binding,
+          category: 'gates',
+          id: 'voice-ptt-storage-playback',
+          proof: {
+            audioPersisted: false,
+            transcriptCorrection: 'passed',
+            captions: 'passed',
+            playbackControls: 'passed',
+            objectUrlRevoked: true,
           },
         }),
       ];

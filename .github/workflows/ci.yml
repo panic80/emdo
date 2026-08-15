@@ -372,7 +372,7 @@ jobs:
             test -f "release/acceptance-evidence/artifacts/ci/$id.json"
             test -f "release/acceptance-evidence/descriptors/ci/$id.json"
           done
-          for id in production-preview-browser agent-evals-provider-free agent-evals-production-runtime; do
+          for id in production-preview-browser voice-ptt-storage-playback agent-evals-provider-free agent-evals-production-runtime; do
             test -f "release/acceptance-evidence/artifacts/gates/$id.json"
             test -f "release/acceptance-evidence/descriptors/gates/$id.json"
           done
