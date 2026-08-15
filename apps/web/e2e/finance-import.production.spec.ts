@@ -223,9 +223,45 @@ test('commits a reviewed CSV import against the production browser contract', as
   );
 
   await page.setViewportSize({ width: 320, height: 700 });
+  const horizontalOverflow = await page.evaluate(() => {
+    const viewportWidth = window.innerWidth;
+    const offenders = Array.from(
+      document.body.querySelectorAll<HTMLElement>('*'),
+    )
+      .flatMap((element) => {
+        const bounds = element.getBoundingClientRect();
+        if (bounds.left >= -0.5 && bounds.right <= viewportWidth + 0.5) {
+          return [];
+        }
+        const style = window.getComputedStyle(element);
+        return [
+          {
+            tag: element.tagName.toLowerCase(),
+            id: element.id,
+            className: element.className,
+            name: element.getAttribute('name'),
+            type: element.getAttribute('type'),
+            left: bounds.left,
+            right: bounds.right,
+            width: bounds.width,
+            minWidth: style.minWidth,
+            overflowX: style.overflowX,
+          },
+        ];
+      })
+      .slice(0, 20);
+    return {
+      viewportWidth,
+      documentScrollWidth: document.documentElement.scrollWidth,
+      bodyScrollWidth: document.body.scrollWidth,
+      offenders,
+    };
+  });
   expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBe(true);
+    horizontalOverflow.offenders,
+    JSON.stringify(horizontalOverflow, undefined, 2),
+  ).toEqual([]);
+  expect(horizontalOverflow.documentScrollWidth).toBeLessThanOrEqual(
+    horizontalOverflow.viewportWidth,
+  );
 });
