@@ -25,6 +25,7 @@ const CURRENT_DURABLE_SERVICE_NAMES = Object.freeze([
   'sync',
   'todayRead',
   'visualProofs',
+  'voice',
   'jwks',
 ] as const satisfies readonly (keyof ProductionApiServiceBindings)[]);
 
@@ -43,7 +44,8 @@ const selectCurrentDurableBindings = (
             name === 'proposals' ||
             name === 'runEvents' ||
             name === 'visualProofs' ||
-            name === 'google')
+            name === 'google' ||
+            name === 'voice')
         ) {
           return [];
         }

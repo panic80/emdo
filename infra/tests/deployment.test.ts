@@ -8,6 +8,36 @@ const read = (path: string): Promise<string> =>
   readFile(new URL(path, root), 'utf8');
 
 describe('container and edge configuration', () => {
+  it('mounts OpenAI audio configuration only through the production API secret boundary', async () => {
+    const [compose, stagingCompose, common] = await Promise.all([
+      read('infra/compose/compose.yml'),
+      read('infra/compose/compose.staging.yml'),
+      read('infra/scripts/_common.sh'),
+    ]);
+    const apiService = compose.match(
+      /\n {2}api:\n[\s\S]+?\n {2}worker:\n/u,
+    )?.[0];
+
+    expect(apiService).toContain('api.env');
+    expect(compose.match(/api\.env/gu)).toHaveLength(1);
+    for (const key of [
+      'EMDO_OPENAI_AUDIO_API_KEY',
+      'EMDO_OPENAI_SPEECH_MODEL',
+      'EMDO_OPENAI_AUDIO_PRICING_B64URL',
+    ]) {
+      expect(compose).not.toContain(key);
+      expect(stagingCompose).not.toContain(key);
+      expect(common).toContain(key);
+      const stagingManifest = common.slice(
+        common.indexOf('assert_staging_secret_manifest()'),
+        common.indexOf('assert_isolated_project_absent()'),
+      );
+      expect(stagingManifest).not.toContain(key);
+    }
+    expect(common).toContain('assert_production_api_environment "$1/api.env"');
+    expect(common).toContain('assert_staging_api_environment "$1/api.env"');
+  });
+
   it('allows only the reviewed package install hook and static SQLite WASM', async () => {
     const [rootManifestSource, webReleaseAssertion] = await Promise.all([
       read('package.json'),

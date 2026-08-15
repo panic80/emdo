@@ -161,16 +161,19 @@ const markClaimIndeterminate = async (
     | 'speech-provider-state-unknown'
     | 'transcription-settlement-state-unknown'
     | 'speech-settlement-state-unknown',
-): Promise<void> => {
-  await services.audioRequests
-    .markIndeterminate({
+): Promise<boolean> => {
+  try {
+    await services.audioRequests.markIndeterminate({
       claimId: claim.claimId,
       ownershipToken: claim.ownershipToken,
       reasonCode,
       principal,
       requestId,
-    })
-    .catch(() => undefined);
+    });
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 const releaseClaimKnownNoDispatch = async (
@@ -180,16 +183,19 @@ const releaseClaimKnownNoDispatch = async (
   requestId: string,
   reasonCode:
     'transcription-provider-not-dispatched' | 'speech-provider-not-dispatched',
-): Promise<void> => {
-  await services.audioRequests
-    .releaseKnownNoDispatch({
+): Promise<boolean> => {
+  try {
+    await services.audioRequests.releaseKnownNoDispatch({
       claimId: claim.claimId,
       ownershipToken: claim.ownershipToken,
       reasonCode,
       principal,
       requestId,
-    })
-    .catch(() => undefined);
+    });
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 export const registerVoiceRoutes = (
@@ -332,36 +338,59 @@ export const registerVoiceRoutes = (
             }),
           );
           if (result.status === 'failed') {
+            receiptTransitioned = true;
             if (result.reconciliationRequired) {
-              await markClaimIndeterminate(
+              const marked = await markClaimIndeterminate(
                 services,
                 claim,
                 principal,
                 request.id,
                 'transcription-provider-state-unknown',
               );
+              if (!marked) throw audioRequestIndeterminate();
             } else {
-              await releaseClaimKnownNoDispatch(
+              const released = await releaseClaimKnownNoDispatch(
                 services,
                 claim,
                 principal,
                 request.id,
                 'transcription-provider-not-dispatched',
               );
+              if (!released) {
+                await markClaimIndeterminate(
+                  services,
+                  claim,
+                  principal,
+                  request.id,
+                  'transcription-settlement-state-unknown',
+                );
+                throw audioRequestIndeterminate();
+              }
             }
-            receiptTransitioned = true;
             throw voiceFailureProblem(result.safeError);
           }
           if (result.model !== model) throw serviceContractProblem();
-          await services.audioRequests.completeTranscription({
-            claimId: claim.claimId,
-            ownershipToken: claim.ownershipToken,
-            transcript: result.transcript,
-            model: result.model,
-            spendWarning: result.spendWarning,
-            principal,
-            requestId: request.id,
-          });
+          try {
+            await services.audioRequests.completeTranscription({
+              claimId: claim.claimId,
+              ownershipToken: claim.ownershipToken,
+              transcript: result.transcript,
+              model: result.model,
+              spendWarning: result.spendWarning,
+              principal,
+              requestId: request.id,
+            });
+          } catch {
+            receiptTransitioned = true;
+            await markClaimIndeterminate(
+              services,
+              claim,
+              principal,
+              request.id,
+              'transcription-settlement-state-unknown',
+            );
+            throw audioRequestIndeterminate();
+          }
           receiptTransitioned = true;
           setEphemeralAudioHeaders(reply);
           return reply
@@ -378,6 +407,7 @@ export const registerVoiceRoutes = (
             });
         } catch (error) {
           if (!receiptTransitioned) {
+            receiptTransitioned = true;
             await markClaimIndeterminate(
               services,
               claim,
@@ -385,6 +415,7 @@ export const registerVoiceRoutes = (
               request.id,
               'transcription-settlement-state-unknown',
             );
+            throw audioRequestIndeterminate();
           }
           throw error;
         }
@@ -467,24 +498,35 @@ export const registerVoiceRoutes = (
             rawResult,
           );
           if (result.status === 'failed') {
+            receiptTransitioned = true;
             if (result.reconciliationRequired) {
-              await markClaimIndeterminate(
+              const marked = await markClaimIndeterminate(
                 services,
                 claim,
                 principal,
                 request.id,
                 'speech-provider-state-unknown',
               );
+              if (!marked) throw audioRequestIndeterminate();
             } else {
-              await releaseClaimKnownNoDispatch(
+              const released = await releaseClaimKnownNoDispatch(
                 services,
                 claim,
                 principal,
                 request.id,
                 'speech-provider-not-dispatched',
               );
+              if (!released) {
+                await markClaimIndeterminate(
+                  services,
+                  claim,
+                  principal,
+                  request.id,
+                  'speech-settlement-state-unknown',
+                );
+                throw audioRequestIndeterminate();
+              }
             }
-            receiptTransitioned = true;
             throw voiceFailureProblem(result.safeError);
           }
           ownedProviderAudio = result.audio;
@@ -494,14 +536,26 @@ export const registerVoiceRoutes = (
           if (result.audio.byteLength > limits.maximumAudioBytes) {
             throw serviceContractProblem();
           }
-          await services.audioRequests.completeSpeech({
-            claimId: claim.claimId,
-            ownershipToken: claim.ownershipToken,
-            model: result.model,
-            contentType: result.contentType,
-            principal,
-            requestId: request.id,
-          });
+          try {
+            await services.audioRequests.completeSpeech({
+              claimId: claim.claimId,
+              ownershipToken: claim.ownershipToken,
+              model: result.model,
+              contentType: result.contentType,
+              principal,
+              requestId: request.id,
+            });
+          } catch {
+            receiptTransitioned = true;
+            await markClaimIndeterminate(
+              services,
+              claim,
+              principal,
+              request.id,
+              'speech-settlement-state-unknown',
+            );
+            throw audioRequestIndeterminate();
+          }
           receiptTransitioned = true;
           responseAudio = Buffer.from(result.audio);
           responseMetadata = Object.freeze({
@@ -511,6 +565,7 @@ export const registerVoiceRoutes = (
           });
         } catch (error) {
           if (!receiptTransitioned) {
+            receiptTransitioned = true;
             await markClaimIndeterminate(
               services,
               claim,
@@ -518,6 +573,7 @@ export const registerVoiceRoutes = (
               request.id,
               'speech-settlement-state-unknown',
             );
+            throw audioRequestIndeterminate();
           }
           throw error;
         }

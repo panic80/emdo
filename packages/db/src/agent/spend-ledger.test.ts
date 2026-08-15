@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { DatabaseClient, DatabasePool } from '../scoped-repository.js';
-import { PostgresSpendLedger } from './spend-ledger.js';
+import {
+  PostgresSpendLedger,
+  checkPostgresAudioSpendReadiness,
+} from './spend-ledger.js';
 
 const principal = {
   userId: '20000000-0000-4000-8000-000000000001',
@@ -50,6 +53,41 @@ const stored = (state: string, decisionCadMinor = 100) => ({
 });
 
 describe('PostgresSpendLedger', () => {
+  it('accepts only the literal true result from the exact readiness aggregate', async () => {
+    for (const [ready, expected] of [
+      [true, true],
+      [false, false],
+      [null, false],
+      ['true', false],
+    ] as const) {
+      const { pool, query, client } = poolFor((sql) =>
+        sql.includes('emdo.audio_spend_ready()') ? [{ ready }] : [],
+      );
+
+      await expect(checkPostgresAudioSpendReadiness(pool)).resolves.toBe(
+        expected,
+      );
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining('emdo.audio_spend_ready()'),
+        [],
+      );
+      expect(client.release).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('fails readiness closed and releases the failed database session', async () => {
+    const client: DatabaseClient = {
+      query: vi.fn(async () => {
+        throw new Error('private database detail');
+      }),
+      release: vi.fn(),
+    };
+    const pool: DatabasePool = { connect: vi.fn(async () => client) };
+
+    await expect(checkPostgresAudioSpendReadiness(pool)).resolves.toBe(false);
+    expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
   it('serializes the monthly total and persists an exact reservation result', async () => {
     const { pool, query } = poolFor((sql) => {
       if (sql.includes('lock_active_request_scope'))

@@ -470,6 +470,17 @@ env_file_value() {
   printf '%s' "$found"
 }
 
+env_file_has_key() {
+  local path="$1"
+  local requested_key="$2"
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "${line%%=*}" == "$requested_key" ]] && return 0
+  done < "$path"
+  return 1
+}
+
 assert_internal_postgres_uri() {
   local path="$1"
   local key="$2"
@@ -517,6 +528,81 @@ assert_staging_auth_provider_config() {
     die "$path contains an invalid staging Resend authentication API key"
   [[ ${#resend_from_email} -le 320 && "$resend_from_email" =~ ^[a-z0-9][a-z0-9._%+-]{0,63}@[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$ ]] ||
     die "$path contains an invalid lowercase staging authentication sender"
+}
+
+assert_production_api_environment() {
+  local path="$1"
+  local key configured=0 api_key speech_model pricing
+  assert_env_file_allowed_keys "$path" \
+    EMDO_PUBLIC_ORIGIN EMDO_METRICS_TOKEN EMDO_API_DATABASE_URL \
+    EMDO_AUTH_DATABASE_URL EMDO_ONBOARDING_DATABASE_URL \
+    EMDO_VISUAL_DECISION_DATABASE_URL \
+    EMDO_API_AUTH_SECRET EMDO_SESSION_SECRET EMDO_SYNC_JWT_KEYRING_B64URL \
+    EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL \
+    EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL \
+    EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL \
+    EMDO_INVITATION_DELIVERY_KEY_ID \
+    EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL \
+    EMDO_GOOGLE_IDENTITY_CLIENT_ID EMDO_GOOGLE_IDENTITY_CLIENT_SECRET \
+    EMDO_TRANSACTIONAL_EMAIL_PROVIDER EMDO_RESEND_AUTH_API_KEY \
+    EMDO_RESEND_FROM_EMAIL \
+    EMDO_GOOGLE_CALENDAR_OAUTH_CLIENT_ID \
+    EMDO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET \
+    EMDO_GOOGLE_CALENDAR_OAUTH_STATE_SIGNING_KEY_B64URL \
+    EMDO_GOOGLE_CALENDAR_VAULT_KEYRING_B64URL \
+    EMDO_OPENAI_AUDIO_API_KEY EMDO_OPENAI_SPEECH_MODEL \
+    EMDO_OPENAI_AUDIO_PRICING_B64URL
+
+  for key in \
+    EMDO_OPENAI_AUDIO_API_KEY \
+    EMDO_OPENAI_SPEECH_MODEL \
+    EMDO_OPENAI_AUDIO_PRICING_B64URL; do
+    if env_file_has_key "$path" "$key"; then
+      configured=$((configured + 1))
+    fi
+  done
+  ((configured == 0)) && return 0
+  ((configured == 3)) ||
+    die "$path must configure all OpenAI audio settings together"
+
+  api_key="$(env_file_value "$path" EMDO_OPENAI_AUDIO_API_KEY)"
+  speech_model="$(env_file_value "$path" EMDO_OPENAI_SPEECH_MODEL)"
+  pricing="$(env_file_value "$path" EMDO_OPENAI_AUDIO_PRICING_B64URL)"
+  [[ ${#api_key} -ge 16 && ${#api_key} -le 512 && "$api_key" =~ ^[A-Za-z0-9_-]+$ ]] ||
+    die "$path contains an invalid OpenAI audio API key"
+  case "$speech_model" in
+    tts-1 | tts-1-hd | gpt-4o-mini-tts | gpt-4o-mini-tts-2025-12-15) ;;
+    *) die "$path contains an unsupported OpenAI speech model" ;;
+  esac
+  [[ ${#pricing} -ge 1 && ${#pricing} -le 32768 && "$pricing" =~ ^[A-Za-z0-9_-]+$ ]] ||
+    die "$path contains an invalid OpenAI audio pricing envelope"
+}
+
+assert_staging_api_environment() {
+  local path="$1"
+  assert_env_file_allowed_keys "$path" \
+    EMDO_PUBLIC_ORIGIN EMDO_METRICS_TOKEN EMDO_API_DATABASE_URL \
+    EMDO_AUTH_DATABASE_URL EMDO_ONBOARDING_DATABASE_URL \
+    EMDO_VISUAL_DECISION_DATABASE_URL \
+    EMDO_API_AUTH_SECRET EMDO_SESSION_SECRET EMDO_SYNC_JWT_KEYRING_B64URL \
+    EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL \
+    EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL \
+    EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL \
+    EMDO_INVITATION_DELIVERY_KEY_ID \
+    EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL \
+    EMDO_GOOGLE_IDENTITY_CLIENT_ID EMDO_GOOGLE_IDENTITY_CLIENT_SECRET \
+    EMDO_TRANSACTIONAL_EMAIL_PROVIDER EMDO_RESEND_AUTH_API_KEY \
+    EMDO_RESEND_FROM_EMAIL
+  assert_internal_postgres_uri "$path" \
+    EMDO_API_DATABASE_URL emdo_api_login emdo_app
+  assert_internal_postgres_uri "$path" \
+    EMDO_AUTH_DATABASE_URL emdo_auth_login emdo_app
+  assert_internal_postgres_uri "$path" \
+    EMDO_ONBOARDING_DATABASE_URL emdo_onboarding_login emdo_app
+  assert_internal_postgres_uri "$path" \
+    EMDO_VISUAL_DECISION_DATABASE_URL emdo_visual_decision_login emdo_app
+  assert_staging_auth_provider_config "$path"
+  assert_https_origin_value "$path" EMDO_PUBLIC_ORIGIN
 }
 
 assert_finance_import_retention_config() {
@@ -570,6 +656,7 @@ assert_google_oauth_disconnect_retention_config() {
 assert_base_secret_manifest() {
   assert_secret_file_manifest "$1" "${BASE_SECRET_MANIFEST[@]}"
   assert_edge_proxy_secret_file "$1/edge-proxy.env"
+  assert_production_api_environment "$1/api.env"
   assert_finance_import_retention_config "$1/finance-import-retention.env"
   assert_google_oauth_disconnect_reconciliation_config \
     "$1/google-oauth-disconnect-reconciliation.env"
@@ -590,19 +677,7 @@ assert_staging_secret_manifest() {
     "$1/google-oauth-disconnect-retention.env"
   assert_env_file_allowed_keys "$1/migration.env" \
     EMDO_MIGRATION_DATABASE_URL EMDO_JOB_MIGRATION_DATABASE_URL
-  assert_env_file_allowed_keys "$1/api.env" \
-    EMDO_PUBLIC_ORIGIN EMDO_METRICS_TOKEN EMDO_API_DATABASE_URL \
-    EMDO_AUTH_DATABASE_URL EMDO_ONBOARDING_DATABASE_URL \
-    EMDO_VISUAL_DECISION_DATABASE_URL \
-    EMDO_API_AUTH_SECRET EMDO_SESSION_SECRET EMDO_SYNC_JWT_KEYRING_B64URL \
-    EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL \
-    EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL \
-    EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL \
-    EMDO_INVITATION_DELIVERY_KEY_ID \
-    EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL \
-    EMDO_GOOGLE_IDENTITY_CLIENT_ID EMDO_GOOGLE_IDENTITY_CLIENT_SECRET \
-    EMDO_TRANSACTIONAL_EMAIL_PROVIDER EMDO_RESEND_AUTH_API_KEY \
-    EMDO_RESEND_FROM_EMAIL
+  assert_staging_api_environment "$1/api.env"
   assert_env_file_allowed_keys "$1/worker.env" \
     EMDO_WORKER_DATABASE_URL EMDO_WORKER_EXECUTOR_DATABASE_URL \
     EMDO_WORKER_DISPATCHER_DATABASE_URL \
@@ -622,15 +697,6 @@ assert_staging_secret_manifest() {
     EMDO_MIGRATION_DATABASE_URL postgres emdo_app
   assert_internal_postgres_uri "$1/migration.env" \
     EMDO_JOB_MIGRATION_DATABASE_URL postgres emdo_app
-  assert_internal_postgres_uri "$1/api.env" \
-    EMDO_API_DATABASE_URL emdo_api_login emdo_app
-  assert_internal_postgres_uri "$1/api.env" \
-    EMDO_AUTH_DATABASE_URL emdo_auth_login emdo_app
-  assert_internal_postgres_uri "$1/api.env" \
-    EMDO_ONBOARDING_DATABASE_URL emdo_onboarding_login emdo_app
-  assert_internal_postgres_uri "$1/api.env" \
-    EMDO_VISUAL_DECISION_DATABASE_URL emdo_visual_decision_login emdo_app
-  assert_staging_auth_provider_config "$1/api.env"
   assert_internal_postgres_uri "$1/worker.env" \
     EMDO_WORKER_DATABASE_URL emdo_worker_login emdo_app
   assert_internal_postgres_uri "$1/worker.env" \
@@ -648,7 +714,6 @@ assert_staging_secret_manifest() {
     EMDO_BOOTSTRAP_DATABASE_URL emdo_owner_bootstrap_login emdo_app
   [[ "$(env_file_value "$1/synthetic.env" EMDO_STAGING_API_ORIGIN)" == http://127.0.0.1:3000 ]] ||
     die 'synthetic staging must call only the API network-namespace loopback origin'
-  assert_https_origin_value "$1/api.env" EMDO_PUBLIC_ORIGIN
   assert_https_origin_value "$1/worker.env" EMDO_APPLICATION_ORIGIN
   assert_https_origin_value "$1/synthetic.env" EMDO_PUBLIC_ORIGIN
 }

@@ -217,6 +217,24 @@ const selectColumns = `reservation_id, household_id, period, request_hash,
   authorization_hash, execution_id, estimated_cad_minor, actual_cad_minor,
   decision_cad_minor, warning, state`;
 
+export const checkPostgresAudioSpendReadiness = async (
+  pool: DatabasePool,
+): Promise<boolean> => {
+  let client: Awaited<ReturnType<DatabasePool['connect']>> | undefined;
+  try {
+    client = await pool.connect();
+    const result = await client.query(
+      'select emdo.audio_spend_ready() as ready',
+      [],
+    );
+    return result.rows.length === 1 && result.rows[0]?.ready === true;
+  } catch {
+    return false;
+  } finally {
+    client?.release();
+  }
+};
+
 export class PostgresSpendLedger {
   readonly #principal: Readonly<DurableRepositoryPrincipal>;
 

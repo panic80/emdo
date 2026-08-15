@@ -111,7 +111,14 @@ made no persistence write. Only a report containing both exact passing
 identities can emit `voice-ptt-storage-playback`. This remains provider-free
 browser evidence: the test stubs transcription and speech, so it does not
 satisfy the separate `openai-transcription` or `openai-speech` provider
-receipts. The service-worker update gate likewise requires two exact
+receipts. The built-in API source now has an auth-gated OpenAI audio binding,
+server-side media inspection, request-bound spend accounting, strict deployment
+pricing, bounded catalog readiness, and drain-before-close behavior. Those
+local source and PostgreSQL checks still cannot emit either provider receipt:
+each requires its separately credentialed live endpoint smoke, response digest,
+and protected-environment provenance on the exact release SHA. Real browser
+WebM, authenticated staging, and production proof also remain pending. The
+service-worker update gate likewise requires two exact
 production-Chromium identities. They install byte-distinct workers derived from
 the generated production worker through the real browser registration
 lifecycle. One preserves an actual queued offline finance edit while the new

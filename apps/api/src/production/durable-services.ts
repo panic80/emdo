@@ -36,6 +36,10 @@ import { parseProductionSyncJwtKeyring } from './sync-keyring.js';
 import type { ProductionApiServiceBindings } from './unavailable-services.js';
 import { PostgresVisualProposalDecisionGateway } from './visual-approval-services.js';
 import { createProductionVisualProofTokenCodec } from './visual-proof-keyring.js';
+import {
+  createProductionVoiceProviderBinding,
+  type ProductionVoiceProviderComposition,
+} from './voice-services.js';
 
 type DatabaseRuntime = Pick<EmdoDatabaseClient, 'scopedPool' | 'close'>;
 type ExperienceReadGateways = Pick<
@@ -117,6 +121,10 @@ export interface ProductionDurableServiceDependencies {
     readonly environment: Readonly<Record<string, string | undefined>>;
     readonly pool: DatabaseRuntime['scopedPool'];
   }) => ProductionGoogleConnectorComposition;
+  readonly createVoiceProviderBinding: (input: {
+    readonly environment: Readonly<Record<string, string | undefined>>;
+    readonly pool: DatabaseRuntime['scopedPool'];
+  }) => ProductionVoiceProviderComposition;
 }
 
 const defaultDependencies: ProductionDurableServiceDependencies = Object.freeze(
@@ -163,6 +171,10 @@ const defaultDependencies: ProductionDurableServiceDependencies = Object.freeze(
       readonly environment: Readonly<Record<string, string | undefined>>;
       readonly pool: DatabaseRuntime['scopedPool'];
     }) => createProductionGoogleConnectorBinding(input),
+    createVoiceProviderBinding: (input: {
+      readonly environment: Readonly<Record<string, string | undefined>>;
+      readonly pool: DatabaseRuntime['scopedPool'];
+    }) => createProductionVoiceProviderBinding(input),
   },
 );
 
@@ -411,6 +423,17 @@ export const createProductionDurableServiceBindings = async (
     if (google.close !== undefined) additionalCloses.push(google.close);
   } catch {
     // Calendar remains fail-closed unless its complete secret and DB graph loads.
+  }
+
+  try {
+    const voice = dependencies.createVoiceProviderBinding({
+      environment,
+      pool: database.scopedPool,
+    });
+    if (voice.binding !== undefined) bindings.voice = voice.binding;
+    if (voice.close !== undefined) additionalCloses.push(voice.close);
+  } catch {
+    // Voice remains fail-closed unless its complete secret, inspector, and spend graph load.
   }
 
   try {

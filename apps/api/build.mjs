@@ -76,8 +76,10 @@ const allowedExternal = (specifier) =>
     'better-auth',
     'drizzle-orm',
     'fastify',
+    'file-type',
     'jose',
     'kysely',
+    'music-metadata',
     'nanostores',
     'pg',
     'zod',
@@ -88,6 +90,7 @@ const allowedExternal = (specifier) =>
 
 const validateOutput = async (outputRoot, journal, metafile) => {
   const expected = [
+    'audio-inspector-worker.js',
     'index.js',
     'cli/bootstrap-owner.js',
     'cli/migrate.js',
@@ -171,6 +174,7 @@ export const buildApi = async ({ outputRoot = defaultOutputRoot } = {}) => {
     bundle: true,
     entryNames: '[dir]/[name]',
     entryPoints: {
+      'audio-inspector-worker': 'src/production/audio-inspector-worker.ts',
       index: 'src/index.ts',
       'cli/bootstrap-owner': 'src/cli/bootstrap-owner.ts',
       'cli/migrate': 'src/cli/migrate.ts',

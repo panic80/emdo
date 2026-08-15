@@ -148,15 +148,20 @@ constitutes provider/staging/production evidence.
 
 ### Voice provider
 
-The OpenAI integration exports a bounded fetch transport, audio adapter, and
-credentialed endpoint smoke routine, but there is no curated API
-`VoiceGateway` production factory. The missing graph includes a trusted media
-and container inspector, request-bound spend authority, frozen cost calculator,
-translation between the API voice port and `OpenAiAudioAdapter`, strict API-key
-configuration, and a bounded cached live smoke probe covering both
-transcription models and the selected speech model. Therefore
-`voice.provider` stays unavailable while the independently durable
-`voice.audio-requests` receipt component may be healthy.
+The built-in source graph now includes the worker-isolated media inspector,
+strict versioned CAD pricing calculator, request-bound `PostgresSpendLedger`,
+`OpenAiAudioAdapter` translation, API-only all-or-nothing configuration,
+bounded cached model-catalog readiness, auth-gated assembly, and drain-before-
+database-close behavior. Missing or malformed configuration still leaves
+`voice.provider` unavailable, independently of the durable
+`voice.audio-requests` receipt component. Local focused tests and the isolated
+PostgreSQL 17 spend/readiness proof do not establish provider execution.
+
+Release readiness remains blocked on credentialed transcription and selected-
+speech endpoint smokes, real browser WebM capture and privacy behavior,
+authenticated staging, and production evidence. The catalog check proves only
+that the configured credential can resolve the required model IDs; it is not an
+audio endpoint receipt and is never relabeled as one.
 
 ## Release boundary
 

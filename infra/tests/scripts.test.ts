@@ -12,6 +12,22 @@ const commonPath = join(rootPath, 'infra/scripts/_common.sh');
 const digest = (character: string): string => character.repeat(64);
 const sourceSha = 'b'.repeat(40);
 const infrastructureSourceSha = 'c'.repeat(40);
+const validOpenAiAudioPricing = Buffer.from(
+  JSON.stringify({
+    schemaVersion: 1,
+    pricingVersion: 'deployment-2026-08-15',
+    transcriptionCadMicrosPerMinute: {
+      'gpt-4o-mini-transcribe': 10_000_000,
+      'gpt-4o-transcribe': 20_000_000,
+    },
+    speechCadMicrosPerMillionCharacters: {
+      'tts-1': 10_000_000,
+      'tts-1-hd': 20_000_000,
+      'gpt-4o-mini-tts': 30_000_000,
+      'gpt-4o-mini-tts-2025-12-15': 40_000_000,
+    },
+  }),
+).toString('base64url');
 
 const validLock = (overrides: Readonly<Record<string, string>> = {}): string =>
   [
@@ -207,6 +223,90 @@ describe('deployment script trust boundaries', () => {
         workerEnvironment,
       ).status,
     ).toBe(0);
+  });
+
+  it('accepts only an all-or-nothing production OpenAI audio configuration', async () => {
+    const apiEnvironment = join(directory, 'api.env');
+    const valid = [
+      'EMDO_OPENAI_AUDIO_API_KEY=sk_audio_production_fixture_0123456789',
+      'EMDO_OPENAI_SPEECH_MODEL=tts-1',
+      `EMDO_OPENAI_AUDIO_PRICING_B64URL=${validOpenAiAudioPricing}`,
+    ];
+    await writeFile(apiEnvironment, `${valid.join('\n')}\n`);
+
+    const accepted = runCommon(
+      'assert_production_api_environment "$2"',
+      apiEnvironment,
+    );
+    expect(accepted.status).toBe(0);
+    expect(accepted.stderr).toBe('');
+
+    for (const invalid of [
+      valid.slice(0, 2),
+      valid.map((line) =>
+        line.startsWith('EMDO_OPENAI_SPEECH_MODEL=')
+          ? 'EMDO_OPENAI_SPEECH_MODEL=gpt-4o-tts'
+          : line,
+      ),
+      valid.map((line) =>
+        line.startsWith('EMDO_OPENAI_AUDIO_PRICING_B64URL=')
+          ? 'EMDO_OPENAI_AUDIO_PRICING_B64URL=not+base64url'
+          : line,
+      ),
+      [...valid, 'OPENAI_API_KEY=must-not-be-admitted'],
+    ]) {
+      await writeFile(apiEnvironment, `${invalid.join('\n')}\n`);
+      const rejected = runCommon(
+        'assert_production_api_environment "$2"',
+        apiEnvironment,
+      );
+      expect(rejected.status).not.toBe(0);
+      expect(rejected.stderr).not.toContain('must-not-be-admitted');
+      expect(rejected.stderr).not.toContain(
+        'sk_audio_production_fixture_0123456789',
+      );
+    }
+
+    await writeFile(apiEnvironment, 'EMDO_PUBLIC_ORIGIN=https://example.ca\n');
+    expect(
+      runCommon('assert_production_api_environment "$2"', apiEnvironment)
+        .status,
+    ).toBe(0);
+  });
+
+  it.each([
+    'EMDO_OPENAI_AUDIO_API_KEY',
+    'EMDO_OPENAI_SPEECH_MODEL',
+    'EMDO_OPENAI_AUDIO_PRICING_B64URL',
+  ])('rejects %s from synthetic staging API secrets', async (forbiddenKey) => {
+    const apiEnvironment = join(directory, 'api.env');
+    const valid = [
+      'EMDO_PUBLIC_ORIGIN=https://staging.example.invalid',
+      'EMDO_API_DATABASE_URL=postgresql://emdo_api_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+      'EMDO_AUTH_DATABASE_URL=postgresql://emdo_auth_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+      'EMDO_ONBOARDING_DATABASE_URL=postgresql://emdo_onboarding_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+      'EMDO_VISUAL_DECISION_DATABASE_URL=postgresql://emdo_visual_decision_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+      'EMDO_TRANSACTIONAL_EMAIL_PROVIDER=resend',
+      'EMDO_GOOGLE_IDENTITY_CLIENT_ID=123456789012-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com',
+      'EMDO_GOOGLE_IDENTITY_CLIENT_SECRET=staging-google-client-secret',
+      'EMDO_RESEND_AUTH_API_KEY=re_staging_auth_provider_key_0123456789',
+      'EMDO_RESEND_FROM_EMAIL=auth@staging.emdo.invalid',
+    ];
+    await writeFile(apiEnvironment, `${valid.join('\n')}\n`);
+    expect(
+      runCommon('assert_staging_api_environment "$2"', apiEnvironment).status,
+    ).toBe(0);
+
+    await writeFile(
+      apiEnvironment,
+      `${[...valid, `${forbiddenKey}=synthetic-stage-secret-canary`].join('\n')}\n`,
+    );
+    const rejected = runCommon(
+      'assert_staging_api_environment "$2"',
+      apiEnvironment,
+    );
+    expect(rejected.status).not.toBe(0);
+    expect(rejected.stderr).not.toContain('synthetic-stage-secret-canary');
   });
 
   it('requires the dedicated internal audio reconciliation login', async () => {

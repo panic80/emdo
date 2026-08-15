@@ -178,6 +178,53 @@ describe('production API service assembly', () => {
     });
   });
 
+  it('selects the voice provider only with trusted authentication', async () => {
+    const speak = vi.fn(async () => ({
+      status: 'failed' as const,
+      safeError: {
+        code: 'audio-provider-unavailable' as const,
+        message: 'Audio is unavailable.',
+        retryable: true,
+      },
+      reconciliationRequired: false,
+    }));
+    const voice = {
+      inspectRecording: vi.fn(),
+      getSpeechConfiguration: vi.fn(),
+      transcribe: vi.fn(),
+      speak,
+    };
+    mocks.createDurable.mockResolvedValue({
+      bindings: {
+        voice: {
+          check: vi.fn(async () => true),
+          service: voice,
+        },
+      },
+    });
+
+    const unavailable = await assembleProductionApiServices({});
+    await expect(unavailable.readiness.check()).resolves.toMatchObject({
+      checks: { 'voice.provider': 'unavailable' },
+    });
+    expect(speak).not.toHaveBeenCalled();
+
+    mocks.createAuthentication.mockResolvedValue({
+      binding: {
+        service: authBoundary(),
+        check: vi.fn(async () => true),
+      },
+    });
+    const available = await assembleProductionApiServices({});
+    await expect(available.voice.speak({} as never)).resolves.toMatchObject({
+      status: 'failed',
+    });
+    expect(speak).toHaveBeenCalledOnce();
+    await expect(available.readiness.check()).resolves.toMatchObject({
+      checks: { 'voice.provider': 'ok' },
+    });
+  });
+
   it('selects the current checked finance import boundary from durable composition', async () => {
     const auth = authBoundary();
     const listDestinations = vi.fn(async () => ({

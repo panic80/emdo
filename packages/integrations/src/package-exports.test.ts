@@ -29,6 +29,8 @@ describe('integration package subpath exports', () => {
 
     expect(openai).toHaveProperty('OpenAiAudioAdapter');
     expect(openai).toHaveProperty('OpenAiFetchAudioTransport');
+    expect(openai).toHaveProperty('ProductionOpenAiAudioCostCalculator');
+    expect(openai).toHaveProperty('parseOpenAiAudioPricing');
     expect(maps).toHaveProperty('GoogleRoutesTravelTimeClient');
     expect(maps).toHaveProperty('runGoogleRoutesDeploymentSmoke');
     expect(maps).not.toHaveProperty('RecordedMapsTravelTimeClient');

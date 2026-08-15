@@ -59,10 +59,8 @@ describeDatabase(
       }
 
       const migrations = await loadOrderedMigrations();
-      expect(migrations).toHaveLength(14);
-      expect(migrations.at(-1)?.id).toBe(
-        '0013_google_oauth_disconnect_retention_runner',
-      );
+      expect(migrations).toHaveLength(15);
+      expect(migrations.at(-1)?.id).toBe('0014_audio_spend_readiness');
       for (const migration of migrations) await admin.query(migration.sql);
 
       await expect(

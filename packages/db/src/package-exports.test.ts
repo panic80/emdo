@@ -24,6 +24,7 @@ describe('@emdo/db production export boundaries', () => {
         'PostgresApprovalCheckpointRepository',
         'PostgresApprovalResumeBoundary',
         'PostgresSpendLedger',
+        'checkPostgresAudioSpendReadiness',
         'PostgresHouseholdAdministrationService',
         'PostgresInvitationRedemptionCoordinator',
         'PostgresGoogleCalendarProviderAuthorityResolver',

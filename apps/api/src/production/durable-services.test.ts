@@ -151,6 +151,7 @@ const dependencies = (): ProductionDurableServiceDependencies => {
         }) as never,
     ),
     createGoogleConnectorBinding: vi.fn(() => ({})),
+    createVoiceProviderBinding: vi.fn(() => ({})),
   };
 };
 
@@ -706,6 +707,57 @@ describe('production durable API service composition', () => {
     await closing;
     expect(database.close).toHaveBeenCalledOnce();
     expect(closeGoogle.mock.invocationCallOrder[0]).toBeLessThan(
+      database.close.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('binds the voice provider to the API pool and drains it before database close', async () => {
+    const adapters = dependencies();
+    let releaseVoice: (() => void) | undefined;
+    const closeVoice = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseVoice = resolve;
+        }),
+    );
+    const voice = {
+      inspectRecording: vi.fn(),
+      getSpeechConfiguration: vi.fn(),
+      transcribe: vi.fn(),
+      speak: vi.fn(),
+    };
+    const check = vi.fn(async () => true);
+    vi.mocked(adapters.createVoiceProviderBinding).mockReturnValue({
+      binding: { service: voice, check },
+      close: closeVoice,
+    });
+    const environment = {
+      EMDO_API_DATABASE_URL: databaseUrl,
+      EMDO_OPENAI_AUDIO_API_KEY: `sk-proj-${'x'.repeat(40)}`,
+      EMDO_OPENAI_SPEECH_MODEL: 'tts-1',
+      EMDO_OPENAI_AUDIO_PRICING_B64URL: 'pricing-envelope',
+    };
+
+    const result = await createProductionDurableServiceBindings(
+      environment,
+      adapters,
+    );
+    const database = vi.mocked(adapters.createDatabaseClient).mock.results[0]!
+      .value;
+
+    expect(adapters.createVoiceProviderBinding).toHaveBeenCalledWith({
+      environment,
+      pool: database.scopedPool,
+    });
+    expect(result.bindings.voice).toEqual({ service: voice, check });
+
+    const closing = result.close!();
+    await vi.waitFor(() => expect(closeVoice).toHaveBeenCalledOnce());
+    expect(database.close).not.toHaveBeenCalled();
+    releaseVoice!();
+    await closing;
+    expect(database.close).toHaveBeenCalledOnce();
+    expect(closeVoice.mock.invocationCallOrder[0]).toBeLessThan(
       database.close.mock.invocationCallOrder[0]!,
     );
   });

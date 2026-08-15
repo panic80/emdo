@@ -311,6 +311,8 @@ services:
     <<: *runtime-security
     image: '${API_IMAGE:?API_IMAGE must be an immutable application image reference}'
     restart: unless-stopped
+    # Provider credentials are admitted only through the root-owned API file.
+    # No worker or auxiliary service mounts this file.
     env_file:
       - '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/api.env'
       - '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/edge-proxy.env'

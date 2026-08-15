@@ -1524,7 +1524,10 @@ describe('Fastify API boundary', () => {
       },
     });
 
-    expect(response.statusCode).toBe(500);
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      code: 'audio-request-indeterminate',
+    });
     expect(response.body).not.toContain('sensitive persistence diagnostic');
     expect([...providerAudio]).toEqual([0, 0, 0, 0]);
     expect(services.audioRequests.markIndeterminate).toHaveBeenCalledWith(
@@ -1537,6 +1540,131 @@ describe('Fastify API boundary', () => {
       }),
     );
 
+    await app.close();
+  });
+
+  it('returns indeterminate when transcription completion cannot be persisted', async () => {
+    const services = buildServices();
+    services.voice.transcribe = vi.fn(async () => ({
+      status: 'completed' as const,
+      transcript: 'Private transcript',
+      model: 'gpt-4o-mini-transcribe' as const,
+      spendWarning: false,
+    }));
+    services.audioRequests.completeTranscription = vi.fn(async () => {
+      throw new Error('private transcription completion failure');
+    });
+    const app = await createApp({ services });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/voice/transcribe?durationMs=800&attempt=default',
+      headers: {
+        ...authenticatedHeaders,
+        'idempotency-key': 'request:018f1f5e:transcription-indeterminate',
+        'content-type': 'audio/webm',
+      },
+      payload: Buffer.from([1, 2, 3]),
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      code: 'audio-request-indeterminate',
+    });
+    expect(services.audioRequests.completeTranscription).toHaveBeenCalledOnce();
+    expect(services.audioRequests.markIndeterminate).toHaveBeenCalledOnce();
+    expect(services.audioRequests.markIndeterminate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reasonCode: 'transcription-settlement-state-unknown',
+      }),
+    );
+    await app.close();
+  });
+
+  it('returns indeterminate when a known-no-dispatch release cannot be persisted', async () => {
+    const services = buildServices();
+    services.voice.speak = vi.fn(async () => ({
+      status: 'failed' as const,
+      safeError: {
+        code: 'ai-spend-limit-reached' as const,
+        message: 'The monthly AI spend limit has been reached.',
+        retryable: false,
+      },
+      reconciliationRequired: false,
+    }));
+    services.audioRequests.releaseKnownNoDispatch = vi.fn(async () => {
+      throw new Error('private release persistence failure');
+    });
+    const app = await createApp({ services });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/voice/speak',
+      headers: {
+        ...authenticatedHeaders,
+        'idempotency-key': 'request:018f1f5e:release-indeterminate',
+      },
+      payload: {
+        schemaVersion: 1,
+        voice: 'alloy',
+        text: 'Summary',
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      code: 'audio-request-indeterminate',
+    });
+    expect(
+      services.audioRequests.releaseKnownNoDispatch,
+    ).toHaveBeenCalledOnce();
+    expect(services.audioRequests.markIndeterminate).toHaveBeenCalledOnce();
+    expect(services.audioRequests.markIndeterminate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reasonCode: 'speech-settlement-state-unknown',
+      }),
+    );
+    await app.close();
+  });
+
+  it('returns indeterminate when provider-state persistence fails', async () => {
+    const services = buildServices();
+    services.voice.speak = vi.fn(async () => ({
+      status: 'failed' as const,
+      safeError: {
+        code: 'audio-provider-unavailable' as const,
+        message: 'Audio is unavailable.',
+        retryable: true,
+      },
+      reconciliationRequired: true,
+    }));
+    services.audioRequests.markIndeterminate = vi.fn(async () => {
+      throw new Error('private indeterminate persistence failure');
+    });
+    const app = await createApp({ services });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/voice/speak',
+      headers: {
+        ...authenticatedHeaders,
+        'idempotency-key': 'request:018f1f5e:provider-state-indeterminate',
+      },
+      payload: {
+        schemaVersion: 1,
+        voice: 'alloy',
+        text: 'Summary',
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      code: 'audio-request-indeterminate',
+    });
+    expect(services.audioRequests.markIndeterminate).toHaveBeenCalledOnce();
+    expect(
+      services.audioRequests.releaseKnownNoDispatch,
+    ).not.toHaveBeenCalled();
     await app.close();
   });
 
@@ -1569,7 +1697,10 @@ describe('Fastify API boundary', () => {
       },
     });
 
-    expect(response.statusCode).toBe(502);
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      code: 'audio-request-indeterminate',
+    });
     expect([...providerAudio]).toEqual([0, 0, 0, 0, 0]);
     expect(services.audioRequests.completeSpeech).not.toHaveBeenCalled();
     expect(services.audioRequests.markIndeterminate).toHaveBeenCalledOnce();

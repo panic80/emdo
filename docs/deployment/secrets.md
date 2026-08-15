@@ -170,7 +170,68 @@ Expected private env-file boundaries are:
   `EMDO_RESEND_FROM_EMAIL` on a verified sending domain. These identity
   credentials are not Calendar OAuth credentials, and the Resend key is not
   mounted into the worker. Missing or malformed values keep authentication
-  unavailable and open no auth database pool;
+  unavailable and open no auth database pool. Production voice is a separate,
+  API-only, all-or-nothing bundle:
+  `EMDO_OPENAI_AUDIO_API_KEY`, `EMDO_OPENAI_SPEECH_MODEL`, and
+  `EMDO_OPENAI_AUDIO_PRICING_B64URL`. The selected speech model must be one of
+  `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`, or
+  `gpt-4o-mini-tts-2025-12-15`. The pricing value is canonical unpadded
+  base64url of strict version-1 JSON containing an opaque safe
+  `pricingVersion`, positive integer CAD-micros-per-minute rates for both
+  transcription models, and positive integer CAD-micros-per-million-character
+  rates for all four accepted speech models. Deployment preflight rejects
+  partial configuration, unknown `api.env` keys, malformed surface values, and
+  any OpenAI audio setting in synthetic staging. Runtime composition decodes
+  and exact-validates the complete pricing schema before retaining the key in
+  an API-owned erasable buffer. No value is printed in preflight errors or
+  readiness diagnostics. Generate the pricing document without shell quoting
+  or padding drift using audited, current CAD rates:
+
+  ```bash
+  PRICING_VERSION=provider-date-fx-version \
+  CAD_MICROS_GPT_4O_MINI_TRANSCRIBE=... \
+  CAD_MICROS_GPT_4O_TRANSCRIBE=... \
+  CAD_MICROS_TTS_1=... \
+  CAD_MICROS_TTS_1_HD=... \
+  CAD_MICROS_GPT_4O_MINI_TTS=... \
+  CAD_MICROS_GPT_4O_MINI_TTS_2025_12_15=... \
+  node <<'NODE'
+  const rate = (name) => {
+    const value = Number(process.env[name]);
+    if (!Number.isSafeInteger(value) || value <= 0) throw new Error(name);
+    return value;
+  };
+  const pricingVersion = process.env.PRICING_VERSION;
+  if (!/^[A-Za-z0-9._-]{1,100}$/.test(pricingVersion ?? '')) {
+    throw new Error('PRICING_VERSION');
+  }
+  const document = {
+    schemaVersion: 1,
+    pricingVersion,
+    transcriptionCadMicrosPerMinute: {
+      'gpt-4o-mini-transcribe': rate('CAD_MICROS_GPT_4O_MINI_TRANSCRIBE'),
+      'gpt-4o-transcribe': rate('CAD_MICROS_GPT_4O_TRANSCRIBE'),
+    },
+    speechCadMicrosPerMillionCharacters: {
+      'tts-1': rate('CAD_MICROS_TTS_1'),
+      'tts-1-hd': rate('CAD_MICROS_TTS_1_HD'),
+      'gpt-4o-mini-tts': rate('CAD_MICROS_GPT_4O_MINI_TTS'),
+      'gpt-4o-mini-tts-2025-12-15': rate(
+        'CAD_MICROS_GPT_4O_MINI_TTS_2025_12_15',
+      ),
+    },
+  };
+  process.stdout.write(Buffer.from(JSON.stringify(document)).toString('base64url') + '\n');
+  NODE
+  ```
+
+  Every vendor-rate or CAD-conversion change gets a new `pricingVersion` and a
+  separately retained operator provenance record. Replace the pricing document
+  and selected model together, then require bounded catalog readiness; do not
+  infer transcription or speech endpoint acceptance from that check. The API
+  key is never mounted into the worker, browser, auxiliary one-shots, or
+  synthetic staging. Credentialed endpoint smokes remain separate evidence;
+
 - `edge-proxy.env`: exactly one 43-128 character base64url
   `EMDO_EDGE_PROXY_SECRET`, generated from at least 32 random bytes and shared
   only with the API and Caddy;

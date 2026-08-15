@@ -34,6 +34,7 @@ describe('API production package', () => {
       ),
     ) as { readonly entries: readonly { readonly tag: string }[] };
     const expectedArtifacts = [
+      'audio-inspector-worker.js',
       'cli/bootstrap-owner.js',
       'cli/migrate.js',
       'cli/purge-finance-imports.js',
@@ -80,6 +81,7 @@ describe('API production package', () => {
     expect(stagingAcceptanceSource).not.toContain('Core readiness gate failed');
 
     for (const entrypoint of [
+      './dist/audio-inspector-worker.js',
       './dist/index.js',
       './dist/cli/bootstrap-owner.js',
       './dist/cli/migrate.js',
@@ -203,8 +205,10 @@ describe('API production package', () => {
       'better-call',
       'drizzle-orm',
       'fastify',
+      'file-type',
       'jose',
       'kysely',
+      'music-metadata',
       'nanostores',
       'pg',
       'zod',

@@ -45,6 +45,7 @@ services:
   api:
     restart: 'no'
     ports: !override []
+    # Staging preflight rejects every OpenAI audio setting from api.env.
     environment:
       EMDO_ENVIRONMENT: staging
       EMDO_ALLOW_LOOPBACK_API_INGRESS: 'true'
