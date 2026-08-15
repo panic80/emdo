@@ -535,6 +535,56 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
     );
   });
 
+  it('accepts a rotated operation grant when the trusted scope fingerprint is unchanged', async () => {
+    const credentialBroker = broker();
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ etag: '"calendar-v1"' }))
+      .mockResolvedValueOnce(jsonResponse({}, { status: 404 }));
+    const authorization = approvedContext(command);
+    const rotatedAuthorization: ApprovedCalendarWriteContext = {
+      ...authorization,
+      providerWriteOperationScope: {
+        ...authorization.providerWriteOperationScope,
+        requestId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f090',
+        spaceAccessGrantId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f091',
+      },
+    };
+    const gateway = new FetchGoogleCalendarConditionalGateway({
+      actor,
+      authorizationScopeFingerprint,
+      clock: approvalClock,
+      broker: credentialBroker,
+      fetch,
+    });
+
+    await expect(
+      gateway.readCurrent(command, rotatedAuthorization),
+    ).resolves.toMatchObject({
+      calendarId: command.calendarId,
+      calendarVersion: '"calendar-v1"',
+      event: null,
+    });
+    expect(credentialBroker.calls).toHaveLength(1);
+  });
+
+  it('rejects a trusted scope fingerprint mismatch before credential brokerage', async () => {
+    const credentialBroker = broker();
+    const gateway = new FetchGoogleCalendarConditionalGateway({
+      actor,
+      authorizationScopeFingerprint:
+        EffectiveAuthorizationScopeFingerprintSchema.parse('6'.repeat(64)),
+      clock: approvalClock,
+      broker: credentialBroker,
+      fetch: vi.fn(),
+    });
+
+    await expect(
+      gateway.readCurrent(command, approvedContext(command)),
+    ).rejects.toThrow('google-calendar-write-authorization-invalid');
+    expect(credentialBroker.calls).toEqual([]);
+  });
+
   it('creates with a deterministic ID, exact body, and verified readback', async () => {
     const credentialBroker = broker();
     const providerEvent = {
@@ -562,7 +612,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
       .mockResolvedValueOnce(jsonResponse(providerEvent));
     const gateway = new FetchGoogleCalendarConditionalGateway({
       actor,
-      spaceAccessGrantId,
+      authorizationScopeFingerprint,
       clock: approvalClock,
       broker: credentialBroker,
       fetch,
@@ -642,7 +692,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
     const executor = new CalendarWriteExecutor(
       new FetchGoogleCalendarConditionalGateway({
         actor,
-        spaceAccessGrantId,
+        authorizationScopeFingerprint,
         clock: approvalClock,
         broker: broker(),
         fetch,
@@ -675,7 +725,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
       );
     const gateway = new FetchGoogleCalendarConditionalGateway({
       actor,
-      spaceAccessGrantId,
+      authorizationScopeFingerprint,
       clock: approvalClock,
       broker: broker(),
       fetch,
@@ -716,7 +766,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
       });
       const gateway = new FetchGoogleCalendarConditionalGateway({
         actor,
-        spaceAccessGrantId,
+        authorizationScopeFingerprint,
         clock: approvalClock,
         broker: broker(),
         fetch,
@@ -747,7 +797,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
     const cancel = vi.spyOn(response.body!, 'cancel');
     const gateway = new FetchGoogleCalendarConditionalGateway({
       actor,
-      spaceAccessGrantId,
+      authorizationScopeFingerprint,
       clock: approvalClock,
       broker: broker(),
       fetch: vi
@@ -774,7 +824,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
     );
     const gateway = new FetchGoogleCalendarConditionalGateway({
       actor,
-      spaceAccessGrantId,
+      authorizationScopeFingerprint,
       clock: approvalClock,
       broker: broker(),
       fetch,
@@ -810,7 +860,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
       .mockResolvedValueOnce(jsonResponse({ etag: '"calendar-v1"' }));
     const gateway = new FetchGoogleCalendarConditionalGateway({
       actor,
-      spaceAccessGrantId,
+      authorizationScopeFingerprint,
       clock: approvalClock,
       broker: credentialBroker,
       fetch,
@@ -857,7 +907,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
       );
     const gateway = new FetchGoogleCalendarConditionalGateway({
       actor,
-      spaceAccessGrantId,
+      authorizationScopeFingerprint,
       clock: approvalClock,
       broker: broker(),
       fetch,
@@ -919,7 +969,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
     const executor = new CalendarWriteExecutor(
       new FetchGoogleCalendarConditionalGateway({
         actor,
-        spaceAccessGrantId,
+        authorizationScopeFingerprint,
         clock: approvalClock,
         broker: broker(),
         fetch,
@@ -950,7 +1000,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
     });
     const gateway = new FetchGoogleCalendarConditionalGateway({
       actor,
-      spaceAccessGrantId,
+      authorizationScopeFingerprint,
       clock: approvalClock,
       broker: broker(),
       timeoutMs: 5,
@@ -975,7 +1025,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
     const fetch = vi.fn();
     const gateway = new FetchGoogleCalendarConditionalGateway({
       actor,
-      spaceAccessGrantId,
+      authorizationScopeFingerprint,
       broker: credentialBroker,
       fetch,
       clock: () => new Date('2026-08-09T12:10:00.000Z'),
@@ -997,7 +1047,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
     let clockCall = 0;
     const gateway = new FetchGoogleCalendarConditionalGateway({
       actor,
-      spaceAccessGrantId,
+      authorizationScopeFingerprint,
       broker: credentialBroker,
       fetch,
       clock: () => {
@@ -1026,7 +1076,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
     const fetch = vi.fn(async () => jsonResponse({ etag: '"calendar-v1"' }));
     const gateway = new FetchGoogleCalendarConditionalGateway({
       actor,
-      spaceAccessGrantId,
+      authorizationScopeFingerprint,
       broker: credentialBroker,
       fetch,
       clock: () => {
@@ -1086,7 +1136,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
     const executor = new CalendarWriteExecutor(
       new FetchGoogleCalendarConditionalGateway({
         actor,
-        spaceAccessGrantId,
+        authorizationScopeFingerprint,
         broker: broker(),
         fetch,
         clock: () => new Date(now.getTime()),
@@ -1116,7 +1166,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
       const credentialBroker = broker();
       const gateway = new FetchGoogleCalendarConditionalGateway({
         actor: differentActor,
-        spaceAccessGrantId,
+        authorizationScopeFingerprint,
         clock: approvalClock,
         broker: credentialBroker,
         fetch: vi.fn(),
@@ -1141,7 +1191,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
     const fetch = vi.fn();
     const gateway = new FetchGoogleCalendarConditionalGateway({
       actor,
-      spaceAccessGrantId,
+      authorizationScopeFingerprint,
       clock: approvalClock,
       broker: credentialBroker,
       fetch,
@@ -1156,19 +1206,18 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('rejects an approval from another trusted space grant before token access', async () => {
+  it('rejects the removed constructor grant seam before token access', () => {
     const credentialBroker = broker();
-    const gateway = new FetchGoogleCalendarConditionalGateway({
-      actor,
-      spaceAccessGrantId: 'different-space-access-grant',
-      clock: approvalClock,
-      broker: credentialBroker,
-      fetch: vi.fn(),
-    });
-
-    await expect(
-      gateway.readCurrent(command, approvedContext(command)),
-    ).rejects.toThrow('google-calendar-write-authorization-invalid');
+    expect(
+      () =>
+        new FetchGoogleCalendarConditionalGateway({
+          actor,
+          spaceAccessGrantId,
+          clock: approvalClock,
+          broker: credentialBroker,
+          fetch: vi.fn(),
+        } as never),
+    ).toThrow('invalid-google-calendar-conditional-gateway');
     expect(credentialBroker.calls).toEqual([]);
   });
 
@@ -1176,7 +1225,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
     const credentialBroker = broker();
     const gateway = new FetchGoogleCalendarConditionalGateway({
       actor,
-      spaceAccessGrantId,
+      authorizationScopeFingerprint,
       clock: approvalClock,
       broker: credentialBroker,
       fetch: vi.fn(),
@@ -1207,7 +1256,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
     const fetch = vi.fn();
     const gateway = new FetchGoogleCalendarConditionalGateway({
       actor,
-      spaceAccessGrantId,
+      authorizationScopeFingerprint,
       clock: approvalClock,
       broker: credentialBroker,
       fetch,
@@ -1227,7 +1276,7 @@ describe('FetchGoogleCalendarConditionalGateway', () => {
     const authorization = approvedContext(command);
     const gateway = new FetchGoogleCalendarConditionalGateway({
       actor: { ...actor, userId: 'different-user' },
-      spaceAccessGrantId,
+      authorizationScopeFingerprint,
       clock: approvalClock,
       broker: credentialBroker,
       fetch: vi.fn(),

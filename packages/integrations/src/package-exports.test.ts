@@ -1,3 +1,4 @@
+import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
 import type { GoogleCalendarOAuthRouteService } from '@emdo/integrations/google-oauth-routes';
 import {
   createGoogleCalendarOAuthServerRuntime,
@@ -158,7 +159,8 @@ describe('integration package subpath exports', () => {
         privateSpaceId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f103',
         sessionId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f104',
       },
-      spaceAccessGrantId: 'space-grant-1',
+      authorizationScopeFingerprint:
+        EffectiveAuthorizationScopeFingerprintSchema.parse('5'.repeat(64)),
     } as const;
     expect(
       runtime.calendar.createConditionalGateway(trustedScope),
@@ -175,7 +177,10 @@ describe('integration package subpath exports', () => {
 
     let accessorReads = 0;
     const accessorScope = Object.defineProperty(
-      { spaceAccessGrantId: 'space-grant-1' },
+      {
+        authorizationScopeFingerprint:
+          trustedScope.authorizationScopeFingerprint,
+      },
       'actor',
       {
         enumerable: true,

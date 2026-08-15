@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto';
 
-import { deepFreeze, type DeepReadonly } from '@emdo/contracts';
+import {
+  EffectiveAuthorizationScopeFingerprintSchema,
+  deepFreeze,
+  type DeepReadonly,
+  type EffectiveAuthorizationScopeFingerprint,
+} from '@emdo/contracts';
 import { z } from 'zod';
 
 import {
@@ -1302,7 +1307,7 @@ const providerEventBody = (command: GoogleCalendarWriteCommand): string => {
 
 const isGatewayAuthorizationValid = (
   actor: GoogleCalendarOAuthActor,
-  spaceAccessGrantId: string,
+  authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint,
   command: GoogleCalendarWriteCommand,
   authorization: ApprovedCalendarWriteContext,
 ): boolean => {
@@ -1316,9 +1321,10 @@ const isGatewayAuthorizationValid = (
       operationScope.userId === actor.userId &&
       operationScope.householdId === actor.householdId &&
       operationScope.sessionId === actor.sessionId &&
-      operationScope.spaceAccessGrantId === spaceAccessGrantId &&
       operationScope.authorizationScopeFingerprint ===
-        authority.authorizationScopeFingerprint &&
+        authorizationScopeFingerprint &&
+      authority.authorizationScopeFingerprint ===
+        authorizationScopeFingerprint &&
       isGoogleCalendarWriteAuthorized(command, authorization)
     );
   } catch {
@@ -1328,14 +1334,14 @@ const isGatewayAuthorizationValid = (
 
 const assertGatewayAuthorization = (
   actor: GoogleCalendarOAuthActor,
-  spaceAccessGrantId: string,
+  authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint,
   command: GoogleCalendarWriteCommand,
   authorization: ApprovedCalendarWriteContext,
 ): void => {
   if (
     !isGatewayAuthorizationValid(
       actor,
-      spaceAccessGrantId,
+      authorizationScopeFingerprint,
       command,
       authorization,
     )
@@ -1346,13 +1352,13 @@ const assertGatewayAuthorization = (
 
 export class FetchGoogleCalendarConditionalGateway implements GoogleCalendarConditionalGateway {
   readonly #actor: GoogleCalendarOAuthActor;
-  readonly #spaceAccessGrantId: string;
+  readonly #authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
   readonly #http: GoogleCalendarHttpClient;
   readonly #clock: () => Date;
 
   constructor(input: {
     readonly actor: GoogleCalendarOAuthActor;
-    readonly spaceAccessGrantId: string;
+    readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
     readonly fetch: GoogleCalendarFetch;
     readonly broker: GoogleCalendarCredentialBroker;
     readonly timeoutMs?: number;
@@ -1360,8 +1366,15 @@ export class FetchGoogleCalendarConditionalGateway implements GoogleCalendarCond
   }) {
     const snapshot = snapshotPlainRecord(
       input,
-      ['actor', 'spaceAccessGrantId', 'fetch', 'broker', 'timeoutMs', 'clock'],
-      ['actor', 'spaceAccessGrantId', 'fetch', 'broker'],
+      [
+        'actor',
+        'authorizationScopeFingerprint',
+        'fetch',
+        'broker',
+        'timeoutMs',
+        'clock',
+      ],
+      ['actor', 'authorizationScopeFingerprint', 'fetch', 'broker'],
     );
     if (snapshot === undefined) {
       throw new Error('invalid-google-calendar-conditional-gateway');
@@ -1376,10 +1389,11 @@ export class FetchGoogleCalendarConditionalGateway implements GoogleCalendarCond
     if (!actorResult.success) {
       throw new Error('invalid-google-calendar-conditional-gateway');
     }
-    const spaceAccessGrantResult = ReferenceSchema.safeParse(
-      snapshot.spaceAccessGrantId,
-    );
-    if (!spaceAccessGrantResult.success) {
+    const authorizationScopeFingerprintResult =
+      EffectiveAuthorizationScopeFingerprintSchema.safeParse(
+        snapshot.authorizationScopeFingerprint,
+      );
+    if (!authorizationScopeFingerprintResult.success) {
       throw new Error('invalid-google-calendar-conditional-gateway');
     }
     const options = parseOptions({
@@ -1391,7 +1405,8 @@ export class FetchGoogleCalendarConditionalGateway implements GoogleCalendarCond
       ...(snapshot.clock === undefined ? {} : { clock: snapshot.clock }),
     });
     this.#actor = deepFreeze(actorResult.data);
-    this.#spaceAccessGrantId = spaceAccessGrantResult.data;
+    this.#authorizationScopeFingerprint =
+      authorizationScopeFingerprintResult.data;
     this.#http = new GoogleCalendarHttpClient(options);
     this.#clock = options.clock;
   }
@@ -1402,7 +1417,7 @@ export class FetchGoogleCalendarConditionalGateway implements GoogleCalendarCond
   ): Promise<GoogleCalendarProviderState> {
     assertGatewayAuthorization(
       this.#actor,
-      this.#spaceAccessGrantId,
+      this.#authorizationScopeFingerprint,
       command,
       authorization,
     );
@@ -1415,7 +1430,7 @@ export class FetchGoogleCalendarConditionalGateway implements GoogleCalendarCond
   ): Promise<GoogleCalendarProviderState> {
     assertGatewayAuthorization(
       this.#actor,
-      this.#spaceAccessGrantId,
+      this.#authorizationScopeFingerprint,
       command,
       authorization,
     );
@@ -1428,7 +1443,7 @@ export class FetchGoogleCalendarConditionalGateway implements GoogleCalendarCond
   ): Promise<unknown> {
     assertGatewayAuthorization(
       this.#actor,
-      this.#spaceAccessGrantId,
+      this.#authorizationScopeFingerprint,
       command,
       authorization,
     );
@@ -1524,7 +1539,7 @@ export class FetchGoogleCalendarConditionalGateway implements GoogleCalendarCond
                 this.#leaseMatchesApproval(lease, authorization) &&
                 isGatewayAuthorizationValid(
                   this.#actor,
-                  this.#spaceAccessGrantId,
+                  this.#authorizationScopeFingerprint,
                   command,
                   authorization,
                 );

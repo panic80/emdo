@@ -1,3 +1,8 @@
+import {
+  EffectiveAuthorizationScopeFingerprintSchema,
+  type EffectiveAuthorizationScopeFingerprint,
+} from '@emdo/contracts';
+
 import { VaultCrypto, type VaultKeyProvider } from '../../vault/crypto.js';
 import {
   FetchGoogleCalendarConditionalGateway,
@@ -54,7 +59,7 @@ export type {
 
 export interface GoogleCalendarConditionalGatewayScope {
   readonly actor: GoogleCalendarOAuthActor;
-  readonly spaceAccessGrantId: string;
+  readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
 }
 
 const snapshotConditionalGatewayScope = (
@@ -73,24 +78,31 @@ const snapshotConditionalGatewayScope = (
   if (
     keys.length !== 2 ||
     !Object.hasOwn(descriptors, 'actor') ||
-    !Object.hasOwn(descriptors, 'spaceAccessGrantId') ||
+    !Object.hasOwn(descriptors, 'authorizationScopeFingerprint') ||
     keys.some((key) => typeof key === 'symbol')
   ) {
     throw new Error('invalid-google-calendar-conditional-gateway-scope');
   }
   const actor = descriptors.actor;
-  const spaceAccessGrantId = descriptors.spaceAccessGrantId;
+  const authorizationScopeFingerprint =
+    descriptors.authorizationScopeFingerprint;
   if (
     actor === undefined ||
-    spaceAccessGrantId === undefined ||
+    authorizationScopeFingerprint === undefined ||
     !('value' in actor) ||
-    !('value' in spaceAccessGrantId)
+    !('value' in authorizationScopeFingerprint)
   ) {
+    throw new Error('invalid-google-calendar-conditional-gateway-scope');
+  }
+  const fingerprint = EffectiveAuthorizationScopeFingerprintSchema.safeParse(
+    authorizationScopeFingerprint.value,
+  );
+  if (!fingerprint.success) {
     throw new Error('invalid-google-calendar-conditional-gateway-scope');
   }
   return Object.freeze({
     actor: actor.value as GoogleCalendarOAuthActor,
-    spaceAccessGrantId: spaceAccessGrantId.value as string,
+    authorizationScopeFingerprint: fingerprint.data,
   });
 };
 
@@ -178,7 +190,7 @@ export const createGoogleCalendarOAuthServerRuntime = (
         const scope = snapshotConditionalGatewayScope(rawScope);
         return new FetchGoogleCalendarConditionalGateway({
           actor: scope.actor,
-          spaceAccessGrantId: scope.spaceAccessGrantId,
+          authorizationScopeFingerprint: scope.authorizationScopeFingerprint,
           fetch: options.calendarFetch,
           broker,
           ...(options.calendarTimeoutMs === undefined

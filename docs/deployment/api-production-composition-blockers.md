@@ -93,16 +93,20 @@ replace any of those server-owned authorities.
 
 ### Google Calendar connector
 
-The current Google OAuth/Calendar runtime is not bound because its earlier
-grant-ID authority shape is being replaced by provider authority v2. The final
-curated factory must return the route gateway and a bounded readiness check
-over the DB-backed flow, encrypted grant, authorization epoch, lease, and audit
-stores; vault key ring; identity and Calendar OAuth client separation; exact
-redirect/public origins; and a credentialed live Calendar smoke target. The
-trusted resolution must bind immutable household/private-space/provider grant
-reference/authorization epoch/fingerprint authority and a fresh
-request/grant/session operation sidecar. Until that exact contract lands,
-`google.connector` stays unavailable.
+The provider boundary now uses authority v2 end to end. Conditional Calendar
+writes are constructed from the trusted actor and branded stable authorization
+scope fingerprint; each dispatch still receives and validates its fresh
+request/grant/session operation sidecar, while the provider grant reference and
+authorization epoch remain immutable approval and lease checks. A rotating
+space-access grant is never pinned in the gateway constructor.
+
+The runtime remains unbound because the final curated environment factory is
+still missing. That factory must return the route gateway and a bounded
+readiness check over the DB-backed flow, encrypted grant, authorization epoch,
+lease, and audit stores; vault key ring; identity and Calendar OAuth client
+separation; exact redirect/public origins; and a credentialed live Calendar
+smoke target. Until that complete graph lands, `google.connector` stays
+unavailable.
 
 ### Voice provider
 
