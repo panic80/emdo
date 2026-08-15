@@ -24,6 +24,13 @@ const attackProof = Object.freeze({
   attackCaseCount: 15,
 });
 
+const expectedDatabaseName = (
+  suite: (typeof POSTGRES_INTEGRATION_SUITES)[number],
+): string =>
+  'canonicalDatabaseName' in suite
+    ? suite.canonicalDatabaseName
+    : `emdo_ci_${suite.id.replaceAll('-', '_')}`;
+
 const createDependencies = (
   events: string[],
 ): PostgresIntegrationDependencies => {
@@ -35,9 +42,10 @@ const createDependencies = (
     })),
     createDatabase: vi.fn(async ({ suite }) => {
       events.push(`create:${suite.id}`);
+      const databaseName = expectedDatabaseName(suite);
       return {
-        databaseName: `emdo_ci_${suite.id.replaceAll('-', '_')}`,
-        databaseUrl: `postgresql://postgres:test@127.0.0.1:5432/emdo_ci_${suite.id.replaceAll('-', '_')}`,
+        databaseName,
+        databaseUrl: `postgresql://postgres:test@127.0.0.1:5432/${databaseName}`,
       };
     }),
     runSuite: vi.fn(async ({ databaseName, suite }) => {
@@ -211,7 +219,7 @@ describe('PostgreSQL integration orchestrator', () => {
     );
   });
 
-  it('runs every suite sequentially in its own generated database and writes a non-release report last', async () => {
+  it('runs every suite sequentially in a fresh database instance and writes a non-release report last', async () => {
     const events: string[] = [];
     const dependencies = createDependencies(events);
 
@@ -249,7 +257,7 @@ describe('PostgreSQL integration orchestrator', () => {
     );
     expect(
       new Set(report.suites.map(({ databaseName }) => databaseName)).size,
-    ).toBe(POSTGRES_INTEGRATION_SUITES.length);
+    ).toBe(new Set(POSTGRES_INTEGRATION_SUITES.map(expectedDatabaseName)).size);
     expect(dependencies.runSuite).toHaveBeenCalledWith(
       expect.objectContaining({
         probeContext: {
@@ -263,12 +271,15 @@ describe('PostgreSQL integration orchestrator', () => {
       }),
     );
     expect(events).toEqual([
-      ...POSTGRES_INTEGRATION_SUITES.flatMap(({ id }) => [
-        `create:${id}`,
-        `run:${id}:emdo_ci_${id.replaceAll('-', '_')}`,
-        `drop:${id}:emdo_ci_${id.replaceAll('-', '_')}`,
-        `roles:${id}`,
-      ]),
+      ...POSTGRES_INTEGRATION_SUITES.flatMap((suite) => {
+        const databaseName = expectedDatabaseName(suite);
+        return [
+          `create:${suite.id}`,
+          `run:${suite.id}:${databaseName}`,
+          `drop:${suite.id}:${databaseName}`,
+          `roles:${suite.id}`,
+        ];
+      }),
       `report:${POSTGRES_INTEGRATION_SUITES.length}`,
     ]);
   });

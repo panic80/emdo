@@ -763,17 +763,27 @@ export const runPostgresIntegrationSuites = async (input: {
   }
 
   const suiteReports: PostgresIntegrationRawReport['suites'][number][] = [];
-  const databaseNames = new Set<string>();
+  const databaseNames = new Map<string, string | null>();
   let attackProof: RlsCrossHouseholdAttackProof | undefined;
   for (const suite of POSTGRES_INTEGRATION_SUITES) {
     const database = await dependencies.createDatabase({
       adminUrl: input.adminUrl,
       suite,
     });
-    if (databaseNames.has(database.databaseName)) {
+    const canonicalDatabaseName =
+      'canonicalDatabaseName' in suite ? suite.canonicalDatabaseName : null;
+    const previousCanonicalName = databaseNames.get(database.databaseName);
+    if (
+      databaseNames.has(database.databaseName) &&
+      (canonicalDatabaseName === null ||
+        previousCanonicalName !== canonicalDatabaseName)
+    ) {
       throw new Error('PostgreSQL integration database isolation was reused.');
     }
-    databaseNames.add(database.databaseName);
+    // Canonical-readiness suites may reuse emdo_app only after the preceding
+    // suite's database and global roles were successfully removed. The real
+    // creator rejects an existing database before creating the fresh instance.
+    databaseNames.set(database.databaseName, canonicalDatabaseName);
     let suiteFailure: unknown;
     let result: PostgresSuiteResult | undefined;
     try {
