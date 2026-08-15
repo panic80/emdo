@@ -102,15 +102,43 @@ request/grant/session operation sidecar, while the provider grant reference and
 authorization epoch remain immutable approval and lease checks. A rotating
 space-access grant is never pinned in the gateway constructor.
 
-The runtime remains unbound because the final curated environment factory is
-still missing. That factory must return the route gateway and a bounded
-readiness check over the DB-backed flow, encrypted grant, authorization epoch,
-lease, and audit stores; the strict production-only
-`EMDO_GOOGLE_CALENDAR_VAULT_KEYRING_B64URL`; identity and Calendar OAuth client
-separation; exact redirect/public origins; and a credentialed live Calendar
-smoke target. The raw `EMDO_CREDENTIAL_VAULT_KEY` has no supported fallback,
-and synthetic staging rejects both raw and Calendar provider vault secrets.
-Until that complete graph lands, `google.connector` stays unavailable.
+The durable factory constructs the provider-free binding only when the complete
+production-only Calendar configuration is present; the top-level graph exposes
+that binding only when trusted authentication was also constructed. Every
+request derives a fresh actor from the authenticated principal
+and constructs fresh DB-bound flow, encrypted grant, authorization epoch,
+lease, and audit adapters; no principal-bound store or runtime is cached. The
+session advisory lease uses a separately owned, lazy pool capped at two
+connections, so holding a cross-replica lease cannot exhaust the main API pool
+needed by nested durable operations. Shutdown drains route work and closes that
+lease pool before the main API pool. The
+exact callback is derived from `EMDO_PUBLIC_ORIGIN`, Calendar and identity
+clients must differ, OAuth state and vault keys are independent, and
+construction/readiness performs no Google request. The raw
+`EMDO_CREDENTIAL_VAULT_KEY` has no supported fallback. Synthetic staging
+rejects every Calendar client, state, and vault secret, so its current
+all-components readiness contract cannot report `google.connector: ok`; that
+profile mismatch remains an explicit release blocker rather than a fabricated
+healthy provider. Protected credentialed consent/callback, revocation, and
+Calendar read/write receipts are still required before provider acceptance.
+
+Disconnect uses a durable provider-side-effect fence. One canonical active
+operation is unique per actor regardless of request, idempotency key, session,
+authorization epoch, or encrypted credential revision; retries link their own
+receipts to that operation. Marking the operation `dispatching` atomically
+advances the local authorization epoch, deletes the encrypted grant, and
+invalidates pending flows before any Google request is allowed. A crash after
+that commit therefore leaves no usable local Calendar authority. A recovered
+`dispatching` operation is settled as `unconfirmed` without another Google
+request, either by an authenticated retry or by the bounded aged-dispatch
+reconciler. Completed receipts retain only bounded result and request/session
+lineage, never token material. The isolated `NOLOGIN`
+`emdo_google_oauth_disconnect_retention` and
+`emdo_google_oauth_disconnect_reconciliation` policy roles can execute only
+their bounded purge or reconciliation aggregates. No production login or
+scheduler is composed for either role yet, so 90-day purge and aged-dispatch
+reconciliation remain explicit deployment blockers outside API request
+readiness.
 
 ### Voice provider
 

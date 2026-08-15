@@ -1,8 +1,11 @@
 export {
   GoogleCalendarAuthorizationStartInputSchema,
   GoogleCalendarConnectionActorInputSchema,
+  GoogleCalendarDisconnectInputSchema,
   GoogleCalendarOAuthCallbackInputSchema,
   GoogleCalendarOAuthError,
+  GoogleOAuthAuthorizationStartFailure,
+  GoogleOAuthDisconnectFailure,
   createGoogleCalendarOAuthRouteService,
   createUnavailableGoogleCalendarOAuthRouteService,
 } from './service.js';

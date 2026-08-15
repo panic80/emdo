@@ -243,6 +243,14 @@ export class GoogleOAuthAuthorizationStartFailure extends Error {
   }
 }
 
+export class GoogleOAuthDisconnectFailure extends Error {
+  override readonly name = 'GoogleOAuthDisconnectFailure';
+
+  constructor(readonly reason: 'conflict') {
+    super('Google Calendar OAuth disconnect idempotency conflict');
+  }
+}
+
 /**
  * Durable per-private-grant tombstone. Epoch zero represents a grant that has
  * never been invalidated. Advancing must be atomic and survive credential
@@ -257,6 +265,67 @@ export interface GoogleOAuthAuthorizationEpochStore {
     | { readonly status: 'advanced'; readonly authorizationEpoch: number }
     | { readonly status: 'conflict' }
   >;
+}
+
+const DisconnectResultSchema = z.strictObject({
+  status: z.literal('disconnected'),
+  providerRevocation: z.enum(['not-applicable', 'confirmed', 'unconfirmed']),
+});
+const DisconnectClaimResultSchema = z.discriminatedUnion('status', [
+  z.strictObject({
+    status: z.literal('claimed'),
+    operationId: OpaqueReferenceSchema.min(16).max(160),
+    credentialRevision: z.number().int().safe().positive().nullable(),
+    authorizationEpoch: z.number().int().safe().nonnegative(),
+  }),
+  z.strictObject({
+    status: z.literal('dispatching'),
+    operationId: OpaqueReferenceSchema.min(16).max(160),
+  }),
+  z.strictObject({
+    status: z.literal('replayed'),
+    result: DisconnectResultSchema,
+  }),
+  z.strictObject({ status: z.literal('conflict') }),
+]);
+const DisconnectDispatchResultSchema = z.discriminatedUnion('status', [
+  z.strictObject({ status: z.literal('dispatching') }),
+  z.strictObject({
+    status: z.literal('replayed'),
+    result: DisconnectResultSchema,
+  }),
+  z.strictObject({ status: z.literal('conflict') }),
+]);
+const DisconnectSettlementResultSchema = z.discriminatedUnion('status', [
+  z.strictObject({
+    status: z.enum(['stored', 'replayed']),
+    result: DisconnectResultSchema,
+  }),
+  z.strictObject({ status: z.literal('conflict') }),
+]);
+
+/**
+ * Durable external-side-effect fence. A production implementation must make
+ * each transition transactional and must never move dispatching back to
+ * claimed. Marking dispatching atomically revokes the local grant and advances
+ * its authorization epoch before provider I/O; a dispatching retry records an
+ * unconfirmed outcome without another provider call.
+ */
+export interface GoogleOAuthDisconnectOperationStore {
+  claim(input: {
+    readonly actor: GoogleCalendarOAuthActor;
+    readonly idempotencyKey: string;
+    readonly requestFingerprint: string;
+  }): Promise<z.output<typeof DisconnectClaimResultSchema>>;
+  markDispatching(input: {
+    readonly actor: GoogleCalendarOAuthActor;
+    readonly operationId: string;
+  }): Promise<z.output<typeof DisconnectDispatchResultSchema>>;
+  settle(input: {
+    readonly actor: GoogleCalendarOAuthActor;
+    readonly operationId: string;
+    readonly providerRevocation: 'not-applicable' | 'confirmed' | 'unconfirmed';
+  }): Promise<z.output<typeof DisconnectSettlementResultSchema>>;
 }
 
 export interface GoogleCalendarCredentialVault {
@@ -432,6 +501,10 @@ const RefreshTokenResponseSchema = z.strictObject({
 export const GoogleCalendarConnectionActorInputSchema = z.strictObject({
   actor: ActorSchema,
 });
+export const GoogleCalendarDisconnectInputSchema = z.strictObject({
+  actor: ActorSchema,
+  idempotencyKey: IdempotencyKeySchema,
+});
 export const GoogleCalendarCapabilityLeaseInputSchema = z.strictObject({
   actor: ActorSchema,
   capability: z.enum(['calendar-read', 'calendar-event-write']),
@@ -448,6 +521,7 @@ export interface GoogleCalendarOAuthServiceOptions {
   readonly flowStore: GoogleOAuthFlowStore;
   readonly credentialVault: GoogleCalendarCredentialVault;
   readonly authorizationEpochStore: GoogleOAuthAuthorizationEpochStore;
+  readonly disconnectOperationStore: GoogleOAuthDisconnectOperationStore;
   readonly transport: GoogleOAuthTransport;
   readonly audit: GoogleOAuthAuditSink;
   readonly grantLease: GoogleOAuthGrantLease;
@@ -464,11 +538,13 @@ export class GoogleCalendarOAuthService {
   readonly #flowStore: GoogleOAuthFlowStore;
   readonly #credentialVault: GoogleCalendarCredentialVault;
   readonly #authorizationEpochStore: GoogleOAuthAuthorizationEpochStore;
+  readonly #disconnectOperationStore: GoogleOAuthDisconnectOperationStore;
   readonly #transport: GoogleOAuthTransport;
   readonly #audit: GoogleOAuthAuditSink;
   readonly #grantLease: GoogleOAuthGrantLease;
   readonly #clock: () => Date;
   readonly #entropy: (length: number) => Uint8Array;
+  #available = true;
 
   constructor(options: GoogleCalendarOAuthServiceOptions) {
     const configuration = CONFIGURATION_SCHEMA.parse(options.configuration);
@@ -482,6 +558,7 @@ export class GoogleCalendarOAuthService {
     this.#flowStore = options.flowStore;
     this.#credentialVault = options.credentialVault;
     this.#authorizationEpochStore = options.authorizationEpochStore;
+    this.#disconnectOperationStore = options.disconnectOperationStore;
     this.#transport = options.transport;
     this.#audit = options.audit;
     this.#grantLease = options.grantLease;
@@ -490,6 +567,7 @@ export class GoogleCalendarOAuthService {
   }
 
   async beginAuthorization(input: unknown) {
+    this.#assertAvailable();
     assertPlainRouteInput(input);
     const parsed = GoogleCalendarAuthorizationStartInputSchema.parse(input);
     return this.#grantLease.runExclusive(parsed.actor, async () => {
@@ -611,6 +689,7 @@ export class GoogleCalendarOAuthService {
   }
 
   async handleCallback(input: unknown) {
+    this.#assertAvailable();
     assertPlainRouteInput(input);
     const parsedInput = GoogleCalendarOAuthCallbackInputSchema.parse(input);
     const stateId = this.#verifyState(parsedInput.state);
@@ -784,6 +863,7 @@ export class GoogleCalendarOAuthService {
   }
 
   async getConnectionStatus(input: unknown) {
+    this.#assertAvailable();
     assertPlainRouteInput(input);
     const parsed = GoogleCalendarConnectionActorInputSchema.parse(input);
     const [authorizationEpoch, current] = await Promise.all([
@@ -805,6 +885,7 @@ export class GoogleCalendarOAuthService {
   }
 
   async acquireAccessTokenForCapability(input: unknown) {
+    this.#assertAvailable();
     assertPlainRouteInput(input);
     const parsed = GoogleCalendarCapabilityLeaseInputSchema.parse(input);
     return this.#grantLease.runExclusive(parsed.actor, async () => {
@@ -958,30 +1039,78 @@ export class GoogleCalendarOAuthService {
   }
 
   async disconnect(input: unknown) {
+    this.#assertAvailable();
     assertPlainRouteInput(input);
-    const parsed = GoogleCalendarConnectionActorInputSchema.parse(input);
+    const parsed = GoogleCalendarDisconnectInputSchema.parse(input);
     return this.#grantLease.runExclusive(parsed.actor, async () => {
-      const authorizationEpoch = await this.#loadAuthorizationEpoch(
-        parsed.actor,
+      const requestFingerprint = createHash('sha256')
+        .update(
+          JSON.stringify({
+            domain: 'emdo.google-calendar.oauth-disconnect.v1',
+          }),
+        )
+        .digest('hex');
+      const claim = DisconnectClaimResultSchema.parse(
+        await this.#disconnectOperationStore.claim({
+          actor: parsed.actor,
+          idempotencyKey: parsed.idempotencyKey,
+          requestFingerprint,
+        }),
       );
-      const current = await this.#credentialVault.load(parsed.actor);
-      const validated =
-        current === undefined
-          ? undefined
-          : VersionedCredentialSchema.parse(current);
+      if (claim.status === 'conflict') {
+        throw new GoogleOAuthDisconnectFailure('conflict');
+      }
+      if (claim.status === 'replayed') {
+        return deepFreeze(claim.result);
+      }
+
+      const settle = async (
+        operationId: string,
+        providerRevocation: 'not-applicable' | 'confirmed' | 'unconfirmed',
+      ): Promise<GoogleCalendarDisconnectRouteResult> => {
+        const settlement = DisconnectSettlementResultSchema.parse(
+          await this.#disconnectOperationStore.settle({
+            actor: parsed.actor,
+            operationId,
+            providerRevocation,
+          }),
+        );
+        if (settlement.status === 'conflict') {
+          throw new GoogleCalendarOAuthError('credential-write-conflict');
+        }
+        if (settlement.status === 'stored') {
+          await this.#recordAudit({
+            event: 'google-calendar.oauth-disconnected',
+            userId: parsed.actor.userId,
+            householdId: parsed.actor.householdId,
+            outcome:
+              settlement.result.providerRevocation === 'unconfirmed'
+                ? 'unconfirmed'
+                : 'success',
+          });
+        }
+        return deepFreeze(settlement.result);
+      };
+
+      if (claim.status === 'dispatching') {
+        return settle(claim.operationId, 'unconfirmed');
+      }
+
       await this.#recordAudit({
         event: 'google-calendar.oauth-disconnect-started',
         userId: parsed.actor.userId,
         householdId: parsed.actor.householdId,
         outcome: 'started',
       });
-      const advanced = await this.#authorizationEpochStore.advance({
-        actor: parsed.actor,
-        expectedEpoch: authorizationEpoch,
-      });
+      const current = await this.#credentialVault.load(parsed.actor);
+      const validated =
+        current === undefined
+          ? undefined
+          : VersionedCredentialSchema.parse(current);
       if (
-        advanced.status !== 'advanced' ||
-        advanced.authorizationEpoch !== authorizationEpoch + 1
+        (claim.credentialRevision === null) !== (validated === undefined) ||
+        (validated !== undefined &&
+          validated.revision !== claim.credentialRevision)
       ) {
         await this.#recordBrokerFailure(
           parsed.actor,
@@ -990,24 +1119,24 @@ export class GoogleCalendarOAuthService {
         );
         throw new GoogleCalendarOAuthError('credential-write-conflict');
       }
-      try {
-        await this.#flowStore.invalidateActor(parsed.actor);
-      } catch {
-        // The durable epoch is authoritative; retained flow rows cannot resume.
-      }
 
       if (validated === undefined) {
-        await this.#recordAudit({
-          event: 'google-calendar.oauth-disconnected',
-          userId: parsed.actor.userId,
-          householdId: parsed.actor.householdId,
-          outcome: 'success',
-        });
-        return deepFreeze({
-          status: 'disconnected' as const,
-          providerRevocation: 'not-applicable' as const,
-        });
+        return settle(claim.operationId, 'not-applicable');
       }
+
+      const dispatched = DisconnectDispatchResultSchema.parse(
+        await this.#disconnectOperationStore.markDispatching({
+          actor: parsed.actor,
+          operationId: claim.operationId,
+        }),
+      );
+      if (dispatched.status === 'conflict') {
+        throw new GoogleCalendarOAuthError('credential-write-conflict');
+      }
+      if (dispatched.status === 'replayed') {
+        return deepFreeze(dispatched.result);
+      }
+
       let providerRevocation: 'confirmed' | 'unconfirmed' = 'confirmed';
       try {
         await this.#transport.revokeToken({
@@ -1016,28 +1145,7 @@ export class GoogleCalendarOAuthService {
       } catch {
         providerRevocation = 'unconfirmed';
       }
-      const deleted = await this.#credentialVault.delete({
-        actor: parsed.actor,
-        expectedRevision: validated.revision,
-      });
-      if (!deleted) {
-        await this.#recordBrokerFailure(
-          parsed.actor,
-          undefined,
-          'credential-write-conflict',
-        );
-        throw new GoogleCalendarOAuthError('credential-write-conflict');
-      }
-      await this.#recordAudit({
-        event: 'google-calendar.oauth-disconnected',
-        userId: parsed.actor.userId,
-        householdId: parsed.actor.householdId,
-        outcome: providerRevocation === 'confirmed' ? 'success' : 'unconfirmed',
-      });
-      return deepFreeze({
-        status: 'disconnected' as const,
-        providerRevocation,
-      });
+      return settle(claim.operationId, providerRevocation);
     });
   }
 
@@ -1200,6 +1308,18 @@ export class GoogleCalendarOAuthService {
     const now = this.#clock();
     if (!Number.isFinite(now.getTime())) throw new Error('Invalid OAuth clock');
     return now;
+  }
+
+  dispose(): void {
+    if (!this.#available) return;
+    this.#available = false;
+    this.#stateSigningKey.fill(0);
+  }
+
+  #assertAvailable(): void {
+    if (!this.#available) {
+      throw new GoogleCalendarOAuthError('connector-unavailable');
+    }
   }
 
   #randomBase64Url(length: number, name: string): string {

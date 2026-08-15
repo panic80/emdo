@@ -138,6 +138,46 @@ describe('production API service assembly', () => {
     });
   });
 
+  it('selects the Google connector only with trusted authentication', async () => {
+    const beginAuthorization = vi.fn(async () => ({
+      status: 'already-authorized' as const,
+      grantedPurposes: ['calendar-read' as const],
+    }));
+    const google = {
+      beginAuthorization,
+      completeAuthorization: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    mocks.createDurable.mockResolvedValue({
+      bindings: {
+        google: {
+          check: vi.fn(async () => true),
+          service: google,
+        },
+      },
+    });
+
+    const unavailable = await assembleProductionApiServices({});
+    await expect(unavailable.readiness.check()).resolves.toMatchObject({
+      checks: { 'google.connector': 'unavailable' },
+    });
+
+    mocks.createAuthentication.mockResolvedValue({
+      binding: {
+        service: authBoundary(),
+        check: vi.fn(async () => true),
+      },
+    });
+    const available = await assembleProductionApiServices({});
+    await expect(
+      available.google.beginAuthorization({} as never),
+    ).resolves.toMatchObject({ status: 'already-authorized' });
+    expect(beginAuthorization).toHaveBeenCalledOnce();
+    await expect(available.readiness.check()).resolves.toMatchObject({
+      checks: { 'google.connector': 'ok' },
+    });
+  });
+
   it('selects the current checked finance import boundary from durable composition', async () => {
     const auth = authBoundary();
     const listDestinations = vi.fn(async () => ({

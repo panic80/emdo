@@ -13,6 +13,7 @@ const CURRENT_DURABLE_SERVICE_NAMES = Object.freeze([
   'audioRequests',
   'financeRead',
   'financeImports',
+  'google',
   'householdAdministration',
   'notificationPreferences',
   'proposalQueries',
@@ -41,7 +42,8 @@ const selectCurrentDurableBindings = (
           (name === 'proposalQueries' ||
             name === 'proposals' ||
             name === 'runEvents' ||
-            name === 'visualProofs')
+            name === 'visualProofs' ||
+            name === 'google')
         ) {
           return [];
         }

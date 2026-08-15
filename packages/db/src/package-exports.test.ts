@@ -27,6 +27,7 @@ describe('@emdo/db production export boundaries', () => {
         'PostgresHouseholdAdministrationService',
         'PostgresInvitationRedemptionCoordinator',
         'PostgresGoogleCalendarProviderAuthorityResolver',
+        'PostgresGoogleOAuthDisconnectOperationStore',
         'checkPostgresGoogleOAuthRuntimeReadiness',
         'PostgresAudioRequestCoordinator',
         'PostgresAudioRequestReconciliationStore',

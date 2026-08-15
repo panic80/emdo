@@ -55,10 +55,18 @@ const decodeCanonicalBase64Url = (
 
 export const createProductionGoogleCalendarVaultKeyProvider = (
   encoded: string,
+  forbiddenKeyMaterials: readonly Uint8Array[] = [],
 ): RotatingVaultKeyProvider => {
   const decodedKeys: Buffer[] = [];
+  const forbiddenKeys: Buffer[] = [];
   let provider: RotatingVaultKeyProvider | undefined;
   try {
+    for (const material of forbiddenKeyMaterials) {
+      if (!(material instanceof Uint8Array) || material.byteLength === 0) {
+        throw invalidKeyring();
+      }
+      forbiddenKeys.push(Buffer.from(material));
+    }
     if (
       typeof encoded !== 'string' ||
       encoded.length > MAXIMUM_ENCODED_KEYRING_CHARACTERS
@@ -100,6 +108,14 @@ export const createProductionGoogleCalendarVaultKeyProvider = (
           throw invalidKeyring();
         }
       }
+      for (const forbidden of forbiddenKeys) {
+        if (
+          decoded[left]!.key.byteLength === forbidden.byteLength &&
+          timingSafeEqual(decoded[left]!.key, forbidden)
+        ) {
+          throw invalidKeyring();
+        }
+      }
     }
     provider = new RotatingVaultKeyProvider({
       current: decoded[0]!,
@@ -111,5 +127,6 @@ export const createProductionGoogleCalendarVaultKeyProvider = (
     throw invalidKeyring();
   } finally {
     for (const key of decodedKeys) key.fill(0);
+    for (const key of forbiddenKeys) key.fill(0);
   }
 };

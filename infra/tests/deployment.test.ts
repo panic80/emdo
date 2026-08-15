@@ -670,6 +670,15 @@ describe('host deployment and recovery scripts', () => {
     expect(stagingManifest).not.toContain(
       'EMDO_GOOGLE_CALENDAR_VAULT_KEYRING_B64URL',
     );
+    expect(stagingManifest).not.toContain(
+      'EMDO_GOOGLE_CALENDAR_OAUTH_CLIENT_ID',
+    );
+    expect(stagingManifest).not.toContain(
+      'EMDO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET',
+    );
+    expect(stagingManifest).not.toContain(
+      'EMDO_GOOGLE_CALENDAR_OAUTH_STATE_SIGNING_KEY_B64URL',
+    );
     expect(staging).toContain('assert_isolated_project_absent');
     expect(staging.indexOf('expires-at-epoch')).toBeLessThan(
       staging.indexOf('staging_compose pull'),

@@ -104,6 +104,7 @@ export {
   PostgresGoogleCalendarProviderAuthorityResolver,
   PostgresGoogleOAuthAuditSink,
   PostgresGoogleOAuthAuthorizationEpochStore,
+  PostgresGoogleOAuthDisconnectOperationStore,
   PostgresGoogleOAuthFlowStore,
   PostgresGoogleOAuthGrantLease,
   checkPostgresGoogleOAuthRuntimeReadiness,

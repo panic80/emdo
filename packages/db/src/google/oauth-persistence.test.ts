@@ -5,6 +5,7 @@ import {
   PostgresEncryptedGoogleCalendarGrantStore,
   PostgresGoogleCalendarProviderAuthorityResolver,
   PostgresGoogleOAuthAuthorizationEpochStore,
+  PostgresGoogleOAuthDisconnectOperationStore,
   PostgresGoogleOAuthFlowStore,
   PostgresGoogleOAuthGrantLease,
   checkPostgresGoogleOAuthRuntimeReadiness,
@@ -45,16 +46,20 @@ const poolFor = (
 describe('durable Google OAuth persistence', () => {
   it('fails readiness closed unless the exact database runtime probe returns true', async () => {
     const ready = poolFor((sql) =>
-      sql.includes('google_oauth_runtime_ready') ? [{ ready: true }] : [],
+      sql.includes('google_oauth_runtime_ready')
+        ? [{ oauth_ready: true, disconnect_ready: true }]
+        : [],
     );
     await expect(
       checkPostgresGoogleOAuthRuntimeReadiness(ready.pool),
     ).resolves.toBe(true);
-    expect(ready.query).toHaveBeenCalledWith(
-      'select emdo.google_oauth_runtime_ready() as ready',
+    expect(ready.query.mock.calls[0]?.[0]).toContain(
+      'emdo.google_oauth_disconnect_ready() as disconnect_ready',
     );
 
-    const malformed = poolFor(() => [{ ready: 'yes' }]);
+    const malformed = poolFor(() => [
+      { oauth_ready: true, disconnect_ready: 'yes' },
+    ]);
     await expect(
       checkPostgresGoogleOAuthRuntimeReadiness(malformed.pool),
     ).resolves.toBe(false);
@@ -104,6 +109,82 @@ describe('durable Google OAuth persistence', () => {
         sql.includes('commit_google_oauth_authorization_start'),
       ),
     ).toHaveLength(1);
+  });
+
+  it('claims, fences, and settles a disconnect through durable exact aggregates', async () => {
+    const operationId = '70000000-0000-4000-8000-000000000099';
+    const result = {
+      status: 'disconnected' as const,
+      providerRevocation: 'confirmed' as const,
+    };
+    const { pool, query } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope')) {
+        return [{ authorized: true }];
+      }
+      if (sql.includes('claim_google_oauth_disconnect')) {
+        return [
+          {
+            status: 'claimed',
+            operation_id: operationId,
+            credential_revision: 3,
+            authorization_epoch: 2,
+            result: null,
+          },
+        ];
+      }
+      if (sql.includes('mark_google_oauth_disconnect_dispatching')) {
+        return [{ status: 'dispatching', result: null }];
+      }
+      if (sql.includes('settle_google_oauth_disconnect')) {
+        return [{ status: 'stored', result }];
+      }
+      return [];
+    });
+    const store = new PostgresGoogleOAuthDisconnectOperationStore(
+      pool,
+      requestAuthority,
+    );
+
+    await expect(
+      store.claim({
+        actor,
+        idempotencyKey: 'google-oauth-disconnect-db-0001',
+        requestFingerprint: 'e'.repeat(64),
+      }),
+    ).resolves.toEqual({
+      status: 'claimed',
+      operationId,
+      credentialRevision: 3,
+      authorizationEpoch: 2,
+    });
+    await expect(
+      store.markDispatching({ actor, operationId }),
+    ).resolves.toEqual({ status: 'dispatching' });
+    await expect(
+      store.settle({
+        actor,
+        operationId,
+        providerRevocation: 'confirmed',
+      }),
+    ).resolves.toEqual({ status: 'stored', result });
+
+    expect(
+      query.mock.calls.some(([sql]) =>
+        sql.includes('insert into emdo.google_oauth_disconnect_operations'),
+      ),
+    ).toBe(false);
+    expect(
+      query.mock.calls.find(([sql]) =>
+        sql.includes('claim_google_oauth_disconnect'),
+      )?.[1],
+    ).toEqual([
+      actor.userId,
+      actor.householdId,
+      actor.privateSpaceId,
+      actor.sessionId,
+      'google-oauth-disconnect-db-0001',
+      'e'.repeat(64),
+    ]);
   });
 
   it('passes each PKCE binding only through the atomic start aggregate', async () => {
@@ -314,6 +395,49 @@ describe('durable Google OAuth persistence', () => {
     );
     expect(serialized).toContain('ciphertext');
     expect(serialized).not.toMatch(/access[_-]?token|refresh[_-]?token/i);
+  });
+
+  it('maps the active disconnect mutation fence to a bounded CAS conflict', async () => {
+    const { pool } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope')) {
+        return [{ authorized: true }];
+      }
+      if (sql.includes('compare_and_set_encrypted_google_calendar_grant')) {
+        throw Object.assign(new Error('sensitive disconnect fence detail'), {
+          code: '40001',
+        });
+      }
+      return [];
+    });
+
+    await expect(
+      new PostgresEncryptedGoogleCalendarGrantStore(
+        pool,
+        requestAuthority,
+      ).compareAndSet({
+        scope: {
+          householdId: actor.householdId,
+          spaceId: actor.privateSpaceId,
+          recordId: `google-calendar-oauth-v1-${'a'.repeat(64)}`,
+          provider: 'google',
+          grantType: 'calendar-authorization',
+        },
+        ownerUserId: actor.userId,
+        expectedRevision: null,
+        authorizationEpoch: 1,
+        providerGrantReference: 'gcal-grant-reference-reconnect',
+        payload: {
+          algorithm: 'aes-256-gcm',
+          aadVersion: 1,
+          ciphertext: 'ciphertext',
+          nonce: 'nonce',
+          authenticationTag: 'tag',
+          wrappedKey: 'wrapped',
+          keyVersion: 'k1',
+        },
+        now: new Date('2026-08-10T12:00:00.000Z'),
+      }),
+    ).resolves.toEqual({ status: 'conflict' });
   });
 
   it('rejects provider grant references that the database constraint rejects', async () => {

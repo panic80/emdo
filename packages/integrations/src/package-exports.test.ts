@@ -57,6 +57,8 @@ describe('integration package subpath exports', () => {
     );
     expect(oauth).toHaveProperty('GoogleCalendarOAuthCallbackInputSchema');
     expect(oauth).toHaveProperty('GoogleCalendarOAuthError');
+    expect(oauth).toHaveProperty('GoogleOAuthAuthorizationStartFailure');
+    expect(oauth).toHaveProperty('GoogleOAuthDisconnectFailure');
 
     expect(oauth).not.toHaveProperty('GoogleCalendarOAuthService');
     expect(oauth).not.toHaveProperty('GOOGLE_CALENDAR_SCOPES');
@@ -107,6 +109,11 @@ describe('integration package subpath exports', () => {
         load: async () => 0,
         advance: async () => ({ status: 'conflict' as const }),
       },
+      disconnectOperationStore: {
+        claim: async () => ({ status: 'conflict' as const }),
+        markDispatching: async () => ({ status: 'conflict' as const }),
+        settle: async () => ({ status: 'conflict' as const }),
+      },
       grantStore: {
         load: async () => undefined,
         compareAndSet: async () => ({ status: 'conflict' as const }),
@@ -135,7 +142,11 @@ describe('integration package subpath exports', () => {
 
     const runtime = createGoogleCalendarOAuthServerRuntime(options);
 
-    expect(Object.keys(runtime).sort()).toEqual(['calendar', 'routes']);
+    expect(Object.keys(runtime).sort()).toEqual([
+      'calendar',
+      'dispose',
+      'routes',
+    ]);
     expect(Object.keys(runtime.routes).sort()).toEqual([
       'beginAuthorization',
       'disconnect',

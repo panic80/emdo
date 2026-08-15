@@ -13,7 +13,9 @@ import {
   type GoogleCalendarAuthorizationRouteResult,
   type GoogleCalendarCredential,
   type GoogleCalendarCredentialVault,
+  type GoogleCalendarOAuthActor,
   type GoogleOAuthAuthorizationEpochStore,
+  type GoogleOAuthDisconnectOperationStore,
   type GoogleOAuthGrantLease,
   type GoogleOAuthAuditSink,
   type GoogleOAuthAuditEvent,
@@ -153,6 +155,18 @@ const unusedTransport: GoogleOAuthTransport = {
   },
 };
 
+const unusedDisconnectOperationStore: GoogleOAuthDisconnectOperationStore = {
+  async claim() {
+    throw new Error('not used');
+  },
+  async markDispatching() {
+    throw new Error('not used');
+  },
+  async settle() {
+    throw new Error('not used');
+  },
+};
+
 const noAudit: GoogleOAuthAuditSink = {
   async record() {},
 };
@@ -213,6 +227,218 @@ class MemoryCredentialVault implements GoogleCalendarCredentialVault {
     if (!existed) return false;
     this.stored = undefined;
     return true;
+  }
+}
+
+type MemoryDisconnectOperation = {
+  readonly operationId: string;
+  readonly requestFingerprint: string;
+  readonly credentialRevision: number | null;
+  readonly authorizationEpoch: number;
+  state: 'claimed' | 'dispatching' | 'completed';
+  result?: {
+    readonly status: 'disconnected';
+    readonly providerRevocation: 'not-applicable' | 'confirmed' | 'unconfirmed';
+  };
+};
+
+class MemoryDisconnectOperationStore implements GoogleOAuthDisconnectOperationStore {
+  readonly #operations = new Map<string, MemoryDisconnectOperation>();
+  #sequence = 0;
+
+  constructor(
+    private readonly credentialVault: MemoryCredentialVault,
+    private readonly authorizationEpochStore: MemoryAuthorizationEpochStore,
+    private readonly invalidateFlows:
+      (() => Promise<unknown>) | undefined = undefined,
+  ) {}
+
+  async claim(
+    input: Parameters<GoogleOAuthDisconnectOperationStore['claim']>[0],
+  ) {
+    const key = this.#key(input.actor, input.idempotencyKey);
+    const existing = this.#operations.get(key);
+    if (existing !== undefined) {
+      if (existing.requestFingerprint !== input.requestFingerprint) {
+        return { status: 'conflict' as const };
+      }
+      if (existing.state === 'completed') {
+        return {
+          status: 'replayed' as const,
+          result: existing.result!,
+        };
+      }
+      if (existing.state === 'dispatching') {
+        return {
+          status: 'dispatching' as const,
+          operationId: existing.operationId,
+        };
+      }
+      return {
+        status: 'claimed' as const,
+        operationId: existing.operationId,
+        credentialRevision: existing.credentialRevision,
+        authorizationEpoch: existing.authorizationEpoch,
+      };
+    }
+    const active = this.#findActiveCredential(input.actor);
+    if (active !== undefined) {
+      this.#operations.set(key, active);
+      return active.state === 'dispatching'
+        ? {
+            status: 'dispatching' as const,
+            operationId: active.operationId,
+          }
+        : {
+            status: 'claimed' as const,
+            operationId: active.operationId,
+            credentialRevision: active.credentialRevision,
+            authorizationEpoch: active.authorizationEpoch,
+          };
+    }
+    this.#sequence += 1;
+    const operation: MemoryDisconnectOperation = {
+      operationId: `google-disconnect-operation-${this.#sequence}`,
+      requestFingerprint: input.requestFingerprint,
+      credentialRevision: this.credentialVault.stored?.revision ?? null,
+      authorizationEpoch: this.authorizationEpochStore.epoch,
+      state: 'claimed',
+    };
+    this.#operations.set(key, operation);
+    return {
+      status: 'claimed' as const,
+      operationId: operation.operationId,
+      credentialRevision: operation.credentialRevision,
+      authorizationEpoch: operation.authorizationEpoch,
+    };
+  }
+
+  async markDispatching(
+    input: Parameters<
+      GoogleOAuthDisconnectOperationStore['markDispatching']
+    >[0],
+  ) {
+    const operation = this.#find(input.actor, input.operationId);
+    if (operation === undefined) return { status: 'conflict' as const };
+    if (operation.state === 'completed') {
+      return { status: 'replayed' as const, result: operation.result! };
+    }
+    if (operation.credentialRevision === null) {
+      return { status: 'conflict' as const };
+    }
+    if (
+      this.credentialVault.stored?.revision !== operation.credentialRevision ||
+      this.authorizationEpochStore.epoch !== operation.authorizationEpoch
+    ) {
+      return { status: 'conflict' as const };
+    }
+    operation.state = 'dispatching';
+    this.authorizationEpochStore.epoch += 1;
+    this.credentialVault.stored = undefined;
+    await this.invalidateFlows?.();
+    return { status: 'dispatching' as const };
+  }
+
+  async settle(
+    input: Parameters<GoogleOAuthDisconnectOperationStore['settle']>[0],
+  ) {
+    const operation = this.#find(input.actor, input.operationId);
+    if (operation === undefined) return { status: 'conflict' as const };
+    if (operation.state === 'completed') {
+      return { status: 'replayed' as const, result: operation.result! };
+    }
+    const noCredentialSettlement =
+      operation.credentialRevision === null &&
+      this.credentialVault.stored === undefined &&
+      operation.state === 'claimed' &&
+      input.providerRevocation === 'not-applicable' &&
+      this.authorizationEpochStore.epoch === operation.authorizationEpoch;
+    const dispatchedSettlement =
+      operation.credentialRevision !== null &&
+      this.credentialVault.stored === undefined &&
+      operation.state === 'dispatching' &&
+      input.providerRevocation !== 'not-applicable' &&
+      this.authorizationEpochStore.epoch === operation.authorizationEpoch + 1;
+    if (!noCredentialSettlement && !dispatchedSettlement) {
+      return { status: 'conflict' as const };
+    }
+    if (noCredentialSettlement) {
+      this.authorizationEpochStore.epoch += 1;
+      await this.invalidateFlows?.();
+    }
+    operation.state = 'completed';
+    operation.result = {
+      status: 'disconnected',
+      providerRevocation: input.providerRevocation,
+    };
+    return { status: 'stored' as const, result: operation.result };
+  }
+
+  async seedDispatching(input: {
+    readonly actor: GoogleCalendarOAuthActor;
+    readonly idempotencyKey: string;
+  }): Promise<void> {
+    const requestFingerprint = createHash('sha256')
+      .update(
+        JSON.stringify({
+          domain: 'emdo.google-calendar.oauth-disconnect.v1',
+        }),
+      )
+      .digest('hex');
+    const claimed = await this.claim({ ...input, requestFingerprint });
+    if (claimed.status !== 'claimed') throw new Error('claim unavailable');
+    const dispatched = await this.markDispatching({
+      actor: input.actor,
+      operationId: claimed.operationId,
+    });
+    if (dispatched.status !== 'dispatching') {
+      throw new Error('dispatch unavailable');
+    }
+  }
+
+  #key(inputActor: GoogleCalendarOAuthActor, idempotencyKey: string): string {
+    return [
+      inputActor.userId,
+      inputActor.householdId,
+      inputActor.privateSpaceId,
+      inputActor.sessionId,
+      idempotencyKey,
+    ].join(':');
+  }
+
+  #find(inputActor: GoogleCalendarOAuthActor, operationId: string) {
+    for (const [key, operation] of this.#operations) {
+      if (
+        operation.operationId === operationId &&
+        key.startsWith(
+          [
+            inputActor.userId,
+            inputActor.householdId,
+            inputActor.privateSpaceId,
+          ].join(':') + ':',
+        )
+      ) {
+        return operation;
+      }
+    }
+    return undefined;
+  }
+
+  #findActiveCredential(inputActor: GoogleCalendarOAuthActor) {
+    const stablePrefix = [
+      inputActor.userId,
+      inputActor.householdId,
+      inputActor.privateSpaceId,
+    ].join(':');
+    for (const [key, operation] of this.#operations) {
+      if (
+        key.startsWith(`${stablePrefix}:`) &&
+        operation.state !== 'completed'
+      ) {
+        return operation;
+      }
+    }
+    return undefined;
   }
 }
 
@@ -292,6 +518,7 @@ const createService = (options?: {
       credentialVault: options?.credentialVault ?? unusedVault,
       authorizationEpochStore:
         options?.authorizationEpochStore ?? new MemoryAuthorizationEpochStore(),
+      disconnectOperationStore: unusedDisconnectOperationStore,
       transport: unusedTransport,
       audit: noAudit,
       grantLease: directLease,
@@ -545,6 +772,11 @@ describe('GoogleCalendarOAuthService callback', () => {
     const authorizationEpochStore = new MemoryAuthorizationEpochStore();
     const transport = new CapturingTransport();
     const audit = new CapturingAudit();
+    const disconnectOperationStore = new MemoryDisconnectOperationStore(
+      credentialVault,
+      authorizationEpochStore,
+      () => flowStore.invalidateActor(actor),
+    );
     const service = new GoogleCalendarOAuthService({
       configuration: {
         calendarClientId: 'calendar-client.apps.googleusercontent.com',
@@ -556,6 +788,7 @@ describe('GoogleCalendarOAuthService callback', () => {
       flowStore,
       credentialVault,
       authorizationEpochStore,
+      disconnectOperationStore,
       transport,
       audit,
       grantLease: directLease,
@@ -967,7 +1200,12 @@ describe('GoogleCalendarOAuthService callback', () => {
     const fixture = createCallbackFixture();
     const state = await beginAndGetState(fixture.service);
 
-    await expect(fixture.service.disconnect({ actor })).resolves.toEqual({
+    await expect(
+      fixture.service.disconnect({
+        actor,
+        idempotencyKey: 'google-oauth-disconnect-empty-0001',
+      }),
+    ).resolves.toEqual({
       status: 'disconnected',
       providerRevocation: 'not-applicable',
     });
@@ -1002,6 +1240,10 @@ describe('GoogleCalendarOAuthService credential broker and disconnect', () => {
     };
     const transport = new CapturingTransport();
     const audit = new CapturingAudit();
+    const disconnectOperationStore = new MemoryDisconnectOperationStore(
+      credentialVault,
+      authorizationEpochStore,
+    );
     const service = new GoogleCalendarOAuthService({
       configuration: {
         calendarClientId: 'calendar-client.apps.googleusercontent.com',
@@ -1013,6 +1255,7 @@ describe('GoogleCalendarOAuthService credential broker and disconnect', () => {
       flowStore: new InMemoryGoogleOAuthFlowStore(() => new Date(now)),
       credentialVault,
       authorizationEpochStore,
+      disconnectOperationStore,
       transport,
       audit,
       grantLease: directLease,
@@ -1023,6 +1266,7 @@ describe('GoogleCalendarOAuthService credential broker and disconnect', () => {
       service,
       credentialVault,
       authorizationEpochStore,
+      disconnectOperationStore,
       transport,
       audit,
       setNow(value: string) {
@@ -1169,7 +1413,12 @@ describe('GoogleCalendarOAuthService credential broker and disconnect', () => {
 
   it('revokes the refresh token, deletes locally, and reports unconfirmed provider revocation safely', async () => {
     const confirmed = createConnectedFixture();
-    await expect(confirmed.service.disconnect({ actor })).resolves.toEqual({
+    await expect(
+      confirmed.service.disconnect({
+        actor,
+        idempotencyKey: 'google-oauth-disconnect-confirmed-0001',
+      }),
+    ).resolves.toEqual({
       status: 'disconnected',
       providerRevocation: 'confirmed',
     });
@@ -1186,7 +1435,12 @@ describe('GoogleCalendarOAuthService credential broker and disconnect', () => {
     unconfirmed.transport.revokeFailure = new Error(
       'provider leaked refresh-token-sensitive',
     );
-    await expect(unconfirmed.service.disconnect({ actor })).resolves.toEqual({
+    await expect(
+      unconfirmed.service.disconnect({
+        actor,
+        idempotencyKey: 'google-oauth-disconnect-unconfirmed-0001',
+      }),
+    ).resolves.toEqual({
       status: 'disconnected',
       providerRevocation: 'unconfirmed',
     });
@@ -1196,10 +1450,94 @@ describe('GoogleCalendarOAuthService credential broker and disconnect', () => {
     );
   });
 
+  it('replays one durable disconnect receipt without repeating provider revocation', async () => {
+    const fixture = createConnectedFixture();
+    const input = {
+      actor,
+      idempotencyKey: 'google-oauth-disconnect-replay-0001',
+    };
+
+    const first = await fixture.service.disconnect(input);
+    await expect(fixture.service.disconnect(input)).resolves.toEqual(first);
+    expect(fixture.transport.revokeCalls).toEqual([
+      { token: 'existing-refresh-token-sensitive' },
+    ]);
+    expect(fixture.authorizationEpochStore.epoch).toBe(1);
+  });
+
+  it('settles a recovered dispatching fence as unconfirmed without another provider call', async () => {
+    const fixture = createConnectedFixture();
+    const idempotencyKey = 'google-oauth-disconnect-recover-0001';
+    await fixture.disconnectOperationStore.seedDispatching({
+      actor,
+      idempotencyKey,
+    });
+    expect(fixture.credentialVault.stored).toBeUndefined();
+    expect(fixture.authorizationEpochStore.epoch).toBe(1);
+
+    await expect(
+      fixture.service.disconnect({ actor, idempotencyKey }),
+    ).resolves.toEqual({
+      status: 'disconnected',
+      providerRevocation: 'unconfirmed',
+    });
+    expect(fixture.transport.revokeCalls).toHaveLength(0);
+    expect(fixture.credentialVault.stored).toBeUndefined();
+    expect(fixture.authorizationEpochStore.epoch).toBe(1);
+    await expect(
+      fixture.service.disconnect({ actor, idempotencyKey }),
+    ).resolves.toEqual({
+      status: 'disconnected',
+      providerRevocation: 'unconfirmed',
+    });
+    expect(fixture.transport.revokeCalls).toHaveLength(0);
+  });
+
+  it('adopts one dispatching credential fence across a rotated session and idempotency key', async () => {
+    const fixture = createConnectedFixture();
+    await fixture.disconnectOperationStore.seedDispatching({
+      actor,
+      idempotencyKey: 'google-oauth-disconnect-origin-0001',
+    });
+    const rotatedActor = {
+      ...actor,
+      sessionId: '10000000-0000-4000-8000-000000000099',
+    };
+    const rotatedKey = 'google-oauth-disconnect-rotated-0001';
+
+    await expect(
+      fixture.service.disconnect({
+        actor: rotatedActor,
+        idempotencyKey: rotatedKey,
+      }),
+    ).resolves.toEqual({
+      status: 'disconnected',
+      providerRevocation: 'unconfirmed',
+    });
+    expect(fixture.transport.revokeCalls).toHaveLength(0);
+    expect(fixture.credentialVault.stored).toBeUndefined();
+    expect(fixture.authorizationEpochStore.epoch).toBe(1);
+    await expect(
+      fixture.service.disconnect({
+        actor: rotatedActor,
+        idempotencyKey: rotatedKey,
+      }),
+    ).resolves.toEqual({
+      status: 'disconnected',
+      providerRevocation: 'unconfirmed',
+    });
+    expect(fixture.transport.revokeCalls).toHaveLength(0);
+  });
+
   it('retries revocation after a crash left a credential behind a newer tombstone epoch', async () => {
     const confirmed = createConnectedFixture();
     confirmed.authorizationEpochStore.epoch = 1;
-    await expect(confirmed.service.disconnect({ actor })).resolves.toEqual({
+    await expect(
+      confirmed.service.disconnect({
+        actor,
+        idempotencyKey: 'google-oauth-disconnect-stale-confirmed-0001',
+      }),
+    ).resolves.toEqual({
       status: 'disconnected',
       providerRevocation: 'confirmed',
     });
@@ -1212,7 +1550,12 @@ describe('GoogleCalendarOAuthService credential broker and disconnect', () => {
     const unconfirmed = createConnectedFixture();
     unconfirmed.authorizationEpochStore.epoch = 1;
     unconfirmed.transport.revokeFailure = new Error('sensitive provider text');
-    await expect(unconfirmed.service.disconnect({ actor })).resolves.toEqual({
+    await expect(
+      unconfirmed.service.disconnect({
+        actor,
+        idempotencyKey: 'google-oauth-disconnect-stale-unconfirmed-0001',
+      }),
+    ).resolves.toEqual({
       status: 'disconnected',
       providerRevocation: 'unconfirmed',
     });

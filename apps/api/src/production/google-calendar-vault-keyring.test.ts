@@ -136,4 +136,14 @@ describe('production Google Calendar vault keyring', () => {
       createProductionGoogleCalendarVaultKeyProvider(encoded),
     ).toThrow('api-google-calendar-vault-keyring-invalid');
   });
+
+  it('rejects vault material reused as another Google connector secret', () => {
+    const stateSigningKey = Buffer.alloc(32, 23);
+    expect(() =>
+      createProductionGoogleCalendarVaultKeyProvider(encode(validKeyring()), [
+        stateSigningKey,
+      ]),
+    ).toThrow('api-google-calendar-vault-keyring-invalid');
+    expect(stateSigningKey).toEqual(Buffer.alloc(32, 23));
+  });
 });

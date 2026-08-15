@@ -24,6 +24,7 @@ const createRuntime = () =>
     },
     flowStore: {} as never,
     authorizationEpochStore: {} as never,
+    disconnectOperationStore: {} as never,
     grantStore: {} as never,
     keyProvider: {} as never,
     transport: {} as never,
@@ -66,5 +67,22 @@ describe('createGoogleCalendarOAuthServerRuntime', () => {
         authorizationScopeFingerprint: 'not-a-fingerprint',
       } as never),
     ).toThrow('invalid-google-calendar-conditional-gateway-scope');
+  });
+
+  it('erases runtime-owned state authority and rejects later route use', async () => {
+    const runtime = createRuntime();
+
+    runtime.dispose();
+    runtime.dispose();
+
+    await expect(
+      runtime.routes.beginAuthorization({
+        actor,
+        purpose: 'calendar-read',
+        idempotencyKey: 'calendar-start-01',
+      }),
+    ).rejects.toMatchObject({
+      code: 'connector-unavailable',
+    });
   });
 });

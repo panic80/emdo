@@ -10,7 +10,7 @@ import {
 } from '@emdo/contracts';
 import { z } from 'zod';
 
-import type { DatabasePool } from '../scoped-repository.js';
+import type { DatabaseClient, DatabasePool } from '../scoped-repository.js';
 import {
   beginDurableTransaction,
   firstResultRow,
@@ -94,7 +94,26 @@ const AuthorizationStartInputSchema = z.strictObject({
   result: AuthorizationStartResultSchema,
   flow: FlowSchema.optional(),
 });
-const RuntimeReadinessRowSchema = z.strictObject({ ready: z.boolean() });
+const DisconnectResultSchema = z.strictObject({
+  status: z.literal('disconnected'),
+  providerRevocation: z.enum(['not-applicable', 'confirmed', 'unconfirmed']),
+});
+const DisconnectClaimInputSchema = z.strictObject({
+  actor: ActorSchema,
+  idempotencyKey: IdempotencyKeySchema,
+  requestFingerprint: Sha256Schema,
+});
+const DisconnectOperationInputSchema = z.strictObject({
+  actor: ActorSchema,
+  operationId: UuidSchema,
+});
+const DisconnectSettlementInputSchema = DisconnectOperationInputSchema.extend({
+  providerRevocation: z.enum(['not-applicable', 'confirmed', 'unconfirmed']),
+});
+const RuntimeReadinessRowSchema = z.strictObject({
+  oauth_ready: z.boolean(),
+  disconnect_ready: z.boolean(),
+});
 const Base64UrlSchema = z.string().regex(/^[A-Za-z0-9_-]*$/u);
 const ProviderGrantReferenceSchema = OpaqueReferenceSchema.min(16).max(160);
 const EncryptedPayloadSchema = z.strictObject({
@@ -144,6 +163,12 @@ const ProviderAuthorityResolverInputSchema = z.strictObject({
   ]),
   capabilityFingerprint: Sha256Schema,
 });
+
+const hasPostgresErrorCode = (error: unknown, code: string): boolean =>
+  typeof error === 'object' &&
+  error !== null &&
+  'code' in error &&
+  (error as { readonly code?: unknown }).code === code;
 
 export type PostgresGoogleOAuthActor = Readonly<z.output<typeof ActorSchema>>;
 export type PostgresGoogleOAuthRequestAuthority = Readonly<
@@ -226,9 +251,16 @@ export const checkPostgresGoogleOAuthRuntimeReadiness = async (
   let destroy = false;
   try {
     const row = firstResultRow(
-      await client.query('select emdo.google_oauth_runtime_ready() as ready'),
+      await client.query(
+        `select emdo.google_oauth_runtime_ready() as oauth_ready,
+                emdo.google_oauth_disconnect_ready() as disconnect_ready`,
+      ),
     );
-    const ready = RuntimeReadinessRowSchema.safeParse(row).data?.ready === true;
+    const parsed = RuntimeReadinessRowSchema.safeParse(row);
+    const ready =
+      parsed.success &&
+      parsed.data.oauth_ready === true &&
+      parsed.data.disconnect_ready === true;
     destroy = !ready;
     return ready;
   } catch {
@@ -237,6 +269,48 @@ export const checkPostgresGoogleOAuthRuntimeReadiness = async (
   } finally {
     client.release(destroy ? true : undefined);
   }
+};
+
+const withDisconnectAcknowledgement = async <Value>(
+  pool: DatabasePool,
+  principal: Readonly<DurableRepositoryPrincipal>,
+  actor: PostgresGoogleOAuthActor,
+  execute: (client: DatabaseClient) => Promise<Value>,
+): Promise<Value> => {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const client = await beginDurableTransaction(pool, principal);
+    let transactionOpen = true;
+    let committing = false;
+    let destroyClient = false;
+    try {
+      await lockDurableScope(client, {
+        householdId: actor.householdId,
+        spaceId: actor.privateSpaceId,
+      });
+      const value = await execute(client);
+      committing = true;
+      await client.query('commit');
+      transactionOpen = false;
+      return value;
+    } catch (error) {
+      if (committing) {
+        destroyClient = true;
+        transactionOpen = false;
+        if (attempt === 0) continue;
+      }
+      throw error;
+    } finally {
+      if (transactionOpen) {
+        try {
+          await client.query('rollback');
+        } catch {
+          destroyClient = true;
+        }
+      }
+      client.release(destroyClient ? true : undefined);
+    }
+  }
+  throw new Error('Google OAuth disconnect acknowledgement unavailable');
 };
 
 /** Atomic, single-use PKCE flow persistence. */
@@ -395,6 +469,157 @@ export class PostgresGoogleOAuthFlowStore {
   }
 }
 
+/**
+ * Durable at-most-once fence for Google token revocation. Dispatching is a
+ * one-way boundary: a retry settles local authority as unconfirmed instead of
+ * invoking the provider again.
+ */
+export class PostgresGoogleOAuthDisconnectOperationStore {
+  readonly #authority: PostgresGoogleOAuthRequestAuthority;
+  readonly #principal: Readonly<DurableRepositoryPrincipal>;
+
+  constructor(
+    private readonly pool: DatabasePool,
+    authorityInput: PostgresGoogleOAuthRequestAuthority,
+  ) {
+    this.#authority = deepFreeze(RequestAuthoritySchema.parse(authorityInput));
+    this.#principal = principalForAuthority(this.#authority);
+  }
+
+  async claim(input: z.input<typeof DisconnectClaimInputSchema>) {
+    const request = DisconnectClaimInputSchema.parse(input);
+    const actor = assertActorAuthority(this.#authority, request.actor);
+    return withDisconnectAcknowledgement(
+      this.pool,
+      this.#principal,
+      actor,
+      async (client) => {
+        const row = firstResultRow(
+          await client.query(
+            `select status, operation_id, credential_revision,
+                    authorization_epoch, result
+               from emdo.claim_google_oauth_disconnect(
+                 $1, $2, $3, $4, $5, $6
+               )`,
+            [
+              actor.userId,
+              actor.householdId,
+              actor.privateSpaceId,
+              actor.sessionId,
+              request.idempotencyKey,
+              request.requestFingerprint,
+            ],
+          ),
+        );
+        const status = z
+          .enum(['claimed', 'dispatching', 'replayed', 'conflict'])
+          .parse(row?.status);
+        if (status === 'conflict') return deepFreeze({ status });
+        if (status === 'replayed') {
+          return deepFreeze({
+            status,
+            result: DisconnectResultSchema.parse(row?.result),
+          });
+        }
+        const operationId = UuidSchema.parse(row?.operation_id);
+        if (status === 'dispatching') {
+          return deepFreeze({ status, operationId });
+        }
+        return deepFreeze({
+          status,
+          operationId,
+          credentialRevision: z
+            .number()
+            .int()
+            .safe()
+            .positive()
+            .nullable()
+            .parse(row?.credential_revision),
+          authorizationEpoch: z
+            .number()
+            .int()
+            .safe()
+            .nonnegative()
+            .parse(row?.authorization_epoch),
+        });
+      },
+    );
+  }
+
+  async markDispatching(input: z.input<typeof DisconnectOperationInputSchema>) {
+    const request = DisconnectOperationInputSchema.parse(input);
+    const actor = assertActorAuthority(this.#authority, request.actor);
+    return withDisconnectAcknowledgement(
+      this.pool,
+      this.#principal,
+      actor,
+      async (client) => {
+        const row = firstResultRow(
+          await client.query(
+            `select status, result
+               from emdo.mark_google_oauth_disconnect_dispatching(
+                 $1, $2, $3, $4, $5
+               )`,
+            [
+              request.operationId,
+              actor.userId,
+              actor.householdId,
+              actor.privateSpaceId,
+              actor.sessionId,
+            ],
+          ),
+        );
+        const status = z
+          .enum(['dispatching', 'replayed', 'conflict'])
+          .parse(row?.status);
+        return status === 'replayed'
+          ? deepFreeze({
+              status,
+              result: DisconnectResultSchema.parse(row?.result),
+            })
+          : deepFreeze({ status });
+      },
+    );
+  }
+
+  async settle(input: z.input<typeof DisconnectSettlementInputSchema>) {
+    const request = DisconnectSettlementInputSchema.parse(input);
+    const actor = assertActorAuthority(this.#authority, request.actor);
+    return withDisconnectAcknowledgement(
+      this.pool,
+      this.#principal,
+      actor,
+      async (client) => {
+        const row = firstResultRow(
+          await client.query(
+            `select status, result
+               from emdo.settle_google_oauth_disconnect(
+                 $1, $2, $3, $4, $5, $6
+               )`,
+            [
+              request.operationId,
+              actor.userId,
+              actor.householdId,
+              actor.privateSpaceId,
+              actor.sessionId,
+              request.providerRevocation,
+            ],
+          ),
+        );
+        const status = z
+          .enum(['stored', 'replayed', 'conflict'])
+          .parse(row?.status);
+        return status === 'conflict'
+          ? deepFreeze({ status })
+          : deepFreeze({
+              status,
+              result: DisconnectResultSchema.parse(row?.result),
+            });
+      },
+    );
+  }
+}
+
 /** Durable monotonic tombstone, independent of credential row lifetime. */
 export class PostgresGoogleOAuthAuthorizationEpochStore {
   readonly #authority: PostgresGoogleOAuthRequestAuthority;
@@ -544,40 +769,47 @@ export class PostgresEncryptedGoogleCalendarGrantStore {
   > {
     const request = GrantCasSchema.parse(input);
     this.#assertScope(request.scope, request.ownerUserId);
-    return withDurableTransaction(
-      this.pool,
-      this.#principal,
-      {
-        householdId: request.scope.householdId,
-        spaceId: request.scope.spaceId,
-      },
-      async (client) => {
-        const row = firstResultRow(
-          await client.query(
-            `select emdo.compare_and_set_encrypted_google_calendar_grant(
-                      $1, $2, $3, $4, $5, $6, $7, $8::jsonb
-                    ) as revision`,
-            [
-              request.scope.recordId,
-              request.scope.householdId,
-              request.scope.spaceId,
-              request.ownerUserId,
-              request.expectedRevision,
-              request.authorizationEpoch,
-              request.providerGrantReference,
-              request.payload as unknown as JsonValue,
-            ],
-          ),
-        );
-        if (row?.revision == null) {
-          return deepFreeze({ status: 'conflict' as const });
-        }
-        return deepFreeze({
-          status: 'stored' as const,
-          revision: z.number().int().positive().parse(row.revision),
-        });
-      },
-    );
+    try {
+      return await withDurableTransaction(
+        this.pool,
+        this.#principal,
+        {
+          householdId: request.scope.householdId,
+          spaceId: request.scope.spaceId,
+        },
+        async (client) => {
+          const row = firstResultRow(
+            await client.query(
+              `select emdo.compare_and_set_encrypted_google_calendar_grant(
+                        $1, $2, $3, $4, $5, $6, $7, $8::jsonb
+                      ) as revision`,
+              [
+                request.scope.recordId,
+                request.scope.householdId,
+                request.scope.spaceId,
+                request.ownerUserId,
+                request.expectedRevision,
+                request.authorizationEpoch,
+                request.providerGrantReference,
+                request.payload as unknown as JsonValue,
+              ],
+            ),
+          );
+          if (row?.revision == null) {
+            return deepFreeze({ status: 'conflict' as const });
+          }
+          return deepFreeze({
+            status: 'stored' as const,
+            revision: z.number().int().positive().parse(row.revision),
+          });
+        },
+      );
+    } catch (error) {
+      if (hasPostgresErrorCode(error, '40001')) {
+        return deepFreeze({ status: 'conflict' as const });
+      }
+      throw error;
+    }
   }
 
   async delete(input: z.input<typeof GrantDeleteSchema>): Promise<boolean> {

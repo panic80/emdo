@@ -9,6 +9,7 @@ import {
   financeImportPlans,
   financeImportReceipts,
   googleOAuthAuthorizationStarts,
+  googleOAuthDisconnectOperations,
 } from './schema.js';
 
 const metadataUrl = new URL('../drizzle/meta/', import.meta.url);
@@ -59,7 +60,7 @@ describe('ordered migration snapshot chain', () => {
       readdir(metadataUrl),
     ]);
     expect(journal.entries.map(({ idx }) => idx)).toEqual([
-      0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
     ]);
     expect(journal.entries.map(({ tag }) => tag)).toEqual([
       '0000_household_foundation',
@@ -72,18 +73,19 @@ describe('ordered migration snapshot chain', () => {
       '0007_experience_notification_preferences',
       '0008_finance_import_receipts',
       '0009_google_oauth_authorization_starts',
+      '0010_google_oauth_disconnect_operations',
     ]);
     expect(
       files.filter((file) => /^\d{4}_snapshot\.json$/u.test(file)).sort(),
     ).toEqual(
       Array.from(
-        { length: 10 },
+        { length: 11 },
         (_, index) => `${index.toString().padStart(4, '0')}_snapshot.json`,
       ),
     );
 
     const snapshots = await Promise.all(
-      Array.from({ length: 10 }, (_, index) => readSnapshot(index)),
+      Array.from({ length: 11 }, (_, index) => readSnapshot(index)),
     );
     expect(snapshots[0]?.prevId).toBe('00000000-0000-0000-0000-000000000000');
     for (let index = 1; index < snapshots.length; index += 1) {
@@ -155,6 +157,12 @@ describe('ordered migration snapshot chain', () => {
       changed: [],
       removed: [],
     });
+    const snapshot10 = await readSnapshot(10);
+    expect(tableDelta(snapshot9, snapshot10)).toEqual({
+      added: ['emdo.google_oauth_disconnect_operations'],
+      changed: [],
+      removed: [],
+    });
   });
 
   it('keeps 0008 finance foreign keys and checks fully represented before the additive OAuth snapshot', async () => {
@@ -213,7 +221,7 @@ describe('ordered migration snapshot chain', () => {
         .sort(),
     );
     expect(files).toContain('0009_snapshot.json');
-    expect(files).not.toContain('0010_snapshot.json');
+    expect(files).toContain('0010_snapshot.json');
   });
 
   it('keeps the 0009 OAuth start table exactly aligned with the schema', async () => {
@@ -227,6 +235,32 @@ describe('ordered migration snapshot chain', () => {
       readonly checkConstraints: Readonly<Record<string, unknown>>;
     };
     const config = getTableConfig(googleOAuthAuthorizationStarts);
+
+    expect(Object.keys(stored.indexes).sort()).toEqual(
+      config.indexes.map((index) => index.config.name).sort(),
+    );
+    expect(Object.keys(stored.foreignKeys).sort()).toEqual(
+      config.foreignKeys.map((key) => key.reference().name).sort(),
+    );
+    expect(Object.keys(stored.uniqueConstraints).sort()).toEqual(
+      config.uniqueConstraints.map((constraint) => constraint.name).sort(),
+    );
+    expect(Object.keys(stored.checkConstraints).sort()).toEqual(
+      config.checks.map((check) => check.name).sort(),
+    );
+  });
+
+  it('keeps the 0010 OAuth disconnect table exactly aligned with the schema', async () => {
+    const snapshot10 = await readSnapshot(10);
+    const stored = snapshot10.tables[
+      'emdo.google_oauth_disconnect_operations'
+    ] as {
+      readonly indexes: Readonly<Record<string, unknown>>;
+      readonly foreignKeys: Readonly<Record<string, unknown>>;
+      readonly uniqueConstraints: Readonly<Record<string, unknown>>;
+      readonly checkConstraints: Readonly<Record<string, unknown>>;
+    };
+    const config = getTableConfig(googleOAuthDisconnectOperations);
 
     expect(Object.keys(stored.indexes).sort()).toEqual(
       config.indexes.map((index) => index.config.name).sort(),

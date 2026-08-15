@@ -150,6 +150,7 @@ const dependencies = (): ProductionDurableServiceDependencies => {
           checkReady: vi.fn(async () => true),
         }) as never,
     ),
+    createGoogleConnectorBinding: vi.fn(() => ({})),
   };
 };
 
@@ -627,5 +628,85 @@ describe('production durable API service composition', () => {
       ]),
     ).resolves.toEqual([true, true]);
     expect(syncRuntime.checkReady).toHaveBeenCalledOnce();
+  });
+
+  it('binds the request-scoped Google connector to the API pool and closes its secrets', async () => {
+    const adapters = dependencies();
+    const closeGoogle = vi.fn(async () => undefined);
+    const google = {
+      beginAuthorization: vi.fn(),
+      completeAuthorization: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    const check = vi.fn(async () => true);
+    vi.mocked(adapters.createGoogleConnectorBinding).mockReturnValue({
+      binding: { service: google, check },
+      close: closeGoogle,
+    });
+    const configuredEnvironment = {
+      EMDO_API_DATABASE_URL: databaseUrl,
+      EMDO_PUBLIC_ORIGIN: 'https://emdo.example',
+      EMDO_GOOGLE_IDENTITY_CLIENT_ID:
+        '1234567890-identity.apps.googleusercontent.com',
+      EMDO_GOOGLE_CALENDAR_OAUTH_CLIENT_ID:
+        '1234567890-calendar.apps.googleusercontent.com',
+    };
+
+    const result = await createProductionDurableServiceBindings(
+      configuredEnvironment,
+      adapters,
+    );
+    const database = vi.mocked(adapters.createDatabaseClient).mock.results[0]!
+      .value;
+
+    expect(adapters.createGoogleConnectorBinding).toHaveBeenCalledOnce();
+    expect(adapters.createGoogleConnectorBinding).toHaveBeenCalledWith({
+      environment: configuredEnvironment,
+      pool: database.scopedPool,
+    });
+    expect(result.bindings.google).toEqual({ service: google, check });
+    await result.close?.();
+    await result.close?.();
+    expect(closeGoogle).toHaveBeenCalledOnce();
+    expect(database.close).toHaveBeenCalledOnce();
+  });
+
+  it('drains request-scoped connector resources before closing their database', async () => {
+    const adapters = dependencies();
+    let releaseGoogle: (() => void) | undefined;
+    const closeGoogle = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseGoogle = resolve;
+        }),
+    );
+    vi.mocked(adapters.createGoogleConnectorBinding).mockReturnValue({
+      binding: {
+        service: {
+          beginAuthorization: vi.fn(),
+          completeAuthorization: vi.fn(),
+          disconnect: vi.fn(),
+        },
+        check: vi.fn(async () => true),
+      },
+      close: closeGoogle,
+    });
+    const result = await createProductionDurableServiceBindings(
+      { EMDO_API_DATABASE_URL: databaseUrl },
+      adapters,
+    );
+    const database = vi.mocked(adapters.createDatabaseClient).mock.results[0]!
+      .value;
+
+    const closing = result.close!();
+    await vi.waitFor(() => expect(closeGoogle).toHaveBeenCalledOnce());
+    expect(database.close).not.toHaveBeenCalled();
+
+    releaseGoogle!();
+    await closing;
+    expect(database.close).toHaveBeenCalledOnce();
+    expect(closeGoogle.mock.invocationCallOrder[0]).toBeLessThan(
+      database.close.mock.invocationCallOrder[0]!,
+    );
   });
 });

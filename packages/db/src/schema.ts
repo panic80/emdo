@@ -4061,6 +4061,100 @@ export const googleOAuthAuthorizationStarts = emdoSchema.table(
   ],
 );
 
+/** Durable at-most-once receipt and dispatch fence for OAuth disconnect. */
+export const googleOAuthDisconnectOperations = emdoSchema.table(
+  'google_oauth_disconnect_operations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    parentOperationId: uuid('parent_operation_id'),
+    householdId: uuid('household_id').notNull(),
+    privateSpaceId: uuid('private_space_id').notNull(),
+    originalOwnerUserId: uuid('original_owner_user_id').notNull(),
+    sessionId: uuid('session_id').notNull(),
+    originRequestId: uuid('origin_request_id').notNull(),
+    dispatchRequestId: uuid('dispatch_request_id'),
+    dispatchSessionId: uuid('dispatch_session_id'),
+    completedRequestId: uuid('completed_request_id'),
+    completedSessionId: uuid('completed_session_id'),
+    idempotencyKey: text('idempotency_key').notNull(),
+    requestFingerprint: text('request_fingerprint').notNull(),
+    state: text('state').notNull(),
+    credentialRevision: integer('credential_revision'),
+    authorizationEpoch: integer('authorization_epoch').notNull(),
+    result: jsonb('result').$type<JsonValue>(),
+    completionSource: text('completion_source'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    retainUntil: timestamp('retain_until', { withTimezone: true }),
+  },
+  (table) => [
+    unique('google_oauth_disconnect_operations_scope_key_unique').on(
+      table.householdId,
+      table.privateSpaceId,
+      table.originalOwnerUserId,
+      table.sessionId,
+      table.idempotencyKey,
+    ),
+    foreignKey({
+      name: 'google_oauth_disconnect_operations_household_space_fk',
+      columns: [table.householdId, table.privateSpaceId],
+      foreignColumns: [spaces.householdId, spaces.id],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    foreignKey({
+      name: 'google_oauth_disconnect_operations_owner_membership_fk',
+      columns: [table.householdId, table.originalOwnerUserId],
+      foreignColumns: [
+        householdMemberships.householdId,
+        householdMemberships.userId,
+      ],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    foreignKey({
+      name: 'google_oauth_disconnect_operations_parent_fk',
+      columns: [table.parentOperationId],
+      foreignColumns: [table.id],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    index('google_oauth_disconnect_operations_retention_idx').on(
+      table.retainUntil,
+    ),
+    uniqueIndex('google_oauth_disconnect_operations_active_actor_unique')
+      .on(table.householdId, table.privateSpaceId, table.originalOwnerUserId)
+      .where(
+        sql`${table.parentOperationId} is null and ${table.state} in ('claimed', 'dispatching')`,
+      ),
+    check(
+      'google_oauth_disconnect_operations_parent_check',
+      sql`${table.parentOperationId} is null or ${table.parentOperationId} <> ${table.id}`,
+    ),
+    check(
+      'google_oauth_disconnect_operations_key_check',
+      sql`pg_catalog.length(${table.idempotencyKey}) between 16 and 200 and ${table.idempotencyKey} ~ '^[A-Za-z0-9:._-]+$'`,
+    ),
+    check(
+      'google_oauth_disconnect_operations_fingerprint_check',
+      sql`${table.requestFingerprint} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'google_oauth_disconnect_operations_epoch_revision_check',
+      sql`${table.authorizationEpoch} >= 0 and (${table.credentialRevision} is null or ${table.credentialRevision} > 0)`,
+    ),
+    check(
+      'google_oauth_disconnect_operations_state_check',
+      sql`${table.state} in ('claimed', 'dispatching', 'linked', 'completed')`,
+    ),
+    check(
+      'google_oauth_disconnect_operations_transition_shape_check',
+      sql`(${table.state} = 'claimed' and ${table.parentOperationId} is null and ${table.dispatchRequestId} is null and ${table.dispatchSessionId} is null and ${table.completedRequestId} is null and ${table.completedSessionId} is null and ${table.completionSource} is null and ${table.result} is null and ${table.completedAt} is null and ${table.retainUntil} is null) or (${table.state} = 'dispatching' and ${table.parentOperationId} is null and ${table.credentialRevision} is not null and ${table.dispatchRequestId} is not null and ${table.dispatchSessionId} is not null and ${table.completedRequestId} is null and ${table.completedSessionId} is null and ${table.completionSource} is null and ${table.result} is null and ${table.completedAt} is null and ${table.retainUntil} is null) or (${table.state} = 'linked' and ${table.parentOperationId} is not null and ${table.dispatchRequestId} is null and ${table.dispatchSessionId} is null and ${table.completedRequestId} is null and ${table.completedSessionId} is null and ${table.completionSource} is null and ${table.result} is null and ${table.completedAt} is null and ${table.retainUntil} is null) or (${table.state} = 'completed' and ((${table.completionSource} = 'interactive' and ${table.completedRequestId} is not null and ${table.completedSessionId} is not null) or (${table.completionSource} = 'reconciliation' and ${table.completedRequestId} is null and ${table.completedSessionId} is null and ${table.result} ->> 'providerRevocation' = 'unconfirmed')) and ${table.result} is not null and pg_catalog.jsonb_typeof(${table.result}) = 'object' and ${table.result} ?& array['status', 'providerRevocation']::text[] and (${table.result} - array['status', 'providerRevocation']::text[]) = '{}'::jsonb and ${table.result} ->> 'status' = 'disconnected' and ((${table.credentialRevision} is null and ${table.dispatchRequestId} is null and ${table.dispatchSessionId} is null and ${table.result} ->> 'providerRevocation' = 'not-applicable') or (${table.credentialRevision} is not null and ${table.dispatchRequestId} is not null and ${table.dispatchSessionId} is not null and ${table.result} ->> 'providerRevocation' in ('confirmed', 'unconfirmed'))) and ${table.completedAt} is not null and ${table.retainUntil} > ${table.completedAt} and ${table.retainUntil} <= ${table.completedAt} + interval '90 days')`,
+    ),
+  ],
+);
+
 /** Monotonic grant tombstone that survives credential deletion/reconnect ABA. */
 export const googleOAuthAuthorizationEpochs = emdoSchema.table(
   'google_oauth_authorization_epochs',
@@ -4281,6 +4375,7 @@ export const foundationTables = Object.freeze({
   households,
   google_oauth_authorization_epochs: googleOAuthAuthorizationEpochs,
   google_oauth_authorization_starts: googleOAuthAuthorizationStarts,
+  google_oauth_disconnect_operations: googleOAuthDisconnectOperations,
   google_oauth_flows: googleOAuthFlows,
   household_administration_commands: householdAdministrationCommands,
   invitations,

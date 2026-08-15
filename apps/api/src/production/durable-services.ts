@@ -27,6 +27,10 @@ import { z } from 'zod';
 
 import type { ApiServices } from '../services/contracts.js';
 import { parseProductionExperienceCursorKeyring } from './experience-cursor-keyring.js';
+import {
+  createProductionGoogleConnectorBinding,
+  type ProductionGoogleConnectorComposition,
+} from './google-services.js';
 import { parseProductionProposalCursorKeyring } from './proposal-cursor-keyring.js';
 import { parseProductionSyncJwtKeyring } from './sync-keyring.js';
 import type { ProductionApiServiceBindings } from './unavailable-services.js';
@@ -109,6 +113,10 @@ export interface ProductionDurableServiceDependencies {
     readonly powerSyncEndpoint: string;
     readonly keyRing: PostgresSyncGatewayKeyRing;
   }) => PostgresSyncGatewayRuntime;
+  readonly createGoogleConnectorBinding: (input: {
+    readonly environment: Readonly<Record<string, string | undefined>>;
+    readonly pool: DatabaseRuntime['scopedPool'];
+  }) => ProductionGoogleConnectorComposition;
 }
 
 const defaultDependencies: ProductionDurableServiceDependencies = Object.freeze(
@@ -151,6 +159,10 @@ const defaultDependencies: ProductionDurableServiceDependencies = Object.freeze(
       readonly powerSyncEndpoint: string;
       readonly keyRing: PostgresSyncGatewayKeyRing;
     }) => createPostgresSyncGatewayRuntime(input),
+    createGoogleConnectorBinding: (input: {
+      readonly environment: Readonly<Record<string, string | undefined>>;
+      readonly pool: DatabaseRuntime['scopedPool'];
+    }) => createProductionGoogleConnectorBinding(input),
   },
 );
 
@@ -246,15 +258,22 @@ const coalesceProbe = (probe: () => Promise<boolean>) => {
   };
 };
 
-const createDatabaseClose = (databases: readonly DatabaseRuntime[]) => {
+const createDatabaseClose = (
+  databases: readonly DatabaseRuntime[],
+  additionalCloses: readonly (() => Promise<void>)[] = [],
+) => {
   let closePromise: Promise<void> | undefined;
   return (): Promise<void> => {
     closePromise ??= (async () => {
-      const outcomes = await Promise.allSettled(
+      const resourceOutcomes = await Promise.allSettled(
+        additionalCloses.map((close) => Promise.resolve().then(close)),
+      );
+      const databaseOutcomes = await Promise.allSettled(
         [...databases]
           .reverse()
           .map((database) => Promise.resolve().then(() => database.close())),
       );
+      const outcomes = [...resourceOutcomes, ...databaseOutcomes];
       const failures = outcomes.flatMap((outcome) =>
         outcome.status === 'rejected' ? [outcome.reason] : [],
       );
@@ -297,6 +316,7 @@ export const createProductionDurableServiceBindings = async (
 
   const bindings: ProductionApiServiceBindings = {};
   const databases: DatabaseRuntime[] = [database];
+  const additionalCloses: Array<() => Promise<void>> = [];
   try {
     const encodedExperienceCursorKeyring =
       environment.EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL;
@@ -380,6 +400,17 @@ export const createProductionDurableServiceBindings = async (
     };
   } catch {
     // Import mutations remain fail-closed while the receipt boundary is unavailable.
+  }
+
+  try {
+    const google = dependencies.createGoogleConnectorBinding({
+      environment,
+      pool: database.scopedPool,
+    });
+    if (google.binding !== undefined) bindings.google = google.binding;
+    if (google.close !== undefined) additionalCloses.push(google.close);
+  } catch {
+    // Calendar remains fail-closed unless its complete secret and DB graph loads.
   }
 
   try {
@@ -523,10 +554,12 @@ export const createProductionDurableServiceBindings = async (
   }
 
   if (Object.keys(bindings).length === 0) {
-    await createDatabaseClose(databases)().catch(() => undefined);
+    await createDatabaseClose(databases, additionalCloses)().catch(
+      () => undefined,
+    );
     return Object.freeze({ bindings: Object.freeze({}) });
   }
-  const close = createDatabaseClose(databases);
+  const close = createDatabaseClose(databases, additionalCloses);
   return Object.freeze({
     bindings: Object.freeze(bindings),
     close,

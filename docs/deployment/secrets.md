@@ -90,7 +90,14 @@ Expected private env-file boundaries are:
   replays through exact `issueUntil` and `verifyUntil` instants. Every key is
   32–64 bytes, key IDs and key material are unique, and a previous key's drain
   window is at least the two-minute proof lifetime plus 30 seconds of clock
-  skew. The future production-only Google Calendar connector uses the separate
+  skew. The production-only Google Calendar connector requires a dedicated
+  `EMDO_GOOGLE_CALENDAR_OAUTH_CLIENT_ID` and
+  `EMDO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET`, distinct from the Better Auth
+  identity client; it derives the exact callback as
+  `${EMDO_PUBLIC_ORIGIN}/api/v1/connectors/google/callback`. OAuth state uses
+  the independent canonical 32–64 byte
+  `EMDO_GOOGLE_CALENDAR_OAUTH_STATE_SIGNING_KEY_B64URL`. Encrypted Calendar
+  grants use the separate
   `EMDO_GOOGLE_CALENDAR_VAULT_KEYRING_B64URL`: canonical unpadded base64url of
   strict version-1 JSON `{schemaVersion,current,previous}`. Each entry is exact
   `{keyVersion,keyB64url}` with a 32-byte KEK; the current key alone wraps new
@@ -99,9 +106,21 @@ Expected private env-file boundaries are:
   decoded key material must also be unique, and parser-owned bytes are erased
   after construction. This material is never shared with authentication,
   Sync, cursor, visual-proof, Google identity, or another provider key. The
-  obsolete `EMDO_CREDENTIAL_VAULT_KEY` is unsupported; neither it nor the
-  Calendar vault keyring is admitted to synthetic staging. Invalid or absent
-  Calendar keyring configuration keeps `google.connector` unavailable.
+  state-signing material cannot equal a current or retained vault KEK. The
+  obsolete `EMDO_CREDENTIAL_VAULT_KEY` is unsupported. None of the Calendar
+  client, state, or vault secrets is admitted to synthetic staging. Invalid or
+  absent Calendar configuration keeps `google.connector` unavailable. The
+  provider-free readiness probe proves the exact API database authority and
+  durable OAuth/vault surface only; protected consent, exchange, revocation,
+  and Calendar read/write receipts remain separate release evidence. Durable
+  disconnect operations globally fence one active operation per actor and
+  revoke local epoch, grant, and flow authority before provider I/O. They retain
+  bounded receipts for at most 90 days. The isolated
+  `emdo_google_oauth_disconnect_retention` and
+  `emdo_google_oauth_disconnect_reconciliation` policy roles have no login
+  credentials; separately controlled purge and aged-dispatch reconciliation
+  schedulers with purpose-specific runtime authority remain required before
+  operational retention and recovery are accepted.
   `EMDO_VISUAL_DECISION_DATABASE_URL` must name the membership-free
   `emdo_visual_decision_login` in `emdo_app`; it receives schema usage and
   execute permission on only `commit_provider_proposal_decision(text,jsonb)`.

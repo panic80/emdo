@@ -9,6 +9,7 @@ import {
   PostgresEncryptedGoogleCalendarGrantStore,
   PostgresGoogleCalendarProviderAuthorityResolver,
   PostgresGoogleOAuthAuthorizationEpochStore,
+  PostgresGoogleOAuthDisconnectOperationStore,
   PostgresGoogleOAuthFlowStore,
   checkPostgresGoogleOAuthRuntimeReadiness,
 } from './oauth-persistence.js';
@@ -20,6 +21,8 @@ const ids = {
   user: '83900000-0000-4000-8000-000000000001',
   session: '83900000-0000-4000-8000-000000000002',
   request: '83900000-0000-4000-8000-000000000003',
+  retryRequest: '83900000-0000-4000-8000-00000000000a',
+  retrySession: '83900000-0000-4000-8000-00000000000b',
   household: '83900000-0000-4000-8000-000000000004',
   membership: '83900000-0000-4000-8000-000000000005',
   space: '83900000-0000-4000-8000-000000000006',
@@ -124,9 +127,12 @@ describeDatabase(
       await admin.query(
         `insert into emdo.auth_sessions(
            id, user_id, token, expires_at, active_household_id
-         ) values ($1, $2, 'oauth-authority-token',
-                   pg_catalog.clock_timestamp() + interval '1 hour', $3)`,
-        [ids.session, ids.user, ids.household],
+         ) values
+           ($1, $3, 'oauth-authority-token',
+            pg_catalog.clock_timestamp() + interval '1 hour', $4),
+           ($2, $3, 'oauth-authority-retry-token',
+            pg_catalog.clock_timestamp() + interval '1 hour', $4)`,
+        [ids.session, ids.retrySession, ids.user, ids.household],
       );
       await admin.query(
         `insert into emdo.agent_runs(
@@ -440,6 +446,324 @@ describeDatabase(
       await expect(resolver.resolve(resolverInput)).resolves.toBeUndefined();
     });
 
+    it('replays a dispatching disconnect under a fresh request without another provider phase', async () => {
+      await admin.query('delete from emdo.google_oauth_disconnect_operations');
+      await admin.query('delete from emdo.encrypted_google_calendar_grants');
+      await admin.query('delete from emdo.google_oauth_authorization_epochs');
+
+      const recordId = `google-calendar-oauth-v1-${createHash('sha256')
+        .update(ids.user)
+        .digest('hex')}`;
+      const scope = {
+        householdId: ids.household,
+        spaceId: ids.space,
+        recordId,
+        provider: 'google' as const,
+        grantType: 'calendar-authorization' as const,
+      };
+      await expect(
+        new PostgresEncryptedGoogleCalendarGrantStore(
+          runtime.scopedPool,
+          requestAuthority,
+        ).compareAndSet({
+          scope,
+          ownerUserId: ids.user,
+          expectedRevision: null,
+          authorizationEpoch: 0,
+          providerGrantReference: providerReferenceA,
+          payload,
+          now: new Date(),
+        }),
+      ).resolves.toEqual({ status: 'stored', revision: 1 });
+
+      const requestFingerprint = createHash('sha256')
+        .update(
+          JSON.stringify({
+            domain: 'emdo.google-calendar.oauth-disconnect.v1',
+          }),
+        )
+        .digest('hex');
+      const idempotencyKey = 'google-oauth-disconnect-integration-0001';
+      const retryIdempotencyKey =
+        'google-oauth-disconnect-integration-rotated-0001';
+      const originalStore = new PostgresGoogleOAuthDisconnectOperationStore(
+        runtime.scopedPool,
+        requestAuthority,
+      );
+      const claim = await originalStore.claim({
+        actor,
+        idempotencyKey,
+        requestFingerprint,
+      });
+      expect(claim).toMatchObject({
+        status: 'claimed',
+        credentialRevision: 1,
+        authorizationEpoch: 0,
+      });
+      if (claim.status !== 'claimed') throw new Error('disconnect not claimed');
+      await expect(
+        originalStore.markDispatching({
+          actor,
+          operationId: claim.operationId,
+        }),
+      ).resolves.toEqual({ status: 'dispatching' });
+
+      const dispatchAuthorityState = await admin.query(
+        `select epoch.authorization_epoch,
+                pg_catalog.count(grant_row.record_id)::integer as grants
+           from emdo.google_oauth_authorization_epochs as epoch
+           left join emdo.encrypted_google_calendar_grants as grant_row
+             on grant_row.household_id = epoch.household_id
+            and grant_row.private_space_id = epoch.private_space_id
+            and grant_row.original_owner_user_id = epoch.original_owner_user_id
+          where epoch.household_id = $1
+            and epoch.private_space_id = $2
+            and epoch.original_owner_user_id = $3
+          group by epoch.authorization_epoch`,
+        [ids.household, ids.space, ids.user],
+      );
+      expect(dispatchAuthorityState.rows[0]).toEqual({
+        authorization_epoch: 1,
+        grants: 0,
+      });
+      await expect(
+        new PostgresEncryptedGoogleCalendarGrantStore(
+          runtime.scopedPool,
+          requestAuthority,
+        ).compareAndSet({
+          scope,
+          ownerUserId: ids.user,
+          expectedRevision: null,
+          authorizationEpoch: 1,
+          providerGrantReference: providerReferenceB,
+          payload,
+          now: new Date(),
+        }),
+      ).resolves.toEqual({ status: 'conflict' });
+
+      await new PostgresSpaceAccessGrantService(
+        runtime.scopedPool,
+      ).resolveActivePrincipalScope({
+        activeMembershipId: ids.membership,
+        householdId: ids.household,
+        requestId: ids.retryRequest,
+        role: 'owner',
+        sessionId: ids.retrySession,
+        userId: ids.user,
+      });
+      const retryAuthority = {
+        ...requestAuthority,
+        requestId: ids.retryRequest,
+        sessionId: ids.retrySession,
+      };
+      const retryActor = {
+        ...actor,
+        sessionId: ids.retrySession,
+      };
+      const retryStore = new PostgresGoogleOAuthDisconnectOperationStore(
+        runtime.scopedPool,
+        retryAuthority,
+      );
+      await expect(
+        retryStore.claim({
+          actor: retryActor,
+          idempotencyKey: retryIdempotencyKey,
+          requestFingerprint,
+        }),
+      ).resolves.toEqual({
+        status: 'dispatching',
+        operationId: claim.operationId,
+      });
+      const result = {
+        status: 'disconnected' as const,
+        providerRevocation: 'unconfirmed' as const,
+      };
+      await expect(
+        retryStore.settle({
+          actor: retryActor,
+          operationId: claim.operationId,
+          providerRevocation: 'unconfirmed',
+        }),
+      ).resolves.toEqual({ status: 'stored', result });
+      await expect(
+        retryStore.claim({
+          actor: retryActor,
+          idempotencyKey: retryIdempotencyKey,
+          requestFingerprint,
+        }),
+      ).resolves.toEqual({ status: 'replayed', result });
+      await expect(
+        originalStore.claim({ actor, idempotencyKey, requestFingerprint }),
+      ).resolves.toEqual({ status: 'replayed', result });
+
+      const persisted = await admin.query(
+        `select parent_operation_id, session_id, origin_request_id,
+                dispatch_request_id, dispatch_session_id,
+                completed_request_id, completed_session_id,
+                completion_source, state, result
+           from emdo.google_oauth_disconnect_operations
+          where id = $1 or parent_operation_id = $1
+          order by parent_operation_id nulls first`,
+        [claim.operationId],
+      );
+      expect(persisted.rows).toEqual([
+        {
+          parent_operation_id: null,
+          session_id: ids.session,
+          origin_request_id: ids.request,
+          dispatch_request_id: ids.request,
+          dispatch_session_id: ids.session,
+          completed_request_id: ids.retryRequest,
+          completed_session_id: ids.retrySession,
+          completion_source: 'interactive',
+          state: 'completed',
+          result,
+        },
+        {
+          parent_operation_id: claim.operationId,
+          session_id: ids.retrySession,
+          origin_request_id: ids.retryRequest,
+          dispatch_request_id: ids.request,
+          dispatch_session_id: ids.session,
+          completed_request_id: ids.retryRequest,
+          completed_session_id: ids.retrySession,
+          completion_source: 'interactive',
+          state: 'completed',
+          result,
+        },
+      ]);
+      const authorityState = await admin.query(
+        `select epoch.authorization_epoch,
+                pg_catalog.count(grant_row.record_id)::integer as grants
+           from emdo.google_oauth_authorization_epochs as epoch
+           left join emdo.encrypted_google_calendar_grants as grant_row
+             on grant_row.household_id = epoch.household_id
+            and grant_row.private_space_id = epoch.private_space_id
+            and grant_row.original_owner_user_id = epoch.original_owner_user_id
+          where epoch.household_id = $1
+            and epoch.private_space_id = $2
+            and epoch.original_owner_user_id = $3
+          group by epoch.authorization_epoch`,
+        [ids.household, ids.space, ids.user],
+      );
+      expect(authorityState.rows[0]).toEqual({
+        authorization_epoch: 1,
+        grants: 0,
+      });
+    });
+
+    it('reconciles an aged dispatch without provider authority or a user session', async () => {
+      await admin.query('delete from emdo.google_oauth_disconnect_operations');
+      await admin.query('delete from emdo.encrypted_google_calendar_grants');
+      await admin.query('delete from emdo.google_oauth_authorization_epochs');
+      const recordId = `google-calendar-oauth-v1-${createHash('sha256')
+        .update(ids.user)
+        .digest('hex')}`;
+      const scope = {
+        householdId: ids.household,
+        spaceId: ids.space,
+        recordId,
+        provider: 'google' as const,
+        grantType: 'calendar-authorization' as const,
+      };
+      await expect(
+        new PostgresEncryptedGoogleCalendarGrantStore(
+          runtime.scopedPool,
+          requestAuthority,
+        ).compareAndSet({
+          scope,
+          ownerUserId: ids.user,
+          expectedRevision: null,
+          authorizationEpoch: 0,
+          providerGrantReference: providerReferenceA,
+          payload,
+          now: new Date(),
+        }),
+      ).resolves.toEqual({ status: 'stored', revision: 1 });
+      const requestFingerprint = createHash('sha256')
+        .update(
+          JSON.stringify({
+            domain: 'emdo.google-calendar.oauth-disconnect.v1',
+          }),
+        )
+        .digest('hex');
+      const store = new PostgresGoogleOAuthDisconnectOperationStore(
+        runtime.scopedPool,
+        requestAuthority,
+      );
+      const claim = await store.claim({
+        actor,
+        idempotencyKey: 'google-oauth-disconnect-reconcile-0001',
+        requestFingerprint,
+      });
+      if (claim.status !== 'claimed') throw new Error('disconnect not claimed');
+      await expect(
+        store.markDispatching({ actor, operationId: claim.operationId }),
+      ).resolves.toEqual({ status: 'dispatching' });
+
+      await admin.query(
+        `alter table emdo.google_oauth_disconnect_operations
+           disable trigger google_oauth_disconnect_operations_transition_guard`,
+      );
+      try {
+        await admin.query(
+          `update emdo.google_oauth_disconnect_operations
+              set updated_at = pg_catalog.clock_timestamp() - interval '11 minutes'
+            where id = $1`,
+          [claim.operationId],
+        );
+      } finally {
+        await admin.query(
+          `alter table emdo.google_oauth_disconnect_operations
+             enable trigger google_oauth_disconnect_operations_transition_guard`,
+        );
+      }
+
+      await admin.query('begin');
+      try {
+        await admin.query(
+          'set local role emdo_google_oauth_disconnect_reconciliation',
+        );
+        const reconciled = await admin.query(
+          'select emdo.reconcile_stranded_google_oauth_disconnects(10) as count',
+        );
+        expect(reconciled.rows[0]).toEqual({ count: 1 });
+        await admin.query('commit');
+      } catch (error) {
+        await admin.query('rollback');
+        throw error;
+      }
+
+      const persisted = await admin.query(
+        `select state, completion_source, completed_request_id,
+                completed_session_id, result
+           from emdo.google_oauth_disconnect_operations
+          where id = $1`,
+        [claim.operationId],
+      );
+      expect(persisted.rows[0]).toEqual({
+        state: 'completed',
+        completion_source: 'reconciliation',
+        completed_request_id: null,
+        completed_session_id: null,
+        result: {
+          status: 'disconnected',
+          providerRevocation: 'unconfirmed',
+        },
+      });
+      await admin.query('begin');
+      try {
+        await admin.query(
+          'set local role emdo_google_oauth_disconnect_reconciliation',
+        );
+        await expect(
+          admin.query('select * from emdo.google_oauth_disconnect_operations'),
+        ).rejects.toThrow(/permission denied/u);
+      } finally {
+        await admin.query('rollback');
+      }
+    });
+
     it('denies direct app-role reads and writes to encrypted authority rows', async () => {
       const expectAppDenied = async (
         sql: string,
@@ -479,6 +803,9 @@ describeDatabase(
       );
       await expectAppDenied(
         'select * from emdo.google_oauth_authorization_starts',
+      );
+      await expectAppDenied(
+        'select * from emdo.google_oauth_disconnect_operations',
       );
       await expectAppDenied('select * from emdo.google_oauth_flows');
       await expectAppDenied(
@@ -527,6 +854,24 @@ describeDatabase(
         checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),
       ).resolves.toBe(true);
       await admin.query(
+        `revoke execute on function
+           emdo.settle_google_oauth_disconnect(
+             uuid, uuid, uuid, uuid, uuid, text
+           ) from emdo_app`,
+      );
+      await expect(
+        checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),
+      ).resolves.toBe(false);
+      await admin.query(
+        `grant execute on function
+           emdo.settle_google_oauth_disconnect(
+             uuid, uuid, uuid, uuid, uuid, text
+           ) to emdo_app`,
+      );
+      await expect(
+        checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),
+      ).resolves.toBe(true);
+      await admin.query(
         `grant execute on function
            emdo.is_valid_encrypted_google_calendar_grant_payload(jsonb)
          to emdo_app`,
@@ -539,6 +884,21 @@ describeDatabase(
            emdo.is_valid_encrypted_google_calendar_grant_payload(jsonb)
          from emdo_app`,
       );
+      await expect(
+        checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),
+      ).resolves.toBe(true);
+      await admin.query(
+        'grant emdo_google_oauth_disconnect_retention to emdo_api_login',
+      );
+      try {
+        await expect(
+          checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),
+        ).resolves.toBe(false);
+      } finally {
+        await admin.query(
+          'revoke emdo_google_oauth_disconnect_retention from emdo_api_login',
+        );
+      }
       await expect(
         checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),
       ).resolves.toBe(true);

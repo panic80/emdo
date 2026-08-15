@@ -30,6 +30,7 @@ import {
   type GoogleCalendarOAuthActor,
   type GoogleOAuthAuditSink,
   type GoogleOAuthAuthorizationEpochStore,
+  type GoogleOAuthDisconnectOperationStore,
   type GoogleOAuthFlowStore,
   type GoogleOAuthGrantLease,
   type GoogleOAuthTransport,
@@ -55,6 +56,7 @@ export type {
   GoogleCalendarOAuthActor,
   GoogleOAuthAuditSink,
   GoogleOAuthAuthorizationEpochStore,
+  GoogleOAuthDisconnectOperationStore,
   GoogleOAuthFetch,
   GoogleOAuthFlowStore,
   GoogleOAuthGrantLease,
@@ -121,6 +123,8 @@ export interface GoogleCalendarOAuthServerRuntime {
       scope: GoogleCalendarConditionalGatewayScope,
     ): FetchGoogleCalendarConditionalGateway;
   }>;
+  /** Erases runtime-owned OAuth state-signing material. Idempotent. */
+  dispose(): void;
 }
 
 export interface GoogleCalendarOAuthServerRuntimeOptions {
@@ -133,6 +137,7 @@ export interface GoogleCalendarOAuthServerRuntimeOptions {
   };
   readonly flowStore: GoogleOAuthFlowStore;
   readonly authorizationEpochStore: GoogleOAuthAuthorizationEpochStore;
+  readonly disconnectOperationStore: GoogleOAuthDisconnectOperationStore;
   readonly grantStore: EncryptedGoogleCalendarGrantStore;
   readonly keyProvider: VaultKeyProvider;
   readonly transport: GoogleOAuthTransport;
@@ -160,6 +165,7 @@ export const createGoogleCalendarOAuthServerRuntime = (
       clock: options.clock,
     }),
     authorizationEpochStore: options.authorizationEpochStore,
+    disconnectOperationStore: options.disconnectOperationStore,
     transport: options.transport,
     audit: options.audit,
     grantLease: options.grantLease,
@@ -205,5 +211,6 @@ export const createGoogleCalendarOAuthServerRuntime = (
         });
       },
     }),
+    dispose: () => service.dispose(),
   });
 };
