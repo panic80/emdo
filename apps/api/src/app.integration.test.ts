@@ -435,6 +435,7 @@ const buildServices = () => {
     },
     google: {
       beginAuthorization: vi.fn(async () => ({
+        status: 'authorization-required' as const,
         authorizationUrl:
           'https://accounts.google.com/o/oauth2/v2/auth?state=opaque',
         expiresAt: '2026-08-09T12:10:00.000Z',
@@ -442,9 +443,12 @@ const buildServices = () => {
       completeAuthorization: vi.fn(async () => ({
         status: 'connected' as const,
         connectionId: 'google-calendar-connection',
-        grantedScopes: ['https://www.googleapis.com/auth/calendar.events'],
+        grantedPurposes: ['calendar-event-write' as const],
       })),
-      disconnect: vi.fn(async () => ({ status: 'disconnected' as const })),
+      disconnect: vi.fn(async () => ({
+        status: 'disconnected' as const,
+        providerRevocation: 'confirmed' as const,
+      })),
     },
     householdAdministration: {
       issueInvitation: vi.fn(async () => {
@@ -1659,12 +1663,41 @@ describe('Fastify API boundary', () => {
       method: 'POST',
       url: '/api/v1/connectors/google/authorize',
       headers: { ...authenticatedHeaders, 'idempotency-key': IDEMPOTENCY_KEY },
-      payload: { schemaVersion: 1, returnTo: '/settings' },
+      payload: { schemaVersion: 1, purpose: 'calendar-event-write' },
     });
     expect(authorize.statusCode).toBe(200);
+    expect(authorize.json()).toMatchObject({
+      status: 'authorization-required',
+    });
+    expect(services.google.beginAuthorization).toHaveBeenCalledWith(
+      expect.objectContaining({
+        purpose: 'calendar-event-write',
+        principal,
+        idempotencyKey: IDEMPOTENCY_KEY,
+      }),
+    );
     expect(services.google.beginAuthorization).toHaveBeenCalledWith(
       expect.not.objectContaining({ scopes: expect.anything() }),
     );
+
+    services.google.beginAuthorization = vi.fn(async () => ({
+      status: 'already-authorized' as const,
+      grantedPurposes: ['calendar-read' as const],
+    }));
+    const alreadyAuthorized = await app.inject({
+      method: 'POST',
+      url: '/api/v1/connectors/google/authorize',
+      headers: {
+        ...authenticatedHeaders,
+        'idempotency-key': 'already-authorized-key',
+      },
+      payload: { schemaVersion: 1, purpose: 'calendar-read' },
+    });
+    expect(alreadyAuthorized.statusCode).toBe(200);
+    expect(alreadyAuthorized.json()).toEqual({
+      status: 'already-authorized',
+      grantedPurposes: ['calendar-read'],
+    });
 
     const unauthenticatedCallback = await app.inject({
       method: 'GET',
@@ -1678,6 +1711,11 @@ describe('Fastify API boundary', () => {
       headers: { cookie: '__Secure-emdo.session_token=current' },
     });
     expect(callback.statusCode).toBe(200);
+    expect(callback.json()).toEqual({
+      status: 'connected',
+      connectionId: 'google-calendar-connection',
+      grantedPurposes: ['calendar-event-write'],
+    });
     expect(services.google.completeAuthorization).toHaveBeenCalledWith(
       expect.objectContaining({
         code: 'opaque-code',
@@ -1692,6 +1730,10 @@ describe('Fastify API boundary', () => {
       payload: { schemaVersion: 1 },
     });
     expect(disconnect.statusCode).toBe(200);
+    expect(disconnect.json()).toEqual({
+      status: 'disconnected',
+      providerRevocation: 'confirmed',
+    });
     expect(services.google.disconnect).toHaveBeenCalledWith(
       expect.objectContaining({ principal, idempotencyKey: IDEMPOTENCY_KEY }),
     );
@@ -1702,18 +1744,23 @@ describe('Fastify API boundary', () => {
       headers: { ...authenticatedHeaders, 'idempotency-key': IDEMPOTENCY_KEY },
       payload: {
         schemaVersion: 1,
+        purpose: 'calendar-read',
         scopes: ['https://www.googleapis.com/auth/drive'],
       },
     });
     expect(clientScopes.statusCode).toBe(400);
 
-    const backslashReturn = await app.inject({
+    const deadReturnPath = await app.inject({
       method: 'POST',
       url: '/api/v1/connectors/google/authorize',
       headers: { ...authenticatedHeaders, 'idempotency-key': IDEMPOTENCY_KEY },
-      payload: { schemaVersion: 1, returnTo: '/\\evil.example/path' },
+      payload: {
+        schemaVersion: 1,
+        purpose: 'calendar-read',
+        returnTo: '/settings',
+      },
     });
-    expect(backslashReturn.statusCode).toBe(400);
+    expect(deadReturnPath.statusCode).toBe(400);
 
     const callbackInjection = await app.inject({
       method: 'GET',

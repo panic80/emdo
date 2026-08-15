@@ -187,11 +187,15 @@ const configuredServices = (): Omit<ApiServices, 'metrics' | 'readiness'> => ({
   },
   google: {
     beginAuthorization: async () => ({
+      status: 'authorization-required',
       authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
       expiresAt: '2026-08-10T12:05:00.000Z',
     }),
     completeAuthorization: async () => ({ status: 'denied' }),
-    disconnect: async () => ({ status: 'disconnected' }),
+    disconnect: async () => ({
+      status: 'disconnected',
+      providerRevocation: 'confirmed',
+    }),
   },
   householdAdministration: {
     issueInvitation: async () => {

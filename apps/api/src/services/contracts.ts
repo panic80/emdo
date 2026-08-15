@@ -615,13 +615,22 @@ export interface GoogleConnectorGateway {
   /** Scopes and exact redirect URI are server configuration, never request input. */
   beginAuthorization(input: {
     readonly principal: AuthenticatedPrincipal;
-    readonly returnTo?: string;
+    readonly purpose: 'calendar-read' | 'calendar-event-write';
     readonly requestId: string;
     readonly idempotencyKey: string;
-  }): Promise<{
-    readonly authorizationUrl: string;
-    readonly expiresAt: string;
-  }>;
+  }): Promise<
+    | {
+        readonly status: 'already-authorized';
+        readonly grantedPurposes: readonly (
+          'calendar-read' | 'calendar-event-write'
+        )[];
+      }
+    | {
+        readonly status: 'authorization-required';
+        readonly authorizationUrl: string;
+        readonly expiresAt: string;
+      }
+  >;
   /** Must consume state once, verify PKCE, and use the configured exact redirect. */
   completeAuthorization(input: {
     readonly principal: AuthenticatedPrincipal;
@@ -634,7 +643,9 @@ export interface GoogleConnectorGateway {
     | {
         readonly status: 'connected';
         readonly connectionId: string;
-        readonly grantedScopes: readonly string[];
+        readonly grantedPurposes: readonly (
+          'calendar-read' | 'calendar-event-write'
+        )[];
       }
     | { readonly status: 'denied' }
   >;
@@ -643,7 +654,10 @@ export interface GoogleConnectorGateway {
     readonly principal: AuthenticatedPrincipal;
     readonly requestId: string;
     readonly idempotencyKey: string;
-  }): Promise<{ readonly status: 'disconnected' }>;
+  }): Promise<{
+    readonly status: 'disconnected';
+    readonly providerRevocation: 'not-applicable' | 'confirmed' | 'unconfirmed';
+  }>;
 }
 
 export type HouseholdRole = 'owner' | 'member';

@@ -121,12 +121,7 @@ export const createApp = async (
     publicOrigin,
   );
   registerVoiceRoutes(app, options.services, limits);
-  registerGoogleRoutes(
-    app,
-    options.services,
-    limits.maximumJsonBodyBytes,
-    publicOrigin,
-  );
+  registerGoogleRoutes(app, options.services, limits.maximumJsonBodyBytes);
   registerHouseholdAdministrationRoutes(
     app,
     options.services,

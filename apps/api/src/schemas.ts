@@ -940,44 +940,46 @@ export const CanonicalAppOriginSchema = z.url().refine((value) => {
   return url.protocol === 'https:' && url.origin === value;
 }, 'Expected an exact HTTPS application origin');
 
-const createInternalReturnPathSchema = (rawOrigin: string) => {
-  const origin = CanonicalAppOriginSchema.parse(rawOrigin);
-  return z
-    .string()
-    .min(1)
-    .max(512)
-    .refine(
-      (value) =>
-        value.startsWith('/') &&
-        !value.startsWith('//') &&
-        !value.includes('\\') &&
-        !/%5c/iu.test(value),
-    )
-    .refine((value) => {
-      try {
-        return new URL(value, origin).origin === origin;
-      } catch {
-        return false;
-      }
-    });
-};
+export const GoogleCalendarAuthorizationPurposeSchema = z.enum([
+  'calendar-read',
+  'calendar-event-write',
+]);
 
-export const createGoogleAuthorizeRequestSchema = (origin: string) =>
-  z.strictObject({
-    schemaVersion: z.literal(1),
-    returnTo: createInternalReturnPathSchema(origin).optional(),
+const GoogleCalendarGrantedPurposesSchema = z
+  .array(GoogleCalendarAuthorizationPurposeSchema)
+  .min(1)
+  .max(2)
+  .superRefine((purposes, context) => {
+    if (new Set(purposes).size !== purposes.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Granted Google Calendar purposes must be unique',
+      });
+    }
   });
 
-export const GoogleAuthorizeRequestSchema = createGoogleAuthorizeRequestSchema(
-  'https://emdo.invalid',
-);
+export const createGoogleAuthorizeRequestSchema = () =>
+  z.strictObject({
+    schemaVersion: z.literal(1),
+    purpose: GoogleCalendarAuthorizationPurposeSchema,
+  });
 
-export const GoogleAuthorizeResponseSchema = z.strictObject({
-  authorizationUrl: z
-    .url()
-    .refine((value) => new URL(value).protocol === 'https:'),
-  expiresAt: IsoDateTimeSchema,
-});
+export const GoogleAuthorizeRequestSchema =
+  createGoogleAuthorizeRequestSchema();
+
+export const GoogleAuthorizeResponseSchema = z.discriminatedUnion('status', [
+  z.strictObject({
+    status: z.literal('already-authorized'),
+    grantedPurposes: GoogleCalendarGrantedPurposesSchema,
+  }),
+  z.strictObject({
+    status: z.literal('authorization-required'),
+    authorizationUrl: z
+      .url()
+      .refine((value) => new URL(value).protocol === 'https:'),
+    expiresAt: IsoDateTimeSchema,
+  }),
+]);
 
 export const GoogleCallbackQuerySchema = z
   .strictObject({
@@ -1007,7 +1009,7 @@ export const GoogleCallbackResponseSchema = z.discriminatedUnion('status', [
   z.strictObject({
     status: z.literal('connected'),
     connectionId: IdentifierSchema,
-    grantedScopes: z.array(z.string().min(1).max(512)).max(32),
+    grantedPurposes: GoogleCalendarGrantedPurposesSchema,
   }),
   z.strictObject({ status: z.literal('denied') }),
 ]);
@@ -1018,6 +1020,7 @@ export const GoogleDisconnectRequestSchema = z.strictObject({
 
 export const GoogleDisconnectResponseSchema = z.strictObject({
   status: z.literal('disconnected'),
+  providerRevocation: z.enum(['not-applicable', 'confirmed', 'unconfirmed']),
 });
 
 export const JwksSchema = z

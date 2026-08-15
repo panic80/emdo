@@ -21,10 +21,8 @@ export const registerGoogleRoutes = (
   app: FastifyInstance,
   services: ApiServices,
   maximumJsonBodyBytes: number,
-  publicOrigin: string,
 ): void => {
-  const authorizeRequestSchema =
-    createGoogleAuthorizeRequestSchema(publicOrigin);
+  const authorizeRequestSchema = createGoogleAuthorizeRequestSchema();
   app.post(
     '/api/v1/connectors/google/authorize',
     { bodyLimit: maximumJsonBodyBytes },
@@ -37,7 +35,7 @@ export const registerGoogleRoutes = (
         GoogleAuthorizeResponseSchema,
         await services.google.beginAuthorization({
           principal,
-          returnTo: input.returnTo,
+          purpose: input.purpose,
           requestId: request.id,
           idempotencyKey,
         }),
