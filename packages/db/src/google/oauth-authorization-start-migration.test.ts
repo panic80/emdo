@@ -15,11 +15,12 @@ const readNormalized = async () =>
 describe('Google OAuth authorization-start receipts migration', () => {
   it('is journaled as the narrow 0009 OAuth idempotency upgrade', async () => {
     const migrations = await loadOrderedMigrations();
-
-    expect(migrations.at(-1)?.id).toBe(
-      '0009_google_oauth_authorization_starts',
+    const migration = migrations.find(
+      ({ id }) => id === '0009_google_oauth_authorization_starts',
     );
-    expect(migrations.at(-1)?.index).toBe(9);
+
+    expect(migration?.id).toBe('0009_google_oauth_authorization_starts');
+    expect(migration?.index).toBe(9);
   });
 
   it('stores exact start receipts behind forced RLS with no raw app DML', async () => {

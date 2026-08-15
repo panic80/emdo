@@ -58,6 +58,18 @@ const bindingHash = '5'.repeat(64);
 const preparationBindingHash = '8'.repeat(64);
 const providerGrantReferenceA = 'google-grant-reference-workflow-a';
 const providerGrantReferenceB = 'google-grant-reference-workflow-b';
+const encryptedGrantPayload = (marker: number) =>
+  JSON.stringify({
+    algorithm: 'aes-256-gcm',
+    aadVersion: 1,
+    ciphertext: Buffer.from(`workflow-calendar-token-${marker}`).toString(
+      'base64url',
+    ),
+    nonce: Buffer.alloc(12, marker).toString('base64url'),
+    authenticationTag: Buffer.alloc(16, marker + 1).toString('base64url'),
+    wrappedKey: Buffer.alloc(60, marker + 2).toString('base64url'),
+    keyVersion: 'workflow-vault-key-v1',
+  });
 const providerSdkCallId = 'sdk-call-workflow-calendar-create-1';
 const providerPrepareSdkCallId = 'sdk-call-workflow-calendar-prepare-1';
 const visualDecisionSdkCallId = 'sdk-call-workflow-calendar-visual-1';
@@ -292,10 +304,10 @@ const seedAuthorityFixtures = async (client: import('pg').Client) => {
         provider, grant_type, revision, authorization_epoch,
         provider_grant_reference, encrypted_payload, created_at, updated_at)
      values ($1, $3, $4, $5, 'google', 'calendar-authorization', 1, 0,
-             $6, '{"ciphertext":"workflow-a"}'::jsonb,
+             $6, $10::jsonb,
              pg_catalog.clock_timestamp(), pg_catalog.clock_timestamp()),
             ($2, $3, $7, $8, 'google', 'calendar-authorization', 1, 0,
-             $9, '{"ciphertext":"workflow-b"}'::jsonb,
+             $9, $11::jsonb,
              pg_catalog.clock_timestamp(), pg_catalog.clock_timestamp())`,
     [
       `google-calendar-oauth-v1-${'a'.repeat(64)}`,
@@ -307,6 +319,8 @@ const seedAuthorityFixtures = async (client: import('pg').Client) => {
       ids.spaceB,
       ids.userB,
       providerGrantReferenceB,
+      encryptedGrantPayload(1),
+      encryptedGrantPayload(2),
     ],
   );
   await client.query(

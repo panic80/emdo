@@ -15,9 +15,12 @@ const readNormalized = async (url: URL) =>
 describe('finance import receipts migration', () => {
   it('is journaled as the narrow 0008 durable finance import upgrade', async () => {
     const migrations = await loadOrderedMigrations();
+    const migration = migrations.find(
+      ({ id }) => id === '0008_finance_import_receipts',
+    );
 
-    expect(migrations.at(-1)?.id).toBe('0008_finance_import_receipts');
-    expect(migrations.at(-1)?.index).toBe(8);
+    expect(migration?.id).toBe('0008_finance_import_receipts');
+    expect(migration?.index).toBe(8);
   });
 
   it('keeps plans, duplicate fingerprints, and immutable receipts behind forced RLS', async () => {
