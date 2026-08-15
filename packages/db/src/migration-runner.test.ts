@@ -35,6 +35,7 @@ describe('database migration runner', () => {
       '0010_google_oauth_disconnect_operations',
       '0011_finance_import_retention_runner',
       '0012_google_oauth_disconnect_reconciliation_runner',
+      '0013_google_oauth_disconnect_retention_runner',
     ]);
     expect(migrations.map(({ index }) => index)).toEqual(
       migrations.map((_, index) => index),
@@ -72,6 +73,9 @@ describe('database migration runner', () => {
     );
     expect(migrations[12]?.sql).toContain(
       'CREATE OR REPLACE FUNCTION emdo.google_oauth_disconnect_reconciliation_runner_ready',
+    );
+    expect(migrations[13]?.sql).toContain(
+      'CREATE OR REPLACE FUNCTION emdo.google_oauth_disconnect_retention_runner_ready',
     );
   });
 

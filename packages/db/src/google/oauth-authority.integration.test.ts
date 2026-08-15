@@ -50,6 +50,8 @@ const loginRole = 'emdo_api_login';
 const loginPassword = `emdo-test-${randomUUID()}`;
 const reconciliationLogin = 'emdo_google_oauth_disconnect_reconciliation_login';
 const reconciliationPassword = `emdo-reconciliation-${randomUUID()}`;
+const retentionLogin = 'emdo_google_oauth_disconnect_retention_login';
+const retentionPassword = `emdo-retention-${randomUUID()}`;
 const providerReferenceA = 'gcal-provider-reference-integration-a';
 const providerReferenceB = 'gcal-provider-reference-integration-b';
 const payload = {
@@ -87,6 +89,7 @@ describeDatabase(
   () => {
     let admin: import('pg').Client;
     let reconciliation: import('pg').Pool;
+    let retention: import('pg').Pool;
     let runtime: EmdoDatabaseClient;
     let spaceAccessGrantId: string;
 
@@ -158,6 +161,12 @@ describeDatabase(
       await admin.query(
         `grant connect on database emdo_app to ${reconciliationLogin}`,
       );
+      await admin.query(
+        `alter role ${retentionLogin} login password '${retentionPassword}'`,
+      );
+      await admin.query(
+        `grant connect on database emdo_app to ${retentionLogin}`,
+      );
       const runtimeUrl = new URL(databaseUrl!);
       runtimeUrl.username = loginRole;
       runtimeUrl.password = loginPassword;
@@ -175,6 +184,15 @@ describeDatabase(
         connectionString: reconciliationUrl.toString(),
         max: 1,
       });
+      const retentionUrl = new URL(databaseUrl!);
+      retentionUrl.username = retentionLogin;
+      retentionUrl.password = retentionPassword;
+      retention = new Pool({
+        allowExitOnIdle: true,
+        application_name: 'emdo-google-oauth-retention-integration',
+        connectionString: retentionUrl.toString(),
+        max: 1,
+      });
       const active = await new PostgresSpaceAccessGrantService(
         runtime.scopedPool,
       ).resolveActivePrincipalScope({
@@ -189,11 +207,15 @@ describeDatabase(
     }, 30_000);
 
     afterAll(async () => {
+      await retention?.end();
       await reconciliation?.end();
       await runtime?.close();
       if (admin !== undefined) {
         await admin
           .query(`alter role ${reconciliationLogin} nologin password null`)
+          .catch(() => undefined);
+        await admin
+          .query(`alter role ${retentionLogin} nologin password null`)
           .catch(() => undefined);
         const login = await admin.query(
           `select 1 from pg_catalog.pg_roles where rolname = $1`,
@@ -947,6 +969,187 @@ describeDatabase(
       await expect(ready()).resolves.toMatchObject({
         rows: [{ ready: true }],
       });
+    });
+
+    it('purges only expired completed disconnect receipts through the isolated retention login', async () => {
+      await admin.query('delete from emdo.google_oauth_disconnect_operations');
+      const expired = '83900000-0000-4000-8000-000000000031';
+      const retained = '83900000-0000-4000-8000-000000000032';
+      const active = '83900000-0000-4000-8000-000000000033';
+      await admin.query(
+        `insert into emdo.google_oauth_disconnect_operations(
+           id, household_id, private_space_id, original_owner_user_id,
+           session_id, origin_request_id, completed_request_id,
+           completed_session_id, idempotency_key, request_fingerprint, state,
+           authorization_epoch, result, completion_source, created_at,
+           updated_at, completed_at, retain_until
+         ) values
+           ($1, $4, $5, $6, $7, $8, $8, $7,
+            'google-oauth-retention-expired-0001', $9, 'completed', 1,
+            '{"status":"disconnected","providerRevocation":"not-applicable"}'::jsonb,
+            'interactive', pg_catalog.clock_timestamp() - interval '91 days',
+            pg_catalog.clock_timestamp() - interval '91 days',
+            pg_catalog.clock_timestamp() - interval '91 days',
+            pg_catalog.clock_timestamp() - interval '1 day'),
+           ($2, $4, $5, $6, $7, $8, $8, $7,
+            'google-oauth-retention-current-0001', $9, 'completed', 1,
+            '{"status":"disconnected","providerRevocation":"not-applicable"}'::jsonb,
+            'interactive', pg_catalog.clock_timestamp(),
+            pg_catalog.clock_timestamp(), pg_catalog.clock_timestamp(),
+            pg_catalog.clock_timestamp() + interval '89 days'),
+           ($3, $4, $5, $6, $7, $8, null, null,
+            'google-oauth-retention-active-0001', $9, 'claimed', 1,
+            null, null, pg_catalog.clock_timestamp(),
+            pg_catalog.clock_timestamp(), null, null)`,
+        [
+          expired,
+          retained,
+          active,
+          ids.household,
+          ids.space,
+          ids.user,
+          ids.session,
+          ids.request,
+          'a'.repeat(64),
+        ],
+      );
+
+      await expect(
+        retention.query(
+          'select emdo.google_oauth_disconnect_retention_runner_ready() as ready',
+        ),
+      ).resolves.toMatchObject({ rows: [{ ready: true }] });
+      await expect(
+        retention.query(
+          'select emdo.purge_completed_google_oauth_disconnects(100)',
+        ),
+      ).rejects.toMatchObject({ code: '42501' });
+      await expect(
+        retention.query(
+          'select * from emdo.google_oauth_disconnect_operations',
+        ),
+      ).rejects.toMatchObject({ code: '42501' });
+
+      const client = await retention.connect();
+      try {
+        await client.query('begin');
+        await client.query(
+          'set local role emdo_google_oauth_disconnect_retention',
+        );
+        await expect(
+          client.query(
+            'select emdo.purge_completed_google_oauth_disconnects(100) as purged',
+          ),
+        ).resolves.toMatchObject({ rows: [{ purged: 1 }] });
+        await client.query('commit');
+      } catch (error) {
+        await client.query('rollback').catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      await expect(
+        admin.query(
+          `select id, state from emdo.google_oauth_disconnect_operations
+            where id = any($1::uuid[]) order by id`,
+          [[expired, retained, active]],
+        ),
+      ).resolves.toMatchObject({
+        rows: [
+          { id: retained, state: 'completed' },
+          { id: active, state: 'claimed' },
+        ],
+      });
+      await expect(
+        checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),
+      ).resolves.toBe(true);
+      await expect(
+        reconciliation.query(
+          'select emdo.google_oauth_disconnect_reconciliation_runner_ready() as ready',
+        ),
+      ).resolves.toMatchObject({ rows: [{ ready: true }] });
+    });
+
+    it('fails retention-runner readiness closed under reversible role and ACL drift', async () => {
+      const ready = () =>
+        retention.query<{ ready: boolean }>(
+          'select emdo.google_oauth_disconnect_retention_runner_ready() as ready',
+        );
+      await expect(ready()).resolves.toMatchObject({ rows: [{ ready: true }] });
+
+      for (const [drift, restore] of [
+        [
+          `grant emdo_app to ${retentionLogin}`,
+          `revoke emdo_app from ${retentionLogin}`,
+        ],
+        [
+          `alter role ${retentionLogin} bypassrls`,
+          `alter role ${retentionLogin} nobypassrls`,
+        ],
+        [
+          'alter role emdo_google_oauth_disconnect_retention bypassrls',
+          'alter role emdo_google_oauth_disconnect_retention nobypassrls',
+        ],
+        [
+          `grant execute on function
+             emdo.purge_completed_google_oauth_disconnects(integer)
+           to ${retentionLogin}`,
+          `revoke execute on function
+             emdo.purge_completed_google_oauth_disconnects(integer)
+           from ${retentionLogin}`,
+        ],
+        [
+          `grant select on emdo.google_oauth_disconnect_operations
+           to ${retentionLogin}`,
+          `revoke select on emdo.google_oauth_disconnect_operations
+           from ${retentionLogin}`,
+        ],
+        [
+          `grant execute on function
+             emdo.reconcile_stranded_google_oauth_disconnects(integer)
+           to emdo_google_oauth_disconnect_retention`,
+          `revoke execute on function
+             emdo.reconcile_stranded_google_oauth_disconnects(integer)
+           from emdo_google_oauth_disconnect_retention`,
+        ],
+        [
+          `grant select on emdo.google_oauth_authorization_epochs
+           to emdo_google_oauth_disconnect_retention`,
+          `revoke select on emdo.google_oauth_authorization_epochs
+           from emdo_google_oauth_disconnect_retention`,
+        ],
+      ] as const) {
+        await admin.query(drift);
+        try {
+          await expect(ready()).resolves.toMatchObject({
+            rows: [{ ready: false }],
+          });
+        } finally {
+          await admin.query(restore);
+        }
+      }
+      await admin.query(
+        `grant truncate on emdo.google_oauth_disconnect_operations
+         to emdo_google_oauth_disconnect_retention`,
+      );
+      try {
+        await expect(ready()).resolves.toMatchObject({
+          rows: [{ ready: false }],
+        });
+        await expect(
+          checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),
+        ).resolves.toBe(false);
+      } finally {
+        await admin.query(
+          `revoke truncate on emdo.google_oauth_disconnect_operations
+           from emdo_google_oauth_disconnect_retention`,
+        );
+      }
+      await expect(ready()).resolves.toMatchObject({ rows: [{ ready: true }] });
+      await expect(
+        checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),
+      ).resolves.toBe(true);
     });
 
     it('denies direct app-role reads and writes to encrypted authority rows', async () => {

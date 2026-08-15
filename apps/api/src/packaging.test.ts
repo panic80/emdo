@@ -37,6 +37,7 @@ describe('API production package', () => {
       'cli/bootstrap-owner.js',
       'cli/migrate.js',
       'cli/purge-finance-imports.js',
+      'cli/purge-google-oauth-disconnect-receipts.js',
       'cli/reconcile-google-oauth-disconnects.js',
       'cli/seed-synthetic.js',
       'cli/staging-acceptance.js',
@@ -83,6 +84,7 @@ describe('API production package', () => {
       './dist/cli/bootstrap-owner.js',
       './dist/cli/migrate.js',
       './dist/cli/purge-finance-imports.js',
+      './dist/cli/purge-google-oauth-disconnect-receipts.js',
       './dist/cli/reconcile-google-oauth-disconnects.js',
       './dist/cli/seed-synthetic.js',
       './dist/cli/staging-acceptance.js',
@@ -148,6 +150,12 @@ describe('API production package', () => {
         './dist/cli/reconcile-google-oauth-disconnects.js',
         ['--reconcile-stranded-disconnects'],
         'Google OAuth disconnect reconciliation failed.',
+        1,
+      ],
+      [
+        './dist/cli/purge-google-oauth-disconnect-receipts.js',
+        ['--purge-completed-disconnects'],
+        'Google OAuth disconnect receipt retention failed.',
         1,
       ],
       [

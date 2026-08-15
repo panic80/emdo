@@ -1,0 +1,207 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import { runGoogleOAuthDisconnectReceiptRetentionCommand } from './purge-google-oauth-disconnect-receipts.js';
+
+const validEnvironment = Object.freeze({
+  EMDO_ENVIRONMENT: 'production',
+  EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_DATABASE_URL:
+    'postgresql://emdo_google_oauth_disconnect_retention_login:secret@postgres:5432/emdo_app?sslmode=disable',
+  EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_LIMIT: '25',
+});
+
+describe('Google OAuth disconnect receipt retention CLI', () => {
+  it('preflights the exact login, assumes only the retention role, and purges a bounded batch', async () => {
+    const queries: {
+      readonly text: string;
+      readonly values?: readonly unknown[];
+    }[] = [];
+    const release = vi.fn();
+    const end = vi.fn(async () => undefined);
+    const client = {
+      async query(text: string, values?: readonly unknown[]) {
+        queries.push({ text, values });
+        if (text.includes('google_oauth_disconnect_retention_runner_ready')) {
+          return { rows: [{ ready: true }], rowCount: 1 };
+        }
+        if (text.includes('session_user::text')) {
+          return {
+            rows: [
+              {
+                current_user_name: 'emdo_google_oauth_disconnect_retention',
+                session_user_name:
+                  'emdo_google_oauth_disconnect_retention_login',
+              },
+            ],
+            rowCount: 1,
+          };
+        }
+        if (text.includes('purge_completed_google_oauth_disconnects')) {
+          return { rows: [{ purged: 3 }], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
+      },
+      release,
+    };
+    const createPool = vi.fn(() => ({
+      connect: vi.fn(async () => client),
+      end,
+    }));
+
+    await expect(
+      runGoogleOAuthDisconnectReceiptRetentionCommand({
+        argv: ['--purge-completed-disconnects'],
+        environment: validEnvironment,
+        createPool,
+      }),
+    ).resolves.toEqual({ purged: 3, status: 'purged' });
+
+    expect(createPool).toHaveBeenCalledWith({
+      allowExitOnIdle: true,
+      application_name: 'emdo-google-oauth-disconnect-retention',
+      connectionString:
+        validEnvironment.EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_DATABASE_URL,
+      connectionTimeoutMillis: 10_000,
+      idleTimeoutMillis: 10_000,
+      max: 1,
+    });
+    expect(queries).toEqual([
+      { text: 'begin', values: undefined },
+      {
+        text: "set local statement_timeout = '30s'",
+        values: undefined,
+      },
+      { text: "set local lock_timeout = '5s'", values: undefined },
+      {
+        text: 'select emdo.google_oauth_disconnect_retention_runner_ready() as ready',
+        values: undefined,
+      },
+      {
+        text: 'set local role emdo_google_oauth_disconnect_retention',
+        values: undefined,
+      },
+      {
+        text: expect.stringContaining('session_user::text'),
+        values: undefined,
+      },
+      {
+        text: 'select emdo.purge_completed_google_oauth_disconnects($1::integer) as purged',
+        values: [25],
+      },
+      { text: 'commit', values: undefined },
+    ]);
+    expect(release).toHaveBeenCalledWith();
+    expect(end).toHaveBeenCalledOnce();
+  });
+
+  it('destroys the session and reports one bounded error when readiness or results are invalid', async () => {
+    for (const scenario of ['not-ready', 'invalid-result'] as const) {
+      const release = vi.fn();
+      const end = vi.fn(async () => undefined);
+      const client = {
+        async query(text: string) {
+          if (text.includes('google_oauth_disconnect_retention_runner_ready')) {
+            return {
+              rows: [{ ready: scenario === 'invalid-result' }],
+              rowCount: 1,
+            };
+          }
+          if (text.includes('session_user::text')) {
+            return {
+              rows: [
+                {
+                  current_user_name: 'emdo_google_oauth_disconnect_retention',
+                  session_user_name:
+                    'emdo_google_oauth_disconnect_retention_login',
+                },
+              ],
+              rowCount: 1,
+            };
+          }
+          if (text.includes('purge_completed_google_oauth_disconnects')) {
+            return { rows: [{ purged: 'invalid' }], rowCount: 1 };
+          }
+          return { rows: [], rowCount: 0 };
+        },
+        release,
+      };
+
+      await expect(
+        runGoogleOAuthDisconnectReceiptRetentionCommand({
+          argv: ['--purge-completed-disconnects'],
+          environment: validEnvironment,
+          createPool: () => ({ connect: async () => client, end }),
+        }),
+      ).rejects.toThrow('Google OAuth disconnect receipt retention failed');
+      expect(release).toHaveBeenCalledWith(true);
+      expect(end).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('rejects non-production, shared, external, and unbounded inputs before connecting', async () => {
+    const createPool = vi.fn();
+    const invalidInputs = [
+      { argv: [], environment: validEnvironment },
+      {
+        argv: ['--purge-completed-disconnects'],
+        environment: { ...validEnvironment, EMDO_ENVIRONMENT: 'staging' },
+      },
+      {
+        argv: ['--purge-completed-disconnects'],
+        environment: {
+          ...validEnvironment,
+          EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_DATABASE_URL:
+            'postgresql://emdo_api_login:secret@postgres:5432/emdo_app?sslmode=disable',
+        },
+      },
+      {
+        argv: ['--purge-completed-disconnects'],
+        environment: {
+          ...validEnvironment,
+          EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_DATABASE_URL:
+            'postgresql://emdo_google_oauth_disconnect_retention_login:secret@provider.example:5432/emdo_app?sslmode=disable',
+        },
+      },
+      {
+        argv: ['--purge-completed-disconnects'],
+        environment: {
+          ...validEnvironment,
+          EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_DATABASE_URL:
+            'postgresql://emdo_google_oauth_disconnect_retention_login:secret@postgres:5432/emdo_powersync?sslmode=disable',
+        },
+      },
+      {
+        argv: ['--purge-completed-disconnects'],
+        environment: {
+          ...validEnvironment,
+          EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_LIMIT: '0',
+        },
+      },
+      {
+        argv: ['--purge-completed-disconnects'],
+        environment: {
+          ...validEnvironment,
+          EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_LIMIT: '101',
+        },
+      },
+      {
+        argv: ['--purge-completed-disconnects'],
+        environment: {
+          ...validEnvironment,
+          EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_LIMIT: '1.5',
+        },
+      },
+    ] as const;
+
+    for (const invalid of invalidInputs) {
+      await expect(
+        runGoogleOAuthDisconnectReceiptRetentionCommand({
+          ...invalid,
+          createPool,
+        }),
+      ).rejects.toThrow(
+        'Google OAuth disconnect receipt retention configuration is invalid',
+      );
+    }
+    expect(createPool).not.toHaveBeenCalled();
+  });
+});

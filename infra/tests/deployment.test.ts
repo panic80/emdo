@@ -131,6 +131,7 @@ describe('container and edge configuration', () => {
       './dist/cli/migrate.js',
       './dist/cli/bootstrap-owner.js',
       './dist/cli/purge-finance-imports.js',
+      './dist/cli/purge-google-oauth-disconnect-receipts.js',
       './dist/cli/reconcile-google-oauth-disconnects.js',
       './dist/cli/seed-synthetic.js',
       './dist/cli/staging-acceptance.js',
@@ -668,6 +669,122 @@ describe('container and edge configuration', () => {
     expect(service).toContain('ReadWritePaths=/var/lib/emdo/locks');
     expect(timer).toContain('OnCalendar=*-*-* *:0/5:00');
     expect(timer).toContain('RandomizedDelaySec=2m');
+    expect(timer).toContain('Persistent=true');
+  });
+
+  it('purges completed Google OAuth disconnect receipts through one isolated disabled-by-default authority', async () => {
+    const [
+      compose,
+      initialization,
+      provision,
+      common,
+      purge,
+      dispatcher,
+      preparation,
+      service,
+      timer,
+    ] = await Promise.all([
+      read('infra/compose/compose.yml'),
+      read('infra/compose/postgres-init.sql'),
+      read('infra/compose/provision-runtime.sql'),
+      read('infra/scripts/_common.sh'),
+      read('infra/scripts/purge-google-oauth-disconnect-receipts.sh'),
+      read('infra/scripts/dispatch-active-release.sh'),
+      read('infra/scripts/prepare-host.sh'),
+      read('infra/systemd/emdo-google-oauth-disconnect-retention.service'),
+      read('infra/systemd/emdo-google-oauth-disconnect-retention.timer'),
+    ]);
+
+    expect(initialization).toContain(
+      'CREATE ROLE emdo_google_oauth_disconnect_retention_login LOGIN',
+    );
+    expect(initialization).toContain(
+      "pg_read_file('/run/secrets/google_oauth_disconnect_retention_database_password')",
+    );
+    expect(provision).toContain(
+      'ALTER ROLE emdo_google_oauth_disconnect_retention_login LOGIN NOSUPERUSER',
+    );
+    expect(provision).toMatch(
+      /GRANT emdo_google_oauth_disconnect_retention\s+TO emdo_google_oauth_disconnect_retention_login\s+WITH INHERIT FALSE, SET TRUE, ADMIN FALSE/u,
+    );
+    expect(provision).toMatch(
+      /emdo\.google_oauth_disconnect_retention_runner_ready\(\)\s+TO emdo_google_oauth_disconnect_retention_login/u,
+    );
+    expect(provision).not.toMatch(
+      /purge_completed_google_oauth_disconnects\(integer\)[^;]*to emdo_google_oauth_disconnect_retention_login/iu,
+    );
+
+    expect(common).toContain(
+      'google_oauth_disconnect_retention_database_password',
+    );
+    expect(common).toContain('google-oauth-disconnect-retention.env');
+    expect(common).toContain(
+      'EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_DATABASE_URL',
+    );
+    expect(common).toContain(
+      'emdo_google_oauth_disconnect_retention_login emdo_app',
+    );
+    expect(common).toContain('EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_LIMIT');
+
+    const retentionService = compose.match(
+      /\n {2}google-oauth-disconnect-retention:\n[\s\S]+?\n {2}api:\n/u,
+    )?.[0];
+    const postgresService = compose.match(
+      /\n {2}postgres:\n[\s\S]+?\n {2}migrate:\n/u,
+    )?.[0];
+    expect(retentionService).toBeDefined();
+    expect(postgresService).toBeDefined();
+    expect(retentionService).toContain(
+      'profiles: [google-oauth-disconnect-retention]',
+    );
+    expect(retentionService).toContain('google-oauth-disconnect-retention.env');
+    expect(retentionService).toContain(
+      'dist/cli/purge-google-oauth-disconnect-receipts.js',
+    );
+    expect(retentionService).toContain("restart: 'no'");
+    expect(retentionService).toContain('      - google-oauth-retention-db');
+    expect(retentionService).not.toContain('      - backend');
+    expect(postgresService).toContain('      - google-oauth-retention-db');
+    expect(compose.match(/^ {6}- google-oauth-retention-db$/gmu)).toHaveLength(
+      2,
+    );
+    expect(compose).toMatch(
+      /\n {2}google-oauth-retention-db:\n {4}name: [^\n]+\n {4}internal: true/u,
+    );
+    expect(retentionService).not.toContain('api.env');
+    expect(retentionService).not.toContain('worker.env');
+    expect(retentionService).not.toContain(
+      'EMDO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET',
+    );
+
+    expect(purge).toContain(
+      'Google OAuth disconnect receipt retention must execute the assets bound to current production state',
+    );
+    expect(purge).toContain('assert_base_secret_manifest "$SECRETS_DIR"');
+    expect(purge).toContain('capacity.lock');
+    expect(purge).toContain('production-mutation.lock');
+    expect(purge).toContain(
+      'production_compose --profile google-oauth-disconnect-retention run --rm --no-deps google-oauth-disconnect-retention',
+    );
+    expect(dispatcher).toContain(
+      "purge-google-oauth-disconnect-receipts) relative_entrypoint='infra/scripts/purge-google-oauth-disconnect-receipts.sh'",
+    );
+    expect(preparation).toContain(
+      'emdo-google-oauth-disconnect-retention.service',
+    );
+    expect(preparation).toContain(
+      'emdo-google-oauth-disconnect-retention.timer',
+    );
+    expect(preparation).not.toContain(
+      'systemctl enable --now emdo-google-oauth-disconnect-retention.timer',
+    );
+    expect(service).toContain(
+      'ExecStart=/usr/local/sbin/emdo-dispatch-active-release purge-google-oauth-disconnect-receipts',
+    );
+    expect(service).toContain('ReadOnlyPaths=/var/lib/emdo /etc/emdo');
+    expect(service).toContain('ReadWritePaths=/var/lib/emdo/locks');
+    expect(timer).toContain('OnCalendar=daily');
+    expect(timer).toContain('RandomizedDelaySec=30m');
     expect(timer).toContain('Persistent=true');
   });
 

@@ -310,6 +310,49 @@ describe('deployment script trust boundaries', () => {
     }
   });
 
+  it('requires the dedicated bounded Google OAuth disconnect retention environment', async () => {
+    const environment = join(
+      directory,
+      'google-oauth-disconnect-retention.env',
+    );
+    const valid = [
+      'EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_DATABASE_URL=postgresql://emdo_google_oauth_disconnect_retention_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+      'EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_LIMIT=100',
+      '',
+    ].join('\n');
+    await writeFile(environment, valid);
+    expect(
+      runCommon(
+        'assert_google_oauth_disconnect_retention_config "$2"',
+        environment,
+      ).status,
+    ).toBe(0);
+
+    for (const invalid of [
+      valid.replace(
+        'emdo_google_oauth_disconnect_retention_login',
+        'emdo_api_login',
+      ),
+      valid.replace(
+        'EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_LIMIT=100',
+        'EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_LIMIT=0',
+      ),
+      valid.replace(
+        'EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_LIMIT=100',
+        'EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_LIMIT=101',
+      ),
+      `${valid}EMDO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET=forbidden\n`,
+    ]) {
+      await writeFile(environment, invalid);
+      expect(
+        runCommon(
+          'assert_google_oauth_disconnect_retention_config "$2"',
+          environment,
+        ).status,
+      ).not.toBe(0);
+    }
+  });
+
   it('requires the dedicated internal invitation-onboarding login', async () => {
     const apiEnvironment = join(directory, 'api.env');
     await writeFile(
@@ -632,6 +675,7 @@ describe('deployment script trust boundaries', () => {
     for (const path of [
       'cli/migrate.js',
       'cli/purge-finance-imports.js',
+      'cli/purge-google-oauth-disconnect-receipts.js',
       'cli/reconcile-google-oauth-disconnects.js',
       'cli/seed-synthetic.js',
       'cli/staging-acceptance.js',

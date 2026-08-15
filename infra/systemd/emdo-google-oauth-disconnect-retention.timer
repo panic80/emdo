@@ -1,0 +1,12 @@
+[Unit]
+Description=Purge expired completed EMDO Google OAuth disconnect receipts daily
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30m
+Persistent=true
+AccuracySec=5m
+Unit=emdo-google-oauth-disconnect-retention.service
+
+[Install]
+WantedBy=timers.target

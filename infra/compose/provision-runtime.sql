@@ -60,6 +60,14 @@ WHERE NOT EXISTS (
   WHERE rolname = 'emdo_google_oauth_disconnect_reconciliation_login'
 ) \gexec
 SELECT format(
+  'CREATE ROLE emdo_google_oauth_disconnect_retention_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
+  trim(pg_read_file('/run/secrets/google_oauth_disconnect_retention_database_password'))
+)
+WHERE NOT EXISTS (
+  SELECT FROM pg_catalog.pg_roles
+  WHERE rolname = 'emdo_google_oauth_disconnect_retention_login'
+) \gexec
+SELECT format(
   'CREATE ROLE emdo_workflow_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
   trim(pg_read_file('/run/secrets/workflow_database_password'))
 )
@@ -92,6 +100,8 @@ ALTER ROLE emdo_audio_reconciliation_login LOGIN NOSUPERUSER NOCREATEDB NOCREATE
 ALTER ROLE emdo_finance_import_retention_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
   NOINHERIT NOBYPASSRLS NOREPLICATION;
 ALTER ROLE emdo_google_oauth_disconnect_reconciliation_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+  NOINHERIT NOBYPASSRLS NOREPLICATION;
+ALTER ROLE emdo_google_oauth_disconnect_retention_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
   NOINHERIT NOBYPASSRLS NOREPLICATION;
 -- The workflow login has no data-plane role membership. It receives only the
 -- phase-specific aggregate entrypoints regranted below after blanket revocation.
@@ -146,6 +156,10 @@ SELECT format(
   trim(pg_read_file('/run/secrets/google_oauth_disconnect_reconciliation_database_password'))
 ) \gexec
 SELECT format(
+  'ALTER ROLE emdo_google_oauth_disconnect_retention_login PASSWORD %L',
+  trim(pg_read_file('/run/secrets/google_oauth_disconnect_retention_database_password'))
+) \gexec
+SELECT format(
   'ALTER ROLE emdo_workflow_login PASSWORD %L',
   trim(pg_read_file('/run/secrets/workflow_database_password'))
 ) \gexec
@@ -177,6 +191,7 @@ REVOKE CONNECT ON DATABASE emdo_app FROM
   emdo_audio_reconciliation_login, emdo_workflow_login,
   emdo_finance_import_retention_login,
   emdo_google_oauth_disconnect_reconciliation_login,
+  emdo_google_oauth_disconnect_retention_login,
   emdo_visual_decision_login,
   emdo_powersync_replication,
   emdo_owner_bootstrap_login, emdo_powersync_storage;
@@ -187,6 +202,7 @@ GRANT CONNECT ON DATABASE emdo_app TO
   emdo_audio_reconciliation_login, emdo_workflow_login,
   emdo_finance_import_retention_login,
   emdo_google_oauth_disconnect_reconciliation_login,
+  emdo_google_oauth_disconnect_retention_login,
   emdo_visual_decision_login,
   emdo_powersync_replication,
   emdo_owner_bootstrap_login;
@@ -199,6 +215,7 @@ REVOKE CONNECT ON DATABASE emdo_powersync FROM
   emdo_audio_reconciliation_login, emdo_workflow_login,
   emdo_finance_import_retention_login,
   emdo_google_oauth_disconnect_reconciliation_login,
+  emdo_google_oauth_disconnect_retention_login,
   emdo_visual_decision_login,
   emdo_powersync_replication,
   emdo_powersync_storage, emdo_owner_bootstrap_login;
@@ -215,6 +232,7 @@ REVOKE ALL PRIVILEGES ON SCHEMA emdo FROM
   emdo_audio_reconciliation_login, emdo_workflow_login,
   emdo_finance_import_retention_login,
   emdo_google_oauth_disconnect_reconciliation_login,
+  emdo_google_oauth_disconnect_retention_login,
   emdo_visual_decision_login,
   emdo_powersync_replication,
   emdo_owner_bootstrap_login;
@@ -225,6 +243,7 @@ REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA emdo FROM
   emdo_audio_reconciliation_login, emdo_workflow_login,
   emdo_finance_import_retention_login,
   emdo_google_oauth_disconnect_reconciliation_login,
+  emdo_google_oauth_disconnect_retention_login,
   emdo_visual_decision_login,
   emdo_owner_bootstrap_login,
   emdo_powersync_replication;
@@ -235,6 +254,7 @@ REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA emdo FROM
   emdo_audio_reconciliation_login, emdo_workflow_login,
   emdo_finance_import_retention_login,
   emdo_google_oauth_disconnect_reconciliation_login,
+  emdo_google_oauth_disconnect_retention_login,
   emdo_visual_decision_login,
   emdo_owner_bootstrap_login,
   emdo_powersync_replication;
@@ -245,6 +265,7 @@ REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA emdo FROM
   emdo_audio_reconciliation_login, emdo_workflow_login,
   emdo_finance_import_retention_login,
   emdo_google_oauth_disconnect_reconciliation_login,
+  emdo_google_oauth_disconnect_retention_login,
   emdo_visual_decision_login,
   emdo_owner_bootstrap_login,
   emdo_powersync_replication;
@@ -269,6 +290,7 @@ BEGIN
       'emdo_audio_reconciliation_login',
       'emdo_finance_import_retention_login',
       'emdo_google_oauth_disconnect_reconciliation_login',
+      'emdo_google_oauth_disconnect_retention_login',
       'emdo_workflow_login',
       'emdo_visual_decision_login',
       'emdo_owner_bootstrap_login',
@@ -303,6 +325,9 @@ GRANT emdo_finance_import_retention TO emdo_finance_import_retention_login
 GRANT emdo_google_oauth_disconnect_reconciliation
   TO emdo_google_oauth_disconnect_reconciliation_login
   WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
+GRANT emdo_google_oauth_disconnect_retention
+  TO emdo_google_oauth_disconnect_retention_login
+  WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 GRANT emdo_owner_bootstrap TO emdo_owner_bootstrap_login
   WITH INHERIT FALSE, SET TRUE, ADMIN FALSE;
 
@@ -332,6 +357,12 @@ TO emdo_google_oauth_disconnect_reconciliation_login;
 GRANT EXECUTE ON FUNCTION
   emdo.google_oauth_disconnect_reconciliation_runner_ready()
 TO emdo_google_oauth_disconnect_reconciliation_login;
+
+GRANT USAGE ON SCHEMA emdo
+TO emdo_google_oauth_disconnect_retention_login;
+GRANT EXECUTE ON FUNCTION
+  emdo.google_oauth_disconnect_retention_runner_ready()
+TO emdo_google_oauth_disconnect_retention_login;
 
 REVOKE ALL PRIVILEGES ON SCHEMA pgboss FROM
   emdo_worker_executor_login, emdo_worker_dispatcher_login,

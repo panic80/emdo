@@ -137,16 +137,14 @@ reconciler. Completed receipts retain only bounded result and request/session
 lineage, never token material. The isolated `NOLOGIN`
 `emdo_google_oauth_disconnect_retention` and
 `emdo_google_oauth_disconnect_reconciliation` policy roles can execute only
-their bounded purge or reconciliation aggregates. A purpose-specific
-reconciliation login, provider-free CLI, Compose profile, and host timer are
-now composed. The one-shot reaches PostgreSQL over a dedicated internal
-network that is not attached to the API, worker, or provider-capable services;
-its readiness probe also rejects any raw relation access or executable routine
-beyond its exact preflight and reconciliation aggregate. The timer is installed
-disabled and still needs an observed post-migration host run before operational
-recovery is accepted. No production login or scheduler exists for 90-day
-receipt purge, which remains a separate deployment blocker outside API request
-readiness.
+their bounded purge or reconciliation aggregates. Purpose-specific logins,
+provider-free CLIs, Compose profiles, database-only internal networks, and host
+timers are now composed for both operations. Each readiness probe rejects raw
+relation access or executable routines beyond its exact preflight and policy
+aggregate. Both timers are installed disabled and still need observed
+post-migration host runs before operational recovery or 90-day receipt deletion
+is accepted. Neither source-composed runner changes API request readiness or
+constitutes provider/staging/production evidence.
 
 ### Voice provider
 

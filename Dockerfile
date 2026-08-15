@@ -24,6 +24,7 @@ RUN test -f apps/api/dist/index.js \
     && test -f apps/api/dist/cli/migrate.js \
     && test -f apps/api/dist/cli/bootstrap-owner.js \
     && test -f apps/api/dist/cli/purge-finance-imports.js \
+    && test -f apps/api/dist/cli/purge-google-oauth-disconnect-receipts.js \
     && test -f apps/api/dist/cli/reconcile-google-oauth-disconnects.js \
     && test -f apps/api/dist/cli/seed-synthetic.js \
     && test -f apps/api/dist/cli/staging-acceptance.js \
@@ -47,7 +48,7 @@ RUN node infra/scripts/validate-runtime-package.mjs /opt/emdo/api \
 # these imports prove the CLI-specific dependency graphs are deployable.
 RUN cd /opt/emdo/api \
     && node --input-type=module --eval \
-      "await Promise.all([import('./dist/index.js'), import('./dist/cli/migrate.js'), import('./dist/cli/bootstrap-owner.js'), import('./dist/cli/purge-finance-imports.js'), import('./dist/cli/reconcile-google-oauth-disconnects.js'), import('./dist/cli/seed-synthetic.js'), import('./dist/cli/staging-acceptance.js')])"
+      "await Promise.all([import('./dist/index.js'), import('./dist/cli/migrate.js'), import('./dist/cli/bootstrap-owner.js'), import('./dist/cli/purge-finance-imports.js'), import('./dist/cli/purge-google-oauth-disconnect-receipts.js'), import('./dist/cli/reconcile-google-oauth-disconnects.js'), import('./dist/cli/seed-synthetic.js'), import('./dist/cli/staging-acceptance.js')])"
 # Import the worker from its pruned production closure, not workspace modules.
 RUN cd /opt/emdo/worker \
     && node --input-type=module --eval \

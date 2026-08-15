@@ -47,6 +47,7 @@ services:
       - audio_reconciliation_database_password
       - finance_import_retention_database_password
       - google_oauth_disconnect_reconciliation_database_password
+      - google_oauth_disconnect_retention_database_password
       - workflow_database_password
       - visual_decision_database_password
       - powersync_replication_password
@@ -58,6 +59,7 @@ services:
     networks:
       - backend
       - google-oauth-reconciliation-db
+      - google-oauth-retention-db
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres -d emdo_app']
       interval: 10s
@@ -195,6 +197,7 @@ services:
       - audio_reconciliation_database_password
       - finance_import_retention_database_password
       - google_oauth_disconnect_reconciliation_database_password
+      - google_oauth_disconnect_retention_database_password
       - workflow_database_password
       - visual_decision_database_password
       - powersync_replication_password
@@ -266,6 +269,35 @@ services:
         condition: service_healthy
     networks:
       - google-oauth-reconciliation-db
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+          pids: 48
+    pids_limit: 48
+    logging: *default-logging
+
+  google-oauth-disconnect-retention:
+    <<: *runtime-security
+    image: '${API_IMAGE:?API_IMAGE must be an immutable application image reference}'
+    profiles: [google-oauth-disconnect-retention]
+    restart: 'no'
+    env_file:
+      - '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/google-oauth-disconnect-retention.env'
+    environment:
+      EMDO_ENVIRONMENT: production
+    command:
+      - node
+      - dist/cli/purge-google-oauth-disconnect-receipts.js
+      - --purge-completed-disconnects
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - google-oauth-retention-db
     deploy:
       resources:
         limits:
@@ -516,6 +548,9 @@ networks:
   google-oauth-reconciliation-db:
     name: emdo-${DEPLOYMENT_NAMESPACE:?DEPLOYMENT_NAMESPACE is required}-google-oauth-reconciliation-db
     internal: true
+  google-oauth-retention-db:
+    name: emdo-${DEPLOYMENT_NAMESPACE:?DEPLOYMENT_NAMESPACE is required}-google-oauth-retention-db
+    internal: true
 
 volumes:
   postgres-data:
@@ -546,6 +581,8 @@ secrets:
     file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/finance_import_retention_database_password'
   google_oauth_disconnect_reconciliation_database_password:
     file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/google_oauth_disconnect_reconciliation_database_password'
+  google_oauth_disconnect_retention_database_password:
+    file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/google_oauth_disconnect_retention_database_password'
   workflow_database_password:
     file: '${SECRETS_DIR:?SECRETS_DIR must point outside the repository}/workflow_database_password'
   visual_decision_database_password:

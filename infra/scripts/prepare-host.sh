@@ -138,6 +138,8 @@ for unit in \
   emdo-finance-import-retention.timer \
   emdo-google-oauth-disconnect-reconciliation.service \
   emdo-google-oauth-disconnect-reconciliation.timer \
+  emdo-google-oauth-disconnect-retention.service \
+  emdo-google-oauth-disconnect-retention.timer \
   emdo-staging-sweeper.service \
   emdo-staging-sweeper.timer; do
   install -o 0 -g 0 -m 0644 \
@@ -146,4 +148,4 @@ done
 systemctl daemon-reload
 systemctl enable --now emdo-staging-sweeper.timer
 
-printf '[emdo-host-prepare] governed host paths installed; staging expiry is active and production monitoring, backup, finance-retention, and Google disconnect reconciliation timers remain disabled until production is healthy\n' >&2
+printf '[emdo-host-prepare] governed host paths installed; staging expiry is active and production monitoring, backup, finance-retention, Google disconnect reconciliation, and Google disconnect receipt-retention timers remain disabled until production is healthy\n' >&2

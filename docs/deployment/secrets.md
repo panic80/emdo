@@ -16,6 +16,7 @@ Keep configuration outside the checkout:
     audio_reconciliation_database_password
     finance_import_retention_database_password
     google_oauth_disconnect_reconciliation_database_password
+    google_oauth_disconnect_retention_database_password
     workflow_database_password
     visual_decision_database_password
     powersync_replication_password
@@ -28,6 +29,7 @@ Keep configuration outside the checkout:
     worker.env
     finance-import-retention.env
     google-oauth-disconnect-reconciliation.env
+    google-oauth-disconnect-retention.env
     powersync.env
   staging/
     deployment.env
@@ -83,6 +85,13 @@ Expected private env-file boundaries are:
   contains no Google, API, worker, vault, OAuth client, or provider secret.
   That one-shot shares a dedicated internal database network only with
   PostgreSQL; it cannot reach the API, worker, or provider-capable services;
+- `google-oauth-disconnect-retention.env`: only the dedicated internal
+  `EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_DATABASE_URL` and bounded
+  `EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_LIMIT` from 1 through 100. It is
+  mounted only into the provider-free one-shot receipt-retention profile and
+  contains no Google, API, worker, vault, OAuth client, or provider secret.
+  Its separate internal network is attached only to PostgreSQL and that
+  one-shot;
 - `api.env`: distinct application, Better Auth, invitation-onboarding, and
   decision-only database URIs,
   application/session keys, encrypted-vault keyring, and provider settings.
@@ -131,13 +140,12 @@ Expected private env-file boundaries are:
   and Calendar read/write receipts remain separate release evidence. Durable
   disconnect operations globally fence one active operation per actor and
   revoke local epoch, grant, and flow authority before provider I/O. They retain
-  bounded receipts for at most 90 days. The isolated
-  `emdo_google_oauth_disconnect_retention` policy role still has no login
-  credential or purge runner. A dedicated `NOINHERIT` reconciliation login,
-  bounded provider-free CLI, and host timer are composed for aged disconnects,
-  but the timer is installed disabled and no host execution is claimed.
-  Operational recovery remains pending deliberate enablement and an observed
-  run; 90-day purge remains a separate blocker.
+  bounded receipts for at most 90 days. Dedicated `NOINHERIT` reconciliation
+  and retention logins, bounded provider-free CLIs, isolated database-only
+  Compose networks, and host timers are composed for aged dispatch recovery
+  and receipt purge. Both timers are installed disabled and no host execution
+  is claimed. Operational recovery and deletion remain pending deliberate
+  enablement and observed post-migration runs.
   `EMDO_VISUAL_DECISION_DATABASE_URL` must name the membership-free
   `emdo_visual_decision_login` in `emdo_app`; it receives schema usage and
   execute permission on only `commit_provider_proposal_decision(text,jsonb)`.
@@ -261,6 +269,16 @@ the bounded expired, receipt-less plan purge.
 privilege or direct reconciliation execution. Its one-shot CLI proves the
 login lattice, deliberately assumes the policy role, and invokes only the
 bounded no-provider aged-dispatch aggregate.
+
+`google_oauth_disconnect_retention_database_password` belongs only to
+`emdo_google_oauth_disconnect_retention_login`. That login is `NOINHERIT`, has
+exactly one set-only membership in `emdo_google_oauth_disconnect_retention`,
+and receives no directly effective raw OAuth-table privilege or purge
+execution. Its one-shot CLI proves the login and policy-role ACL lattice,
+deliberately assumes the policy role, and invokes only the bounded expired
+completed-receipt purge. The policy role itself has only the RLS-constrained
+select/delete access required by that aggregate and no other table, sequence,
+or routine authority.
 
 PowerSync never receives an API, migration, or PostgreSQL owner URI. The API
 never receives the PowerSync storage owner or replication credential. Better

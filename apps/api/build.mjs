@@ -92,6 +92,7 @@ const validateOutput = async (outputRoot, journal, metafile) => {
     'cli/bootstrap-owner.js',
     'cli/migrate.js',
     'cli/purge-finance-imports.js',
+    'cli/purge-google-oauth-disconnect-receipts.js',
     'cli/reconcile-google-oauth-disconnects.js',
     'cli/seed-synthetic.js',
     'cli/staging-acceptance.js',
@@ -174,6 +175,8 @@ export const buildApi = async ({ outputRoot = defaultOutputRoot } = {}) => {
       'cli/bootstrap-owner': 'src/cli/bootstrap-owner.ts',
       'cli/migrate': 'src/cli/migrate.ts',
       'cli/purge-finance-imports': 'src/cli/purge-finance-imports.ts',
+      'cli/purge-google-oauth-disconnect-receipts':
+        'src/cli/purge-google-oauth-disconnect-receipts.ts',
       'cli/reconcile-google-oauth-disconnects':
         'src/cli/reconcile-google-oauth-disconnects.ts',
       'cli/seed-synthetic': 'src/cli/seed-synthetic.ts',
