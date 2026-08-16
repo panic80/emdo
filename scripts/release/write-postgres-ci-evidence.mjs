@@ -33,6 +33,10 @@ const SUITE_IDS = Object.freeze([
   'proposal-lifecycle',
   'sync-conflict-runtime',
 ]);
+const CANONICAL_DATABASE_SUITE_IDS = Object.freeze([
+  'finance-import-retention-runner',
+  'google-oauth-authority',
+]);
 const exactKeys = (value, keys) =>
   value !== null &&
   typeof value === 'object' &&
@@ -111,13 +115,19 @@ const parseRawReport = (value, sourceSha, runId) => {
       (suite, index) =>
         !exactKeys(suite, ['id', 'databaseName', 'testCount', 'status']) ||
         suite.id !== SUITE_IDS[index] ||
-        !/^emdo_ci_[a-z0-9_]{1,52}$/u.test(suite.databaseName) ||
+        (CANONICAL_DATABASE_SUITE_IDS.includes(suite.id)
+          ? suite.databaseName !== 'emdo_app'
+          : !/^emdo_ci_[a-z0-9_]{1,52}$/u.test(suite.databaseName)) ||
         !Number.isSafeInteger(suite.testCount) ||
         suite.testCount < 1 ||
         suite.status !== 'passed',
     ) ||
-    new Set(value.suites.map(({ databaseName }) => databaseName)).size !==
-      SUITE_IDS.length
+    new Set(
+      value.suites
+        .filter(({ id }) => !CANONICAL_DATABASE_SUITE_IDS.includes(id))
+        .map(({ databaseName }) => databaseName),
+    ).size !==
+      SUITE_IDS.length - CANONICAL_DATABASE_SUITE_IDS.length
   ) {
     fail();
   }

@@ -50,7 +50,11 @@ const rawReport = () => ({
   databaseIsolation: 'dedicated-database-per-suite',
   suites: suiteIds.map((id, index) => ({
     id,
-    databaseName: `emdo_ci_suite_${index}`,
+    databaseName:
+      id === 'finance-import-retention-runner' ||
+      id === 'google-oauth-authority'
+        ? 'emdo_app'
+        : `emdo_ci_suite_${index}`,
     testCount: 2,
     status: 'passed',
   })),
@@ -119,6 +123,16 @@ describe('PostgreSQL CI evidence writer', () => {
     [
       'a missing suite',
       { suites: rawReport().suites.slice(0, rawReport().suites.length - 1) },
+    ],
+    [
+      'a canonical suite with a generated database name',
+      {
+        suites: rawReport().suites.map((suite) =>
+          suite.id === 'finance-import-retention-runner'
+            ? { ...suite, databaseName: 'emdo_ci_retention' }
+            : suite,
+        ),
+      },
     ],
     [
       'a false attack result',
