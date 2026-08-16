@@ -39,7 +39,7 @@ const AuthorityRowSchema = z.strictObject({
   request_id: UuidSchema,
   household_id: UuidSchema,
   private_space_id: UuidSchema,
-  proposal_space_id: UuidSchema,
+  writable_space_ids: z.array(UuidSchema).min(1).max(256),
 });
 
 const CanonicalPayloadSchema = z.strictObject({
@@ -69,7 +69,8 @@ const SafeConflict = deepFreeze({
 
 const AuthorityConflict = deepFreeze({
   code: 'shopping-item-create-unavailable' as const,
-  message: 'The shopping item could not be created in the active private space.',
+  message:
+    'The shopping item could not be created in the active private space.',
 });
 
 export interface ProviderFreeShoppingCreateInput {
@@ -117,7 +118,10 @@ const canonicalJson = (value: JsonValue): string => {
   }
   return `{${Object.keys(value)
     .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key] as JsonValue)}`)
+    .map(
+      (key) =>
+        `${JSON.stringify(key)}:${canonicalJson(value[key] as JsonValue)}`,
+    )
     .join(',')}}`;
 };
 
@@ -160,11 +164,11 @@ export class PostgresProviderFreeShoppingService {
                session_user, 'emdo.sync_entities', 'SELECT,INSERT'
              )
              and pg_catalog.to_regprocedure(
-               'emdo.lock_current_authorization_scope(uuid,uuid,uuid)'
+               'emdo.resolve_space_access_grant(uuid,uuid,uuid,uuid,uuid,uuid)'
              ) is not null
              and pg_catalog.has_function_privilege(
                session_user,
-               'emdo.lock_current_authorization_scope(uuid,uuid,uuid)',
+               'emdo.resolve_space_access_grant(uuid,uuid,uuid,uuid,uuid,uuid)',
                'EXECUTE'
              )
            ) as ready`,
@@ -206,18 +210,29 @@ export class PostgresProviderFreeShoppingService {
     return withDurableTransaction(
       this.pool,
       principal,
-      { householdId: input.principal.householdId, spaceId: input.privateSpaceId },
+      {
+        householdId: input.principal.householdId,
+        spaceId: input.privateSpaceId,
+      },
       async (client) => {
         const authority = AuthorityRowSchema.safeParse(
           firstResultRow(
             await client.query(
               `/* provider_free_shopping_authority */
-               select user_id, session_id, request_id, household_id,
-                      private_space_id, proposal_space_id
-                 from emdo.lock_current_authorization_scope(
-                   $1::uuid, null, $2::uuid
+               select original_owner_user_id as user_id, session_id,
+                      request_id, household_id, private_space_id,
+                      writable_space_ids
+                 from emdo.resolve_space_access_grant(
+                   $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6::uuid
                  )`,
-              [input.principal.spaceAccessGrantId, input.runId],
+              [
+                input.principal.spaceAccessGrantId,
+                input.principal.householdId,
+                input.principal.userId,
+                input.principal.sessionId,
+                input.requestId,
+                input.privateSpaceId,
+              ],
             ),
           ),
         );
@@ -228,9 +243,12 @@ export class PostgresProviderFreeShoppingService {
           authority.data.request_id !== input.requestId ||
           authority.data.household_id !== input.principal.householdId ||
           authority.data.private_space_id !== input.privateSpaceId ||
-          authority.data.proposal_space_id !== input.privateSpaceId
+          !authority.data.writable_space_ids.includes(input.privateSpaceId)
         ) {
-          return deepFreeze({ status: 'conflict' as const, safeError: AuthorityConflict });
+          return deepFreeze({
+            status: 'conflict' as const,
+            safeError: AuthorityConflict,
+          });
         }
 
         const inserted = firstResultRow(
@@ -257,9 +275,15 @@ export class PostgresProviderFreeShoppingService {
         if (inserted !== undefined) {
           const stored = StoredItemSchema.safeParse(inserted);
           if (!stored.success) {
-            return deepFreeze({ status: 'conflict' as const, safeError: AuthorityConflict });
+            return deepFreeze({
+              status: 'conflict' as const,
+              safeError: AuthorityConflict,
+            });
           }
-          return deepFreeze({ status: 'applied' as const, item: view(stored.data) });
+          return deepFreeze({
+            status: 'applied' as const,
+            item: view(stored.data),
+          });
         }
 
         const existing = firstResultRow(
@@ -275,15 +299,24 @@ export class PostgresProviderFreeShoppingService {
         );
         const stored = StoredItemSchema.safeParse(existing);
         if (!stored.success) {
-          return deepFreeze({ status: 'conflict' as const, safeError: AuthorityConflict });
+          return deepFreeze({
+            status: 'conflict' as const,
+            safeError: AuthorityConflict,
+          });
         }
         if (
           stored.data.entity_id !== input.item.id ||
           canonicalJson(stored.data.payload) !== canonicalJson(payload)
         ) {
-          return deepFreeze({ status: 'conflict' as const, safeError: SafeConflict });
+          return deepFreeze({
+            status: 'conflict' as const,
+            safeError: SafeConflict,
+          });
         }
-        return deepFreeze({ status: 'duplicate' as const, item: view(stored.data) });
+        return deepFreeze({
+          status: 'duplicate' as const,
+          item: view(stored.data),
+        });
       },
     );
   }

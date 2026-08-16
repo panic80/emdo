@@ -417,9 +417,9 @@ describe('PostgresSchedulerDisclosureGrantResolver', () => {
       principal,
       schedulerResolverScope,
     );
-    await expect(
-      malformedResolver.resolve(ids.grantId),
-    ).rejects.toMatchObject({ code: 'invalid-result' });
+    await expect(malformedResolver.resolve(ids.grantId)).rejects.toMatchObject({
+      code: 'invalid-result',
+    });
     expect(
       malformedPool.query.mock.calls.some(([sql]) =>
         sql.includes('commit_model_disclosure_authorization'),

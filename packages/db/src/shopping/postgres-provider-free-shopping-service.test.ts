@@ -64,11 +64,13 @@ describe('PostgresProviderFreeShoppingService', () => {
       sql.includes('provider_free_shopping_ready') ? [{ ready: true }] : [],
     );
     const api = await import('@emdo/db/api');
-    const service = new (api as typeof api & {
-      PostgresProviderFreeShoppingService: new (pool: DatabasePool) => {
-        checkReady: () => Promise<boolean>;
-      };
-    }).PostgresProviderFreeShoppingService(pool);
+    const service = new (
+      api as typeof api & {
+        PostgresProviderFreeShoppingService: new (pool: DatabasePool) => {
+          checkReady: () => Promise<boolean>;
+        };
+      }
+    ).PostgresProviderFreeShoppingService(pool);
 
     await expect(service.checkReady()).resolves.toBe(true);
     expect(query).toHaveBeenCalledWith(
@@ -82,8 +84,9 @@ describe('PostgresProviderFreeShoppingService', () => {
     expect(readiness?.[0]).toContain('relforcerowsecurity');
     expect(readiness?.[0]).toContain("'SELECT,INSERT'");
     expect(readiness?.[0]).toContain(
-      "'emdo.lock_current_authorization_scope(uuid,uuid,uuid)'",
+      "'emdo.resolve_space_access_grant(uuid,uuid,uuid,uuid,uuid,uuid)'",
     );
+    expect(readiness?.[0]).not.toContain('lock_current_authorization_scope');
   });
 
   it('fails closed when readiness metadata is malformed or the catalog query fails', async () => {
@@ -101,21 +104,26 @@ describe('PostgresProviderFreeShoppingService', () => {
       connect: vi.fn(async () => unavailableClient),
     };
     const api = await import('@emdo/db/api');
-    const Service = (api as typeof api & {
-      PostgresProviderFreeShoppingService: new (pool: DatabasePool) => {
-        checkReady: () => Promise<boolean>;
-      };
-    }).PostgresProviderFreeShoppingService;
+    const Service = (
+      api as typeof api & {
+        PostgresProviderFreeShoppingService: new (pool: DatabasePool) => {
+          checkReady: () => Promise<boolean>;
+        };
+      }
+    ).PostgresProviderFreeShoppingService;
 
     await expect(new Service(malformed.pool).checkReady()).resolves.toBe(false);
-    await expect(new Service(unavailablePool).checkReady()).resolves.toBe(false);
+    await expect(new Service(unavailablePool).checkReady()).resolves.toBe(
+      false,
+    );
     expect(unavailableClient.release).toHaveBeenCalledWith(true);
   });
 
   it('creates the exact canonical shopping item after fresh grant and private-space authority checks', async () => {
     const { pool, query } = poolFor((sql) => {
-      if (sql.includes('lock_active_request_scope')) return [{ authorized: true }];
-      if (sql.includes('lock_current_authorization_scope')) {
+      if (sql.includes('lock_active_request_scope'))
+        return [{ authorized: true }];
+      if (sql.includes('resolve_space_access_grant')) {
         return [
           {
             user_id: ids.userId,
@@ -123,7 +131,7 @@ describe('PostgresProviderFreeShoppingService', () => {
             request_id: ids.requestId,
             household_id: ids.householdId,
             private_space_id: ids.privateSpaceId,
-            proposal_space_id: ids.privateSpaceId,
+            writable_space_ids: [ids.privateSpaceId],
           },
         ];
       }
@@ -141,11 +149,13 @@ describe('PostgresProviderFreeShoppingService', () => {
     });
     const api = await import('@emdo/db/api');
     expect(api).toHaveProperty('PostgresProviderFreeShoppingService');
-    const service = new (api as typeof api & {
-      PostgresProviderFreeShoppingService: new (pool: DatabasePool) => {
-        create: (value: typeof input) => Promise<unknown>;
-      };
-    }).PostgresProviderFreeShoppingService(pool);
+    const service = new (
+      api as typeof api & {
+        PostgresProviderFreeShoppingService: new (pool: DatabasePool) => {
+          create: (value: typeof input) => Promise<unknown>;
+        };
+      }
+    ).PostgresProviderFreeShoppingService(pool);
 
     await expect(service.create(input)).resolves.toEqual({
       status: 'applied',
@@ -159,9 +169,16 @@ describe('PostgresProviderFreeShoppingService', () => {
       },
     });
     const authority = query.mock.calls.find(([sql]) =>
-      sql.includes('lock_current_authorization_scope'),
+      sql.includes('resolve_space_access_grant'),
     );
-    expect(authority?.[1]).toEqual([ids.grantId, ids.runId]);
+    expect(authority?.[1]).toEqual([
+      ids.grantId,
+      ids.householdId,
+      ids.userId,
+      ids.sessionId,
+      ids.requestId,
+      ids.privateSpaceId,
+    ]);
     const insert = query.mock.calls.find(([sql]) =>
       sql.includes('insert into emdo.sync_entities'),
     );
@@ -178,8 +195,9 @@ describe('PostgresProviderFreeShoppingService', () => {
 
   it('returns duplicate only when the existing private-space item has the exact canonical payload', async () => {
     const { pool } = poolFor((sql) => {
-      if (sql.includes('lock_active_request_scope')) return [{ authorized: true }];
-      if (sql.includes('lock_current_authorization_scope')) {
+      if (sql.includes('lock_active_request_scope'))
+        return [{ authorized: true }];
+      if (sql.includes('resolve_space_access_grant')) {
         return [
           {
             user_id: ids.userId,
@@ -187,7 +205,7 @@ describe('PostgresProviderFreeShoppingService', () => {
             request_id: ids.requestId,
             household_id: ids.householdId,
             private_space_id: ids.privateSpaceId,
-            proposal_space_id: ids.privateSpaceId,
+            writable_space_ids: [ids.privateSpaceId],
           },
         ];
       }
@@ -205,11 +223,13 @@ describe('PostgresProviderFreeShoppingService', () => {
       return [];
     });
     const api = await import('@emdo/db/api');
-    const service = new (api as typeof api & {
-      PostgresProviderFreeShoppingService: new (pool: DatabasePool) => {
-        create: (value: typeof input) => Promise<unknown>;
-      };
-    }).PostgresProviderFreeShoppingService(pool);
+    const service = new (
+      api as typeof api & {
+        PostgresProviderFreeShoppingService: new (pool: DatabasePool) => {
+          create: (value: typeof input) => Promise<unknown>;
+        };
+      }
+    ).PostgresProviderFreeShoppingService(pool);
 
     await expect(service.create(input)).resolves.toMatchObject({
       status: 'duplicate',
@@ -219,8 +239,9 @@ describe('PostgresProviderFreeShoppingService', () => {
 
   it('returns a safe conflict when an existing private-space item differs', async () => {
     const { pool } = poolFor((sql) => {
-      if (sql.includes('lock_active_request_scope')) return [{ authorized: true }];
-      if (sql.includes('lock_current_authorization_scope')) {
+      if (sql.includes('lock_active_request_scope'))
+        return [{ authorized: true }];
+      if (sql.includes('resolve_space_access_grant')) {
         return [
           {
             user_id: ids.userId,
@@ -228,7 +249,7 @@ describe('PostgresProviderFreeShoppingService', () => {
             request_id: ids.requestId,
             household_id: ids.householdId,
             private_space_id: ids.privateSpaceId,
-            proposal_space_id: ids.privateSpaceId,
+            writable_space_ids: [ids.privateSpaceId],
           },
         ];
       }
@@ -246,11 +267,13 @@ describe('PostgresProviderFreeShoppingService', () => {
       return [];
     });
     const api = await import('@emdo/db/api');
-    const service = new (api as typeof api & {
-      PostgresProviderFreeShoppingService: new (pool: DatabasePool) => {
-        create: (value: typeof input) => Promise<unknown>;
-      };
-    }).PostgresProviderFreeShoppingService(pool);
+    const service = new (
+      api as typeof api & {
+        PostgresProviderFreeShoppingService: new (pool: DatabasePool) => {
+          create: (value: typeof input) => Promise<unknown>;
+        };
+      }
+    ).PostgresProviderFreeShoppingService(pool);
 
     await expect(service.create(input)).resolves.toEqual({
       status: 'conflict',

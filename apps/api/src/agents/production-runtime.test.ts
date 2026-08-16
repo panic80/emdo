@@ -640,7 +640,8 @@ describe('production agent runtime', () => {
       requestId: ids.request,
       abortSignal: new AbortController().signal,
     });
-    for await (const _event of replay) {
+    for await (const event of replay) {
+      void event;
       throw new Error('The strict test source must be empty');
     }
   });
@@ -911,8 +912,14 @@ describe('production agent runtime', () => {
           authorizationScopeFingerprint: runScopeFingerprint,
           escalationTriggers: [],
         }),
-        complete: async () => ({ status: 'completed' as const, terminalEventSequence: 1 }),
-        markIndeterminate: async () => ({ status: 'indeterminate' as const, terminalEventSequence: 1 }),
+        complete: async () => ({
+          status: 'completed' as const,
+          terminalEventSequence: 1,
+        }),
+        markIndeterminate: async () => ({
+          status: 'indeterminate' as const,
+          terminalEventSequence: 1,
+        }),
         check: async () => true,
       },
       runEvents: {
@@ -923,14 +930,15 @@ describe('production agent runtime', () => {
         check: async () => true,
       },
       runtimeFactory: {
-        create: async () => ({
-          orchestrator: {
-            runTurn: async (input: { readonly routeHint?: string }) => {
-              received(input);
-              return runTurn();
+        create: async () =>
+          ({
+            orchestrator: {
+              runTurn: async (input: { readonly routeHint?: string }) => {
+                received(input);
+                return runTurn();
+              },
             },
-          },
-        }) as never,
+          }) as never,
         check: async () => true,
       },
     });

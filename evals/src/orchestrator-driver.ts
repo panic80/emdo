@@ -318,14 +318,18 @@ export const createAgentOrchestratorEvalDriver = (options: {
   };
 
   const driver: AgentEvalDriver = {
-    start: async ({ evalCase, signal }) =>
-      resultPhase(
+    start: async ({ evalCase, signal }) => {
+      const { disclosureGrantId: _resumeDisclosureGrantId, ...turn } =
+        evalCase.turn;
+      void _resumeDisclosureGrantId;
+      return resultPhase(
         await runTurn({
-          ...evalCase.turn,
+          ...turn,
           abortSignal: signal,
         }),
         evalCase.turn,
-      ),
+      );
+    },
     resume: async ({ evalCase, checkpoint, decision, signal }) => {
       const key = pendingKey(evalCase.turn.runId, checkpoint.checkpointId);
       const interrupted = pending.get(key);

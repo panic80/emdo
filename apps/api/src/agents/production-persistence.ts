@@ -97,7 +97,10 @@ const providerFreeShoppingPort = (
         }),
       ),
     checkReady: async () => {
-      if (!('checkReady' in service) || typeof service.checkReady !== 'function') {
+      if (
+        !('checkReady' in service) ||
+        typeof service.checkReady !== 'function'
+      ) {
         return false;
       }
       return service.checkReady();

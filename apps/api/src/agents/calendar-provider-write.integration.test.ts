@@ -115,8 +115,6 @@ const canonicalArguments = {
   expectedCalendarVersion: 'calendar-v7',
   event: eventPayload,
 };
-const targetId = `${canonicalArguments.calendarId.length}:${canonicalArguments.calendarId}${eventId.length}:${eventId}`;
-
 const authorizationScopeFingerprint =
   EffectiveAuthorizationScopeFingerprintSchema.parse('f'.repeat(64));
 

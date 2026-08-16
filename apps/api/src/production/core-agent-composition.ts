@@ -34,7 +34,6 @@ import {
 } from '../agents/capability-runtime.js';
 import type { TrustedProviderWriteCapabilityBinding } from '../agents/production-bindings.js';
 import { AuthenticatedPrincipalSchema } from '../schemas.js';
-import type { AuthenticatedPrincipal } from '../services/contracts.js';
 import type { RequestScopedGoogleCalendarConditionalGatewayFactory } from './google-services.js';
 
 type DatabasePool = EmdoDatabaseClient['scopedPool'];
@@ -42,7 +41,9 @@ type DatabasePool = EmdoDatabaseClient['scopedPool'];
 const PrincipalWithPrivateSpaceSchema = AuthenticatedPrincipalSchema.extend({
   privateSpaceId: UuidSchema,
 });
-type PrincipalWithPrivateSpace = z.infer<typeof PrincipalWithPrivateSpaceSchema>;
+type PrincipalWithPrivateSpace = z.infer<
+  typeof PrincipalWithPrivateSpaceSchema
+>;
 
 const ProposalAuthorityInputSchema = z.strictObject({
   requestId: UuidSchema,
@@ -75,12 +76,11 @@ const ProviderWriteInvocationSchema = z.strictObject({
 
 const closedNotApplied = (
   evidence: unknown,
-): ProviderCommitOutcome<CalendarWriteResult> =>
-  ({
-    application: 'not-applied' as const,
-    reason: 'approval-policy-mismatch' as const,
-    evidence: JsonValueSchema.parse(evidence),
-  });
+): ProviderCommitOutcome<CalendarWriteResult> => ({
+  application: 'not-applied' as const,
+  reason: 'approval-policy-mismatch' as const,
+  evidence: JsonValueSchema.parse(evidence),
+});
 
 const mapCalendarWriteOutcome = (
   result: CalendarWriteResult,
@@ -177,9 +177,8 @@ export const createRequestScopedGoogleCalendarEventCreateBinding = (
         TrustedProviderWriteCapabilityBinding['executeProviderWrite']
       >[1],
     ) => {
-      const arguments_ = CalendarCanonicalArgumentsSchema.safeParse(
-        rawArguments,
-      );
+      const arguments_ =
+        CalendarCanonicalArgumentsSchema.safeParse(rawArguments);
       const context = ProviderWriteInvocationSchema.safeParse({
         requestId: rawContext.requestId,
         runId: rawContext.runId,
@@ -241,21 +240,23 @@ export const createRequestScopedGoogleCalendarEventCreateBinding = (
         },
         { spaceId: principal.data.privateSpaceId, runId: context.data.runId },
       );
-      const result = await new CalendarWriteExecutor(gateway, receiptStore).execute(
-        command,
-        authorization,
-      );
+      const result = await new CalendarWriteExecutor(
+        gateway,
+        receiptStore,
+      ).execute(command, authorization);
       return mapCalendarWriteOutcome(result);
     },
   });
 };
 
 export interface RequestScopedGoogleCalendarProposalReaderFactory {
-  createProposalTargetReader(input: Readonly<{
-    principal: ReturnType<typeof AuthenticatedPrincipalSchema.parse>;
-    requestId: string;
-    authorityResolution: TrustedProviderWriteAuthorityResolution;
-  }>): CalendarProposalStateReader | undefined;
+  createProposalTargetReader(
+    input: Readonly<{
+      principal: ReturnType<typeof AuthenticatedPrincipalSchema.parse>;
+      requestId: string;
+      authorityResolution: TrustedProviderWriteAuthorityResolution;
+    }>,
+  ): CalendarProposalStateReader | undefined;
 }
 
 export interface RequestScopedGoogleCalendarCoreRuntime {
@@ -267,12 +268,14 @@ export interface RequestScopedGoogleCalendarCoreRuntime {
  * to the target-only proposal reader. The Google factory owns readiness and
  * runtime lifecycle; this adapter rejects every mismatch before it can be used.
  */
-export const createRequestScopedGoogleCalendarCoreRuntime = (input: Readonly<{
-  principal: unknown;
-  requestId: unknown;
-  authorityResolution: unknown;
-  google: RequestScopedGoogleCalendarProposalReaderFactory;
-}>): RequestScopedGoogleCalendarCoreRuntime => {
+export const createRequestScopedGoogleCalendarCoreRuntime = (
+  input: Readonly<{
+    principal: unknown;
+    requestId: unknown;
+    authorityResolution: unknown;
+    google: RequestScopedGoogleCalendarProposalReaderFactory;
+  }>,
+): RequestScopedGoogleCalendarCoreRuntime => {
   const principal = AuthenticatedPrincipalSchema.safeParse(input.principal);
   const requestId = UuidSchema.safeParse(input.requestId);
   const authority = TrustedProviderWriteAuthorityResolutionSchema.safeParse(

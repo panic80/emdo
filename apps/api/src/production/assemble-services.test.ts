@@ -168,7 +168,9 @@ describe('production API service assembly', () => {
       },
     });
     const available = await assembleProductionApiServices({});
-    await expect(available.managerTurns.start({} as never)).resolves.toMatchObject({
+    await expect(
+      available.managerTurns.start({} as never),
+    ).resolves.toMatchObject({
       status: 'accepted',
     });
     expect(start).toHaveBeenCalledOnce();

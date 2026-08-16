@@ -715,13 +715,14 @@ describe('production capability runtime conformance', () => {
       }),
     );
 
-    const {
-      disclosureGrantVersion: _disclosureGrantVersion,
-      ...withoutDisclosureGrantVersion
-    } = context as {
+    const withoutDisclosureGrantVersion: {
+      disclosureGrantVersion?: unknown;
+      readonly [key: string]: unknown;
+    } = { ...context } as {
       readonly disclosureGrantVersion: string;
       readonly [key: string]: unknown;
     };
+    delete withoutDisclosureGrantVersion.disclosureGrantVersion;
     await expect(
       runtime.materializeProviderWriteProposal({
         capabilityId: CALENDAR_CREATE,

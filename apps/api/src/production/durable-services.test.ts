@@ -26,9 +26,8 @@ vi.mock('./approval-checkpoint-keyring.js', () => ({
     coreAgentMocks.createCheckpointCipher,
 }));
 vi.mock('./core-openai-services.js', async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import('./core-openai-services.js')
-  >();
+  const actual =
+    await importOriginal<typeof import('./core-openai-services.js')>();
   return {
     ...actual,
     createProductionOpenAiAgentServiceBundle: coreAgentMocks.createOpenAi,
@@ -275,10 +274,13 @@ const dependencies = (): ProductionDurableServiceDependencies => {
     ),
     createGoogleConnectorBinding: vi.fn(() => ({})),
     createVoiceProviderBinding: vi.fn(() => ({})),
-    createProviderFreeShoppingService: vi.fn(() => ({
-      create: vi.fn(),
-      checkReady: vi.fn(async () => true),
-    }) as never),
+    createProviderFreeShoppingService: vi.fn(
+      () =>
+        ({
+          create: vi.fn(),
+          checkReady: vi.fn(async () => true),
+        }) as never,
+    ),
   };
 };
 

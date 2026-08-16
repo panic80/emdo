@@ -106,9 +106,8 @@ vi.mock('@emdo/db/api', async (importOriginal) => {
 });
 
 vi.mock('./core-agent-composition.js', async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import('./core-agent-composition.js')
-  >();
+  const actual =
+    await importOriginal<typeof import('./core-agent-composition.js')>();
   return {
     ...actual,
     createRequestScopedGoogleCalendarEventCreateBinding: (input: unknown) => {
@@ -134,7 +133,8 @@ vi.mock('./core-agent-composition.js', async (importOriginal) => {
 });
 
 vi.mock('./core-openai-services.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./core-openai-services.js')>();
+  const actual =
+    await importOriginal<typeof import('./core-openai-services.js')>();
   return {
     ...actual,
     createRequestScopedModelSpendGuard: (input: unknown) => {
@@ -264,8 +264,8 @@ describe('request-scoped core Calendar proposal adapter', () => {
     const resolveDisclosureGrant = vi.fn(async () => disclosureGrant);
     const create = vi.fn(async (proposal) => proposal);
     const createProposalService = vi.fn(() => ({ create }));
-    const createProposalRepository = vi.fn(() =>
-      ({ transaction: vi.fn() }) as never,
+    const createProposalRepository = vi.fn(
+      () => ({ transaction: vi.fn() }) as never,
     );
 
     const adapter = createRequestScopedCoreCalendarProposalAdapter(
@@ -506,7 +506,9 @@ describe('request-scoped core agent runtime factory', () => {
       checkGlobalDependencies: async () => true,
     };
 
-    expect(createRequestScopedCoreAgentRuntimeFactory(complete)).toBeUndefined();
+    expect(
+      createRequestScopedCoreAgentRuntimeFactory(complete),
+    ).toBeUndefined();
     expect(
       createRequestScopedCoreAgentRuntimeFactory({
         ...complete,

@@ -468,11 +468,11 @@ export const createProductionDurableServiceBindings = async (
 
   if (!providerFreeSyntheticStaging) {
     try {
-    google = dependencies.createGoogleConnectorBinding({
-      environment,
-      pool: database.scopedPool,
-    });
-    if (google.binding !== undefined) bindings.google = google.binding;
+      google = dependencies.createGoogleConnectorBinding({
+        environment,
+        pool: database.scopedPool,
+      });
+      if (google.binding !== undefined) bindings.google = google.binding;
     } catch {
       // Calendar remains fail-closed unless its complete secret and DB graph loads.
     }
@@ -480,26 +480,26 @@ export const createProductionDurableServiceBindings = async (
 
   if (!providerFreeSyntheticStaging) {
     try {
-    const voice = dependencies.createVoiceProviderBinding({
-      environment,
-      pool: database.scopedPool,
-    });
-    if (voice.binding !== undefined) bindings.voice = voice.binding;
-    if (voice.close !== undefined) additionalCloses.push(voice.close);
+      const voice = dependencies.createVoiceProviderBinding({
+        environment,
+        pool: database.scopedPool,
+      });
+      if (voice.binding !== undefined) bindings.voice = voice.binding;
+      if (voice.close !== undefined) additionalCloses.push(voice.close);
     } catch {
-    // Voice remains fail-closed unless its complete secret, inspector, and spend graph load.
+      // Voice remains fail-closed unless its complete secret, inspector, and spend graph load.
     }
   }
 
   if (!providerFreeSyntheticStaging) {
     try {
-    const runEvents = dependencies.createRunEventSource(database.scopedPool);
-    bindings.runEvents = {
-      service: runEvents,
-      check: coalesceProbe(() => runEvents.check()),
-    };
+      const runEvents = dependencies.createRunEventSource(database.scopedPool);
+      bindings.runEvents = {
+        service: runEvents,
+        check: coalesceProbe(() => runEvents.check()),
+      };
     } catch {
-    // Persisted replay remains unavailable without its grant-aware aggregate.
+      // Persisted replay remains unavailable without its grant-aware aggregate.
     }
   }
 
@@ -515,7 +515,9 @@ export const createProductionDurableServiceBindings = async (
       );
       let proposalCursorCodec: ProposalQueryCursorCodec;
       try {
-        proposalCursorCodec = new ProposalQueryCursorCodec(proposalCursorKeyring);
+        proposalCursorCodec = new ProposalQueryCursorCodec(
+          proposalCursorKeyring,
+        );
       } finally {
         proposalCursorKeyring.current.secret.fill(0);
         for (const previous of proposalCursorKeyring.previous) {
@@ -538,190 +540,188 @@ export const createProductionDurableServiceBindings = async (
   let unusedDecisionDatabase: DatabaseRuntime | undefined;
   if (!providerFreeSyntheticStaging) {
     try {
-    const encodedVisualProofKeyring =
-      environment.EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL;
-    const decisionDatabaseUrl = VisualDecisionDatabaseUrlSchema.safeParse(
-      environment.EMDO_VISUAL_DECISION_DATABASE_URL,
-    );
-    if (
-      encodedVisualProofKeyring === undefined ||
-      !decisionDatabaseUrl.success
-    ) {
-      throw new Error('api-visual-approval-configuration-missing');
-    }
-    const tokenCodec = createProductionVisualProofTokenCodec(
-      encodedVisualProofKeyring,
-    );
-    const decisionDatabase = dependencies.createDatabaseClient({
-      connectionString: decisionDatabaseUrl.data,
-      applicationName: 'emdo-api-visual-decision',
-    });
-    unusedDecisionDatabase = decisionDatabase;
-    const visualProofs = dependencies.createVisualProofIssuanceGateway(
-      database.scopedPool,
-      tokenCodec,
-    );
-    const proposals = dependencies.createVisualProposalDecisionGateway({
-      readPool: database.scopedPool,
-      decisionPool: decisionDatabase.scopedPool,
-    });
-    Object.assign(bindings, {
-      visualProofs: {
-        service: visualProofs,
-        check: coalesceProbe(() => visualProofs.check()),
-      },
-      proposals: {
-        service: proposals,
-        check: coalesceProbe(() => proposals.checkReady()),
-      },
-    } satisfies ProductionApiServiceBindings);
-    databases.push(decisionDatabase);
-    unusedDecisionDatabase = undefined;
-    } catch {
-    if (unusedDecisionDatabase !== undefined) {
-      try {
-        await unusedDecisionDatabase.close();
-      } catch {
-        databases.push(unusedDecisionDatabase);
+      const encodedVisualProofKeyring =
+        environment.EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL;
+      const decisionDatabaseUrl = VisualDecisionDatabaseUrlSchema.safeParse(
+        environment.EMDO_VISUAL_DECISION_DATABASE_URL,
+      );
+      if (
+        encodedVisualProofKeyring === undefined ||
+        !decisionDatabaseUrl.success
+      ) {
+        throw new Error('api-visual-approval-configuration-missing');
       }
+      const tokenCodec = createProductionVisualProofTokenCodec(
+        encodedVisualProofKeyring,
+      );
+      const decisionDatabase = dependencies.createDatabaseClient({
+        connectionString: decisionDatabaseUrl.data,
+        applicationName: 'emdo-api-visual-decision',
+      });
+      unusedDecisionDatabase = decisionDatabase;
+      const visualProofs = dependencies.createVisualProofIssuanceGateway(
+        database.scopedPool,
+        tokenCodec,
+      );
+      const proposals = dependencies.createVisualProposalDecisionGateway({
+        readPool: database.scopedPool,
+        decisionPool: decisionDatabase.scopedPool,
+      });
+      Object.assign(bindings, {
+        visualProofs: {
+          service: visualProofs,
+          check: coalesceProbe(() => visualProofs.check()),
+        },
+        proposals: {
+          service: proposals,
+          check: coalesceProbe(() => proposals.checkReady()),
+        },
+      } satisfies ProductionApiServiceBindings);
+      databases.push(decisionDatabase);
       unusedDecisionDatabase = undefined;
-    }
-    // Proof issuance and decision persistence activate only as one authority graph.
+    } catch {
+      if (unusedDecisionDatabase !== undefined) {
+        try {
+          await unusedDecisionDatabase.close();
+        } catch {
+          databases.push(unusedDecisionDatabase);
+        }
+        unusedDecisionDatabase = undefined;
+      }
+      // Proof issuance and decision persistence activate only as one authority graph.
     }
   }
 
   let unusedWorkflowDatabase: DatabaseRuntime | undefined;
   let checkpointCipher:
-    | ReturnType<typeof createProductionApprovalCheckpointCipher>
-    | undefined;
+    ReturnType<typeof createProductionApprovalCheckpointCipher> | undefined;
   let openAi = undefined as
-    | ReturnType<typeof createProductionOpenAiAgentServiceBundle>
-    | undefined;
+    ReturnType<typeof createProductionOpenAiAgentServiceBundle> | undefined;
   if (!providerFreeSyntheticStaging) {
     try {
-    const workflowDatabaseUrl = WorkflowDatabaseUrlSchema.safeParse(
-      environment.EMDO_WORKFLOW_DATABASE_URL,
-    );
-    const encodedCheckpointKeyring =
-      environment.EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL;
-    const visualDecisions = bindings.proposals?.service;
-    if (
-      !workflowDatabaseUrl.success ||
-      encodedCheckpointKeyring === undefined ||
-      visualDecisions === undefined ||
-      typeof visualDecisions.decideWithVisualProof !== 'function' ||
-      google?.binding === undefined ||
-      typeof google.binding.check !== 'function' ||
-      google.calendarProposalTargetReaders === undefined ||
-      google.calendarConditionalGateways === undefined
-    ) {
-      throw new Error('api-core-agent-configuration-unavailable');
-    }
-    openAi = createProductionOpenAiAgentServiceBundle({ environment });
-    if (openAi === undefined) {
-      throw new Error('api-core-agent-configuration-unavailable');
-    }
-    checkpointCipher = createProductionApprovalCheckpointCipher(
-      encodedCheckpointKeyring,
-    );
-    const workflowDatabase = dependencies.createDatabaseClient({
-      connectionString: workflowDatabaseUrl.data,
-      applicationName: 'emdo-api-workflow',
-    });
-    unusedWorkflowDatabase = workflowDatabase;
-    const configuredOpenAi = openAi;
-    const configuredCheckpointCipher = checkpointCipher;
-    const checkWorkflowAndGoogle = coalesceProbe(async () => {
-      const [workflow, googleReady] = await Promise.all([
-        checkPostgresProposalWorkflowReadiness(workflowDatabase.scopedPool),
-        google.binding!.check(),
-      ]);
-      return workflow === true && googleReady === true;
-    });
-    const checkCoreAgent = coalesceProbe(async () => {
-      const [workflowAndGoogle, luna, terra] = await Promise.all([
-        checkWorkflowAndGoogle(),
-        configuredOpenAi.modelAvailability.isAvailable('gpt-5.6-luna'),
-        configuredOpenAi.modelAvailability.isAvailable('gpt-5.6-terra'),
-      ]);
-      return workflowAndGoogle === true && luna === true && terra === true;
-    });
-    const runtimeFactory: ProductionAgentRuntimeFactory = Object.freeze({
-      create: async (
-        input: Parameters<ProductionAgentRuntimeFactory['create']>[0],
-      ) => {
-        const factory = createRequestScopedCoreAgentRuntimeFactory({
-          principal: input.principal,
-          requestId: input.requestId,
-          runId: input.runId,
-          conversationId: input.conversationId,
-          readPool: database.scopedPool,
-          workflowPool: workflowDatabase.scopedPool,
-          google: {
-            createProposalTargetReader:
-              google!.calendarProposalTargetReaders!
-                .createProposalTargetReader,
-            createConditionalGateway:
-              google!.calendarConditionalGateways!.createConditionalGateway,
-          },
-          openAi: configuredOpenAi,
-          checkpointCipher: configuredCheckpointCipher,
-          checkGlobalDependencies: checkWorkflowAndGoogle,
-        });
-        if (factory === undefined) {
-          throw new Error('api-core-agent-runtime-unavailable');
-        }
-        return factory.runtime;
-      },
-      check: checkCoreAgent,
-    });
-    const agentPersistence = createProductionAgentPersistence({
-      pool: database.scopedPool,
-      runtimeFactory,
-      visualDecisions,
-    });
-    Object.assign(bindings, agentPersistence.bindings);
-    databases.push(workflowDatabase);
-    unusedWorkflowDatabase = undefined;
-    agentResourceCloses.push(configuredOpenAi.close);
-    if (google.close !== undefined) {
-      agentResourceCloses.push(google.close);
-      googleCloseIsOwnedByAgent = true;
-    }
-    agentResourceCloses.push(async () => {
-      configuredCheckpointCipher.dispose();
-    });
-    checkpointCipher = undefined;
-    openAi = undefined;
-    } catch {
-    if (checkpointCipher !== undefined) {
-      const partialCheckpointCipher = checkpointCipher;
-      try {
-        partialCheckpointCipher.dispose();
-      } catch {
-        agentResourceCloses.push(async () => {
-          partialCheckpointCipher.dispose();
-        });
+      const workflowDatabaseUrl = WorkflowDatabaseUrlSchema.safeParse(
+        environment.EMDO_WORKFLOW_DATABASE_URL,
+      );
+      const encodedCheckpointKeyring =
+        environment.EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL;
+      const visualDecisions = bindings.proposals?.service;
+      if (
+        !workflowDatabaseUrl.success ||
+        encodedCheckpointKeyring === undefined ||
+        visualDecisions === undefined ||
+        typeof visualDecisions.decideWithVisualProof !== 'function' ||
+        google?.binding === undefined ||
+        typeof google.binding.check !== 'function' ||
+        google.calendarProposalTargetReaders === undefined ||
+        google.calendarConditionalGateways === undefined
+      ) {
+        throw new Error('api-core-agent-configuration-unavailable');
       }
-      checkpointCipher = undefined;
-    }
-    if (openAi !== undefined) {
-      try {
-        await openAi.close();
-      } catch {
-        agentResourceCloses.push(openAi.close);
+      openAi = createProductionOpenAiAgentServiceBundle({ environment });
+      if (openAi === undefined) {
+        throw new Error('api-core-agent-configuration-unavailable');
       }
-      openAi = undefined;
-    }
-    if (unusedWorkflowDatabase !== undefined) {
-      try {
-        await unusedWorkflowDatabase.close();
-      } catch {
-        databases.push(unusedWorkflowDatabase);
-      }
+      checkpointCipher = createProductionApprovalCheckpointCipher(
+        encodedCheckpointKeyring,
+      );
+      const workflowDatabase = dependencies.createDatabaseClient({
+        connectionString: workflowDatabaseUrl.data,
+        applicationName: 'emdo-api-workflow',
+      });
+      unusedWorkflowDatabase = workflowDatabase;
+      const configuredOpenAi = openAi;
+      const configuredCheckpointCipher = checkpointCipher;
+      const checkWorkflowAndGoogle = coalesceProbe(async () => {
+        const [workflow, googleReady] = await Promise.all([
+          checkPostgresProposalWorkflowReadiness(workflowDatabase.scopedPool),
+          google.binding!.check(),
+        ]);
+        return workflow === true && googleReady === true;
+      });
+      const checkCoreAgent = coalesceProbe(async () => {
+        const [workflowAndGoogle, luna, terra] = await Promise.all([
+          checkWorkflowAndGoogle(),
+          configuredOpenAi.modelAvailability.isAvailable('gpt-5.6-luna'),
+          configuredOpenAi.modelAvailability.isAvailable('gpt-5.6-terra'),
+        ]);
+        return workflowAndGoogle === true && luna === true && terra === true;
+      });
+      const runtimeFactory: ProductionAgentRuntimeFactory = Object.freeze({
+        create: async (
+          input: Parameters<ProductionAgentRuntimeFactory['create']>[0],
+        ) => {
+          const factory = createRequestScopedCoreAgentRuntimeFactory({
+            principal: input.principal,
+            requestId: input.requestId,
+            runId: input.runId,
+            conversationId: input.conversationId,
+            readPool: database.scopedPool,
+            workflowPool: workflowDatabase.scopedPool,
+            google: {
+              createProposalTargetReader:
+                google!.calendarProposalTargetReaders!
+                  .createProposalTargetReader,
+              createConditionalGateway:
+                google!.calendarConditionalGateways!.createConditionalGateway,
+            },
+            openAi: configuredOpenAi,
+            checkpointCipher: configuredCheckpointCipher,
+            checkGlobalDependencies: checkWorkflowAndGoogle,
+          });
+          if (factory === undefined) {
+            throw new Error('api-core-agent-runtime-unavailable');
+          }
+          return factory.runtime;
+        },
+        check: checkCoreAgent,
+      });
+      const agentPersistence = createProductionAgentPersistence({
+        pool: database.scopedPool,
+        runtimeFactory,
+        visualDecisions,
+      });
+      Object.assign(bindings, agentPersistence.bindings);
+      databases.push(workflowDatabase);
       unusedWorkflowDatabase = undefined;
-    }
-    // Agent turns remain unavailable unless every authenticated durable boundary loads.
+      agentResourceCloses.push(configuredOpenAi.close);
+      if (google.close !== undefined) {
+        agentResourceCloses.push(google.close);
+        googleCloseIsOwnedByAgent = true;
+      }
+      agentResourceCloses.push(async () => {
+        configuredCheckpointCipher.dispose();
+      });
+      checkpointCipher = undefined;
+      openAi = undefined;
+    } catch {
+      if (checkpointCipher !== undefined) {
+        const partialCheckpointCipher = checkpointCipher;
+        try {
+          partialCheckpointCipher.dispose();
+        } catch {
+          agentResourceCloses.push(async () => {
+            partialCheckpointCipher.dispose();
+          });
+        }
+        checkpointCipher = undefined;
+      }
+      if (openAi !== undefined) {
+        try {
+          await openAi.close();
+        } catch {
+          agentResourceCloses.push(openAi.close);
+        }
+        openAi = undefined;
+      }
+      if (unusedWorkflowDatabase !== undefined) {
+        try {
+          await unusedWorkflowDatabase.close();
+        } catch {
+          databases.push(unusedWorkflowDatabase);
+        }
+        unusedWorkflowDatabase = undefined;
+      }
+      // Agent turns remain unavailable unless every authenticated durable boundary loads.
     }
   }
 
@@ -777,12 +777,10 @@ export const createProductionDurableServiceBindings = async (
   }
 
   if (Object.keys(bindings).length === 0) {
-    await createDatabaseClose(
-      databases,
-      [...agentResourceCloses, ...additionalCloses],
-    )().catch(
-      () => undefined,
-    );
+    await createDatabaseClose(databases, [
+      ...agentResourceCloses,
+      ...additionalCloses,
+    ])().catch(() => undefined);
     return Object.freeze({ bindings: Object.freeze({}) });
   }
   const close = createDatabaseClose(databases, [

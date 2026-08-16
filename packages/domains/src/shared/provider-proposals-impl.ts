@@ -2014,7 +2014,8 @@ export const createProposalLifecycleService = (input: {
       rawOperationScope: ProviderWriteOperationScope,
     ) => {
       const binding = parseProviderWriteApprovalBinding(rawBinding);
-      const operationScope = parseProviderWriteOperationScope(rawOperationScope);
+      const operationScope =
+        parseProviderWriteOperationScope(rawOperationScope);
       return binding === undefined || operationScope === undefined
         ? ({ status: 'mismatch' } as const)
         : acquireApproval(
@@ -2031,7 +2032,8 @@ export const createProposalLifecycleService = (input: {
       rawOperationScope: ProviderWriteOperationScope,
     ) => {
       const binding = parseProviderWriteApprovalBinding(rawBinding);
-      const operationScope = parseProviderWriteOperationScope(rawOperationScope);
+      const operationScope =
+        parseProviderWriteOperationScope(rawOperationScope);
       return binding === undefined || operationScope === undefined
         ? ({ status: 'mismatch' } as const)
         : markDispatchingApproval(

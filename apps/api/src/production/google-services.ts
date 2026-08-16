@@ -45,7 +45,10 @@ import { z } from 'zod';
 
 import { ApiProblem } from '../problem.js';
 import { AuthenticatedPrincipalSchema } from '../schemas.js';
-import type { ApiServices, AuthenticatedPrincipal } from '../services/contracts.js';
+import type {
+  ApiServices,
+  AuthenticatedPrincipal,
+} from '../services/contracts.js';
 import { createProductionGoogleCalendarVaultKeyProvider } from './google-calendar-vault-keyring.js';
 import type { ProductionApiServiceBinding } from './unavailable-services.js';
 
@@ -386,11 +389,13 @@ export interface ProductionGoogleConnectorComposition {
 }
 
 export interface RequestScopedGoogleCalendarProposalReaderFactory {
-  createProposalTargetReader(input: Readonly<{
-    principal: AuthenticatedPrincipal;
-    requestId: string;
-    authorityResolution: TrustedProviderWriteAuthorityResolution;
-  }>): CalendarProposalStateReader | undefined;
+  createProposalTargetReader(
+    input: Readonly<{
+      principal: AuthenticatedPrincipal;
+      requestId: string;
+      authorityResolution: TrustedProviderWriteAuthorityResolution;
+    }>,
+  ): CalendarProposalStateReader | undefined;
 }
 
 type ProposalTargetReaderFactoryInput = Parameters<
@@ -398,11 +403,13 @@ type ProposalTargetReaderFactoryInput = Parameters<
 >[0];
 
 export interface RequestScopedGoogleCalendarConditionalGatewayFactory {
-  createConditionalGateway(input: Readonly<{
-    principal: AuthenticatedPrincipal;
-    operationScope: ProviderWriteOperationScope;
-    approvalBinding: ProviderWriteApprovalBinding;
-  }>): GoogleCalendarConditionalGateway | undefined;
+  createConditionalGateway(
+    input: Readonly<{
+      principal: AuthenticatedPrincipal;
+      operationScope: ProviderWriteOperationScope;
+      approvalBinding: ProviderWriteApprovalBinding;
+    }>,
+  ): GoogleCalendarConditionalGateway | undefined;
 }
 
 type ConditionalGatewayFactoryInput = Parameters<
@@ -435,7 +442,8 @@ const approvalBindingsMatch = (
   left.idempotencyTtlMs === right.idempotencyTtlMs &&
   left.authorityBinding.kind === right.authorityBinding.kind &&
   left.authorityBinding.householdId === right.authorityBinding.householdId &&
-  left.authorityBinding.privateSpaceId === right.authorityBinding.privateSpaceId &&
+  left.authorityBinding.privateSpaceId ===
+    right.authorityBinding.privateSpaceId &&
   left.authorityBinding.authorizationScopeFingerprint ===
     right.authorityBinding.authorizationScopeFingerprint &&
   left.authorityBinding.providerGrantReference ===
@@ -587,12 +595,16 @@ export const createProductionGoogleConnectorBinding = (
 
   const calendarProposalTargetReaders: RequestScopedGoogleCalendarProposalReaderFactory =
     Object.freeze({
-      createProposalTargetReader: (rawInput: ProposalTargetReaderFactoryInput) => {
-        const request = ProposalTargetReaderFactoryInputSchema.safeParse(rawInput);
+      createProposalTargetReader: (
+        rawInput: ProposalTargetReaderFactoryInput,
+      ) => {
+        const request =
+          ProposalTargetReaderFactoryInputSchema.safeParse(rawInput);
         if (!request.success || closing) return undefined;
         const principal = request.data.principal;
         const operationScope = request.data.authorityResolution.operationScope;
-        const authorityBinding = request.data.authorityResolution.authorityBinding;
+        const authorityBinding =
+          request.data.authorityResolution.authorityBinding;
         if (
           operationScope.requestId !== request.data.requestId ||
           operationScope.sessionId !== principal.sessionId ||
@@ -610,7 +622,9 @@ export const createProductionGoogleConnectorBinding = (
         }
         return Object.freeze({
           readTargetState: async (
-            target: Parameters<CalendarProposalStateReader['readTargetState']>[0],
+            target: Parameters<
+              CalendarProposalStateReader['readTargetState']
+            >[0],
           ) => {
             if (!(await isReady())) throw unavailable();
             try {
@@ -648,7 +662,8 @@ export const createProductionGoogleConnectorBinding = (
   const calendarConditionalGateways: RequestScopedGoogleCalendarConditionalGatewayFactory =
     Object.freeze({
       createConditionalGateway: (rawInput: ConditionalGatewayFactoryInput) => {
-        const request = ConditionalGatewayFactoryInputSchema.safeParse(rawInput);
+        const request =
+          ConditionalGatewayFactoryInputSchema.safeParse(rawInput);
         if (!request.success || closing) return undefined;
         const principal = request.data.principal;
         const operationScope = request.data.operationScope;

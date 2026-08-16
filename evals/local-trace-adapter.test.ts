@@ -157,6 +157,7 @@ describe('local trace eval adapter', () => {
           agentId: 'finance',
           purpose: 'categorize one transaction',
           phasePurpose: 'specialist-execution',
+          phaseInvocationId: 'finance-disclosure',
           dataClass: 'finance.transactions',
           recordId: 'transaction-private-1',
           fields: ['merchant', 'amountCadMinor'],
@@ -205,6 +206,7 @@ describe('local trace eval adapter', () => {
       runId,
       grantVersion: '1.0.0',
       phasePurpose: 'specialist-execution',
+      phaseInvocationId: 'finance-disclosure',
       dataClass: 'finance.transactions',
       fields: ['merchant', 'amountCadMinor'],
     });

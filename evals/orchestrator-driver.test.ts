@@ -103,7 +103,12 @@ describe('AgentOrchestrator eval driver', () => {
 
     expect(result.passed).toBe(true);
     expect(runTurn).toHaveBeenCalledWith({
-      ...caseById('route-scheduler-intent').turn,
+      ...(() => {
+        const { disclosureGrantId: _resumeDisclosureGrantId, ...turn } =
+          caseById('route-scheduler-intent').turn;
+        void _resumeDisclosureGrantId;
+        return turn;
+      })(),
       abortSignal: expect.any(AbortSignal),
     });
   });

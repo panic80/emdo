@@ -24,6 +24,7 @@ import {
   type AgentExecutionProvider,
   type AgentProviderResult,
   type AgentProviderRequest,
+  type ManagerConversationMemory,
   type ModelDisclosureGateway,
   type OpenAiAgentsRunnerPort,
   type ProviderWriteProposalGateway,
@@ -56,6 +57,12 @@ const evalCase = (id: string): AgentEvalCase => {
   const found = emdoAgentEvalCases.find((candidate) => candidate.id === id);
   if (found === undefined) throw new Error(`missing eval case: ${id}`);
   return found;
+};
+
+const runtimeTurnInput = (turn: AgentEvalCase['turn']) => {
+  const { disclosureGrantId: _resumeDisclosureGrantId, ...input } = turn;
+  void _resumeDisclosureGrantId;
+  return input;
 };
 
 class TraceBuffer implements LocalTraceSink, EvalLocalTraceSource {
@@ -95,12 +102,28 @@ const compiledAgent = (
         : [`${id}.read`],
     readableDataClasses:
       id === 'manager'
-        ? []
+        ? [
+            'conversation.messages',
+            'agent.manager-plans',
+            'agent.specialist-outcomes',
+          ]
         : id === 'scheduler'
-          ? ['calendar.events']
+          ? [
+              'agent.delegations',
+              'agent.specialist-outcomes',
+              'calendar.events',
+            ]
           : id === 'finance'
-            ? ['finance.transactions']
-            : ['shopping.items'],
+            ? [
+                'agent.delegations',
+                'agent.specialist-outcomes',
+                'finance.transactions',
+              ]
+            : [
+                'agent.delegations',
+                'agent.specialist-outcomes',
+                'shopping.items',
+              ],
     riskCeiling: kind === 'manager' ? 'none' : 'read',
     modelPolicy: Object.freeze({
       defaultModel: 'gpt-5.6-luna',
@@ -272,6 +295,135 @@ const managerOutput = (summary: string): EvalJson =>
     actionProposalReferences: Object.freeze([]),
   });
 
+const evalManagerMemory: ManagerConversationMemory = Object.freeze({
+  retrieveForManager: async () => Object.freeze({ entries: [] }),
+  appendManagerMessage: async (input) =>
+    Object.freeze({
+      id:
+        input.role === 'user'
+          ? '018f1f5e-6f47-7d61-a6dd-1e86f8b8f701'
+          : '018f1f5e-6f47-7d61-a6dd-1e86f8b8f702',
+      conversationId: input.conversationId,
+      householdId: input.householdId,
+      userId: input.userId,
+      role: input.role,
+      content: input.content,
+      createdAt: EVAL_NOW,
+    }),
+});
+
+const canonicalDisclosureProjection = (
+  sources: Parameters<ModelDisclosureGateway['authorize']>[0]['sources'],
+) => {
+  const records = sources
+    .map((source, index) => {
+      if (source.kind === 'conversation-message') {
+        return {
+          dataClass: 'conversation.messages',
+          recordId: source.entry.id,
+          fields: {
+            content: source.entry.content,
+            createdAt: source.entry.createdAt,
+            role: source.entry.role,
+          },
+        };
+      }
+      if (source.kind === 'manager-plan') {
+        return {
+          dataClass: 'agent.manager-plans',
+          recordId: `manager-plan-${index + 1}`,
+          fields: { plan: source.plan },
+        };
+      }
+      if (source.kind === 'specialist-delegation') {
+        return {
+          dataClass: 'agent.delegations',
+          recordId: `delegation-${index + 1}`,
+          fields: { delegation: source.delegation },
+        };
+      }
+      return {
+        dataClass: 'agent.specialist-outcomes',
+        recordId: `outcome-${index + 1}`,
+        fields: { outcome: source.outcome },
+      };
+    })
+    .sort((left, right) =>
+      `${left.dataClass}\0${left.recordId}`.localeCompare(
+        `${right.dataClass}\0${right.recordId}`,
+      ),
+    );
+  return Object.freeze({
+    records: Object.freeze(
+      records.map((record) =>
+        Object.freeze({
+          dataClass: record.dataClass,
+          recordId: record.recordId,
+          fields: Object.freeze(Object.keys(record.fields).sort()),
+        }),
+      ),
+    ),
+    payload: Object.freeze({
+      schemaVersion: 1,
+      records: Object.freeze(
+        records.map((record) =>
+          Object.freeze({
+            dataClass: record.dataClass,
+            recordId: record.recordId,
+            fields: Object.freeze(
+              Object.fromEntries(
+                Object.entries(record.fields).sort(([left], [right]) =>
+                  left.localeCompare(right),
+                ),
+              ),
+            ),
+          }),
+        ),
+      ),
+    }),
+  });
+};
+
+const delegatedSpecialistInput = (input: unknown) => {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('invalid-canonical-specialist-input');
+  }
+  const records = (input as { readonly records?: unknown }).records;
+  if (!Array.isArray(records)) {
+    throw new Error('invalid-canonical-specialist-input');
+  }
+  const delegation = records.find(
+    (record) =>
+      record !== null &&
+      typeof record === 'object' &&
+      !Array.isArray(record) &&
+      (record as { readonly dataClass?: unknown }).dataClass ===
+        'agent.delegations',
+  );
+  const fields =
+    delegation !== null && typeof delegation === 'object'
+      ? (delegation as { readonly fields?: unknown }).fields
+      : undefined;
+  const value =
+    fields !== null && typeof fields === 'object' && !Array.isArray(fields)
+      ? (fields as { readonly delegation?: unknown }).delegation
+      : undefined;
+  if (
+    value === null ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    typeof (value as { readonly id?: unknown }).id !== 'string' ||
+    typeof (value as { readonly specialistId?: unknown }).specialistId !==
+      'string'
+  ) {
+    throw new Error('invalid-canonical-specialist-input');
+  }
+  return value as Readonly<{
+    readonly id: string;
+    readonly specialistId: string;
+  }>;
+};
+
 const rejectingProposalGateway: ProviderWriteProposalGateway = Object.freeze({
   prepare: async () => {
     throw new Error('proposal preparation not expected');
@@ -291,22 +443,25 @@ const checkpointCancellationNotExpected = async (): Promise<never> => {
 const defaultDisclosureGateway: ModelDisclosureGateway = Object.freeze({
   authorize: async (
     input: Parameters<ModelDisclosureGateway['authorize']>[0],
-  ) =>
-    Object.freeze({
+  ) => {
+    const projection = canonicalDisclosureProjection(input.sources);
+    return Object.freeze({
       status: 'authorized' as const,
-      grantId: input.requestedGrantId ?? disclosureFixture.grantId,
+      grantId: disclosureFixture.grantId,
       grantVersion: '1.0.0',
       runId: input.runId,
       householdId: input.householdId,
       userId: input.userId,
       agentId: input.agentId,
       phasePurpose: input.phasePurpose,
+      phaseInvocationId: input.phaseInvocationId,
       disclosurePurpose: 'no-records-required',
       provider: input.provider,
       expiresAt: '2026-08-09T16:10:00.000Z',
-      records: Object.freeze([]),
-      payload: input.payload,
-    }),
+      records: projection.records,
+      payload: projection.payload,
+    });
+  },
 });
 
 const executionProvider = (
@@ -379,26 +534,21 @@ describe('real AgentOrchestrator eval path', () => {
         return completed({ delegations });
       }
       if (request.phase === 'specialist') {
-        const input = request.input as {
-          readonly delegation: {
-            readonly id: string;
-            readonly specialistId: string;
-          };
-        };
+        const delegation = delegatedSpecialistInput(request.input);
         active += 1;
         maximumActive = Math.max(maximumActive, active);
-        lifecycle.push(`start:${caseId}:${input.delegation.id}`);
+        lifecycle.push(`start:${caseId}:${delegation.id}`);
         await new Promise((resolve) => setTimeout(resolve, 4));
         active -= 1;
         if (
           caseId === 'partial-specialist-failure' &&
-          input.delegation.specialistId === 'finance'
+          delegation.specialistId === 'finance'
         ) {
           throw new Error('database password must remain redacted');
         }
-        lifecycle.push(`finish:${caseId}:${input.delegation.id}`);
+        lifecycle.push(`finish:${caseId}:${delegation.id}`);
         return completed(
-          managerOutput(`${input.delegation.specialistId} eval completed.`),
+          managerOutput(`${delegation.specialistId} eval completed.`),
         );
       }
       return completed(
@@ -431,10 +581,7 @@ describe('real AgentOrchestrator eval path', () => {
           });
         },
       },
-      memory: {
-        retrieveForManager: async () => Object.freeze({ entries: [] }),
-        appendManagerMessage: async () => undefined,
-      },
+      memory: evalManagerMemory,
       traceRecorder,
       approvalCheckpoints: {
         create: async () => {
@@ -504,10 +651,7 @@ describe('real AgentOrchestrator eval path', () => {
         modelRouter: new ModelRouter(
           new InMemoryModelAvailability(availability),
         ),
-        memory: {
-          retrieveForManager: async () => Object.freeze({ entries: [] }),
-          appendManagerMessage: async () => undefined,
-        },
+        memory: evalManagerMemory,
         traceRecorder: new LocalTraceRecorder(
           traces,
           () => new Date('2026-08-09T16:00:00.000Z'),
@@ -560,23 +704,31 @@ describe('real AgentOrchestrator eval path', () => {
           ? expiringDisclosureFixture
           : disclosureFixture;
       const filteredSpecialistPayload = Object.freeze({
-        delegation: Object.freeze({
-          id: 'finance-disclosure',
-          specialistId: 'finance',
-          input: Object.freeze({
-            request:
-              'merchant=Example Market amount-cad-minor=1234 posted-at=2026-08-08',
+        schemaVersion: 1,
+        records: Object.freeze([
+          Object.freeze({
+            dataClass: 'agent.delegations',
+            recordId: 'delegation-1',
+            fields: Object.freeze({
+              delegation: Object.freeze({
+                id: 'finance-disclosure',
+                specialistId: 'finance',
+                input: Object.freeze({
+                  request:
+                    'merchant=Example Market amount-cad-minor=1234 posted-at=2026-08-08',
+                }),
+                dependsOn: Object.freeze([]),
+              }),
+            }),
           }),
-          dependsOn: Object.freeze([]),
-        }),
-        dependencyOutcomes: Object.freeze([]),
+        ]),
       });
       const disclosureGateway: ModelDisclosureGateway = Object.freeze({
         authorize: async (
           input: Parameters<ModelDisclosureGateway['authorize']>[0],
         ) => {
           if (input.agentId === 'manager') {
-            expect(input.requestedGrantId).toBeUndefined();
+            const projection = canonicalDisclosureProjection(input.sources);
             return Object.freeze({
               status: 'authorized' as const,
               grantId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f399',
@@ -586,11 +738,12 @@ describe('real AgentOrchestrator eval path', () => {
               userId: input.userId,
               agentId: input.agentId,
               phasePurpose: input.phasePurpose,
+              phaseInvocationId: input.phaseInvocationId,
               disclosurePurpose: 'manager-orchestration-no-private-records',
               provider: input.provider,
               expiresAt: '2026-08-09T16:10:00.000Z',
-              records: Object.freeze([]),
-              payload: input.payload,
+              records: projection.records,
+              payload: projection.payload,
             });
           }
           expect(input).toMatchObject({
@@ -599,12 +752,8 @@ describe('real AgentOrchestrator eval path', () => {
             userId: item.turn.userId,
             agentId: 'finance',
             phasePurpose: 'specialist-execution',
+            phaseInvocationId: 'finance-disclosure',
             provider: 'openai',
-            requestedGrantId: fixture.grantId,
-            requestedDataClasses: [
-              'conversation.messages',
-              'finance.transactions',
-            ],
           });
           if (item.id === 'cross-run-disclosure-reuse-denied') {
             return Object.freeze({
@@ -622,14 +771,15 @@ describe('real AgentOrchestrator eval path', () => {
             userId: item.turn.userId,
             agentId: fixture.agentId,
             phasePurpose: fixture.phasePurpose,
+            phaseInvocationId: input.phaseInvocationId,
             disclosurePurpose: fixture.purpose,
             provider: 'openai' as const,
             expiresAt: fixture.expiresAt,
             records: Object.freeze([
               Object.freeze({
-                dataClass: fixture.dataClass,
-                recordId: fixture.recordId,
-                fields: fixture.fields,
+                dataClass: 'agent.delegations',
+                recordId: 'delegation-1',
+                fields: Object.freeze(['delegation']),
               }),
             ]),
             payload: filteredSpecialistPayload,
@@ -694,10 +844,7 @@ describe('real AgentOrchestrator eval path', () => {
             'gpt-5.6-terra': true,
           }),
         ),
-        memory: {
-          retrieveForManager: async () => Object.freeze({ entries: [] }),
-          appendManagerMessage: async () => undefined,
-        },
+        memory: evalManagerMemory,
         traceRecorder: new LocalTraceRecorder(
           traces,
           () => new Date(currentTimeMs),
@@ -877,10 +1024,7 @@ describe('real AgentOrchestrator eval path', () => {
           'gpt-5.6-terra': true,
         }),
       ),
-      memory: {
-        retrieveForManager: async () => Object.freeze({ entries: [] }),
-        appendManagerMessage: async () => undefined,
-      },
+      memory: evalManagerMemory,
       traceRecorder: new LocalTraceRecorder(
         traces,
         () => new Date(EVAL_NOW),
@@ -1103,10 +1247,7 @@ describe('real AgentOrchestrator eval path', () => {
           'gpt-5.6-terra': true,
         }),
       ),
-      memory: {
-        retrieveForManager: async () => Object.freeze({ entries: [] }),
-        appendManagerMessage: async () => undefined,
-      },
+      memory: evalManagerMemory,
       traceRecorder: new LocalTraceRecorder(
         traces,
         () => new Date(EVAL_NOW),
@@ -1128,7 +1269,7 @@ describe('real AgentOrchestrator eval path', () => {
     });
 
     const result = await orchestrator.runTurn({
-      ...item.turn,
+      ...runtimeTurnInput(item.turn),
       abortSignal: new AbortController().signal,
     });
 
@@ -1320,10 +1461,7 @@ describe('real AgentOrchestrator eval path', () => {
           'gpt-5.6-terra': true,
         }),
       ),
-      memory: {
-        retrieveForManager: async () => Object.freeze({ entries: [] }),
-        appendManagerMessage: async () => undefined,
-      },
+      memory: evalManagerMemory,
       traceRecorder: new LocalTraceRecorder(
         failingTraceSink,
         clock,
@@ -1357,7 +1495,7 @@ describe('real AgentOrchestrator eval path', () => {
 
     try {
       const result = await orchestrator.runTurn({
-        ...item.turn,
+        ...runtimeTurnInput(item.turn),
         abortSignal: new AbortController().signal,
       });
 
@@ -1498,10 +1636,7 @@ describe('real AgentOrchestrator eval path', () => {
           'gpt-5.6-terra': true,
         }),
       ),
-      memory: {
-        retrieveForManager: async () => Object.freeze({ entries: [] }),
-        appendManagerMessage: async () => undefined,
-      },
+      memory: evalManagerMemory,
       traceRecorder,
       approvalCheckpoints: checkpoints,
       proposalGateway: {
@@ -1657,10 +1792,7 @@ describe('real AgentOrchestrator eval path', () => {
           'gpt-5.6-terra': true,
         }),
       ),
-      memory: {
-        retrieveForManager: async () => Object.freeze({ entries: [] }),
-        appendManagerMessage: async () => undefined,
-      },
+      memory: evalManagerMemory,
       traceRecorder: new LocalTraceRecorder(
         traces,
         clock,

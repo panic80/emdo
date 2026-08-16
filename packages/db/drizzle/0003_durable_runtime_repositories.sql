@@ -14279,11 +14279,6 @@ GRANT EXECUTE ON FUNCTION
 GRANT EXECUTE ON FUNCTION
 	"emdo"."read_agent_run_events"(uuid, uuid, bigint, integer)
 	TO emdo_app;
--- The provider-free shopping command calls this only inside a durable
--- request-scoped transaction before its fixed-scope sync insert.
-GRANT EXECUTE ON FUNCTION
-	"emdo"."lock_current_authorization_scope"(uuid, uuid, uuid)
-	TO emdo_app;
 --> statement-breakpoint
 
 -- PostgreSQL grants EXECUTE on new functions to PUBLIC by default. These

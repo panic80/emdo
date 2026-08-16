@@ -91,6 +91,7 @@ export type AgentEvalTraceEvent =
       readonly purpose: string;
       readonly phasePurpose:
         'manager-plan' | 'specialist-execution' | 'manager-synthesis';
+      readonly phaseInvocationId?: string;
       readonly dataClass: string;
       readonly recordId: string;
       readonly fields: readonly string[];
@@ -907,11 +908,24 @@ const evaluateAssertion = (
         > => event.type === 'data-disclosure',
       );
       if (disclosures.length === 0) return [failure('disclosure-missing')];
+      const matchingDisclosures = disclosures.filter(
+        (event) =>
+          event.grantId === assertion.grantId &&
+          event.grantVersion === assertion.grantVersion &&
+          event.runId === assertion.runId &&
+          event.agentId === assertion.agentId &&
+          event.dataClass === assertion.dataClass &&
+          event.recordId === assertion.recordId &&
+          event.purpose === assertion.purpose &&
+          event.phasePurpose === assertion.phasePurpose &&
+          event.provider === assertion.provider &&
+          event.expiresAt === assertion.expiresAt,
+      );
       const failures: AgentEvalFailure[] = [];
-      if (disclosures.length !== 1) {
+      if (matchingDisclosures.length !== 1) {
         failures.push(failure('unexpected-disclosure'));
       }
-      const disclosure = disclosures[0]!;
+      const disclosure = matchingDisclosures[0] ?? disclosures[0]!;
       if (!exactStrings(disclosure.fields, assertion.fields)) {
         failures.push(failure('disclosure-fields-mismatch'));
       }
@@ -949,7 +963,11 @@ const evaluateAssertion = (
           event.agentId === assertion.agentId &&
           event.reason === assertion.reason,
       );
-      const leaked = events.some((event) => event.type === 'data-disclosure');
+      const leaked = events.some(
+        (event) =>
+          event.type === 'data-disclosure' &&
+          event.agentId === assertion.agentId,
+      );
       const final = phases.at(-1);
       const expiryChronologyValid =
         assertion.reason !== 'grant-expired' ||

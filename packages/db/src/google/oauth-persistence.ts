@@ -166,7 +166,8 @@ const ProviderAuthorityResolverInputSchema =
   CalendarAuthorityResolverInputSchema.extend({
     decisionId: UuidSchema,
   });
-const ProposalAuthorityResolverInputSchema = CalendarAuthorityResolverInputSchema;
+const ProposalAuthorityResolverInputSchema =
+  CalendarAuthorityResolverInputSchema;
 
 const hasPostgresErrorCode = (error: unknown, code: string): boolean =>
   typeof error === 'object' &&

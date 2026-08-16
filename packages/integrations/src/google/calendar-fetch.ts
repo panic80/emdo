@@ -1398,7 +1398,9 @@ const readProviderTargetState = async (input: {
   readonly session: CredentialSession;
   readonly calendarId: string;
   readonly eventId: string;
-  readonly normalizeEvent: (input: unknown) => GoogleCalendarProviderState['event'];
+  readonly normalizeEvent: (
+    input: unknown,
+  ) => GoogleCalendarProviderState['event'];
 }): Promise<GoogleCalendarProviderState> => {
   const collectionUrl = calendarEventsUrl(input.calendarId);
   collectionUrl.searchParams.set('maxResults', '1');

@@ -256,8 +256,7 @@ describe('GoogleCalendarReadClient', () => {
             ...proposalAuthorityResolution,
             operationScope: {
               ...proposalAuthorityResolution.operationScope,
-              sessionId:
-                '018f1f5e-6f47-7d61-a6dd-1e86f8b8f099',
+              sessionId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f099',
             },
           },
           fetch,

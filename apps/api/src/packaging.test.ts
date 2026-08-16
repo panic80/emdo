@@ -70,9 +70,7 @@ describe('API production package', () => {
     expect(stagingAcceptanceSource).toContain(
       'authority.household-administration',
     );
-    expect(stagingAcceptanceSource).toContain(
-      '/api/v1/experience/notification-preferences',
-    );
+    expect(stagingAcceptanceSource).toContain('/api/v1/experience/shopping');
     expect(stagingAcceptanceSource).toContain(
       'Readiness checks do not match synthetic HTTP subset contract version 1',
     );

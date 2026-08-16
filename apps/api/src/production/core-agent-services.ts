@@ -100,8 +100,11 @@ const MaterializationContextSchema = z.strictObject({
   ),
 });
 
-type PrincipalWithPrivateSpace = z.output<typeof PrincipalWithPrivateSpaceSchema>;
-type MaterializeProposal = TrustedProviderWriteCapabilityBinding['materializeProposal'];
+type PrincipalWithPrivateSpace = z.output<
+  typeof PrincipalWithPrivateSpaceSchema
+>;
+type MaterializeProposal =
+  TrustedProviderWriteCapabilityBinding['materializeProposal'];
 
 const PROPOSAL_LIFETIME_MS = 300_000;
 
@@ -198,7 +201,8 @@ const defaultDependencies: RequestScopedCoreCalendarProposalAdapterDependencies 
       readonly materializer: TrustedProposalMaterializer;
       readonly disclosureGrantResolver: TrustedDisclosureGrantResolver;
       readonly repository: ProposalRepository;
-    }) => new ProposalService(materializer, disclosureGrantResolver, repository),
+    }) =>
+      new ProposalService(materializer, disclosureGrantResolver, repository),
     createProposalId: randomUUID,
     now: () => new Date(),
   });
@@ -288,7 +292,9 @@ export const createRequestScopedCoreCalendarProposalAdapter = (
   readonly materializeProposal: MaterializeProposal;
   readonly presenter: TrustedProviderWriteDecisionPresenter;
 }> => {
-  const principal = PrincipalWithPrivateSpaceSchema.safeParse(rawInput.principal);
+  const principal = PrincipalWithPrivateSpaceSchema.safeParse(
+    rawInput.principal,
+  );
   const requestId = UuidSchema.safeParse(rawInput.requestId);
   const runId = UuidSchema.safeParse(rawInput.runId);
   if (
@@ -337,8 +343,12 @@ export const createRequestScopedCoreCalendarProposalAdapter = (
     throw new Error('api-core-calendar-proposal-adapter-unavailable');
   }
 
-  const materializeProposal: MaterializeProposal = async (rawMaterialization) => {
-    const context = MaterializationContextSchema.parse(rawMaterialization.context);
+  const materializeProposal: MaterializeProposal = async (
+    rawMaterialization,
+  ) => {
+    const context = MaterializationContextSchema.parse(
+      rawMaterialization.context,
+    );
     const argumentsValue = CalendarCanonicalArgumentsSchema.parse(
       rawMaterialization.arguments,
     );
@@ -549,19 +559,23 @@ const validCheckpointCipher = (
  * It constructs no provider clients or calls; all Calendar and OpenAI checks
  * remain deferred to their existing operation/readiness boundaries.
  */
-export const createRequestScopedCoreAgentRuntimeFactory = (rawInput: Readonly<{
-  readonly principal: unknown;
-  readonly requestId: unknown;
-  readonly runId: unknown;
-  readonly conversationId: unknown;
-  readonly readPool: DatabasePool;
-  readonly workflowPool: DatabasePool;
-  readonly google: RequestScopedGoogleCalendarCoreFactory;
-  readonly openAi: ProductionOpenAiAgentServiceBundle;
-  readonly checkpointCipher: ApprovalCheckpointCipher;
-  readonly checkGlobalDependencies: () => Promise<boolean>;
-}>): RequestScopedCoreAgentRuntimeFactory | undefined => {
-  const principal = PrincipalWithPrivateSpaceSchema.safeParse(rawInput.principal);
+export const createRequestScopedCoreAgentRuntimeFactory = (
+  rawInput: Readonly<{
+    readonly principal: unknown;
+    readonly requestId: unknown;
+    readonly runId: unknown;
+    readonly conversationId: unknown;
+    readonly readPool: DatabasePool;
+    readonly workflowPool: DatabasePool;
+    readonly google: RequestScopedGoogleCalendarCoreFactory;
+    readonly openAi: ProductionOpenAiAgentServiceBundle;
+    readonly checkpointCipher: ApprovalCheckpointCipher;
+    readonly checkGlobalDependencies: () => Promise<boolean>;
+  }>,
+): RequestScopedCoreAgentRuntimeFactory | undefined => {
+  const principal = PrincipalWithPrivateSpaceSchema.safeParse(
+    rawInput.principal,
+  );
   const requestId = UuidSchema.safeParse(rawInput.requestId);
   const runId = UuidSchema.safeParse(rawInput.runId);
   const conversationId = UuidSchema.safeParse(rawInput.conversationId);
@@ -589,25 +603,29 @@ export const createRequestScopedCoreAgentRuntimeFactory = (rawInput: Readonly<{
     const fixedPrincipal = deepFreeze(principal.data);
     const fixedRequestId = requestId.data;
     const fixedRunId = runId.data;
-    const durablePrincipal = durablePrincipalFor(fixedPrincipal, fixedRequestId);
+    const durablePrincipal = durablePrincipalFor(
+      fixedPrincipal,
+      fixedRequestId,
+    );
     const proposalRepository = new PostgresProposalRepository({
       readPool: rawInput.readPool,
       workflowPool: rawInput.workflowPool,
       principal: durablePrincipal,
     });
-    const disclosureGrantResolver = new PostgresSchedulerDisclosureGrantResolver(
-      rawInput.readPool,
-      durablePrincipal,
-      {
-        runId: fixedRunId,
-        householdId: fixedPrincipal.householdId,
-        userId: fixedPrincipal.userId,
-        spaceAccessGrantId: fixedPrincipal.spaceAccessGrantId,
-        agentId: 'scheduler',
-        phasePurpose: 'specialist-execution',
-        provider: 'openai',
-      },
-    );
+    const disclosureGrantResolver =
+      new PostgresSchedulerDisclosureGrantResolver(
+        rawInput.readPool,
+        durablePrincipal,
+        {
+          runId: fixedRunId,
+          householdId: fixedPrincipal.householdId,
+          userId: fixedPrincipal.userId,
+          spaceAccessGrantId: fixedPrincipal.spaceAccessGrantId,
+          agentId: 'scheduler',
+          phasePurpose: 'specialist-execution',
+          provider: 'openai',
+        },
+      );
     const proposalAuthorityResolver =
       createPostgresGoogleCalendarProposalAuthorityResolver({
         resolver: new PostgresGoogleCalendarProposalAuthorityResolver(

@@ -547,10 +547,6 @@ const pushDisclosureEvents = (
   );
   if (positive?.type === 'disclosure') {
     const grant = disclosureGrant(evalCase, evalCase.turn.runId);
-    const record = grant.recordAllowlist.find(
-      ({ dataClass, recordId }) =>
-        dataClass === positive.dataClass && recordId === positive.recordId,
-    );
     const now = Date.parse(String(evalCase.fixture.now));
     if (
       grant.id !== evalCase.turn.disclosureGrantId ||
@@ -559,7 +555,10 @@ const pushDisclosureEvents = (
       grant.householdId !== evalCase.turn.householdId ||
       grant.agentId !== positive.agentId ||
       grant.purpose !== positive.purpose ||
-      record === undefined ||
+      positive.dataClass !== 'agent.delegations' ||
+      positive.recordId !== 'delegation-1' ||
+      positive.fields.length !== 1 ||
+      positive.fields[0] !== 'delegation' ||
       Date.parse(grant.createdAt) > now ||
       Date.parse(grant.expiresAt) <= now
     ) {
@@ -573,9 +572,10 @@ const pushDisclosureEvents = (
       agentId: grant.agentId,
       purpose: grant.purpose,
       phasePurpose: disclosurePhasePurpose(evalCase),
-      dataClass: record.dataClass,
-      recordId: record.recordId,
-      fields: record.fields,
+      phaseInvocationId: 'finance-disclosure',
+      dataClass: positive.dataClass,
+      recordId: positive.recordId,
+      fields: positive.fields,
       provider: grant.provider,
       expiresAt: grant.expiresAt,
     });

@@ -112,6 +112,23 @@ describe('durable manager turn aggregate migration', () => {
     );
   });
 
+  it('keeps the private current-scope helper unavailable to emdo_app', async () => {
+    const sql = await readMigration();
+    const helperGrantStatements = sql
+      .split(';')
+      .filter(
+        (statement) =>
+          /grant execute on function/u.test(statement) &&
+          /lock_current_authorization_scope\(uuid, uuid, uuid\)/u.test(
+            statement,
+          ),
+      );
+
+    for (const statement of helperGrantStatements) {
+      expect(statement).not.toMatch(/\bto\b[\s\S]*\bemdo_app\b/u);
+    }
+  });
+
   it('accepts the provider-free MVP runtime profile and records its execution resolution without a model resolution', async () => {
     const sql = await readMigration();
     const complete = sql.match(

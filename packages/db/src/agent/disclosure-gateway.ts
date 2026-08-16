@@ -453,9 +453,8 @@ export class PostgresSchedulerDisclosureGrantResolver {
     scope: SchedulerDisclosureGrantResolverScope,
   ) {
     this.#principal = parseDurablePrincipal(principal);
-    const parsedScope = SchedulerDisclosureGrantResolverScopeSchema.safeParse(
-      scope,
-    );
+    const parsedScope =
+      SchedulerDisclosureGrantResolverScopeSchema.safeParse(scope);
     if (
       !parsedScope.success ||
       parsedScope.data.householdId !== this.#principal.householdId ||
@@ -469,7 +468,9 @@ export class PostgresSchedulerDisclosureGrantResolver {
     this.#scope = deepFreeze(parsedScope.data);
   }
 
-  async resolve(disclosureGrantId: string): Promise<DataDisclosureGrant | undefined> {
+  async resolve(
+    disclosureGrantId: string,
+  ): Promise<DataDisclosureGrant | undefined> {
     const grantId = UuidSchema.safeParse(disclosureGrantId);
     if (!grantId.success) return undefined;
     return withClaimedTransaction(
@@ -504,7 +505,9 @@ export class PostgresSchedulerDisclosureGrantResolver {
         }
         if (resolution.data.status !== 'active') return undefined;
         const active = resolution.data;
-        const recordAllowlist = normalizeRecordAllowlist(active.record_allowlist);
+        const recordAllowlist = normalizeRecordAllowlist(
+          active.record_allowlist,
+        );
         const grant = DataDisclosureGrantSchema.safeParse({
           schemaVersion: active.schema_version,
           id: active.grant_id,

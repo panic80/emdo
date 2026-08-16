@@ -7,7 +7,6 @@ import {
   type ProviderWriteCapabilityContext,
 } from '@emdo/contracts';
 import {
-  CalendarWriteExecutor,
   hashGoogleCalendarPayload,
   type GoogleCalendarConditionalGateway,
 } from '@emdo/integrations/google-calendar';
@@ -143,33 +142,30 @@ const calendarCreateContext = (): ProviderWriteCapabilityContext => {
 
 const receiptPool = () => {
   let commandHash: unknown;
-  const query = vi.fn(
-    async (sql: string, values: readonly unknown[] = []) => ({
-      rowCount: 1,
-      rows: sql.includes('lock_active_request_scope')
-        ? [{ authorized: true }]
-        : sql.includes('select command_hash') &&
-            sql.includes('lease_expires_at')
-          ? []
-          : sql.includes('select command_hash')
+  const query = vi.fn(async (sql: string, values: readonly unknown[] = []) => ({
+    rowCount: 1,
+    rows: sql.includes('lock_active_request_scope')
+      ? [{ authorized: true }]
+      : sql.includes('select command_hash') && sql.includes('lease_expires_at')
+        ? []
+        : sql.includes('select command_hash')
+          ? [
+              {
+                command_hash: commandHash,
+                state: 'pending',
+                result: null,
+              },
+            ]
+          : sql.includes('insert into emdo.scheduler_execution_receipts') ||
+              sql.includes('update emdo.scheduler_execution_receipts')
             ? [
-                {
-                  command_hash: commandHash,
-                  state: 'pending',
-                  result: null,
-                },
+                (() => {
+                  if (sql.includes('insert into')) commandHash = values[3];
+                  return { receipt_key: values[0] };
+                })(),
               ]
-            : sql.includes('insert into emdo.scheduler_execution_receipts') ||
-                sql.includes('update emdo.scheduler_execution_receipts')
-              ? [
-                  (() => {
-                    if (sql.includes('insert into')) commandHash = values[3];
-                    return { receipt_key: values[0] };
-                  })(),
-                ]
-              : [],
-    }),
-  );
+            : [],
+  }));
   return {
     pool: {
       connect: vi.fn(async () => ({ query, release: vi.fn() })),
@@ -305,7 +301,10 @@ describe('core manager and scheduler production composition', () => {
         materializeProposal: vi.fn(),
       });
     await expect(
-      indeterminateBinding.executeProviderWrite(canonicalCreateArguments, context),
+      indeterminateBinding.executeProviderWrite(
+        canonicalCreateArguments,
+        context,
+      ),
     ).resolves.toMatchObject({
       application: 'indeterminate',
       reason: 'transport-lost-after-dispatch',
@@ -465,8 +464,9 @@ describe('core manager and scheduler production composition', () => {
   });
 
   it('fails closed when the resolved Calendar authority is not bound to the proposal request', async () => {
-    const otherFingerprint =
-      EffectiveAuthorizationScopeFingerprintSchema.parse('c'.repeat(64));
+    const otherFingerprint = EffectiveAuthorizationScopeFingerprintSchema.parse(
+      'c'.repeat(64),
+    );
     const resolver = {
       resolve: vi.fn(async () => ({
         authorityBinding: {
@@ -540,7 +540,8 @@ describe('core manager and scheduler production composition', () => {
           userId: ids.user,
           householdId: ids.household,
           agentId: 'scheduler',
-          purpose: 'Generate a calendar proposal from the model-visible record.',
+          purpose:
+            'Generate a calendar proposal from the model-visible record.',
           runId: ids.run,
           recordAllowlist: [
             {

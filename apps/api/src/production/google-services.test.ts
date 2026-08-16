@@ -194,11 +194,14 @@ const dependencies = () => {
     throw new Error('provider fetch must not run during construction');
   });
   const readTargetState = vi.fn(
-    async (input: { readonly calendarId: string; readonly eventId: string }) => ({
-    calendarId: input.calendarId,
-    queriedEventId: input.eventId,
-    calendarVersion: 'calendar-v1',
-    event: null,
+    async (input: {
+      readonly calendarId: string;
+      readonly eventId: string;
+    }) => ({
+      calendarId: input.calendarId,
+      queriedEventId: input.eventId,
+      calendarVersion: 'calendar-v1',
+      event: null,
     }),
   );
   const createProposalTargetReader = vi.fn(() => ({ readTargetState }));
@@ -465,8 +468,7 @@ describe('production Google connector composition', () => {
         privateSpaceId: principalA.privateSpaceId,
         authorizationScopeFingerprint:
           principalA.collectionAuthorizationScopeFingerprint,
-        providerGrantReference:
-          'gcal-0123456789abcdef0123456789abcdef01234567',
+        providerGrantReference: 'gcal-0123456789abcdef0123456789abcdef01234567',
         authorizationEpoch: 1,
       },
       operationScope: {
@@ -525,7 +527,8 @@ describe('production Google connector composition', () => {
       fixture.result,
     );
     const factory = composition.calendarConditionalGateways;
-    if (factory === undefined) throw new Error('calendar-write-gateway-missing');
+    if (factory === undefined)
+      throw new Error('calendar-write-gateway-missing');
     const principalA = principal('A');
     const write = calendarWriteFixture(principalA);
     const gateway = factory.createConditionalGateway({
@@ -533,7 +536,8 @@ describe('production Google connector composition', () => {
       operationScope: write.operationScope,
       approvalBinding: write.approvalBinding,
     });
-    if (gateway === undefined) throw new Error('calendar-write-gateway-missing');
+    if (gateway === undefined)
+      throw new Error('calendar-write-gateway-missing');
 
     expect(fixture.result.createRuntime).not.toHaveBeenCalled();
     expect(fixture.fetch).not.toHaveBeenCalled();
@@ -575,7 +579,8 @@ describe('production Google connector composition', () => {
       fixture.result,
     );
     const factory = composition.calendarConditionalGateways;
-    if (factory === undefined) throw new Error('calendar-write-gateway-missing');
+    if (factory === undefined)
+      throw new Error('calendar-write-gateway-missing');
     const principalA = principal('A');
     const write = calendarWriteFixture(principalA);
     const gateway = factory.createConditionalGateway({
@@ -583,7 +588,8 @@ describe('production Google connector composition', () => {
       operationScope: write.operationScope,
       approvalBinding: write.approvalBinding,
     });
-    if (gateway === undefined) throw new Error('calendar-write-gateway-missing');
+    if (gateway === undefined)
+      throw new Error('calendar-write-gateway-missing');
 
     await expect(
       gateway.readCurrent(write.command, write.authorization),
@@ -603,7 +609,8 @@ describe('production Google connector composition', () => {
       fixture.result,
     );
     const factory = composition.calendarProposalTargetReaders;
-    if (factory === undefined) throw new Error('proposal-target-reader-missing');
+    if (factory === undefined)
+      throw new Error('proposal-target-reader-missing');
     const principalA = principal('A');
     const privateSpaceId = principalA.privateSpaceId;
     if (privateSpaceId === undefined)

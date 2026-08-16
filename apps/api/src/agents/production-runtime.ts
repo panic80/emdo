@@ -65,9 +65,7 @@ import {
   type TrustedProductionCapabilityServices,
 } from './production-bindings.js';
 import type { ProductionProviderProposalComposition } from './proposal-gateway.js';
-import type {
-  ProviderFreeTurnResult,
-} from './provider-free-runtime.js';
+import type { ProviderFreeTurnResult } from './provider-free-runtime.js';
 
 const SDK_VERSION = '0.14.3' as const;
 const REQUESTED_MODEL_ESCALATION_TRIGGERS = Object.freeze([

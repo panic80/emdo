@@ -323,9 +323,10 @@ export const createReferenceEvalDriver = (): ReferenceEvalDriver => {
             agentId: disclosureFixture.agentId,
             purpose: disclosureFixture.purpose,
             phasePurpose: disclosureFixture.phasePurpose,
-            dataClass: disclosureFixture.dataClass,
-            recordId: disclosureFixture.recordId,
-            fields: disclosureFixture.fields,
+            phaseInvocationId: 'finance-disclosure',
+            dataClass: 'agent.delegations',
+            recordId: 'delegation-1',
+            fields: ['delegation'],
             provider: disclosureFixture.provider,
             expiresAt: disclosureFixture.expiresAt,
           });

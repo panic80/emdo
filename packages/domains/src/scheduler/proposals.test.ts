@@ -532,10 +532,10 @@ describe('CalendarProposalMaterializer', () => {
           readRequests.push(request);
           const { calendarId, eventId } = request;
           return {
-          calendarId,
-          queriedEventId: eventId,
-          calendarVersion: 'calendar-v7',
-          event: null,
+            calendarId,
+            queriedEventId: eventId,
+            calendarVersion: 'calendar-v7',
+            event: null,
           };
         },
       },

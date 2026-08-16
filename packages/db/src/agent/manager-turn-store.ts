@@ -193,9 +193,7 @@ export type PostgresManagerTurnIndeterminate =
 export interface PostgresManagerTurnStoreOptions {
   readonly managerAgentVersion?: string;
   readonly requestedModel?:
-    | 'gpt-5.6-luna'
-    | 'gpt-5.6-terra'
-    | 'provider-free-mvp-v1';
+    'gpt-5.6-luna' | 'gpt-5.6-terra' | 'provider-free-mvp-v1';
 }
 
 export class ManagerTurnPersistenceError extends Error {
