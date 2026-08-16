@@ -61,7 +61,7 @@ services:
       - google-oauth-reconciliation-db
       - google-oauth-retention-db
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres -d emdo_app']
+      test: ['CMD-SHELL', 'pg_isready --host 127.0.0.1 -U postgres -d emdo_app']
       interval: 10s
       timeout: 5s
       retries: 12

@@ -236,6 +236,14 @@ describe('container and edge configuration', () => {
     );
   });
 
+  it('checks PostgreSQL readiness over loopback TCP', async () => {
+    const compose = await read('infra/compose/compose.yml');
+
+    expect(compose).toContain(
+      "test: ['CMD-SHELL', 'pg_isready --host 127.0.0.1 -U postgres -d emdo_app']",
+    );
+  });
+
   it('isolates and caps ephemeral staging with synthetic data only', async () => {
     const [staging, common] = await Promise.all([
       read('infra/compose/compose.staging.yml'),
