@@ -54,9 +54,10 @@ exact public origin, and an
 server-derived `collectionAuthorizationScopeFingerprint`; composition must
 still never compute, cast, or accept that fingerprint from a client.
 
-The built-in factory now owns the Better Auth pool/claim bridge, API scope
+The built-in factory can own the Better Auth pool/claim bridge, API scope
 resolver, atomic onboarding coordinator, CSRF key, identity-only Google client,
-and bounded Resend password-reset/verification callbacks. Configuration is
+and bounded Resend password-reset/verification callbacks when their optional
+bundle is present. Configuration is
 parsed completely before a pool opens. The auth and CSRF keys must be distinct
 canonical base64url values containing 32–64 bytes, and the three DSNs must name
 their exact logins. Provider delivery is bounded and idempotent; the readiness
@@ -66,12 +67,12 @@ guard.
 This is source composition, not credentialed evidence. Production remains
 unready until the exact database roles and a verified Resend domain pass the
 built artifact's probe, Google identity and email flows are exercised, and the
-result is captured through protected staging/production gates. The current
-staging contract admits only unrelated Google identity and Resend credentials
-for this auth graph, on an API-only authentication egress network. It continues
-to reject Calendar OAuth, OpenAI, push, and commerce credentials, keeps worker
-provider execution disabled, and never substitutes no-op callbacks. A real
-staging run remains pending.
+result is captured through protected staging/production gates. The provider-free
+staging MVP omits that optional bundle and rejects partial or malformed provider
+credentials at preflight; authentication falls back to its bounded unavailable
+provider behavior. It continues to reject Calendar OAuth, OpenAI, push, and
+commerce credentials, keeps worker provider execution disabled, and never
+substitutes no-op callbacks. A real staging run remains pending.
 
 ## Intentionally unavailable capabilities
 

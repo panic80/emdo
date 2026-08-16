@@ -511,23 +511,18 @@ assert_edge_proxy_secret_file() {
 
 assert_staging_auth_provider_config() {
   local path="$1"
-  local provider google_client_id google_client_secret resend_api_key resend_from_email
-  provider="$(env_file_value "$path" EMDO_TRANSACTIONAL_EMAIL_PROVIDER)"
-  google_client_id="$(env_file_value "$path" EMDO_GOOGLE_IDENTITY_CLIENT_ID)"
-  google_client_secret="$(env_file_value "$path" EMDO_GOOGLE_IDENTITY_CLIENT_SECRET)"
-  resend_api_key="$(env_file_value "$path" EMDO_RESEND_AUTH_API_KEY)"
-  resend_from_email="$(env_file_value "$path" EMDO_RESEND_FROM_EMAIL)"
-
-  [[ "$provider" == resend ]] ||
-    die "$path must select the curated staging authentication email provider"
-  [[ ${#google_client_id} -ge 20 && ${#google_client_id} -le 512 && "$google_client_id" =~ ^[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$ ]] ||
-    die "$path contains an invalid staging Google identity client ID"
-  [[ ${#google_client_secret} -ge 16 && ${#google_client_secret} -le 512 && "$google_client_secret" =~ ^[^[:space:][:cntrl:]]+$ ]] ||
-    die "$path contains an invalid staging Google identity client secret"
-  [[ ${#resend_api_key} -ge 23 && ${#resend_api_key} -le 512 && "$resend_api_key" =~ ^re_[A-Za-z0-9_-]+$ ]] ||
-    die "$path contains an invalid staging Resend authentication API key"
-  [[ ${#resend_from_email} -le 320 && "$resend_from_email" =~ ^[a-z0-9][a-z0-9._%+-]{0,63}@[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$ ]] ||
-    die "$path contains an invalid lowercase staging authentication sender"
+  local key
+  for key in \
+    EMDO_GOOGLE_IDENTITY_CLIENT_ID \
+    EMDO_GOOGLE_IDENTITY_CLIENT_SECRET \
+    EMDO_ONBOARDING_DATABASE_URL \
+    EMDO_RESEND_AUTH_API_KEY \
+    EMDO_RESEND_FROM_EMAIL \
+    EMDO_TRANSACTIONAL_EMAIL_PROVIDER; do
+    if env_file_has_key "$path" "$key"; then
+      die "$path must omit unavailable optional authentication provider key $key"
+    fi
+  done
 }
 
 assert_production_api_environment() {
@@ -582,23 +577,18 @@ assert_staging_api_environment() {
   local path="$1"
   assert_env_file_allowed_keys "$path" \
     EMDO_PUBLIC_ORIGIN EMDO_METRICS_TOKEN EMDO_API_DATABASE_URL \
-    EMDO_AUTH_DATABASE_URL EMDO_ONBOARDING_DATABASE_URL \
+    EMDO_AUTH_DATABASE_URL \
     EMDO_VISUAL_DECISION_DATABASE_URL \
     EMDO_API_AUTH_SECRET EMDO_SESSION_SECRET EMDO_SYNC_JWT_KEYRING_B64URL \
     EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL \
     EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL \
     EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL \
     EMDO_INVITATION_DELIVERY_KEY_ID \
-    EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL \
-    EMDO_GOOGLE_IDENTITY_CLIENT_ID EMDO_GOOGLE_IDENTITY_CLIENT_SECRET \
-    EMDO_TRANSACTIONAL_EMAIL_PROVIDER EMDO_RESEND_AUTH_API_KEY \
-    EMDO_RESEND_FROM_EMAIL
+    EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL
   assert_internal_postgres_uri "$path" \
     EMDO_API_DATABASE_URL emdo_api_login emdo_app
   assert_internal_postgres_uri "$path" \
     EMDO_AUTH_DATABASE_URL emdo_auth_login emdo_app
-  assert_internal_postgres_uri "$path" \
-    EMDO_ONBOARDING_DATABASE_URL emdo_onboarding_login emdo_app
   assert_internal_postgres_uri "$path" \
     EMDO_VISUAL_DECISION_DATABASE_URL emdo_visual_decision_login emdo_app
   assert_staging_auth_provider_config "$path"

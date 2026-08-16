@@ -49,12 +49,14 @@ manifest before Compose can parse or mount it; a symlink or hard-link escape is
 rejected. Production and staging must have unrelated PostgreSQL passwords,
 session/JWT signing keys,
 connector-vault keys, notification credentials, and application secrets.
-Staging env files must use unrelated, staging-only Google identity and Resend
-authentication-delivery credentials. They must omit Calendar OAuth, OpenAI,
-push, and commerce credentials. Only the API joins the staging authentication
-egress network; the worker remains on an internal egress network and enforces
+The provider-free staging MVP omits Google identity, Resend authentication
+delivery, onboarding, Calendar OAuth, OpenAI, push, and commerce credentials.
+Only the API joins the staging authentication egress network; the worker
+remains on an internal egress network and enforces
 `EMDO_EXTERNAL_PROVIDERS_ENABLED=false`. The staging HTTP subset does not call
-provider routes. Provider-specific credentialed receipts remain separate.
+provider routes, and malformed or partial optional provider bundles are
+rejected by preflight. Provider-specific credentialed receipts remain
+separate.
 
 `release-assets-public.pem` is a root-owned, single-link mode-0644 Ed25519
 public key installed by host preparation. The corresponding private key exists
