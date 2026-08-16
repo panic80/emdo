@@ -18,6 +18,9 @@ readonly record_root=/var/lib/emdo/staging-releases
 readonly incoming_root=/var/lib/emdo/release-incoming
 readonly public_key=/etc/emdo/release/release-assets-public.pem
 
+INSTALL_CLEANUP_INCOMING=''
+INSTALL_CLEANUP_INSTALLING=''
+
 assert_safe_run_id() {
   [[ "$1" =~ ^[0-9]{1,20}$ ]] || die 'workflow run ID is invalid'
 }
@@ -124,19 +127,23 @@ install_release() {
   assert_root_file "$public_key" 644 16384
 
   incoming="$(mktemp -d "$incoming_root/install.XXXXXX")"
+  INSTALL_CLEANUP_INCOMING="$incoming"
   copied_archive="$incoming/release.tgz"
   copied_lock="$incoming/images.env"
   copied_descriptor="$incoming/descriptor.env"
   copied_signature="$incoming/descriptor.sig"
   installing=''
+  INSTALL_CLEANUP_INSTALLING=''
   cleanup_install() {
     local exit_code=$?
     trap - EXIT
-    find "$incoming" -xdev -type f -delete 2>/dev/null || true
-    rmdir "$incoming" 2>/dev/null || true
-    if [[ -n "$installing" && -d "$installing" ]]; then
-      find "$installing" -xdev -type f -delete 2>/dev/null || true
-      find "$installing" -xdev -depth -type d -delete 2>/dev/null || true
+    if [[ -n "$INSTALL_CLEANUP_INCOMING" && -d "$INSTALL_CLEANUP_INCOMING" ]]; then
+      find "$INSTALL_CLEANUP_INCOMING" -xdev -type f -delete 2>/dev/null || true
+      rmdir "$INSTALL_CLEANUP_INCOMING" 2>/dev/null || true
+    fi
+    if [[ -n "$INSTALL_CLEANUP_INSTALLING" && -d "$INSTALL_CLEANUP_INSTALLING" ]]; then
+      find "$INSTALL_CLEANUP_INSTALLING" -xdev -type f -delete 2>/dev/null || true
+      find "$INSTALL_CLEANUP_INSTALLING" -xdev -depth -type d -delete 2>/dev/null || true
     fi
     exit "$exit_code"
   }
@@ -221,6 +228,7 @@ install_release() {
   record="$record_root/$run_id.env"
   [[ ! -e "$release" && ! -e "$record" ]] || die 'signed staging release has already been installed or consumed'
   installing="$release_root/.installing-$source_sha-$run_id"
+  INSTALL_CLEANUP_INSTALLING="$installing"
   [[ ! -e "$installing" ]] || die 'staging release installation path already exists'
   install -d -o 0 -g 0 -m 0755 "$installing"
   tar --extract --gzip --file "$copied_archive" --directory "$installing" \
@@ -244,8 +252,10 @@ install_release() {
   install -o 0 -g 0 -m 0600 "$copied_lock" "$installing/images.env"
   mv -- "$installing" "$release"
   installing=''
+  INSTALL_CLEANUP_INSTALLING=''
   write_record "$record" "$release" "$source_sha" "$archive_sha" installed
   log "installed signed staging release $source_sha for workflow run $run_id"
+  cleanup_install
 }
 
 deploy_release() {
