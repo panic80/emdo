@@ -1015,6 +1015,12 @@ describe('host deployment and recovery scripts', () => {
     expect(common).toContain('assert_digest_lock');
     expect(common).toContain("'{{.Config.Image}}'");
     expect(staging).toContain('expires-at-epoch');
+    expect(staging).toMatch(
+      /^export EMDO_STAGING_SOURCE_SHA="\$IMAGE_LOCK_SOURCE_SHA"$/m,
+    );
+    expect(staging).toMatch(
+      /^export EMDO_STAGING_WORKFLOW_RUN_ID="\$run_id"$/m,
+    );
     expect(staging).not.toContain('systemd-run');
     expect(sweeper).toContain('emdo-staging-operator teardown');
     expect(sweeper).toContain('deadline_epoch');
