@@ -26,6 +26,7 @@ const SUITE_IDS = Object.freeze([
   'household-administration',
   'disclosure-authority',
   'finance-import-receipts',
+  'finance-import-retention-runner',
   'google-oauth-authority',
   'manager-run-event-replay',
   'worker-fixed-roles',

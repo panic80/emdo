@@ -98,7 +98,7 @@ const ciProofs: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
     pgvectorExtension: 'passed',
     isolatedDatabases: true,
     sequentialSuites: 'passed',
-    suiteCount: 15,
+    suiteCount: 16,
     attackCaseCount: 15,
   },
 };
@@ -721,7 +721,7 @@ describe('release acceptance evidence', () => {
   it('rejects a PostgreSQL receipt from an incomplete live suite set', () => {
     const incomplete = semanticReceipt('ci', 'postgres-integration');
     const result = incomplete.result as Record<string, unknown>;
-    (result.proof as Record<string, unknown>).suiteCount = 14;
+    (result.proof as Record<string, unknown>).suiteCount = 15;
     expect(() =>
       validateAcceptanceReceipt(incomplete, {
         category: 'ci',
