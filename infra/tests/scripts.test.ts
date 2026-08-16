@@ -284,13 +284,7 @@ describe('deployment script trust boundaries', () => {
       'EMDO_PUBLIC_ORIGIN=https://staging.example.invalid',
       'EMDO_API_DATABASE_URL=postgresql://emdo_api_login:fixture@postgres:5432/emdo_app?sslmode=disable',
       'EMDO_AUTH_DATABASE_URL=postgresql://emdo_auth_login:fixture@postgres:5432/emdo_app?sslmode=disable',
-      'EMDO_ONBOARDING_DATABASE_URL=postgresql://emdo_onboarding_login:fixture@postgres:5432/emdo_app?sslmode=disable',
       'EMDO_VISUAL_DECISION_DATABASE_URL=postgresql://emdo_visual_decision_login:fixture@postgres:5432/emdo_app?sslmode=disable',
-      'EMDO_TRANSACTIONAL_EMAIL_PROVIDER=resend',
-      'EMDO_GOOGLE_IDENTITY_CLIENT_ID=123456789012-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com',
-      'EMDO_GOOGLE_IDENTITY_CLIENT_SECRET=staging-google-client-secret',
-      'EMDO_RESEND_AUTH_API_KEY=re_staging_auth_provider_key_0123456789',
-      'EMDO_RESEND_FROM_EMAIL=auth@staging.emdo.invalid',
     ];
     await writeFile(apiEnvironment, `${valid.join('\n')}\n`);
     expect(
@@ -307,6 +301,36 @@ describe('deployment script trust boundaries', () => {
     );
     expect(rejected.status).not.toBe(0);
     expect(rejected.stderr).not.toContain('synthetic-stage-secret-canary');
+  });
+
+  it('accepts a core-only staging API environment and rejects optional provider bundles', async () => {
+    const apiEnvironment = join(directory, 'api.env');
+    const core = [
+      'EMDO_PUBLIC_ORIGIN=https://staging.example.invalid',
+      'EMDO_API_DATABASE_URL=postgresql://emdo_api_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+      'EMDO_AUTH_DATABASE_URL=postgresql://emdo_auth_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+      'EMDO_VISUAL_DECISION_DATABASE_URL=postgresql://emdo_visual_decision_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+    ];
+    await writeFile(apiEnvironment, `${core.join('\n')}\n`);
+    expect(
+      runCommon('assert_staging_api_environment "$2"', apiEnvironment).status,
+    ).toBe(0);
+
+    for (const optionalLine of [
+      'EMDO_GOOGLE_IDENTITY_CLIENT_ID=123456789012-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com',
+      'EMDO_GOOGLE_IDENTITY_CLIENT_SECRET=staging-google-client-secret',
+      'EMDO_ONBOARDING_DATABASE_URL=postgresql://emdo_onboarding_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+      'EMDO_RESEND_AUTH_API_KEY=re_staging_auth_provider_key_0123456789',
+      'EMDO_RESEND_FROM_EMAIL=auth@staging.emdo.invalid',
+      'EMDO_TRANSACTIONAL_EMAIL_PROVIDER=resend',
+    ]) {
+      await writeFile(apiEnvironment, `${[...core, optionalLine].join('\n')}\n`);
+      const rejected = runCommon(
+        'assert_staging_api_environment "$2"',
+        apiEnvironment,
+      );
+      expect(rejected.status).not.toBe(0);
+    }
   });
 
   it('requires the dedicated internal audio reconciliation login', async () => {
@@ -478,33 +502,23 @@ describe('deployment script trust boundaries', () => {
     ).toBe(0);
   });
 
-  it('requires isolated staging Google identity and Resend auth configuration', async () => {
+  it('keeps optional staging auth providers absent or fails closed on partial bundles', async () => {
     const apiEnvironment = join(directory, 'api.env');
-    const valid = [
-      'EMDO_TRANSACTIONAL_EMAIL_PROVIDER=resend',
-      'EMDO_GOOGLE_IDENTITY_CLIENT_ID=123456789012-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com',
-      'EMDO_GOOGLE_IDENTITY_CLIENT_SECRET=staging-google-client-secret',
-      'EMDO_RESEND_AUTH_API_KEY=re_staging_auth_provider_key_0123456789',
-      'EMDO_RESEND_FROM_EMAIL=auth@staging.emdo.invalid',
-    ];
-    await writeFile(apiEnvironment, `${valid.join('\n')}\n`);
+    await writeFile(apiEnvironment, '\n');
 
     expect(
       runCommon('assert_staging_auth_provider_config "$2"', apiEnvironment)
         .status,
     ).toBe(0);
 
-    for (const invalidLine of [
-      'EMDO_TRANSACTIONAL_EMAIL_PROVIDER=disabled',
-      'EMDO_GOOGLE_IDENTITY_CLIENT_ID=production-client',
-      'EMDO_GOOGLE_IDENTITY_CLIENT_SECRET=contains whitespace',
-      'EMDO_RESEND_AUTH_API_KEY=not-a-resend-key',
-      'EMDO_RESEND_FROM_EMAIL=Auth@staging.emdo.invalid',
+    for (const optionalBundle of [
+      ['EMDO_GOOGLE_IDENTITY_CLIENT_ID=production-client'],
+      ['EMDO_RESEND_AUTH_API_KEY=not-a-resend-key'],
+      ['EMDO_TRANSACTIONAL_EMAIL_PROVIDER=resend', 'EMDO_RESEND_FROM_EMAIL=Auth@staging.emdo.invalid'],
     ]) {
-      const key = invalidLine.slice(0, invalidLine.indexOf('='));
       await writeFile(
         apiEnvironment,
-        `${valid.map((line) => (line.startsWith(`${key}=`) ? invalidLine : line)).join('\n')}\n`,
+        `${optionalBundle.join('\n')}\n`,
       );
       expect(
         runCommon('assert_staging_auth_provider_config "$2"', apiEnvironment)
