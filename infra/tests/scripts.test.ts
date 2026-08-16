@@ -324,7 +324,10 @@ describe('deployment script trust boundaries', () => {
       'EMDO_RESEND_FROM_EMAIL=auth@staging.emdo.invalid',
       'EMDO_TRANSACTIONAL_EMAIL_PROVIDER=resend',
     ]) {
-      await writeFile(apiEnvironment, `${[...core, optionalLine].join('\n')}\n`);
+      await writeFile(
+        apiEnvironment,
+        `${[...core, optionalLine].join('\n')}\n`,
+      );
       const rejected = runCommon(
         'assert_staging_api_environment "$2"',
         apiEnvironment,
@@ -514,12 +517,12 @@ describe('deployment script trust boundaries', () => {
     for (const optionalBundle of [
       ['EMDO_GOOGLE_IDENTITY_CLIENT_ID=production-client'],
       ['EMDO_RESEND_AUTH_API_KEY=not-a-resend-key'],
-      ['EMDO_TRANSACTIONAL_EMAIL_PROVIDER=resend', 'EMDO_RESEND_FROM_EMAIL=Auth@staging.emdo.invalid'],
+      [
+        'EMDO_TRANSACTIONAL_EMAIL_PROVIDER=resend',
+        'EMDO_RESEND_FROM_EMAIL=Auth@staging.emdo.invalid',
+      ],
     ]) {
-      await writeFile(
-        apiEnvironment,
-        `${optionalBundle.join('\n')}\n`,
-      );
+      await writeFile(apiEnvironment, `${optionalBundle.join('\n')}\n`);
       expect(
         runCommon('assert_staging_auth_provider_config "$2"', apiEnvironment)
           .status,
