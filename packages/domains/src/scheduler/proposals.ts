@@ -34,19 +34,6 @@ const ReferenceSchema = z
       }),
     'Reference contains control characters',
   );
-const TargetReferenceSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(512)
-  .refine(
-    (value) =>
-      !Array.from(value).some((character) => {
-        const codePoint = character.codePointAt(0) ?? 0;
-        return codePoint <= 31 || codePoint === 127;
-      }),
-    'Target reference contains control characters',
-  );
 const GoogleEventIdSchema = z
   .string()
   .trim()
@@ -170,52 +157,17 @@ const CalendarTargetStateSchema = z.strictObject({
   event: CalendarEventRecordSchema.nullable(),
 });
 
-const CalendarDisclosureFieldSchema = z.enum([
-  'calendar-id',
-  'calendar-version',
-  'event-id',
-  'event-version',
-  'summary',
-  'start',
-  'end',
-  'time-zone',
-  'location',
-  'description',
-  'attendees',
-  'recurrence',
-]);
-
-const CalendarProposalReadScopeSchema = z.strictObject({
-  grantId: ReferenceSchema,
-  userId: ReferenceSchema,
-  householdId: ReferenceSchema,
-  runId: ReferenceSchema,
-  agentId: z.literal('scheduler'),
-  provider: z.literal('google-calendar'),
-  recordAllowlist: z
-    .array(
-      z.strictObject({
-        dataClass: z.literal('calendar.events'),
-        recordId: TargetReferenceSchema,
-        fields: z.array(CalendarDisclosureFieldSchema).min(1).max(12),
-      }),
-    )
-    .min(1)
-    .max(256),
-});
-
-export type CalendarProposalReadScope = DeepReadonly<
-  z.infer<typeof CalendarProposalReadScopeSchema>
->;
-
 export interface CalendarProposalReadRequest {
-  readonly scope: CalendarProposalReadScope;
   readonly calendarId: string;
   readonly eventId: string;
 }
 
 export interface CalendarProposalStateReader {
-  /** One grant-scoped snapshot prevents torn or cross-tenant previews. */
+  /**
+   * Request-scoped adapter that obtains a conditional provider snapshot from
+   * its server-owned authority. Only canonical target identifiers cross this
+   * boundary; disclosure grants and record allowlists never do.
+   */
   readTargetState(request: CalendarProposalReadRequest): Promise<unknown>;
 }
 
@@ -251,57 +203,6 @@ const invalidArguments = (): never => {
 
 const targetIdFor = (calendarId: string, eventId: string): string =>
   `${calendarId.length}:${calendarId}${eventId.length}:${eventId}`;
-
-const eventFieldName = {
-  eventId: 'event-id',
-  summary: 'summary',
-  start: 'start',
-  end: 'end',
-  timeZone: 'time-zone',
-  location: 'location',
-  description: 'description',
-  attendees: 'attendees',
-  recurrence: 'recurrence',
-} as const;
-
-type CalendarDisclosureField = z.infer<typeof CalendarDisclosureFieldSchema>;
-
-const assertFieldsAllowed = (
-  allowed: ReadonlySet<CalendarDisclosureField>,
-  required: readonly CalendarDisclosureField[],
-): void => {
-  if (required.some((field) => !allowed.has(field))) {
-    throw new SchedulerDomainError(
-      'calendar-authorization-invalid',
-      'The disclosure grant does not allow the required calendar fields.',
-    );
-  }
-};
-
-const fieldsForEvent = (
-  eventValue: z.infer<typeof CalendarEventPayloadSchema>,
-): CalendarDisclosureField[] =>
-  Object.keys(eventValue).flatMap((key) => {
-    const field = eventFieldName[key as keyof typeof eventFieldName];
-    return field === undefined ? [] : [field];
-  });
-
-const targetDisclosureFields = (
-  scope: CalendarProposalReadScope,
-  targetId: string,
-): ReadonlySet<CalendarDisclosureField> => {
-  const matching = scope.recordAllowlist.filter(
-    (record) =>
-      record.dataClass === 'calendar.events' && record.recordId === targetId,
-  );
-  if (matching.length !== 1) {
-    throw new SchedulerDomainError(
-      'calendar-authorization-invalid',
-      'The disclosure grant is not scoped to the exact calendar event.',
-    );
-  }
-  return new Set(matching[0]!.fields);
-};
 
 const parseEventRecord = (input: unknown): CalendarEventRecord | null => {
   if (input === null) return null;
@@ -448,33 +349,20 @@ const assertRecurrenceDeterministic = (
  * provider state. It never trusts a model-supplied preview or target list.
  */
 export class CalendarProposalMaterializer {
-  readonly #scope: CalendarProposalReadScope;
   readonly #providerAuthorityBindingHash: string;
 
   constructor(
     private readonly reader: CalendarProposalStateReader,
-    scopeInput: unknown,
     authorityBindingInput: unknown,
   ) {
-    const scope = boundedSafeParse(CalendarProposalReadScopeSchema, scopeInput);
-    if (!scope.success) {
-      throw new SchedulerDomainError(
-        'calendar-authorization-invalid',
-        'The calendar proposal read scope is invalid.',
-      );
-    }
-    this.#scope = deepFreeze(scope.data);
     const authorityBinding = boundedSafeParse(
       ProviderWriteAuthorityBindingSchema,
       authorityBindingInput,
     );
-    if (
-      !authorityBinding.success ||
-      authorityBinding.data.householdId !== this.#scope.householdId
-    ) {
+    if (!authorityBinding.success) {
       throw new SchedulerDomainError(
         'calendar-authorization-invalid',
-        'The calendar proposal authority is invalid for this household.',
+        'The calendar proposal authority is invalid.',
       );
     }
     this.#providerAuthorityBindingHash = hashCanonicalJson(
@@ -514,27 +402,10 @@ export class CalendarProposalMaterializer {
         ? argumentsValue.event.eventId
         : argumentsValue.eventId;
     const targetId = targetIdFor(argumentsValue.calendarId, eventId);
-    const allowedFields = targetDisclosureFields(this.#scope, targetId);
-    const proposedEvent =
-      argumentsValue.operation === 'create'
-        ? argumentsValue.event
-        : argumentsValue.operation === 'update'
-          ? argumentsValue.replacement
-          : undefined;
-    assertFieldsAllowed(allowedFields, [
-      'calendar-id',
-      'calendar-version',
-      'event-id',
-      ...(argumentsValue.operation === 'create'
-        ? []
-        : (['event-version', 'summary', 'start', 'end', 'time-zone'] as const)),
-      ...(proposedEvent === undefined ? [] : fieldsForEvent(proposedEvent)),
-    ]);
     let rawState: unknown;
     try {
       rawState = await this.reader.readTargetState(
         deepFreeze({
-          scope: this.#scope,
           calendarId: argumentsValue.calendarId,
           eventId,
         }),
@@ -558,14 +429,6 @@ export class CalendarProposalMaterializer {
       );
     }
     const currentEvent = parseEventRecord(state.data.event);
-    if (currentEvent !== null) {
-      assertFieldsAllowed(allowedFields, [
-        'calendar-id',
-        'event-id',
-        'event-version',
-        ...fieldsForEvent(currentEvent),
-      ]);
-    }
 
     if (argumentsValue.operation === 'create') {
       if (currentEvent !== null) {
@@ -692,7 +555,7 @@ export class ScopedCalendarProposalMaterializer implements TrustedProposalMateri
     if (
       !grant.success ||
       grant.data.agentId !== 'scheduler' ||
-      grant.data.provider !== 'google-calendar' ||
+      grant.data.provider !== 'openai' ||
       grant.data.householdId !== this.#authorityBinding.householdId ||
       !Number.isSafeInteger(now) ||
       now < Date.parse(grant.data.createdAt) ||
@@ -700,30 +563,23 @@ export class ScopedCalendarProposalMaterializer implements TrustedProposalMateri
     ) {
       throw new SchedulerDomainError(
         'calendar-authorization-invalid',
-        'The calendar proposal is not bound to a scheduler Calendar grant.',
+        'The calendar proposal is not bound to a scheduler model disclosure grant.',
       );
     }
-    const calendarRecords = grant.data.recordAllowlist.filter(
-      (record) => record.dataClass === 'calendar.events',
+    const hasDelegationSource = grant.data.recordAllowlist.some(
+      (record) =>
+        record.dataClass === 'agent.delegations' &&
+        record.fields.length === 1 &&
+        record.fields[0] === 'delegation',
     );
-    const scope = boundedSafeParse(CalendarProposalReadScopeSchema, {
-      grantId: grant.data.id,
-      userId: grant.data.userId,
-      householdId: grant.data.householdId,
-      runId: grant.data.runId,
-      agentId: grant.data.agentId,
-      provider: grant.data.provider,
-      recordAllowlist: calendarRecords,
-    });
-    if (!scope.success) {
+    if (!hasDelegationSource) {
       throw new SchedulerDomainError(
         'calendar-authorization-invalid',
-        'The disclosure grant has no valid Calendar record scope.',
+        'The disclosure grant has no valid scheduler delegation source.',
       );
     }
     return new CalendarProposalMaterializer(
       this.reader,
-      scope.data,
       this.#authorityBinding,
     ).materialize({
       capabilityId: input.capabilityId,

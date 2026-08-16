@@ -12743,7 +12743,9 @@ CREATE TABLE "emdo"."manager_turns" (
 		pg_catalog.length("manager_agent_version") BETWEEN 5 AND 64
 		AND "manager_agent_version"
 			~ '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
-		AND "requested_model" IN ('gpt-5.6-luna', 'gpt-5.6-terra')
+		AND "requested_model" IN (
+			'gpt-5.6-luna', 'gpt-5.6-terra', 'provider-free-mvp-v1'
+		)
 		AND "ownership_token_hash" ~ '^[a-f0-9]{64}$'
 	),
 	CONSTRAINT "manager_turns_state_check" CHECK (
@@ -13063,7 +13065,9 @@ BEGIN
 		OR pg_catalog.length(p_manager_agent_version) NOT BETWEEN 5 AND 64
 		OR p_manager_agent_version
 			!~ '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
-		OR p_requested_model NOT IN ('gpt-5.6-luna', 'gpt-5.6-terra')
+		OR p_requested_model NOT IN (
+			'gpt-5.6-luna', 'gpt-5.6-terra', 'provider-free-mvp-v1'
+		)
 		OR emdo.current_user_id() IS NULL
 		OR emdo.current_session_id() IS NULL
 		OR emdo.current_request_id() IS NULL
@@ -13360,21 +13364,37 @@ BEGIN
 	END IF;
 	IF (
 		v_status = 'completed'
-		AND (
-			NOT emdo.jsonb_object_has_exact_keys(
-				p_result,
-				ARRAY[
-					'status', 'runId', 'localTraceReference', 'output',
-					'specialistOutcomes', 'hasPartialFailures', 'usage',
-					'modelResolution'
-				]::text[]
+		AND NOT (
+			(
+				emdo.jsonb_object_has_exact_keys(
+					p_result,
+					ARRAY[
+						'status', 'runId', 'localTraceReference', 'output',
+						'specialistOutcomes', 'hasPartialFailures', 'usage',
+						'modelResolution'
+					]::text[]
+				)
+				AND pg_catalog.jsonb_typeof(p_result -> 'hasPartialFailures') = 'boolean'
+				AND pg_catalog.jsonb_typeof(p_result -> 'modelResolution') = 'object'
+				AND p_result #>> '{modelResolution,status}' = 'resolved'
+			) OR (
+				emdo.jsonb_object_has_exact_keys(
+					p_result,
+					ARRAY[
+						'status', 'runId', 'localTraceReference', 'output',
+						'specialistOutcomes', 'hasPartialFailures', 'usage',
+						'executionResolution'
+					]::text[]
+				)
+				AND pg_catalog.jsonb_typeof(p_result -> 'hasPartialFailures') = 'boolean'
+				AND emdo.jsonb_object_has_exact_keys(
+					p_result -> 'executionResolution',
+					ARRAY['status', 'profile', 'reason']::text[]
+				)
+				AND p_result #>> '{executionResolution,status}' = 'provider-free'
+				AND p_result #>> '{executionResolution,profile}' = 'shopping-list-v1'
+				AND p_result #>> '{executionResolution,reason}' = 'provider-free-mvp'
 			)
-			OR pg_catalog.jsonb_typeof(p_result -> 'hasPartialFailures')
-				IS DISTINCT FROM 'boolean'
-			OR pg_catalog.jsonb_typeof(p_result -> 'modelResolution')
-				IS DISTINCT FROM 'object'
-			OR p_result #>> '{modelResolution,status}'
-				IS DISTINCT FROM 'resolved'
 		)
 	) OR (
 		v_status = 'needs-approval'
@@ -13722,7 +13742,10 @@ BEGIN
 			ELSE 'blocked'
 		END,
 		resolved_model = p_result #>> '{modelResolution,resolvedModel}',
-		model_reason = p_result #>> '{modelResolution,reason}',
+		model_reason = COALESCE(
+			p_result #>> '{modelResolution,reason}',
+			p_result #>> '{executionResolution,reason}'
+		),
 		local_trace_reference = p_result ->> 'localTraceReference',
 		safe_error = CASE WHEN v_status = 'failed'
 			THEN p_result -> 'safeError' ELSE NULL END,
@@ -14255,6 +14278,11 @@ GRANT EXECUTE ON FUNCTION
 	TO emdo_app;
 GRANT EXECUTE ON FUNCTION
 	"emdo"."read_agent_run_events"(uuid, uuid, bigint, integer)
+	TO emdo_app;
+-- The provider-free shopping command calls this only inside a durable
+-- request-scoped transaction before its fixed-scope sync insert.
+GRANT EXECUTE ON FUNCTION
+	"emdo"."lock_current_authorization_scope"(uuid, uuid, uuid)
 	TO emdo_app;
 --> statement-breakpoint
 

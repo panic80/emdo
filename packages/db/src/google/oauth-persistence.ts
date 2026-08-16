@@ -146,7 +146,7 @@ const GrantCasSchema = GrantLookupSchema.extend({
 const GrantDeleteSchema = GrantLookupSchema.extend({
   expectedRevision: z.number().int().safe().positive(),
 });
-const ProviderAuthorityResolverInputSchema = z.strictObject({
+const CalendarAuthorityResolverInputSchema = z.strictObject({
   requestId: UuidSchema,
   runId: UuidSchema,
   sessionId: UuidSchema,
@@ -155,7 +155,6 @@ const ProviderAuthorityResolverInputSchema = z.strictObject({
   agentId: z.literal('scheduler'),
   spaceAccessGrantId: UuidSchema,
   disclosureGrantId: UuidSchema,
-  decisionId: UuidSchema,
   capabilityId: z.enum([
     'google-calendar.event.create',
     'google-calendar.event.update',
@@ -163,6 +162,11 @@ const ProviderAuthorityResolverInputSchema = z.strictObject({
   ]),
   capabilityFingerprint: Sha256Schema,
 });
+const ProviderAuthorityResolverInputSchema =
+  CalendarAuthorityResolverInputSchema.extend({
+    decisionId: UuidSchema,
+  });
+const ProposalAuthorityResolverInputSchema = CalendarAuthorityResolverInputSchema;
 
 const hasPostgresErrorCode = (error: unknown, code: string): boolean =>
   typeof error === 'object' &&
@@ -882,6 +886,72 @@ export class PostgresEncryptedGoogleCalendarGrantStore {
   }
 }
 
+type CalendarAuthorityResolverInput = z.output<
+  typeof CalendarAuthorityResolverInputSchema
+>;
+
+const resolveCurrentGoogleCalendarAuthority = async (
+  pool: DatabasePool,
+  principal: DurableRepositoryPrincipal,
+  request: CalendarAuthorityResolverInput,
+) => {
+  if (
+    request.requestId !== principal.requestId ||
+    request.sessionId !== principal.sessionId ||
+    request.userId !== principal.userId ||
+    request.householdId !== principal.householdId
+  ) {
+    return undefined;
+  }
+  return withDurableTransaction(
+    pool,
+    principal,
+    { householdId: principal.householdId },
+    async (client) => {
+      const row = firstResultRow(
+        await client.query(
+          `select household_id, private_space_id, request_id, session_id,
+                  user_id, space_access_grant_id,
+                  authorization_scope_fingerprint,
+                  provider_grant_reference, authorization_epoch
+             from emdo.resolve_current_google_calendar_authority(
+               $1, $2
+             )`,
+          [request.spaceAccessGrantId, request.runId],
+        ),
+      );
+      if (row === undefined) return undefined;
+      if (
+        row.request_id !== request.requestId ||
+        row.session_id !== principal.sessionId ||
+        row.household_id !== principal.householdId ||
+        row.user_id !== request.userId ||
+        row.space_access_grant_id !== request.spaceAccessGrantId
+      ) {
+        return undefined;
+      }
+      return TrustedProviderWriteAuthorityResolutionSchema.parse({
+        authorityBinding: {
+          kind: 'google-calendar-grant-v2',
+          householdId: row.household_id,
+          privateSpaceId: row.private_space_id,
+          authorizationScopeFingerprint: row.authorization_scope_fingerprint,
+          providerGrantReference: row.provider_grant_reference,
+          authorizationEpoch: row.authorization_epoch,
+        },
+        operationScope: {
+          requestId: row.request_id,
+          sessionId: row.session_id,
+          householdId: row.household_id,
+          userId: row.user_id,
+          spaceAccessGrantId: row.space_access_grant_id,
+          authorizationScopeFingerprint: row.authorization_scope_fingerprint,
+        },
+      });
+    },
+  );
+};
+
 /** Resolves only the current request-bound, non-secret Calendar authority. */
 export class PostgresGoogleCalendarProviderAuthorityResolver {
   readonly #principal: DurableRepositoryPrincipal;
@@ -906,61 +976,44 @@ export class PostgresGoogleCalendarProviderAuthorityResolver {
     readonly capabilityId: string;
     readonly capabilityFingerprint: string;
   }) {
-    const request = ProviderAuthorityResolverInputSchema.parse(input);
-    if (
-      request.requestId !== this.#principal.requestId ||
-      request.sessionId !== this.#principal.sessionId ||
-      request.userId !== this.#principal.userId ||
-      request.householdId !== this.#principal.householdId
-    ) {
-      return undefined;
-    }
-    return withDurableTransaction(
+    return resolveCurrentGoogleCalendarAuthority(
       this.pool,
       this.#principal,
-      { householdId: this.#principal.householdId },
-      async (client) => {
-        const row = firstResultRow(
-          await client.query(
-            `select household_id, private_space_id, request_id, session_id,
-                    user_id, space_access_grant_id,
-                    authorization_scope_fingerprint,
-                    provider_grant_reference, authorization_epoch
-               from emdo.resolve_current_google_calendar_authority(
-                 $1, $2
-               )`,
-            [request.spaceAccessGrantId, request.runId],
-          ),
-        );
-        if (row === undefined) return undefined;
-        if (
-          row.request_id !== request.requestId ||
-          row.session_id !== this.#principal.sessionId ||
-          row.household_id !== this.#principal.householdId ||
-          row.user_id !== request.userId ||
-          row.space_access_grant_id !== request.spaceAccessGrantId
-        ) {
-          return undefined;
-        }
-        return TrustedProviderWriteAuthorityResolutionSchema.parse({
-          authorityBinding: {
-            kind: 'google-calendar-grant-v2',
-            householdId: row.household_id,
-            privateSpaceId: row.private_space_id,
-            authorizationScopeFingerprint: row.authorization_scope_fingerprint,
-            providerGrantReference: row.provider_grant_reference,
-            authorizationEpoch: row.authorization_epoch,
-          },
-          operationScope: {
-            requestId: row.request_id,
-            sessionId: row.session_id,
-            householdId: row.household_id,
-            userId: row.user_id,
-            spaceAccessGrantId: row.space_access_grant_id,
-            authorizationScopeFingerprint: row.authorization_scope_fingerprint,
-          },
-        });
-      },
+      ProviderAuthorityResolverInputSchema.parse(input),
+    );
+  }
+}
+
+/**
+ * Resolves the same current Calendar authority before visual approval exists.
+ * It intentionally accepts no decision identifier and performs no provider I/O.
+ */
+export class PostgresGoogleCalendarProposalAuthorityResolver {
+  readonly #principal: DurableRepositoryPrincipal;
+
+  constructor(
+    private readonly pool: DatabasePool,
+    principal: DurableRepositoryPrincipal,
+  ) {
+    this.#principal = parseDurablePrincipal(principal);
+  }
+
+  async resolve(input: {
+    readonly requestId: string;
+    readonly runId: string;
+    readonly sessionId: string;
+    readonly userId: string;
+    readonly householdId: string;
+    readonly agentId: string;
+    readonly spaceAccessGrantId: string;
+    readonly disclosureGrantId: string;
+    readonly capabilityId: string;
+    readonly capabilityFingerprint: string;
+  }) {
+    return resolveCurrentGoogleCalendarAuthority(
+      this.pool,
+      this.#principal,
+      ProposalAuthorityResolverInputSchema.parse(input),
     );
   }
 }

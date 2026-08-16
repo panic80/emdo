@@ -47,6 +47,45 @@ describe('createGoogleCalendarOAuthServerRuntime', () => {
     ).toBeInstanceOf(FetchGoogleCalendarConditionalGateway);
   });
 
+  it('exposes a narrowly scoped pre-approval Calendar target reader without credential or provider I/O', () => {
+    const runtime = createRuntime();
+    const createProposalTargetReader = Object.getOwnPropertyDescriptor(
+      runtime.calendar,
+      'createProposalTargetReader',
+    )?.value;
+    expect(createProposalTargetReader).toBeTypeOf('function');
+    if (typeof createProposalTargetReader !== 'function') return;
+
+    const reader = createProposalTargetReader({
+      actor,
+      request: {
+        requestId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f010',
+        spaceAccessGrantId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f011',
+        authorizationScopeFingerprint,
+      },
+      authorityResolution: {
+        authorityBinding: {
+          kind: 'google-calendar-grant-v2',
+          householdId: actor.householdId,
+          privateSpaceId: actor.privateSpaceId,
+          authorizationScopeFingerprint,
+          providerGrantReference: 'grant-reference-1234',
+          authorizationEpoch: 0,
+        },
+        operationScope: {
+          requestId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f010',
+          sessionId: actor.sessionId,
+          householdId: actor.householdId,
+          userId: actor.userId,
+          spaceAccessGrantId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f011',
+          authorizationScopeFingerprint,
+        },
+      },
+    });
+
+    expect(reader).toHaveProperty('readTargetState');
+  });
+
   it('rejects the removed rotating-grant constructor seam', () => {
     const runtime = createRuntime();
 

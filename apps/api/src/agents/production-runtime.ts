@@ -12,9 +12,12 @@ import {
   type ModelDisclosureGateway,
   type ModelEscalationTrigger,
   type OpenAiAgentCostCalculator,
+  type OpenAiAgentsRunnerPort,
   type OpenAiSdkAgent,
   type OpenAiSdkFunctionTool,
   type SpendGuard,
+  type ResumeTurnInput,
+  type TurnInput,
   type TurnResult,
 } from '@emdo/agent-core';
 import { financeAgentDefinition } from '@emdo/agent-finance';
@@ -42,6 +45,7 @@ import type {
   PersistedRunEventGateway,
   TurnRequest,
 } from '../services/contracts.js';
+import { AuthenticatedPrincipalSchema } from '../schemas.js';
 import {
   createProductionApprovalResumeBinding,
   type DurableApprovalDecisionResumeBoundary,
@@ -49,14 +53,21 @@ import {
 import {
   ALL_MANAGER_DELEGATION_CAPABILITY_IDS,
   ALL_SPECIALIST_CAPABILITY_IDS,
+  CORE_MVP_CAPABILITY_IDS,
+  createCoreProductionCapabilityRuntime,
   createProductionCapabilityRuntime,
   type TrustedProviderProposalAuthorityResolver,
 } from './capability-runtime.js';
 import {
   createProductionCapabilityBindings,
+  createCoreProductionCapabilityBindings,
+  type CoreProductionCapabilityServices,
   type TrustedProductionCapabilityServices,
 } from './production-bindings.js';
 import type { ProductionProviderProposalComposition } from './proposal-gateway.js';
+import type {
+  ProviderFreeTurnResult,
+} from './provider-free-runtime.js';
 
 const SDK_VERSION = '0.14.3' as const;
 const REQUESTED_MODEL_ESCALATION_TRIGGERS = Object.freeze([
@@ -112,10 +123,42 @@ export interface ProductionAgentRuntimeDependencies {
   >;
 }
 
+export interface ProductionRuntimeTurnInput extends TurnInput {
+  /** Routing is carried only to the narrow provider-free runtime. */
+  readonly routeHint?: 'scheduler' | 'finance' | 'shopping';
+}
+
+export interface ProductionRuntimeOrchestrator {
+  runTurn(
+    input: ProductionRuntimeTurnInput,
+  ): Promise<TurnResult | ProviderFreeTurnResult>;
+  resumeTurn(input: ResumeTurnInput): Promise<TurnResult>;
+}
+
 export interface ProductionAgentRuntime {
-  readonly orchestrator: AgentOrchestrator;
+  readonly orchestrator: ProductionRuntimeOrchestrator;
   readonly agentIds: readonly ['manager', 'scheduler', 'finance', 'shopping'];
   readonly capabilityIds: readonly string[];
+  readonly agentGraphHash: string;
+  readonly sdkVersion: typeof SDK_VERSION;
+}
+
+export interface CoreProductionAgentRuntimeDependencies extends Omit<
+  ProductionAgentRuntimeDependencies,
+  'capabilityServices'
+> {
+  readonly capabilityServices: CoreProductionCapabilityServices;
+  /** Server-owned model runner; core runtime never falls back to process globals. */
+  readonly executionRunner: OpenAiAgentsRunnerPort;
+}
+
+export interface CoreProductionAgentRuntime {
+  readonly orchestrator: AgentOrchestrator;
+  readonly agentIds: readonly ['manager', 'scheduler'];
+  readonly capabilityIds: readonly [
+    'agent.scheduler.delegate',
+    'google-calendar.event.create',
+  ];
   readonly agentGraphHash: string;
   readonly sdkVersion: typeof SDK_VERSION;
 }
@@ -127,12 +170,56 @@ const graphDefinitions = Object.freeze([
   shoppingAgentDefinition,
 ] as const);
 
+const coreManagerManifest = AgentManifestSchema.parse({
+  ...managerAgentDefinition.manifest,
+  capabilityAllowlist: ['agent.scheduler.delegate'],
+});
+const coreSchedulerManifest = AgentManifestSchema.parse({
+  ...schedulerAgentDefinition.manifest,
+  capabilityAllowlist: ['google-calendar.event.create'],
+});
+const coreGraphDefinitions = Object.freeze([
+  Object.freeze({
+    ...managerAgentDefinition,
+    manifest: coreManagerManifest,
+    capabilityReferences: managerAgentDefinition.capabilityReferences.filter(
+      ({ id }) => id === 'agent.scheduler.delegate',
+    ),
+  }),
+  Object.freeze({
+    ...schedulerAgentDefinition,
+    manifest: coreSchedulerManifest,
+    capabilityReferences: schedulerAgentDefinition.capabilityReferences.filter(
+      ({ id }) => id === 'google-calendar.event.create',
+    ),
+  }),
+] as const);
+
 const graphHashInput = (
   capabilityRuntime: ReturnType<typeof createProductionCapabilityRuntime>,
 ) => ({
   schemaVersion: 1,
   sdkVersion: SDK_VERSION,
   agents: graphDefinitions.map((definition) => ({
+    manifest: definition.manifest,
+    instructions: definition.instructions,
+    skills: definition.skills,
+    capabilityReferences: definition.capabilityReferences,
+    capabilityDescriptors: capabilityRuntime.registry
+      .resolveForAgent({
+        manifest: definition.manifest,
+        requestedCapabilityIds: definition.manifest.capabilityAllowlist,
+      })
+      .map(({ descriptor }) => descriptor),
+  })),
+});
+
+const coreGraphHashInput = (
+  capabilityRuntime: ReturnType<typeof createCoreProductionCapabilityRuntime>,
+) => ({
+  schemaVersion: 1,
+  sdkVersion: SDK_VERSION,
+  agents: coreGraphDefinitions.map((definition) => ({
     manifest: definition.manifest,
     instructions: definition.instructions,
     skills: definition.skills,
@@ -231,6 +318,82 @@ export const createProductionAgentRuntime = (
   });
 };
 
+/**
+ * Compiles the closed manager+scheduler MVP graph only. This is intentionally
+ * separate from the full graph: no absent service is represented by a fake,
+ * permissive, or unavailable capability binding.
+ */
+export const createCoreProductionAgentRuntime = (
+  dependencies: CoreProductionAgentRuntimeDependencies,
+): CoreProductionAgentRuntime => {
+  const bindings = createCoreProductionCapabilityBindings(
+    dependencies.capabilityServices,
+  );
+  const capabilityRuntime = createCoreProductionCapabilityRuntime({
+    bindings,
+    providerWriteApprovalStore: dependencies.proposals.approvalStore,
+    trustedProviderWriteAuthorityResolver:
+      dependencies.trustedProviderWriteAuthorityResolver,
+    trustedProviderProposalAuthorityResolver:
+      dependencies.trustedProviderProposalAuthorityResolver,
+    manifests: Object.freeze({
+      manager: coreManagerManifest,
+      scheduler: coreSchedulerManifest,
+    }),
+  });
+  const proposalGateway = dependencies.proposals.createGateway(
+    capabilityRuntime as unknown as Parameters<
+      ProductionProviderProposalComposition['createGateway']
+    >[0],
+  );
+  const sdk = createOpenAiAgentsSdkFacade({ proposalGateway });
+  const factory = new AgentFactory<OpenAiSdkAgent, OpenAiSdkFunctionTool>({
+    validateManifest: (value) => AgentManifestSchema.parse(value),
+    capabilityRegistry: capabilityRuntime.registry,
+    schemaResolver: capabilityRuntime.schemaResolver,
+    sharedSkills: FOUNDATIONAL_SKILLS,
+    sdk,
+  });
+  const [manager, scheduler] = coreGraphDefinitions.map((definition) =>
+    factory.compile(definition),
+  ) as [ReturnType<typeof factory.compile>, ReturnType<typeof factory.compile>];
+  for (const compiled of [manager, scheduler]) {
+    compiled.materialize(compiled.manifest.modelPolicy.defaultModel);
+  }
+  const executionProvider = new OpenAiAgentsExecutionProvider({
+    proposalGateway,
+    costCalculator: dependencies.costCalculator,
+    spendGuard: dependencies.spendGuard,
+    runner: dependencies.executionRunner,
+  });
+  if (executionProvider.sdkVersion !== SDK_VERSION) {
+    throw new Error('api-agent-sdk-version-mismatch');
+  }
+  const agentGraphHash = hashCanonicalJson(
+    coreGraphHashInput(capabilityRuntime),
+  );
+  const orchestrator = new AgentOrchestrator({
+    manager,
+    specialists: [scheduler],
+    executionProvider,
+    modelRouter: new ModelRouter(dependencies.modelAvailability),
+    memory: dependencies.memory,
+    traceRecorder: new LocalTraceRecorder(dependencies.traceSink),
+    approvalCheckpoints: dependencies.approvalCheckpoints,
+    proposalGateway,
+    disclosureGateway: dependencies.disclosureGateway,
+    agentGraphHash,
+    sdkVersion: SDK_VERSION,
+  });
+  return Object.freeze({
+    orchestrator,
+    agentIds: Object.freeze(['manager', 'scheduler'] as const),
+    capabilityIds: Object.freeze([...CORE_MVP_CAPABILITY_IDS] as const),
+    agentGraphHash,
+    sdkVersion: SDK_VERSION,
+  });
+};
+
 export type DurableManagerTurnClaim =
   | Readonly<{
       status: 'replay';
@@ -243,7 +406,6 @@ export type DurableManagerTurnClaim =
       ownershipToken: string;
       runId: string;
       conversationId: string;
-      disclosureGrantId?: string;
       authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
       escalationTriggers: readonly RequestedModelEscalationTrigger[];
     }>;
@@ -260,7 +422,6 @@ const DurableManagerTurnClaimSchema = z.discriminatedUnion('status', [
     ownershipToken: OpaqueReferenceSchema,
     runId: UuidSchema,
     conversationId: UuidSchema,
-    disclosureGrantId: UuidSchema.optional(),
     authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprintSchema,
     escalationTriggers: z
       .array(z.enum(REQUESTED_MODEL_ESCALATION_TRIGGERS))
@@ -302,7 +463,7 @@ export interface DurableManagerTurnStore {
     readonly claimId: string;
     readonly ownershipToken: string;
     readonly runId: string;
-    readonly result: TurnResult;
+    readonly result: TurnResult | ProviderFreeTurnResult;
   }): Promise<
     | Readonly<{
         status: 'completed' | 'replay';
@@ -351,7 +512,7 @@ export interface ProductionAgentRuntimeFactory {
       collectionAuthorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
       authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
     }>;
-  }): Promise<ProductionAgentRuntime>;
+  }): Promise<Pick<ProductionAgentRuntime, 'orchestrator'>>;
   check(): Promise<boolean>;
 }
 
@@ -370,6 +531,27 @@ const accepted = (runId: string, replayed: boolean): ManagerTurnAcceptance =>
     replayed,
     eventsPath: `/api/v1/runs/${runId}/events`,
   });
+
+/**
+ * PostgreSQL turn and event aggregates intentionally accept only the durable
+ * request authority fields. Built authentication additionally carries a
+ * server-derived private space for request-scoped provider adapters; that
+ * field must remain available to the runtime factory but cannot cross these
+ * strict aggregate inputs.
+ */
+const projectDurableAgentPrincipal = (principal: AuthenticatedPrincipal) => {
+  const parsed = AuthenticatedPrincipalSchema.parse(principal);
+  return Object.freeze({
+    userId: parsed.userId,
+    sessionId: parsed.sessionId,
+    householdId: parsed.householdId,
+    role: parsed.role,
+    emailVerified: parsed.emailVerified,
+    spaceAccessGrantId: parsed.spaceAccessGrantId,
+    collectionAuthorizationScopeFingerprint:
+      parsed.collectionAuthorizationScopeFingerprint,
+  });
+};
 
 const safeCheck = async (
   ...checks: ReadonlyArray<() => Promise<boolean>>
@@ -410,7 +592,12 @@ export const createProductionAgentServiceBindingsFromDependencies = (
           runtimeFactory,
         });
   const startManagerTurn: ManagerTurnGateway['start'] = async (input) => {
-    const claim = parseDurableManagerTurnClaim(await turns.claim(input));
+    const claim = parseDurableManagerTurnClaim(
+      await turns.claim({
+        ...input,
+        principal: projectDurableAgentPrincipal(input.principal),
+      }),
+    );
     if (claim.status === 'replay') return accepted(claim.runId, true);
     let replayed = false;
     try {
@@ -429,11 +616,11 @@ export const createProductionAgentServiceBindingsFromDependencies = (
         conversationId: claim.conversationId,
         spaceAccessGrantId: input.principal.spaceAccessGrantId,
         authorizationScopeFingerprint: claim.authorizationScopeFingerprint,
-        ...(claim.disclosureGrantId === undefined
-          ? {}
-          : { disclosureGrantId: claim.disclosureGrantId }),
         message: input.request.message,
         escalationTriggers: claim.escalationTriggers,
+        ...(input.request.routeHint === undefined
+          ? {}
+          : { routeHint: input.request.routeHint }),
         abortSignal: new AbortController().signal,
       });
       const completion = await turns.complete({
@@ -491,7 +678,10 @@ export const createProductionAgentServiceBindingsFromDependencies = (
   });
   const runEvents: PersistedRunEventGateway = Object.freeze({
     open: (input: Parameters<PersistedRunEventGateway['open']>[0]) =>
-      eventSource.open(input),
+      eventSource.open({
+        ...input,
+        principal: projectDurableAgentPrincipal(input.principal),
+      }),
   });
   return Object.freeze({
     bindings: Object.freeze({

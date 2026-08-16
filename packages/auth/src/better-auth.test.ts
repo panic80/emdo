@@ -36,7 +36,9 @@ const emptyAuthStorage = () => ({
   verification: [],
 });
 
-const createHarness = () => {
+const createHarness = (
+  options: Readonly<{ googleIdentity?: boolean }> = {},
+) => {
   const captured: {
     auth?: Record<string, unknown>;
     organization?: Record<string, unknown>;
@@ -72,10 +74,14 @@ const createHarness = () => {
     {
       appName: 'EMDO',
       baseURL: 'https://assistant.emdo.test',
-      googleIdentity: {
-        clientId: 'identity-client-id',
-        clientSecret: 'identity-client-secret',
-      },
+      ...(options.googleIdentity === false
+        ? {}
+        : {
+            googleIdentity: {
+              clientId: 'identity-client-id',
+              clientSecret: 'identity-client-secret',
+            },
+          }),
       organizationClaimBridge,
       secret: 'test-secret-that-is-at-least-thirty-two-bytes',
       sendInvitationEmail,
@@ -210,6 +216,12 @@ describe('createEmdoBetterAuth', () => {
         enabled: true,
       },
     });
+  });
+
+  it('keeps Google identity absent when the optional provider is disabled', () => {
+    const { captured } = createHarness({ googleIdentity: false });
+
+    expect(captured.auth?.socialProviders).toEqual({});
   });
 
   it('requires authenticated passkey registration at the configured HTTPS origin', () => {

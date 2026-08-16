@@ -90,10 +90,15 @@ const CanonicalSecretSchema = z
     return valid;
   });
 
-const EnvironmentSchema = z.strictObject({
+const CoreEnvironmentSchema = z.strictObject({
   authSecret: CanonicalSecretSchema,
   apiDatabaseUrl: databaseUrlSchema('emdo_api_login'),
   authDatabaseUrl: databaseUrlSchema('emdo_auth_login'),
+  publicOrigin: ExactHttpsOriginSchema,
+  sessionSecret: CanonicalSecretSchema,
+});
+
+const OptionalProviderEnvironmentSchema = z.strictObject({
   googleClientId: z
     .string()
     .min(20)
@@ -111,7 +116,6 @@ const EnvironmentSchema = z.strictObject({
       }),
     ),
   onboardingDatabaseUrl: databaseUrlSchema('emdo_onboarding_login'),
-  publicOrigin: ExactHttpsOriginSchema,
   resendApiKey: z
     .string()
     .min(23)
@@ -122,39 +126,65 @@ const EnvironmentSchema = z.strictObject({
     .max(320)
     .refine((value) => value === value.toLowerCase())
     .refine((value) => value.slice(value.lastIndexOf('@') + 1).includes('.')),
-  sessionSecret: CanonicalSecretSchema,
   transactionalEmailProvider: z.literal('resend'),
 });
 
-interface ParsedEnvironment extends z.output<typeof EnvironmentSchema> {
+interface ParsedEnvironment extends z.output<typeof CoreEnvironmentSchema> {
+  readonly optionalProviders?: z.output<
+    typeof OptionalProviderEnvironmentSchema
+  >;
   readonly sessionSecretBytes: Uint8Array;
 }
 
 const parseEnvironment = (
   environment: Readonly<Record<string, string | undefined>>,
 ): ParsedEnvironment | undefined => {
-  const parsed = EnvironmentSchema.safeParse({
+  const core = CoreEnvironmentSchema.safeParse({
     authSecret: environment.EMDO_API_AUTH_SECRET,
     apiDatabaseUrl: environment.EMDO_API_DATABASE_URL,
     authDatabaseUrl: environment.EMDO_AUTH_DATABASE_URL,
+    publicOrigin: environment.EMDO_PUBLIC_ORIGIN,
+    sessionSecret: environment.EMDO_SESSION_SECRET,
+  });
+  if (!core.success || core.data.authSecret === core.data.sessionSecret) {
+    return undefined;
+  }
+  const optionalProviders = OptionalProviderEnvironmentSchema.safeParse({
     googleClientId: environment.EMDO_GOOGLE_IDENTITY_CLIENT_ID,
     googleClientSecret: environment.EMDO_GOOGLE_IDENTITY_CLIENT_SECRET,
     onboardingDatabaseUrl: environment.EMDO_ONBOARDING_DATABASE_URL,
-    publicOrigin: environment.EMDO_PUBLIC_ORIGIN,
     resendApiKey: environment.EMDO_RESEND_AUTH_API_KEY,
     resendFromEmail: environment.EMDO_RESEND_FROM_EMAIL,
-    sessionSecret: environment.EMDO_SESSION_SECRET,
     transactionalEmailProvider: environment.EMDO_TRANSACTIONAL_EMAIL_PROVIDER,
   });
-  if (!parsed.success || parsed.data.authSecret === parsed.data.sessionSecret) {
-    return undefined;
-  }
-  const sessionSecretBytes = Buffer.from(
-    parsed.data.sessionSecret,
-    'base64url',
-  );
-  return Object.freeze({ ...parsed.data, sessionSecretBytes });
+  const sessionSecretBytes = Buffer.from(core.data.sessionSecret, 'base64url');
+  return Object.freeze({
+    ...core.data,
+    ...(optionalProviders.success
+      ? { optionalProviders: optionalProviders.data }
+      : {}),
+    sessionSecretBytes,
+  });
 };
+
+const unavailableEmailCallbacks: BetterAuthEmailCallbacks = Object.freeze({
+  sendInvitationEmail: async () => {
+    throw new Error('authentication-email-unavailable');
+  },
+  sendPasswordResetEmail: async () => {
+    throw new Error('authentication-email-unavailable');
+  },
+  sendVerificationEmail: async () => {
+    throw new Error('authentication-email-unavailable');
+  },
+});
+
+const unavailableInvitationRedemptions: InvitationRedemptionCoordinator =
+  Object.freeze({
+    redeem: async () => {
+      throw new Error('invitation-onboarding-unavailable');
+    },
+  });
 
 export interface ProductionAuthenticationDependencies {
   readonly createAuthenticationBoundary: (
@@ -267,21 +297,6 @@ export const createProductionAuthenticationServiceBinding = async (
   const parsed = parseEnvironment(environment);
   if (parsed === undefined) return Object.freeze({});
 
-  let transport: ReadyTransactionalEmailTransport;
-  let emailCallbacks: BetterAuthEmailCallbacks;
-  try {
-    transport = dependencies.createTransactionalEmailTransport({
-      apiKey: parsed.resendApiKey,
-      fromEmail: parsed.resendFromEmail,
-    });
-    emailCallbacks = dependencies.createEmailCallbacks(transport, {
-      applicationOrigin: parsed.publicOrigin,
-    });
-  } catch {
-    parsed.sessionSecretBytes.fill(0);
-    return Object.freeze({});
-  }
-
   const databases: DatabaseRuntime[] = [];
   const close = createClose(databases);
   try {
@@ -297,21 +312,54 @@ export const createProductionAuthenticationServiceBinding = async (
       max: 10,
     });
     databases.push(authDatabase);
-    const onboardingDatabase = dependencies.createDatabaseClient({
-      applicationName: 'emdo-api-onboarding',
-      connectionString: parsed.onboardingDatabaseUrl,
-      max: 2,
-    });
-    databases.push(onboardingDatabase);
 
     const organizationClaimBridge =
       await dependencies.createOrganizationClaimBridge(authDatabase.pool);
     const scopeResolver = dependencies.createScopeResolver(
       scopeDatabase.scopedPool,
     );
-    const invitationRedemptions = dependencies.createInvitationRedemptions(
-      onboardingDatabase.scopedPool,
-    );
+    let emailCallbacks = unavailableEmailCallbacks;
+    let invitationRedemptions: InvitationRedemptionCoordinator =
+      unavailableInvitationRedemptions;
+    let transport: ReadyTransactionalEmailTransport | undefined;
+    let invitationReadiness: (() => Promise<boolean>) | undefined;
+    let optionalDatabase: DatabaseRuntime | undefined;
+    if (parsed.optionalProviders !== undefined) {
+      try {
+        transport = dependencies.createTransactionalEmailTransport({
+          apiKey: parsed.optionalProviders.resendApiKey,
+          fromEmail: parsed.optionalProviders.resendFromEmail,
+        });
+        emailCallbacks = dependencies.createEmailCallbacks(transport, {
+          applicationOrigin: parsed.publicOrigin,
+        });
+        optionalDatabase = dependencies.createDatabaseClient({
+          applicationName: 'emdo-api-onboarding',
+          connectionString: parsed.optionalProviders.onboardingDatabaseUrl,
+          max: 2,
+        });
+        const readyInvitationRedemptions =
+          dependencies.createInvitationRedemptions(optionalDatabase.scopedPool);
+        invitationRedemptions = readyInvitationRedemptions;
+        invitationReadiness = readyInvitationRedemptions.checkReady.bind(
+          readyInvitationRedemptions,
+        );
+        databases.push(optionalDatabase);
+        optionalDatabase = undefined;
+      } catch {
+        transport = undefined;
+        emailCallbacks = unavailableEmailCallbacks;
+        invitationRedemptions = unavailableInvitationRedemptions;
+        if (optionalDatabase !== undefined) {
+          try {
+            await optionalDatabase.close();
+          } catch {
+            databases.push(optionalDatabase);
+          }
+          optionalDatabase = undefined;
+        }
+      }
+    }
     const csrfProtector = dependencies.createCsrfProtector({
       secret: parsed.sessionSecretBytes,
       trustedOrigins: [parsed.publicOrigin],
@@ -320,10 +368,14 @@ export const createProductionAuthenticationServiceBinding = async (
     const auth = dependencies.createBetterAuth({
       appName: 'EMDO',
       baseURL: parsed.publicOrigin,
-      googleIdentity: {
-        clientId: parsed.googleClientId,
-        clientSecret: parsed.googleClientSecret,
-      },
+      ...(parsed.optionalProviders === undefined || transport === undefined
+        ? {}
+        : {
+            googleIdentity: {
+              clientId: parsed.optionalProviders.googleClientId,
+              clientSecret: parsed.optionalProviders.googleClientSecret,
+            },
+          }),
       organizationClaimBridge,
       secret: parsed.authSecret,
       ...emailCallbacks,
@@ -337,12 +389,13 @@ export const createProductionAuthenticationServiceBinding = async (
       scopeResolver,
     });
 
-    const probes = [
+    const probes: Array<() => Promise<boolean>> = [
       organizationClaimBridge.checkReady.bind(organizationClaimBridge),
       scopeResolver.checkReady.bind(scopeResolver),
-      invitationRedemptions.checkReady.bind(invitationRedemptions),
-      transport.checkReady.bind(transport),
-    ] as const;
+    ];
+    if (transport !== undefined && invitationReadiness !== undefined) {
+      probes.push(invitationReadiness, transport.checkReady.bind(transport));
+    }
     const check = coalesceProbe(async () => {
       const results = await Promise.all(
         probes.map((probe) =>

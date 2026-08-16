@@ -14,6 +14,8 @@ import {
   GOOGLE_CALENDAR_API_ENDPOINTS,
   FetchGoogleCalendarConditionalGateway,
   GoogleCalendarFreeBusyClient,
+  GoogleCalendarFetchError,
+  GoogleCalendarProposalTargetReader,
   GoogleCalendarReadClient,
   deriveGoogleCalendarEventId,
   type GoogleCalendarCredentialBroker,
@@ -39,6 +41,24 @@ const accessTokenLease = {
   authorizationEpoch: 0,
   expiresAt: '2026-08-09T14:00:00.000Z',
 };
+const proposalAuthorityResolution = {
+  authorityBinding: {
+    kind: 'google-calendar-grant-v2' as const,
+    householdId: actor.householdId,
+    privateSpaceId: actor.privateSpaceId,
+    authorizationScopeFingerprint,
+    providerGrantReference: accessTokenLease.grantReference,
+    authorizationEpoch: accessTokenLease.authorizationEpoch,
+  },
+  operationScope: {
+    requestId,
+    sessionId: actor.sessionId,
+    householdId: actor.householdId,
+    userId: actor.userId,
+    spaceAccessGrantId,
+    authorizationScopeFingerprint,
+  },
+} as const;
 
 const broker = (): GoogleCalendarCredentialBroker & {
   calls: Array<{ actor: GoogleCalendarOAuthActor; capability: string }>;
@@ -176,6 +196,112 @@ const approvedContext = (
 };
 
 describe('GoogleCalendarReadClient', () => {
+  it('constructs a proposal target reader with zero provider I/O and reads only the canonical Calendar target', async () => {
+    const credentialBroker = broker();
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ etag: 'calendar-v7' }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+    const reader = new GoogleCalendarProposalTargetReader({
+      actor,
+      request: {
+        requestId,
+        spaceAccessGrantId,
+        authorizationScopeFingerprint,
+      },
+      authorityResolution: proposalAuthorityResolution,
+      fetch,
+      broker: credentialBroker,
+      clock: approvalClock,
+    });
+
+    expect(credentialBroker.calls).toEqual([]);
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(
+      reader.readTargetState({
+        calendarId: 'primary',
+        eventId: 'emdo1234567890abcdef',
+      }),
+    ).resolves.toEqual({
+      calendarId: 'primary',
+      queriedEventId: 'emdo1234567890abcdef',
+      calendarVersion: 'calendar-v7',
+      event: null,
+    });
+    expect(credentialBroker.calls).toEqual([
+      { actor, capability: 'calendar-event-write' },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[0]?.[0]).toBe(
+      'https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=1&showDeleted=true&fields=etag',
+    );
+    expect(fetch.mock.calls[1]?.[0]).toBe(
+      'https://www.googleapis.com/calendar/v3/calendars/primary/events/emdo1234567890abcdef?fields=id%2Cetag%2Cstatus%2Csummary%2Cdescription%2Clocation%2Cstart%2Cend%2Cattendees%28email%29%2Crecurrence%2CextendedProperties%28private%29',
+    );
+  });
+
+  it('fails closed before credential or provider I/O when proposal authority is not bound to the current request', () => {
+    const credentialBroker = broker();
+    const fetch = vi.fn();
+    expect(
+      () =>
+        new GoogleCalendarProposalTargetReader({
+          actor,
+          request: {
+            requestId,
+            spaceAccessGrantId,
+            authorizationScopeFingerprint,
+          },
+          authorityResolution: {
+            ...proposalAuthorityResolution,
+            operationScope: {
+              ...proposalAuthorityResolution.operationScope,
+              sessionId:
+                '018f1f5e-6f47-7d61-a6dd-1e86f8b8f099',
+            },
+          },
+          fetch,
+          broker: credentialBroker,
+          clock: approvalClock,
+        }),
+    ).toThrow('invalid-google-calendar-proposal-target-reader');
+    expect(credentialBroker.calls).toEqual([]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects a rotated Calendar grant after lease acquisition and before target reads', async () => {
+    const credentialBroker: GoogleCalendarCredentialBroker = {
+      acquireAccessTokenForCapability: async () => ({
+        ...accessTokenLease,
+        grantReference: 'grant-reference-rotated',
+      }),
+    };
+    const fetch = vi.fn();
+    const reader = new GoogleCalendarProposalTargetReader({
+      actor,
+      request: {
+        requestId,
+        spaceAccessGrantId,
+        authorizationScopeFingerprint,
+      },
+      authorityResolution: proposalAuthorityResolution,
+      fetch,
+      broker: credentialBroker,
+      clock: approvalClock,
+    });
+
+    await expect(
+      reader.readTargetState({
+        calendarId: 'primary',
+        eventId: 'emdo1234567890abcdef',
+      }),
+    ).rejects.toMatchObject({
+      kind: 'credential-unavailable',
+      dispatched: false,
+    } satisfies Partial<GoogleCalendarFetchError>);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('paginates the exact CalendarList endpoint with read-only broker authority', async () => {
     const credentialBroker = broker();
     const fetch = vi

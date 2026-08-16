@@ -115,7 +115,7 @@ export interface EmdoBetterAuthConfiguration {
    * always enables Google's incremental granted-scope behavior, so this client
    * must never be reused for the Calendar connector.
    */
-  readonly googleIdentity: {
+  readonly googleIdentity?: {
     readonly clientId: string;
     readonly clientSecret: string;
   };
@@ -414,14 +414,19 @@ const validateConfiguration = (configuration: EmdoBetterAuthConfiguration) => {
       'A transaction-bound Better Auth organization claim bridge is required',
     );
   }
-  const clientId = assertNonEmpty(
-    configuration.googleIdentity.clientId,
-    'Google identity client ID',
-  );
-  const clientSecret = assertNonEmpty(
-    configuration.googleIdentity.clientSecret,
-    'Google identity client secret',
-  );
+  const googleIdentity =
+    configuration.googleIdentity === undefined
+      ? undefined
+      : Object.freeze({
+          clientId: assertNonEmpty(
+            configuration.googleIdentity.clientId,
+            'Google identity client ID',
+          ),
+          clientSecret: assertNonEmpty(
+            configuration.googleIdentity.clientSecret,
+            'Google identity client secret',
+          ),
+        });
   if (
     configuration.secret.trim().length === 0 ||
     Buffer.byteLength(configuration.secret, 'utf8') < MINIMUM_SECRET_BYTES
@@ -463,8 +468,7 @@ const validateConfiguration = (configuration: EmdoBetterAuthConfiguration) => {
   return {
     appName,
     baseURL,
-    clientId,
-    clientSecret,
+    googleIdentity,
     trustedOrigins,
   };
 };
@@ -1001,17 +1005,20 @@ export function createEmdoBetterAuth<TAuth>(
       storeSessionInDatabase: true,
       updateAge: DAY_SECONDS,
     },
-    socialProviders: {
-      google: {
-        clientId: validated.clientId,
-        clientSecret: validated.clientSecret,
-        disableDefaultScope: true,
-        disableIdTokenSignIn: true,
-        disableImplicitSignUp: true,
-        disableSignUp: true,
-        scope: [...GOOGLE_IDENTITY_SCOPES],
-      },
-    },
+    socialProviders:
+      validated.googleIdentity === undefined
+        ? {}
+        : {
+            google: {
+              clientId: validated.googleIdentity.clientId,
+              clientSecret: validated.googleIdentity.clientSecret,
+              disableDefaultScope: true,
+              disableIdTokenSignIn: true,
+              disableImplicitSignUp: true,
+              disableSignUp: true,
+              scope: [...GOOGLE_IDENTITY_SCOPES],
+            },
+          },
     trustedOrigins: validated.trustedOrigins,
   };
   const auth = dependencies.authFactory(authOptions);

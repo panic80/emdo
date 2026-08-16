@@ -15,6 +15,7 @@ const CURRENT_DURABLE_SERVICE_NAMES = Object.freeze([
   'financeImports',
   'google',
   'householdAdministration',
+  'managerTurns',
   'notificationPreferences',
   'proposalQueries',
   'proposals',
@@ -40,7 +41,8 @@ const selectCurrentDurableBindings = (
       CURRENT_DURABLE_SERVICE_NAMES.flatMap((name) => {
         if (
           !hasTrustedAuthentication &&
-          (name === 'proposalQueries' ||
+          (name === 'managerTurns' ||
+            name === 'proposalQueries' ||
             name === 'proposals' ||
             name === 'runEvents' ||
             name === 'visualProofs' ||

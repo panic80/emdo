@@ -25,12 +25,27 @@ import {
   type GoogleCalendarOAuthServerRuntimeOptions,
   type VaultKeyProvider,
 } from '@emdo/integrations/google-oauth-server';
-import { IdempotencyKeySchema, UuidSchema } from '@emdo/contracts';
+import {
+  IdempotencyKeySchema,
+  ProviderWriteApprovalBindingSchema,
+  ProviderWriteOperationScopeSchema,
+  TrustedProviderWriteAuthorityResolutionSchema,
+  UuidSchema,
+  type ProviderWriteApprovalBinding,
+  type ProviderWriteOperationScope,
+  type TrustedProviderWriteAuthorityResolution,
+} from '@emdo/contracts';
+import type { CalendarProposalStateReader } from '@emdo/domains/scheduler';
+import type {
+  ApprovedCalendarWriteContext,
+  GoogleCalendarConditionalGateway,
+  GoogleCalendarWriteCommand,
+} from '@emdo/integrations/google-calendar';
 import { z } from 'zod';
 
 import { ApiProblem } from '../problem.js';
 import { AuthenticatedPrincipalSchema } from '../schemas.js';
-import type { ApiServices } from '../services/contracts.js';
+import type { ApiServices, AuthenticatedPrincipal } from '../services/contracts.js';
 import { createProductionGoogleCalendarVaultKeyProvider } from './google-calendar-vault-keyring.js';
 import type { ProductionApiServiceBinding } from './unavailable-services.js';
 
@@ -132,6 +147,16 @@ const DisconnectInputSchema = z.strictObject({
   principal: PrincipalWithPrivateSpaceSchema,
   requestId: UuidSchema,
   idempotencyKey: IdempotencyKeySchema,
+});
+const ProposalTargetReaderFactoryInputSchema = z.strictObject({
+  principal: PrincipalWithPrivateSpaceSchema,
+  requestId: UuidSchema,
+  authorityResolution: TrustedProviderWriteAuthorityResolutionSchema,
+});
+const ConditionalGatewayFactoryInputSchema = z.strictObject({
+  principal: PrincipalWithPrivateSpaceSchema,
+  operationScope: ProviderWriteOperationScopeSchema,
+  approvalBinding: ProviderWriteApprovalBindingSchema,
 });
 
 const unavailable = (): ApiProblem =>
@@ -355,8 +380,68 @@ const defaultDependencies: ProductionGoogleConnectorDependencies =
 
 export interface ProductionGoogleConnectorComposition {
   readonly binding?: ProductionApiServiceBinding<ApiServices['google']>;
+  readonly calendarProposalTargetReaders?: RequestScopedGoogleCalendarProposalReaderFactory;
+  readonly calendarConditionalGateways?: RequestScopedGoogleCalendarConditionalGatewayFactory;
   readonly close?: () => Promise<void>;
 }
+
+export interface RequestScopedGoogleCalendarProposalReaderFactory {
+  createProposalTargetReader(input: Readonly<{
+    principal: AuthenticatedPrincipal;
+    requestId: string;
+    authorityResolution: TrustedProviderWriteAuthorityResolution;
+  }>): CalendarProposalStateReader | undefined;
+}
+
+type ProposalTargetReaderFactoryInput = Parameters<
+  RequestScopedGoogleCalendarProposalReaderFactory['createProposalTargetReader']
+>[0];
+
+export interface RequestScopedGoogleCalendarConditionalGatewayFactory {
+  createConditionalGateway(input: Readonly<{
+    principal: AuthenticatedPrincipal;
+    operationScope: ProviderWriteOperationScope;
+    approvalBinding: ProviderWriteApprovalBinding;
+  }>): GoogleCalendarConditionalGateway | undefined;
+}
+
+type ConditionalGatewayFactoryInput = Parameters<
+  RequestScopedGoogleCalendarConditionalGatewayFactory['createConditionalGateway']
+>[0];
+
+const operationScopesMatch = (
+  left: ProviderWriteOperationScope,
+  right: ProviderWriteOperationScope,
+): boolean =>
+  left.requestId === right.requestId &&
+  left.sessionId === right.sessionId &&
+  left.householdId === right.householdId &&
+  left.userId === right.userId &&
+  left.spaceAccessGrantId === right.spaceAccessGrantId &&
+  left.authorizationScopeFingerprint === right.authorizationScopeFingerprint;
+
+const approvalBindingsMatch = (
+  left: ProviderWriteApprovalBinding,
+  right: ProviderWriteApprovalBinding,
+): boolean =>
+  left.decisionId === right.decisionId &&
+  left.userId === right.userId &&
+  left.agentId === right.agentId &&
+  left.runId === right.runId &&
+  left.capabilityId === right.capabilityId &&
+  left.capabilityFingerprint === right.capabilityFingerprint &&
+  left.disclosureGrantId === right.disclosureGrantId &&
+  left.payloadHash === right.payloadHash &&
+  left.idempotencyTtlMs === right.idempotencyTtlMs &&
+  left.authorityBinding.kind === right.authorityBinding.kind &&
+  left.authorityBinding.householdId === right.authorityBinding.householdId &&
+  left.authorityBinding.privateSpaceId === right.authorityBinding.privateSpaceId &&
+  left.authorityBinding.authorizationScopeFingerprint ===
+    right.authorityBinding.authorizationScopeFingerprint &&
+  left.authorityBinding.providerGrantReference ===
+    right.authorityBinding.providerGrantReference &&
+  left.authorityBinding.authorizationEpoch ===
+    right.authorityBinding.authorizationEpoch;
 
 export const createProductionGoogleConnectorBinding = (
   input: {
@@ -413,12 +498,20 @@ export const createProductionGoogleConnectorBinding = (
     redirectUri: `${parsed.data.publicOrigin}/api/v1/connectors/google/callback`,
   });
 
+  const isReady = async (): Promise<boolean> => {
+    if (closing || (await dependencies.checkReady(input.pool)) !== true) {
+      return false;
+    }
+    return (
+      !closing &&
+      (await dependencies.checkReady(leaseDatabase.scopedPool)) === true
+    );
+  };
+
   const withRuntime = async <Value>(
     principalInput: unknown,
     requestIdInput: unknown,
-    operation: (
-      routes: GoogleCalendarOAuthServerRuntime['routes'],
-    ) => Promise<Value>,
+    operation: (runtime: GoogleCalendarOAuthServerRuntime) => Promise<Value>,
   ): Promise<Value> => {
     if (closing) throw unavailable();
     activeOperations += 1;
@@ -478,7 +571,7 @@ export const createProductionGoogleConnectorBinding = (
         throw googleProblem(error);
       }
       try {
-        return await operation(runtime.routes);
+        return await operation(runtime);
       } finally {
         runtime.dispose();
       }
@@ -491,6 +584,161 @@ export const createProductionGoogleConnectorBinding = (
       }
     }
   };
+
+  const calendarProposalTargetReaders: RequestScopedGoogleCalendarProposalReaderFactory =
+    Object.freeze({
+      createProposalTargetReader: (rawInput: ProposalTargetReaderFactoryInput) => {
+        const request = ProposalTargetReaderFactoryInputSchema.safeParse(rawInput);
+        if (!request.success || closing) return undefined;
+        const principal = request.data.principal;
+        const operationScope = request.data.authorityResolution.operationScope;
+        const authorityBinding = request.data.authorityResolution.authorityBinding;
+        if (
+          operationScope.requestId !== request.data.requestId ||
+          operationScope.sessionId !== principal.sessionId ||
+          operationScope.householdId !== principal.householdId ||
+          operationScope.userId !== principal.userId ||
+          operationScope.spaceAccessGrantId !== principal.spaceAccessGrantId ||
+          operationScope.authorizationScopeFingerprint !==
+            principal.collectionAuthorizationScopeFingerprint ||
+          authorityBinding.householdId !== principal.householdId ||
+          authorityBinding.privateSpaceId !== principal.privateSpaceId ||
+          authorityBinding.authorizationScopeFingerprint !==
+            principal.collectionAuthorizationScopeFingerprint
+        ) {
+          return undefined;
+        }
+        return Object.freeze({
+          readTargetState: async (
+            target: Parameters<CalendarProposalStateReader['readTargetState']>[0],
+          ) => {
+            if (!(await isReady())) throw unavailable();
+            try {
+              return await withRuntime(
+                principal,
+                request.data.requestId,
+                (runtime) =>
+                  runtime.calendar
+                    .createProposalTargetReader({
+                      actor: {
+                        userId: principal.userId,
+                        householdId: principal.householdId,
+                        privateSpaceId: principal.privateSpaceId,
+                        sessionId: principal.sessionId,
+                      },
+                      request: {
+                        requestId: request.data.requestId,
+                        spaceAccessGrantId: principal.spaceAccessGrantId,
+                        authorizationScopeFingerprint:
+                          principal.collectionAuthorizationScopeFingerprint,
+                      },
+                      authorityResolution: request.data.authorityResolution,
+                    })
+                    .readTargetState(target),
+              );
+            } catch (error) {
+              if (error instanceof ApiProblem) throw error;
+              throw googleProblem(error);
+            }
+          },
+        });
+      },
+    });
+
+  const calendarConditionalGateways: RequestScopedGoogleCalendarConditionalGatewayFactory =
+    Object.freeze({
+      createConditionalGateway: (rawInput: ConditionalGatewayFactoryInput) => {
+        const request = ConditionalGatewayFactoryInputSchema.safeParse(rawInput);
+        if (!request.success || closing) return undefined;
+        const principal = request.data.principal;
+        const operationScope = request.data.operationScope;
+        const approvalBinding = request.data.approvalBinding;
+        const authorityBinding = approvalBinding.authorityBinding;
+        if (
+          operationScope.sessionId !== principal.sessionId ||
+          operationScope.householdId !== principal.householdId ||
+          operationScope.userId !== principal.userId ||
+          operationScope.spaceAccessGrantId !== principal.spaceAccessGrantId ||
+          operationScope.authorizationScopeFingerprint !==
+            principal.collectionAuthorizationScopeFingerprint ||
+          approvalBinding.userId !== principal.userId ||
+          approvalBinding.agentId !== 'scheduler' ||
+          approvalBinding.capabilityId !== 'google-calendar.event.create' ||
+          authorityBinding.householdId !== principal.householdId ||
+          authorityBinding.privateSpaceId !== principal.privateSpaceId ||
+          authorityBinding.authorizationScopeFingerprint !==
+            principal.collectionAuthorizationScopeFingerprint
+        ) {
+          return undefined;
+        }
+        const withConditionalGateway = async <Value>(
+          command: GoogleCalendarWriteCommand,
+          authorization: ApprovedCalendarWriteContext,
+          operation: (
+            gateway: GoogleCalendarConditionalGateway,
+          ) => Promise<Value>,
+        ): Promise<Value> => {
+          if (
+            !operationScopesMatch(
+              authorization.providerWriteOperationScope,
+              operationScope,
+            ) ||
+            !approvalBindingsMatch(
+              authorization.approvalBinding,
+              approvalBinding,
+            )
+          ) {
+            throw authorityUnavailable();
+          }
+          if (!(await isReady())) throw unavailable();
+          try {
+            return await withRuntime(
+              principal,
+              operationScope.requestId,
+              (runtime) =>
+                operation(
+                  runtime.calendar.createConditionalGateway({
+                    actor: {
+                      userId: principal.userId,
+                      householdId: principal.householdId,
+                      privateSpaceId: principal.privateSpaceId,
+                      sessionId: principal.sessionId,
+                    },
+                    authorizationScopeFingerprint:
+                      principal.collectionAuthorizationScopeFingerprint,
+                  }),
+                ),
+            );
+          } catch (error) {
+            if (error instanceof ApiProblem) throw error;
+            throw googleProblem(error);
+          }
+        };
+        return Object.freeze({
+          readCurrent: (
+            command: GoogleCalendarWriteCommand,
+            authorization: ApprovedCalendarWriteContext,
+          ) =>
+            withConditionalGateway(command, authorization, (gateway) =>
+              gateway.readCurrent(command, authorization),
+            ),
+          applyConditionalExactlyOnce: (
+            command: GoogleCalendarWriteCommand,
+            authorization: ApprovedCalendarWriteContext,
+          ) =>
+            withConditionalGateway(command, authorization, (gateway) =>
+              gateway.applyConditionalExactlyOnce(command, authorization),
+            ),
+          readBack: (
+            command: GoogleCalendarWriteCommand,
+            authorization: ApprovedCalendarWriteContext,
+          ) =>
+            withConditionalGateway(command, authorization, (gateway) =>
+              gateway.readBack(command, authorization),
+            ),
+        });
+      },
+    });
 
   const service: ApiServices['google'] = Object.freeze({
     beginAuthorization: async (
@@ -512,8 +760,8 @@ export const createProductionGoogleConnectorBinding = (
         return await withRuntime(
           request.data.principal,
           request.data.requestId,
-          (routes) =>
-            routes.beginAuthorization({
+          (runtime) =>
+            runtime.routes.beginAuthorization({
               actor: {
                 userId: request.data.principal.userId,
                 householdId: request.data.principal.householdId,
@@ -547,8 +795,8 @@ export const createProductionGoogleConnectorBinding = (
         const result = await withRuntime(
           request.data.principal,
           request.data.requestId,
-          (routes) =>
-            routes.handleCallback({
+          (runtime) =>
+            runtime.routes.handleCallback({
               actor: {
                 userId: request.data.principal.userId,
                 householdId: request.data.principal.householdId,
@@ -600,8 +848,8 @@ export const createProductionGoogleConnectorBinding = (
         return await withRuntime(
           request.data.principal,
           request.data.requestId,
-          (routes) =>
-            routes.disconnect({
+          (runtime) =>
+            runtime.routes.disconnect({
               actor: {
                 userId: request.data.principal.userId,
                 householdId: request.data.principal.householdId,
@@ -641,16 +889,10 @@ export const createProductionGoogleConnectorBinding = (
   return Object.freeze({
     binding: Object.freeze({
       service,
-      check: async () => {
-        if (closing || (await dependencies.checkReady(input.pool)) !== true) {
-          return false;
-        }
-        return (
-          !closing &&
-          (await dependencies.checkReady(leaseDatabase.scopedPool)) === true
-        );
-      },
+      check: isReady,
     }),
+    calendarProposalTargetReaders,
+    calendarConditionalGateways,
     close,
   });
 };

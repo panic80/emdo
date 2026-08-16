@@ -8,6 +8,7 @@ import {
 import { hashCanonicalJson } from '@emdo/toolbox';
 
 import {
+  createProposalLifecycleService,
   createProviderWriteReconciliationService,
   hashActionProposalApproval,
   InMemoryProposalRepository,
@@ -245,6 +246,83 @@ class ClockAdvancingProposalRepository extends InMemoryProposalRepository {
 }
 
 describe('ProposalService', () => {
+  it('provides the exact approval lifecycle and abandonment operations without a materializer', async () => {
+    const now = () => new Date('2026-08-09T16:02:00.000Z');
+    const repository = new InMemoryProposalRepository();
+    const creator = new ProposalService(
+      materializer,
+      disclosureGrantResolver,
+      repository,
+      now,
+    );
+    await creator.create(proposal, preparationBinding);
+    const decision = await creator.decide(decisionRequest, decisionContext);
+    const lifecycle = createProposalLifecycleService({
+      repository,
+      disclosureGrantResolver,
+      now,
+    });
+    const binding = {
+      decisionId: decision.id,
+      userId: ids.user,
+      agentId: 'scheduler' as const,
+      runId: ids.run,
+      capabilityId: proposal.capabilityId,
+      capabilityFingerprint,
+      disclosureGrantId: ids.grant,
+      payloadHash,
+      idempotencyTtlMs: 86_400_000,
+      authorityBinding,
+    };
+
+    const acquisition = await lifecycle.approvalStore.acquire(
+      binding,
+      providerOperationScope,
+    );
+    expect(acquisition).toMatchObject({ status: 'authorized' });
+    if (acquisition.status !== 'authorized') throw new Error('expected permit');
+    await expect(
+      lifecycle.approvalStore.markDispatching(
+        binding,
+        acquisition.authorization.attemptId,
+        providerOperationScope,
+      ),
+    ).resolves.toMatchObject({ status: 'dispatch-authorized' });
+    await expect(
+      lifecycle.approvalStore.finalize(binding, {
+        state: 'executed',
+        application: 'applied',
+        outputStatus: 'valid',
+        resultHash: 'c'.repeat(64),
+      }),
+    ).resolves.toBe('finalized');
+
+    const abandonmentRepository = new InMemoryProposalRepository();
+    const abandonmentCreator = new ProposalService(
+      materializer,
+      disclosureGrantResolver,
+      abandonmentRepository,
+      now,
+    );
+    await abandonmentCreator.create(proposal, preparationBinding);
+    const abandonmentLifecycle = createProposalLifecycleService({
+      repository: abandonmentRepository,
+      disclosureGrantResolver,
+      now,
+    });
+    const abandonment = {
+      ...preparationBinding,
+      reason: 'multiple-provider-writes-require-separate-turns' as const,
+      now: now(),
+    };
+    await expect(
+      abandonmentLifecycle.abandonPrepared(abandonment),
+    ).resolves.toEqual({ status: 'abandoned' });
+    await expect(
+      abandonmentLifecycle.abandonPrepared(abandonment),
+    ).resolves.toEqual({ status: 'already-abandoned' });
+  });
+
   it('exposes asynchronous repository-backed reads', async () => {
     const service = new ProposalService(
       materializer,

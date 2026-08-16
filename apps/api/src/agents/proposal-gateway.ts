@@ -467,6 +467,7 @@ export const createProductionProviderProposalComposition = (input: {
             authorizationScopeFingerprint:
               rawInput.context.authorizationScopeFingerprint,
             disclosureGrantId: rawInput.context.disclosureGrantId,
+            disclosureGrantVersion: rawInput.context.disclosureGrantVersion,
             sdkCallId: rawInput.sdkCallId,
             abortSignal: rawInput.context.abortSignal,
           },

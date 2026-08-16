@@ -2,9 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { runStagingAcceptanceCommand } from './staging-acceptance.js';
 
-const CLIENT_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f90';
-const SPACE_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f91';
 const USER_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f92';
+const RUN_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f93';
 const REQUEST_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5faa';
 const SOURCE_SHA = 'a'.repeat(40);
 const WORKFLOW_RUN_ID = '123456789';
@@ -18,7 +17,6 @@ const environment = {
   EMDO_PUBLIC_ORIGIN: 'https://staging.emdo.invalid',
   EMDO_STAGING_SOURCE_SHA: SOURCE_SHA,
   EMDO_STAGING_WORKFLOW_RUN_ID: WORKFLOW_RUN_ID,
-  EMDO_SYNTHETIC_CLIENT_ID: CLIENT_ID,
   EMDO_SYNTHETIC_OWNER_EMAIL: 'synthetic-owner@emdo.invalid',
   EMDO_SYNTHETIC_OWNER_PASSWORD: 'synthetic-password-0123456789',
 };
@@ -30,9 +28,9 @@ const canonicalReadinessChecks = Object.freeze({
   'authority.proposal-queries': 'unavailable' as const,
   'authority.visual-decisions': 'unavailable' as const,
   'authority.visual-proof-issuance': 'unavailable' as const,
-  agents: 'unavailable' as const,
-  'agents.manager-turns': 'unavailable' as const,
-  'agents.run-events': 'unavailable' as const,
+  agents: 'ok' as const,
+  'agents.manager-turns': 'ok' as const,
+  'agents.run-events': 'ok' as const,
   experience: 'unavailable' as const,
   'experience.activity-read': 'unavailable' as const,
   'experience.finance-read': 'unavailable' as const,
@@ -40,13 +38,13 @@ const canonicalReadinessChecks = Object.freeze({
   'experience.notification-preferences': 'unavailable' as const,
   'experience.schedule-read': 'unavailable' as const,
   'experience.settings-read': 'unavailable' as const,
-  'experience.shopping-read': 'unavailable' as const,
+  'experience.shopping-read': 'ok' as const,
   'experience.today-read': 'unavailable' as const,
   google: 'unavailable' as const,
   'google.connector': 'unavailable' as const,
-  sync: 'ok' as const,
-  'sync.gateway': 'ok' as const,
-  'sync.jwks': 'ok' as const,
+  sync: 'unavailable' as const,
+  'sync.gateway': 'unavailable' as const,
+  'sync.jwks': 'unavailable' as const,
   voice: 'unavailable' as const,
   'voice.audio-requests': 'unavailable' as const,
   'voice.provider': 'unavailable' as const,
@@ -63,6 +61,7 @@ const syntheticHttpSubsetReadiness = Object.freeze({
 const canonicalOpenApiSurface = Object.freeze({
   '/api/auth/get-session': { get: {} },
   '/api/auth/sign-in/email': { post: {} },
+  '/api/v1/auth/csrf': { get: {} },
   '/api/auth/passkey/verify-authentication': { post: {} },
   '/api/v1/auth/invitations/redeem': { post: {} },
   '/api/v1/household/invitations': { get: {}, post: {} },
@@ -122,7 +121,6 @@ const problem = (status: number, code: string) =>
 describe('staging acceptance CLI', () => {
   it('probes the provider-free HTTP subset while worker providers stay disabled', async () => {
     const requests: Request[] = [];
-    const syncOperationBatches: unknown[] = [];
     const fetch = vi.fn(async (request: Request) => {
       requests.push(request);
       const url = new URL(request.url);
@@ -172,51 +170,64 @@ describe('staging acceptance CLI', () => {
           },
         );
       }
-      if (url.pathname === '/api/v1/sync/token') {
-        return Response.json({
+      if (url.pathname === '/api/v1/turns') {
+        expect(await request.json()).toEqual({
           schemaVersion: 1,
-          endpoint: 'https://staging.emdo.invalid/powersync',
-          token: 'header.claims.signature',
-          expiresAt: '2026-08-09T12:05:00.000Z',
-          writeScope: {
-            clientId: url.searchParams.get('clientId'),
-            spaces: [
-              {
-                id: SPACE_ID,
-                visibility: 'private',
-                originalOwnerUserId: USER_ID,
-              },
-            ],
-          },
+          message: 'add 2 each Acceptance milk to shopping list',
+          routeHint: 'shopping',
         });
-      }
-      if (url.pathname === '/api/v1/sync/clients') {
-        const body = (await request.json()) as { clientId: string };
-        return Response.json(
+        return jsonWithRequestId(
           {
             schemaVersion: 1,
-            clientId: body.clientId,
-            status: 'registered',
+            runId: RUN_ID,
+            status: 'accepted',
             replayed: false,
+            eventsPath: `/api/v1/runs/${RUN_ID}/events`,
           },
-          { status: 201 },
+          { status: 202 },
         );
       }
-      if (url.pathname === '/api/v1/sync/ops') {
-        const body = (await request.json()) as {
-          clientId: string;
-          operations: { operationId: string }[];
-        };
-        syncOperationBatches.push(body);
-        return Response.json({
+      if (url.pathname === `/api/v1/runs/${RUN_ID}/events`) {
+        return new Response(
+          `id: 2\nevent: run.completed\ndata: ${JSON.stringify({
+            schemaVersion: 1,
+            runId: RUN_ID,
+            sequence: 2,
+            type: 'run.completed',
+            occurredAt: '2026-08-15T20:00:00.000Z',
+            data: {
+              status: 'completed',
+              runId: RUN_ID,
+              output: {
+                shoppingItem: {
+                  id: 'shopping-acceptance-item-v1',
+                  name: 'Acceptance milk',
+                  unit: 'each',
+                  quantityMinorUnits: 2_000,
+                },
+              },
+              executionResolution: {
+                status: 'provider-free',
+                profile: 'shopping-list-v1',
+                reason: 'provider-free-mvp',
+              },
+            },
+          })}\n\n`,
+          { headers: { 'content-type': 'text/event-stream; charset=utf-8' } },
+        );
+      }
+      if (url.pathname === '/api/v1/experience/shopping') {
+        return jsonWithRequestId({
           schemaVersion: 1,
-          clientId: body.clientId,
-          results: body.operations.map(({ operationId }) => ({
-            operationId,
-            status: 'applied',
-            revision: body.clientId === CLIENT_ID ? 1 : 2,
-            replayed: false,
-          })),
+          items: [
+            {
+              id: 'shopping-acceptance-item-v1',
+              name: 'Acceptance milk',
+              unit: 'each',
+              quantityMinorUnits: 2_000,
+              state: 'active',
+            },
+          ],
         });
       }
       if (url.pathname.endsWith('/decision')) {
@@ -224,8 +235,7 @@ describe('staging acceptance CLI', () => {
       }
       if (
         url.pathname === '/api/v1/voice/speak' ||
-        url.pathname === '/api/v1/connectors/google/authorize' ||
-        url.pathname === '/api/v1/turns'
+        url.pathname === '/api/v1/connectors/google/authorize'
       ) {
         throw new Error('provider-free HTTP subset invoked a provider path');
       }
@@ -258,6 +268,7 @@ describe('staging acceptance CLI', () => {
       proof: {
         healthz: 'passed',
         syntheticHttpSubsetReadiness: 'passed',
+        authenticatedManagerShoppingFlow: 'passed',
         protectedMetrics: 'passed',
         requestIds: 'passed',
         problemJson: 'passed',
@@ -268,16 +279,6 @@ describe('staging acceptance CLI', () => {
         (request) => new URL(request.url).origin === 'http://127.0.0.1:3000',
       ),
     ).toBe(true);
-    expect(
-      requests.filter(
-        (request) => new URL(request.url).pathname === '/api/v1/sync/clients',
-      ),
-    ).toHaveLength(2);
-    expect(
-      requests.filter(
-        (request) => new URL(request.url).pathname === '/api/v1/sync/token',
-      ),
-    ).toHaveLength(2);
     const metricsRequests = requests.filter(
       (request) => new URL(request.url).pathname === '/metrics',
     );
@@ -286,98 +287,33 @@ describe('staging acceptance CLI', () => {
     expect(metricsRequests[0]?.headers.get('cookie')).toBeNull();
     expect(
       requests.some((request) =>
-        [
-          '/api/v1/voice/speak',
-          '/api/v1/connectors/google/authorize',
-          '/api/v1/turns',
-        ].includes(new URL(request.url).pathname),
+        ['/api/v1/voice/speak', '/api/v1/connectors/google/authorize'].includes(
+          new URL(request.url).pathname,
+        ),
       ),
     ).toBe(false);
-    expect(syncOperationBatches).toEqual([
-      {
-        schemaVersion: 1,
-        clientId: CLIENT_ID,
-        operations: [
-          expect.objectContaining({
-            entity: {
-              type: 'scheduler.item',
-              id: 'acceptance-scheduler-item-v1',
-            },
-            mutation: {
-              kind: 'create',
-              payload: {
-                spaceId: SPACE_ID,
-                value: {
-                  id: 'acceptance-scheduler-item-v1',
-                  title: 'Acceptance task',
-                  notes: null,
-                  location: null,
-                  startsAt: '2026-01-02T09:00:00.000-05:00',
-                  endsAt: '2026-01-02T10:00:00.000-05:00',
-                  recurrence: null,
-                  attendees: [],
-                  completion: 'open',
-                },
-              },
-            },
-          }),
-          expect.objectContaining({
-            entity: {
-              type: 'finance.budget',
-              id: 'acceptance-finance-budget-v1',
-            },
-            mutation: {
-              kind: 'create',
-              payload: {
-                spaceId: SPACE_ID,
-                value: {
-                  id: 'acceptance-finance-budget-v1',
-                  currency: 'CAD',
-                  allocationsCadMinor: { groceries: 45_000 },
-                },
-              },
-            },
-          }),
-          expect.objectContaining({
-            entity: {
-              type: 'shopping.item',
-              id: 'acceptance-shopping-item-v1',
-            },
-            mutation: {
-              kind: 'create',
-              payload: {
-                spaceId: SPACE_ID,
-                value: {
-                  name: 'Acceptance milk',
-                  unit: 'each',
-                  quantityMinorUnits: 1_000,
-                },
-              },
-            },
-          }),
-        ],
-      },
-      {
-        schemaVersion: 1,
-        clientId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5fa0',
-        operations: [
-          expect.objectContaining({
-            entity: {
-              type: 'shopping.item',
-              id: 'acceptance-shopping-item-v1',
-            },
-            mutation: {
-              kind: 'delta',
-              payload: {
-                spaceId: SPACE_ID,
-                delta: { quantityMinorUnits: 1_000 },
-              },
-            },
-            baseRevision: 1,
-          }),
-        ],
-      },
-    ]);
+    expect(
+      requests.some(
+        (request) => new URL(request.url).pathname === '/api/v1/turns',
+      ),
+    ).toBe(true);
+    expect(
+      requests.some(
+        (request) =>
+          new URL(request.url).pathname === `/api/v1/runs/${RUN_ID}/events`,
+      ),
+    ).toBe(true);
+    expect(
+      requests.some(
+        (request) =>
+          new URL(request.url).pathname === '/api/v1/experience/shopping',
+      ),
+    ).toBe(true);
+    expect(
+      requests.some((request) =>
+        new URL(request.url).pathname.startsWith('/api/v1/sync/'),
+      ),
+    ).toBe(false);
   });
 
   it.each([
@@ -605,8 +541,8 @@ describe('staging acceptance CLI', () => {
       ...syntheticHttpSubsetReadiness,
       checks: {
         ...canonicalReadinessChecks,
-        sync: 'unavailable',
-        'sync.jwks': 'unavailable',
+        agents: 'unavailable',
+        'agents.manager-turns': 'unavailable',
       },
     });
     await invokeWithReadiness({
@@ -637,8 +573,11 @@ describe('staging acceptance CLI', () => {
         return Response.json({
           openapi: '3.1.0',
           paths: {
-            ...canonicalOpenApiSurface,
-            '/api/v1/experience/finance': { post: {} },
+            ...Object.fromEntries(
+              Object.entries(canonicalOpenApiSurface).filter(
+                ([name]) => name !== '/api/v1/experience/shopping',
+              ),
+            ),
           },
         });
       }

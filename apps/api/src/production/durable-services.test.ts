@@ -1,8 +1,48 @@
 import { generateKeyPairSync } from 'node:crypto';
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ApiServices } from '../services/contracts.js';
+
+const coreAgentMocks = vi.hoisted(() => ({
+  checkWorkflow: vi.fn(),
+  createCheckpointCipher: vi.fn(),
+  createOpenAi: vi.fn(),
+  createCoreRuntimeFactory: vi.fn(),
+  createAgentPersistence: vi.fn(),
+  createProviderFreePersistence: vi.fn(),
+  runtimeFactories: [] as unknown[],
+}));
+
+vi.mock('@emdo/db/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@emdo/db/api')>();
+  return {
+    ...actual,
+    checkPostgresProposalWorkflowReadiness: coreAgentMocks.checkWorkflow,
+  };
+});
+vi.mock('./approval-checkpoint-keyring.js', () => ({
+  createProductionApprovalCheckpointCipher:
+    coreAgentMocks.createCheckpointCipher,
+}));
+vi.mock('./core-openai-services.js', async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import('./core-openai-services.js')
+  >();
+  return {
+    ...actual,
+    createProductionOpenAiAgentServiceBundle: coreAgentMocks.createOpenAi,
+  };
+});
+vi.mock('./core-agent-services.js', () => ({
+  createRequestScopedCoreAgentRuntimeFactory:
+    coreAgentMocks.createCoreRuntimeFactory,
+}));
+vi.mock('../agents/production-persistence.js', () => ({
+  createProductionAgentPersistence: coreAgentMocks.createAgentPersistence,
+  createProviderFreeAgentPersistence:
+    coreAgentMocks.createProviderFreePersistence,
+}));
 import {
   createProductionDurableServiceBindings,
   type ProductionDurableServiceDependencies,
@@ -12,6 +52,8 @@ const databaseUrl =
   'postgresql://emdo_api_login:secret@postgres:5432/emdo_app?sslmode=disable';
 const visualDecisionDatabaseUrl =
   'postgresql://emdo_visual_decision_login:secret@postgres:5432/emdo_app?sslmode=disable';
+const workflowDatabaseUrl =
+  'postgresql://emdo_workflow_login:secret@postgres:5432/emdo_app?sslmode=disable';
 const experienceCursorKeyring = Buffer.from(
   JSON.stringify({
     schemaVersion: 1,
@@ -45,6 +87,31 @@ const visualProofKeyring = Buffer.from(
   }),
   'utf8',
 ).toString('base64url');
+const approvalCheckpointKeyring = Buffer.from(
+  JSON.stringify({
+    schemaVersion: 1,
+    current: {
+      keyId: 'checkpoint.current-1',
+      keyB64url: Buffer.alloc(32, 53).toString('base64url'),
+    },
+    previous: [],
+  }),
+  'utf8',
+).toString('base64url');
+
+const coreAgentEnvironment = () => ({
+  EMDO_API_DATABASE_URL: databaseUrl,
+  EMDO_WORKFLOW_DATABASE_URL: workflowDatabaseUrl,
+  EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL: approvalCheckpointKeyring,
+  EMDO_OPENAI_AGENT_API_KEY: 'sk-core-agent-assembly-test-key-1234567890',
+  EMDO_OPENAI_AGENT_PRICING_VERSION: '2026-08-15',
+  EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '100',
+  EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: '200',
+  EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '300',
+  EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: '400',
+  EMDO_VISUAL_DECISION_DATABASE_URL: visualDecisionDatabaseUrl,
+  EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL: visualProofKeyring,
+});
 
 const experienceServices = () => ({
   activityRead: { list: vi.fn() },
@@ -81,6 +148,62 @@ const financeImportService = () => ({
   preview: vi.fn(),
   commit: vi.fn(),
   checkReady: vi.fn(async () => true),
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  coreAgentMocks.runtimeFactories.length = 0;
+  coreAgentMocks.checkWorkflow.mockResolvedValue(true);
+  coreAgentMocks.createCheckpointCipher.mockReturnValue({
+    security: {
+      atRest: 'authenticated-encryption',
+      algorithm: 'AES-256-GCM',
+      keyRotation: 'versioned-keyring',
+    },
+    seal: vi.fn(),
+    open: vi.fn(),
+    dispose: vi.fn(),
+  });
+  coreAgentMocks.createOpenAi.mockReturnValue({
+    modelAvailability: { isAvailable: vi.fn(async () => true) },
+    costCalculator: { calculateCadMinor: vi.fn(() => 1) },
+    runner: { run: vi.fn() },
+    close: vi.fn(async () => undefined),
+  });
+  coreAgentMocks.createCoreRuntimeFactory.mockReturnValue({
+    runtime: {
+      orchestrator: {
+        runTurn: vi.fn(),
+        resumeTurn: vi.fn(),
+      },
+    },
+    check: vi.fn(async () => true),
+  });
+  coreAgentMocks.createAgentPersistence.mockImplementation(
+    (input: {
+      readonly runtimeFactory: {
+        check(): Promise<boolean>;
+      };
+    }) => {
+      coreAgentMocks.runtimeFactories.push(input.runtimeFactory);
+      return Object.freeze({
+        bindings: Object.freeze({
+          managerTurns: {
+            service: { start: vi.fn() },
+            check: input.runtimeFactory.check,
+          },
+          runEvents: {
+            service: { open: vi.fn() },
+            check: vi.fn(async () => true),
+          },
+          proposals: {
+            service: { decideWithVisualProof: vi.fn() },
+            check: vi.fn(async () => true),
+          },
+        }),
+      });
+    },
+  );
 });
 
 const dependencies = (): ProductionDurableServiceDependencies => {
@@ -152,10 +275,304 @@ const dependencies = (): ProductionDurableServiceDependencies => {
     ),
     createGoogleConnectorBinding: vi.fn(() => ({})),
     createVoiceProviderBinding: vi.fn(() => ({})),
+    createProviderFreeShoppingService: vi.fn(() => ({
+      create: vi.fn(),
+      checkReady: vi.fn(async () => true),
+    }) as never),
   };
 };
 
 describe('production durable API service composition', () => {
+  it('selects only the provider-free manager/shopping persistence graph for exact synthetic staging', async () => {
+    const adapters = dependencies();
+    coreAgentMocks.createProviderFreePersistence.mockReturnValue({
+      bindings: {
+        managerTurns: { service: { start: vi.fn() }, check: vi.fn() },
+        runEvents: { service: { open: vi.fn() }, check: vi.fn() },
+      },
+    });
+
+    const result = await createProductionDurableServiceBindings(
+      {
+        EMDO_API_DATABASE_URL: databaseUrl,
+        EMDO_ENVIRONMENT: 'staging',
+        EMDO_ALLOW_LOOPBACK_API_INGRESS: 'true',
+        EMDO_SYNTHETIC_DATA_ONLY: 'true',
+        EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL: experienceCursorKeyring,
+      },
+      adapters,
+    );
+
+    expect(result.bindings).toMatchObject({
+      managerTurns: { service: { start: expect.any(Function) } },
+      runEvents: { service: { open: expect.any(Function) } },
+      shoppingRead: { service: { list: expect.any(Function) } },
+    });
+    expect(result.bindings.proposals).toBeUndefined();
+    expect(result.bindings.proposalQueries).toBeUndefined();
+    expect(coreAgentMocks.createProviderFreePersistence).toHaveBeenCalledOnce();
+    expect(coreAgentMocks.createAgentPersistence).not.toHaveBeenCalled();
+    expect(coreAgentMocks.createOpenAi).not.toHaveBeenCalled();
+    expect(coreAgentMocks.createCoreRuntimeFactory).not.toHaveBeenCalled();
+    expect(coreAgentMocks.createCheckpointCipher).not.toHaveBeenCalled();
+    expect(adapters.createGoogleConnectorBinding).not.toHaveBeenCalled();
+  });
+
+  it('does not select provider-free persistence when any synthetic staging gate is absent', async () => {
+    const adapters = dependencies();
+    await createProductionDurableServiceBindings(
+      {
+        EMDO_API_DATABASE_URL: databaseUrl,
+        EMDO_ENVIRONMENT: 'production',
+        EMDO_ALLOW_LOOPBACK_API_INGRESS: 'true',
+        EMDO_SYNTHETIC_DATA_ONLY: 'true',
+      },
+      adapters,
+    );
+
+    expect(coreAgentMocks.createProviderFreePersistence).not.toHaveBeenCalled();
+  });
+
+  it('composes the authenticated core agent graph only with its complete workflow, approval, Google, and OpenAI boundaries', async () => {
+    const adapters = dependencies();
+    const googleCheck = vi.fn(async () => true);
+    vi.mocked(adapters.createGoogleConnectorBinding).mockReturnValue({
+      binding: {
+        service: {
+          beginAuthorization: vi.fn(),
+          completeAuthorization: vi.fn(),
+          disconnect: vi.fn(),
+        } as never,
+        check: googleCheck,
+      },
+      calendarProposalTargetReaders: {
+        createProposalTargetReader: vi.fn(),
+      },
+      calendarConditionalGateways: {
+        createConditionalGateway: vi.fn(),
+      },
+    });
+
+    const result = await createProductionDurableServiceBindings(
+      {
+        EMDO_API_DATABASE_URL: databaseUrl,
+        EMDO_WORKFLOW_DATABASE_URL: workflowDatabaseUrl,
+        EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL: approvalCheckpointKeyring,
+        EMDO_OPENAI_AGENT_API_KEY: 'sk-core-agent-assembly-test-key-1234567890',
+        EMDO_OPENAI_AGENT_PRICING_VERSION: '2026-08-15',
+        EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS:
+          '100',
+        EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS:
+          '200',
+        EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS:
+          '300',
+        EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS:
+          '400',
+        EMDO_VISUAL_DECISION_DATABASE_URL: visualDecisionDatabaseUrl,
+        EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL: visualProofKeyring,
+      },
+      adapters,
+    );
+
+    expect(result.bindings.managerTurns).toMatchObject({
+      service: { start: expect.any(Function) },
+      check: expect.any(Function),
+    });
+    expect(adapters.createDatabaseClient).toHaveBeenNthCalledWith(3, {
+      connectionString: workflowDatabaseUrl,
+      applicationName: 'emdo-api-workflow',
+    });
+    const runtimeFactory = coreAgentMocks.runtimeFactories[0] as {
+      create(input: unknown): Promise<unknown>;
+    };
+    await runtimeFactory.create({
+      principal: {
+        userId: '61000000-0000-4000-8000-000000000001',
+        sessionId: '61000000-0000-4000-8000-000000000002',
+        householdId: '61000000-0000-4000-8000-000000000003',
+        privateSpaceId: '61000000-0000-4000-8000-000000000004',
+        role: 'owner',
+        emailVerified: true,
+        spaceAccessGrantId: '61000000-0000-4000-8000-000000000005',
+        collectionAuthorizationScopeFingerprint: 'a'.repeat(64),
+      },
+      requestId: '61000000-0000-4000-8000-000000000006',
+      runId: '61000000-0000-4000-8000-000000000007',
+      conversationId: '61000000-0000-4000-8000-000000000008',
+    });
+    const apiDatabase = vi.mocked(adapters.createDatabaseClient).mock
+      .results[0]!.value;
+    const workflowDatabase = vi.mocked(adapters.createDatabaseClient).mock
+      .results[2]!.value;
+    expect(coreAgentMocks.createCoreRuntimeFactory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        readPool: apiDatabase.scopedPool,
+        workflowPool: workflowDatabase.scopedPool,
+      }),
+    );
+    expect(coreAgentMocks.createOpenAi).toHaveBeenCalledOnce();
+    const openAi = coreAgentMocks.createOpenAi.mock.results[0]!.value;
+    expect(openAi.modelAvailability.isAvailable).not.toHaveBeenCalled();
+    expect(googleCheck).not.toHaveBeenCalled();
+  });
+
+  it('reports the core manager unavailable when workflow, Google, or either model is unavailable', async () => {
+    const adapters = dependencies();
+    const googleCheck = vi.fn(async () => true);
+    vi.mocked(adapters.createGoogleConnectorBinding).mockReturnValue({
+      binding: {
+        service: {
+          beginAuthorization: vi.fn(),
+          completeAuthorization: vi.fn(),
+          disconnect: vi.fn(),
+        } as never,
+        check: googleCheck,
+      },
+      calendarProposalTargetReaders: {
+        createProposalTargetReader: vi.fn(),
+      },
+      calendarConditionalGateways: {
+        createConditionalGateway: vi.fn(),
+      },
+    });
+    const modelAvailability = { isAvailable: vi.fn(async () => true) };
+    coreAgentMocks.createOpenAi.mockReturnValue({
+      modelAvailability,
+      costCalculator: { calculateCadMinor: vi.fn(() => 1) },
+      runner: { run: vi.fn() },
+      close: vi.fn(async () => undefined),
+    });
+
+    const result = await createProductionDurableServiceBindings(
+      coreAgentEnvironment(),
+      adapters,
+    );
+    const check = result.bindings.managerTurns!.check;
+    const first = check();
+    const second = check();
+    expect(second).toBe(first);
+    await expect(first).resolves.toBe(true);
+    expect(coreAgentMocks.checkWorkflow).toHaveBeenCalledOnce();
+    expect(googleCheck).toHaveBeenCalledOnce();
+    expect(modelAvailability.isAvailable).toHaveBeenCalledWith('gpt-5.6-luna');
+    expect(modelAvailability.isAvailable).toHaveBeenCalledWith('gpt-5.6-terra');
+
+    coreAgentMocks.checkWorkflow.mockResolvedValueOnce(false);
+    await expect(check()).resolves.toBe(false);
+    googleCheck.mockResolvedValueOnce(false);
+    await expect(check()).resolves.toBe(false);
+    modelAvailability.isAvailable.mockImplementationOnce(async () => false);
+    await expect(check()).resolves.toBe(false);
+  });
+
+  it('retains independently configured visual decisions and run events when any core input is absent', async () => {
+    const adapters = dependencies();
+    const result = await createProductionDurableServiceBindings(
+      {
+        EMDO_API_DATABASE_URL: databaseUrl,
+        EMDO_VISUAL_DECISION_DATABASE_URL: visualDecisionDatabaseUrl,
+        EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL: visualProofKeyring,
+      },
+      adapters,
+    );
+
+    expect(result.bindings.managerTurns).toBeUndefined();
+    expect(result.bindings.runEvents).toMatchObject({
+      service: { open: expect.any(Function) },
+      check: expect.any(Function),
+    });
+    expect(result.bindings.proposals).toMatchObject({
+      service: { decideWithVisualProof: expect.any(Function) },
+      check: expect.any(Function),
+    });
+    expect(coreAgentMocks.createCheckpointCipher).not.toHaveBeenCalled();
+    expect(coreAgentMocks.createOpenAi).not.toHaveBeenCalled();
+    expect(coreAgentMocks.createAgentPersistence).not.toHaveBeenCalled();
+  });
+
+  it('closes OpenAI, Google, and the checkpoint cipher before workflow and API databases', async () => {
+    const closeOrder: string[] = [];
+    const adapters = dependencies();
+    const apiDatabase = {
+      scopedPool: Object.freeze({ connect: vi.fn() }) as never,
+      close: vi.fn(async () => {
+        closeOrder.push('api');
+      }),
+    };
+    const decisionDatabase = {
+      scopedPool: Object.freeze({ connect: vi.fn() }) as never,
+      close: vi.fn(async () => {
+        closeOrder.push('decision');
+      }),
+    };
+    const workflowDatabase = {
+      scopedPool: Object.freeze({ connect: vi.fn() }) as never,
+      close: vi.fn(async () => {
+        closeOrder.push('workflow');
+      }),
+    };
+    vi.mocked(adapters.createDatabaseClient)
+      .mockReturnValueOnce(apiDatabase)
+      .mockReturnValueOnce(decisionDatabase)
+      .mockReturnValueOnce(workflowDatabase);
+    const googleCheck = vi.fn(async () => true);
+    vi.mocked(adapters.createGoogleConnectorBinding).mockReturnValue({
+      binding: {
+        service: {
+          beginAuthorization: vi.fn(),
+          completeAuthorization: vi.fn(),
+          disconnect: vi.fn(),
+        } as never,
+        check: googleCheck,
+      },
+      calendarProposalTargetReaders: {
+        createProposalTargetReader: vi.fn(),
+      },
+      calendarConditionalGateways: {
+        createConditionalGateway: vi.fn(),
+      },
+      close: vi.fn(async () => {
+        closeOrder.push('google');
+      }),
+    });
+    coreAgentMocks.createOpenAi.mockReturnValue({
+      modelAvailability: { isAvailable: vi.fn(async () => true) },
+      costCalculator: { calculateCadMinor: vi.fn(() => 1) },
+      runner: { run: vi.fn() },
+      close: vi.fn(async () => {
+        closeOrder.push('openai');
+      }),
+    });
+    coreAgentMocks.createCheckpointCipher.mockReturnValue({
+      security: {
+        atRest: 'authenticated-encryption',
+        algorithm: 'AES-256-GCM',
+        keyRotation: 'versioned-keyring',
+      },
+      seal: vi.fn(),
+      open: vi.fn(),
+      dispose: vi.fn(() => {
+        closeOrder.push('checkpoint');
+      }),
+    });
+
+    const result = await createProductionDurableServiceBindings(
+      coreAgentEnvironment(),
+      adapters,
+    );
+    await result.close?.();
+    await result.close?.();
+
+    expect(closeOrder).toEqual([
+      'openai',
+      'google',
+      'checkpoint',
+      'workflow',
+      'decision',
+      'api',
+    ]);
+  });
+
   it('does not open a pool or invent adapters without the API database URL', async () => {
     const adapters = dependencies();
     const result = await createProductionDurableServiceBindings({}, adapters);

@@ -35,6 +35,8 @@ export const shoppingManifest: AgentManifest = AgentManifestSchema.parse({
   ],
   capabilityAllowlist: shoppingCapabilityReferences.map(({ id }) => id),
   readableDataClasses: [
+    'agent.delegations',
+    'agent.specialist-outcomes',
     'shopping.items',
     'shopping.preferences',
     'shopping.substitutions',

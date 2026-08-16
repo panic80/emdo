@@ -47,6 +47,8 @@ export {
   ModelDisclosureGatewayError,
   PostgresDataDisclosureGrantIssuer,
   PostgresModelDisclosureGateway,
+  PostgresSchedulerDisclosureGrantResolver,
+  SchedulerDisclosureGrantResolverError,
 } from './agent/disclosure-gateway.js';
 export type {
   DisclosureFilterGrant,
@@ -54,6 +56,7 @@ export type {
   DisclosurePayloadFilterResult,
   IssuedDataDisclosureGrant,
   ModelDisclosureDenialReason,
+  SchedulerDisclosureGrantResolverScope,
 } from './agent/disclosure-gateway.js';
 export { PostgresApprovalCheckpointRepository } from './agent/approval-checkpoint-repository.js';
 export type {
@@ -104,6 +107,7 @@ export type {
 
 export {
   PostgresEncryptedGoogleCalendarGrantStore,
+  PostgresGoogleCalendarProposalAuthorityResolver,
   PostgresGoogleCalendarProviderAuthorityResolver,
   PostgresGoogleOAuthAuditSink,
   PostgresGoogleOAuthAuthorizationEpochStore,
@@ -123,6 +127,12 @@ export type {
 } from './google/oauth-persistence.js';
 
 export type { DurableRepositoryPrincipal } from './durable/scoped-transaction.js';
+
+export { PostgresProviderFreeShoppingService } from './shopping/postgres-provider-free-shopping-service.js';
+export type {
+  ProviderFreeShoppingCreateInput,
+  ProviderFreeShoppingCreateResult,
+} from './shopping/postgres-provider-free-shopping-service.js';
 
 export {
   FinanceImportPersistenceError,

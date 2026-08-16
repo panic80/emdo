@@ -138,6 +138,45 @@ describe('production API service assembly', () => {
     });
   });
 
+  it('exposes the durable core manager boundary only with trusted authentication', async () => {
+    const start = vi.fn(async () => ({
+      schemaVersion: 1 as const,
+      runId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f010',
+      status: 'accepted' as const,
+      replayed: false,
+      eventsPath: '/api/v1/runs/018f1f5e-6f47-7d61-a6dd-1e86f8b8f010/events',
+    }));
+    mocks.createDurable.mockResolvedValue({
+      bindings: {
+        managerTurns: {
+          check: vi.fn(async () => true),
+          service: { start },
+        },
+      },
+    });
+
+    const unavailable = await assembleProductionApiServices({});
+    await expect(unavailable.readiness.check()).resolves.toMatchObject({
+      checks: { 'agents.manager-turns': 'unavailable' },
+    });
+    expect(start).not.toHaveBeenCalled();
+
+    mocks.createAuthentication.mockResolvedValue({
+      binding: {
+        service: authBoundary(),
+        check: vi.fn(async () => true),
+      },
+    });
+    const available = await assembleProductionApiServices({});
+    await expect(available.managerTurns.start({} as never)).resolves.toMatchObject({
+      status: 'accepted',
+    });
+    expect(start).toHaveBeenCalledOnce();
+    await expect(available.readiness.check()).resolves.toMatchObject({
+      checks: { 'agents.manager-turns': 'ok' },
+    });
+  });
+
   it('selects the Google connector only with trusted authentication', async () => {
     const beginAuthorization = vi.fn(async () => ({
       status: 'already-authorized' as const,

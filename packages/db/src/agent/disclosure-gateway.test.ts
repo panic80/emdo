@@ -6,6 +6,7 @@ import {
   hashDataDisclosureGrant,
   PostgresDataDisclosureGrantIssuer,
   PostgresModelDisclosureGateway,
+  PostgresSchedulerDisclosureGrantResolver,
 } from './disclosure-gateway.js';
 
 const ids = {
@@ -87,6 +88,63 @@ const principal = {
   sessionId: ids.sessionId,
   requestId: ids.requestId,
   householdId: ids.householdId,
+};
+
+const schedulerGrant = {
+  schemaVersion: 1 as const,
+  id: ids.grantId,
+  version: 3,
+  userId: ids.userId,
+  householdId: ids.householdId,
+  agentId: 'scheduler',
+  purpose: 'Generate one Calendar proposal from the delegated request.',
+  runId: ids.runId,
+  recordAllowlist: [
+    {
+      dataClass: 'agent.delegations',
+      recordId: 'scheduler-delegation-1',
+      fields: ['delegation'],
+    },
+  ],
+  provider: 'openai',
+  createdAt: '2026-08-10T12:00:00.000Z',
+  expiresAt: '2026-08-10T12:10:00.000Z',
+  oneRunOnly: true as const,
+};
+
+const schedulerGrantResolution = {
+  status: 'active',
+  schema_version: 1,
+  version: schedulerGrant.version,
+  grant_id: schedulerGrant.id,
+  household_id: schedulerGrant.householdId,
+  space_id: ids.spaceId,
+  original_owner_user_id: schedulerGrant.userId,
+  run_id: schedulerGrant.runId,
+  agent_id: schedulerGrant.agentId,
+  purpose: schedulerGrant.purpose,
+  provider: schedulerGrant.provider,
+  record_allowlist: [
+    {
+      dataClass: 'agent.delegations',
+      recordId: 'scheduler-delegation-1',
+      fields: ['delegation'],
+    },
+  ],
+  grant_hash: hashDataDisclosureGrant(schedulerGrant),
+  created_at: new Date(schedulerGrant.createdAt),
+  expires_at: new Date(schedulerGrant.expiresAt),
+  database_time: new Date('2026-08-10T12:02:00.000Z'),
+};
+
+const schedulerResolverScope = {
+  runId: ids.runId,
+  householdId: ids.householdId,
+  userId: ids.userId,
+  spaceAccessGrantId: ids.spaceAccessGrantId,
+  agentId: 'scheduler' as const,
+  phasePurpose: 'specialist-execution' as const,
+  provider: 'openai' as const,
 };
 
 describe('PostgresModelDisclosureGateway', () => {
@@ -301,6 +359,101 @@ describe('PostgresModelDisclosureGateway', () => {
       grantId: ids.grantId,
       reason: 'grant-expired',
     });
+  });
+});
+
+describe('PostgresSchedulerDisclosureGrantResolver', () => {
+  it('returns only the exact active scheduler grant without recording disclosure authorization or audit', async () => {
+    const { pool, query } = poolFor((sql) =>
+      sql.includes('resolve_model_disclosure_grant')
+        ? [schedulerGrantResolution]
+        : [],
+    );
+    const resolver = new PostgresSchedulerDisclosureGrantResolver(
+      pool,
+      principal,
+      schedulerResolverScope,
+    );
+
+    await expect(resolver.resolve(ids.grantId)).resolves.toEqual(
+      schedulerGrant,
+    );
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('resolve_model_disclosure_grant'),
+      [
+        ids.grantId,
+        ids.runId,
+        ids.householdId,
+        ids.userId,
+        ids.spaceAccessGrantId,
+        'scheduler',
+        'specialist-execution',
+        'openai',
+        '[]',
+      ],
+    );
+    expect(
+      query.mock.calls.some(([sql]) =>
+        sql.includes('commit_model_disclosure_authorization'),
+      ),
+    ).toBe(false);
+    expect(
+      query.mock.calls.some(([sql]) =>
+        sql.includes('record_model_disclosure_denial'),
+      ),
+    ).toBe(false);
+  });
+
+  it('fails closed on a malformed active binding or a durable denial without recording authorization', async () => {
+    const malformed = {
+      ...schedulerGrantResolution,
+      grant_hash: 'b'.repeat(64),
+    };
+    const malformedPool = poolFor((sql) =>
+      sql.includes('resolve_model_disclosure_grant') ? [malformed] : [],
+    );
+    const malformedResolver = new PostgresSchedulerDisclosureGrantResolver(
+      malformedPool.pool,
+      principal,
+      schedulerResolverScope,
+    );
+    await expect(
+      malformedResolver.resolve(ids.grantId),
+    ).rejects.toMatchObject({ code: 'invalid-result' });
+    expect(
+      malformedPool.query.mock.calls.some(([sql]) =>
+        sql.includes('commit_model_disclosure_authorization'),
+      ),
+    ).toBe(false);
+
+    const deniedPool = poolFor((sql) =>
+      sql.includes('resolve_model_disclosure_grant')
+        ? [{ status: 'grant-purpose-mismatch', grant_id: ids.grantId }]
+        : [],
+    );
+    const deniedResolver = new PostgresSchedulerDisclosureGrantResolver(
+      deniedPool.pool,
+      principal,
+      schedulerResolverScope,
+    );
+    await expect(deniedResolver.resolve(ids.grantId)).resolves.toBeUndefined();
+    expect(
+      deniedPool.query.mock.calls.some(([sql]) =>
+        sql.includes('record_model_disclosure_denial'),
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects a resolver scope that is not fixed to the durable principal', () => {
+    const { pool, query } = poolFor(() => []);
+    expect(
+      () =>
+        new PostgresSchedulerDisclosureGrantResolver(pool, principal, {
+          ...schedulerResolverScope,
+          householdId: '82000000-0000-4000-8000-000000000099',
+        }),
+    ).toThrow(/active principal/i);
+    expect(query).not.toHaveBeenCalled();
   });
 });
 

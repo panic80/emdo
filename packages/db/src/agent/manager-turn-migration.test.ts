@@ -112,6 +112,24 @@ describe('durable manager turn aggregate migration', () => {
     );
   });
 
+  it('accepts the provider-free MVP runtime profile and records its execution resolution without a model resolution', async () => {
+    const sql = await readMigration();
+    const complete = sql.match(
+      /create or replace function emdo\.complete_manager_turn[\s\S]+?end\s*\$function\$/u,
+    )?.[0];
+
+    expect(sql).toContain("'provider-free-mvp-v1'");
+    expect(complete).toContain('{executionresolution,status}');
+    expect(complete).toContain("'provider-free'");
+    expect(complete).toContain('{executionresolution,profile}');
+    expect(complete).toContain("'shopping-list-v1'");
+    expect(complete).toContain('{executionresolution,reason}');
+    expect(complete).toContain("'provider-free-mvp'");
+    expect(complete).not.toContain(
+      'resolved_model = p_result #>> {executionresolution,profile}',
+    );
+  });
+
   it('records exact operation outcomes for fail-closed post-commit readback', async () => {
     const sql = await readMigration();
 

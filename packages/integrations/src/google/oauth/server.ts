@@ -11,9 +11,11 @@ import {
 import {
   FetchGoogleCalendarConditionalGateway,
   GoogleCalendarFreeBusyClient,
+  GoogleCalendarProposalTargetReader,
   GoogleCalendarReadClient,
   type GoogleCalendarCredentialBroker,
   type GoogleCalendarFetch,
+  type GoogleCalendarProposalTargetReaderScope,
 } from '../calendar-fetch.js';
 import {
   createGoogleCalendarCredentialedLiveSmokeTarget,
@@ -122,6 +124,9 @@ export interface GoogleCalendarOAuthServerRuntime {
     createConditionalGateway(
       scope: GoogleCalendarConditionalGatewayScope,
     ): FetchGoogleCalendarConditionalGateway;
+    createProposalTargetReader(
+      scope: GoogleCalendarProposalTargetReaderScope,
+    ): GoogleCalendarProposalTargetReader;
   }>;
   /** Erases runtime-owned OAuth state-signing material. Idempotent. */
   dispose(): void;
@@ -210,6 +215,18 @@ export const createGoogleCalendarOAuthServerRuntime = (
           clock: options.clock,
         });
       },
+      createProposalTargetReader: (
+        scope: GoogleCalendarProposalTargetReaderScope,
+      ) =>
+        new GoogleCalendarProposalTargetReader({
+          ...scope,
+          fetch: options.calendarFetch,
+          broker,
+          ...(options.calendarTimeoutMs === undefined
+            ? {}
+            : { timeoutMs: options.calendarTimeoutMs }),
+          clock: options.clock,
+        }),
     }),
     dispose: () => service.dispose(),
   });

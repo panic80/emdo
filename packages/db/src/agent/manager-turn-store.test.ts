@@ -104,6 +104,25 @@ const poolWith = (...clients: readonly DatabaseClient[]): DatabasePool => {
 };
 
 describe('PostgresManagerTurnStore', () => {
+  it('allows the explicit provider-free MVP runtime profile without identifying it as a model', async () => {
+    const database = clientFor((sql, values) =>
+      sql.includes('claim_manager_turn')
+        ? [{ claim_result: claimedResultFor(values) }]
+        : [],
+    );
+    const store = new PostgresManagerTurnStore(poolWith(database.client), {
+      requestedModel: 'provider-free-mvp-v1',
+    });
+
+    await expect(store.claim(claimInput)).resolves.toMatchObject({
+      status: 'claimed',
+    });
+    const aggregate = database.query.mock.calls.find(([sql]) =>
+      sql.includes('claim_manager_turn'),
+    );
+    expect(aggregate?.[1]?.at(-1)).toBe('provider-free-mvp-v1');
+  });
+
   it('claims through one aggregate without trusting a caller fingerprint', async () => {
     const database = clientFor((sql, values) =>
       sql.includes('claim_manager_turn')

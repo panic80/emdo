@@ -157,6 +157,7 @@ describe('integration package subpath exports', () => {
     ]);
     expect(Object.keys(runtime.calendar).sort()).toEqual([
       'createConditionalGateway',
+      'createProposalTargetReader',
       'freeBusy',
       'read',
       'smokeTarget',

@@ -27,6 +27,7 @@ import {
   type CompiledAgent,
 } from './factory.js';
 import type {
+  ConversationMemoryEntry,
   ManagerConversationMemory,
   ManagerMemoryContext,
 } from './memory.js';
@@ -47,8 +48,11 @@ const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const MAX_MESSAGE_LENGTH = 32_000;
 const CHECKPOINT_TTL_MS = 10 * 60 * 1_000;
-const RUNTIME_STATE_VERSION = 4 as const;
+const RUNTIME_STATE_VERSION = 5 as const;
 const CONVERSATION_DATA_CLASS = 'conversation.messages';
+const MANAGER_PLAN_DATA_CLASS = 'agent.manager-plans';
+const DELEGATION_DATA_CLASS = 'agent.delegations';
+const SPECIALIST_OUTCOME_DATA_CLASS = 'agent.specialist-outcomes';
 
 const SDK_CALL_ID_PATTERN = /^[A-Za-z0-9._:-]{1,256}$/;
 const DISCLOSURE_PATH_PATTERN = /^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$/;
@@ -164,6 +168,7 @@ export interface ModelDisclosureAuthorization {
   readonly userId: string;
   readonly agentId: string;
   readonly phasePurpose: ModelDisclosurePurpose;
+  readonly phaseInvocationId: string;
   /** Exact user-authorized purpose stored on the durable disclosure grant. */
   readonly disclosurePurpose: string;
   readonly provider: 'openai';
@@ -184,6 +189,7 @@ export type ModelDisclosureDenialReason =
   | 'grant-user-mismatch'
   | 'grant-agent-mismatch'
   | 'grant-purpose-mismatch'
+  | 'grant-invocation-mismatch'
   | 'grant-provider-mismatch'
   | 'grant-expired'
   | 'record-not-allowed'
@@ -205,6 +211,24 @@ export type ModelDisclosureDenial =
 export type ModelDisclosureDecision =
   ModelDisclosureAuthorization | ModelDisclosureDenial;
 
+export type ModelDisclosureSource =
+  | Readonly<{
+      readonly kind: 'conversation-message';
+      readonly entry: ConversationMemoryEntry;
+    }>
+  | Readonly<{
+      readonly kind: 'manager-plan';
+      readonly plan: JsonValue;
+    }>
+  | Readonly<{
+      readonly kind: 'specialist-delegation';
+      readonly delegation: JsonValue;
+    }>
+  | Readonly<{
+      readonly kind: 'specialist-outcome';
+      readonly outcome: JsonValue;
+    }>;
+
 /**
  * Trusted, server-owned disclosure boundary. Implementations resolve an active
  * grant from durable state using the supplied server-derived scope; callers do
@@ -222,12 +246,11 @@ export interface ModelDisclosureGateway {
       authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
       agentId: string;
       phasePurpose: ModelDisclosurePurpose;
+      /** Stable server-derived key for exactly one logical model dispatch. */
+      phaseInvocationId: string;
       provider: 'openai';
-      /** Optional server-derived binding hint; the gateway still resolves state. */
-      requestedGrantId?: string;
-      /** Classes present in the payload, including dependency/model outputs. */
-      requestedDataClasses: readonly string[];
-      payload: JsonValue;
+      /** Trusted inputs projected to durable canonical records by the gateway. */
+      sources: readonly ModelDisclosureSource[];
     }>,
   ): Promise<ModelDisclosureDecision>;
 }
@@ -672,7 +695,6 @@ export interface TurnInput {
   readonly conversationId: string;
   readonly spaceAccessGrantId: string;
   readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
-  readonly disclosureGrantId?: string;
   readonly message: string;
   readonly escalationTriggers: readonly RequestedModelEscalationTrigger[];
   readonly abortSignal: AbortSignal;
@@ -889,12 +911,16 @@ interface PersistedTurnScope {
   readonly conversationId: string;
   readonly spaceAccessGrantId: string;
   readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
-  readonly disclosureGrantId?: string;
   readonly message: string;
+  readonly currentMessage: ConversationMemoryEntry;
+}
+
+interface PreparedTurnInput extends TurnInput {
+  readonly currentMessage: ConversationMemoryEntry;
 }
 
 interface RuntimeCheckpointState {
-  readonly version: 4;
+  readonly version: 5;
   readonly turn: PersistedTurnScope;
   readonly modelResolution: Extract<ModelResolution, { status: 'resolved' }>;
   readonly plan?: ManagerPlan;
@@ -1128,6 +1154,74 @@ const snapshotPreparedProposalAbandonment = (
   return Object.freeze({ status: value.status });
 };
 
+const snapshotCanonicalDisclosurePayload = (
+  raw: unknown,
+  auditRecords: ModelDisclosureAuthorization['records'],
+): JsonValue => {
+  const envelope = asObject(snapshotJson(raw));
+  assertExactKeys(envelope, ['schemaVersion', 'records']);
+  if (
+    envelope.schemaVersion !== 1 ||
+    !Array.isArray(envelope.records) ||
+    envelope.records.length !== auditRecords.length ||
+    envelope.records.length === 0 ||
+    envelope.records.length > 256
+  ) {
+    throw new Error('invalid-model-disclosure-authorization');
+  }
+  const records = Object.freeze(
+    envelope.records.map((rawRecord, index) => {
+      const record = asObject(rawRecord);
+      assertExactKeys(record, ['dataClass', 'recordId', 'fields']);
+      const fields = asObject(record.fields);
+      const fieldNames = Object.keys(fields);
+      if (
+        fieldNames.length === 0 ||
+        fieldNames.length > 128 ||
+        fieldNames.some((field) => assertDisclosurePath(field) !== field) ||
+        fieldNames.some(
+          (field, fieldIndex) => field !== [...fieldNames].sort()[fieldIndex],
+        )
+      ) {
+        throw new Error('invalid-model-disclosure-authorization');
+      }
+      const dataClass = assertDisclosurePath(record.dataClass);
+      const recordId = assertDisclosurePath(record.recordId);
+      const audit = auditRecords[index];
+      if (
+        audit === undefined ||
+        audit.dataClass !== dataClass ||
+        audit.recordId !== recordId ||
+        audit.fields.length !== fieldNames.length ||
+        audit.fields.some(
+          (field, fieldIndex) => field !== fieldNames[fieldIndex],
+        )
+      ) {
+        throw new Error('invalid-model-disclosure-authorization');
+      }
+      return Object.freeze({
+        dataClass,
+        recordId,
+        fields: Object.freeze(
+          Object.fromEntries(
+            fieldNames.map((field) => [field, snapshotJson(fields[field])]),
+          ),
+        ),
+      });
+    }),
+  );
+  const bindings = records.map(
+    ({ dataClass, recordId }) => `${dataClass}\0${recordId}`,
+  );
+  if (
+    new Set(bindings).size !== bindings.length ||
+    bindings.some((binding, index) => binding !== [...bindings].sort()[index])
+  ) {
+    throw new Error('invalid-model-disclosure-authorization');
+  }
+  return Object.freeze({ schemaVersion: 1, records });
+};
+
 const snapshotDisclosureAuthorization = (
   raw: unknown,
 ): ModelDisclosureDecision => {
@@ -1141,6 +1235,7 @@ const snapshotDisclosureAuthorization = (
       'grant-user-mismatch',
       'grant-agent-mismatch',
       'grant-purpose-mismatch',
+      'grant-invocation-mismatch',
       'grant-provider-mismatch',
       'grant-expired',
       'record-not-allowed',
@@ -1178,6 +1273,7 @@ const snapshotDisclosureAuthorization = (
     'userId',
     'agentId',
     'phasePurpose',
+    'phaseInvocationId',
     'disclosurePurpose',
     'provider',
     'expiresAt',
@@ -1241,11 +1337,12 @@ const snapshotDisclosureAuthorization = (
     userId: assertUuid(value.userId),
     agentId: assertIdentifier(value.agentId),
     phasePurpose: value.phasePurpose,
+    phaseInvocationId: assertIdentifier(value.phaseInvocationId),
     disclosurePurpose: value.disclosurePurpose,
     provider: value.provider,
     expiresAt: value.expiresAt,
     records,
-    payload: snapshotJson(value.payload),
+    payload: snapshotCanonicalDisclosurePayload(value.payload, records),
   });
 };
 
@@ -1516,7 +1613,6 @@ const snapshotTurn = (input: TurnInput): TurnInput => {
     'conversationId',
     'spaceAccessGrantId',
     'authorizationScopeFingerprint',
-    'disclosureGrantId',
     'message',
     'escalationTriggers',
     'abortSignal',
@@ -1525,9 +1621,7 @@ const snapshotTurn = (input: TurnInput): TurnInput => {
   const keys = Reflect.ownKeys(input);
   if (
     keys.some((key) => typeof key !== 'string' || !allowed.includes(key)) ||
-    allowed
-      .filter((key) => key !== 'disclosureGrantId')
-      .some((key) => descriptors[key] === undefined) ||
+    allowed.some((key) => descriptors[key] === undefined) ||
     Object.values(descriptors).some(
       (descriptor) =>
         descriptor.get !== undefined || descriptor.set !== undefined,
@@ -1567,16 +1661,105 @@ const snapshotTurn = (input: TurnInput): TurnInput => {
       EffectiveAuthorizationScopeFingerprintSchema.parse(
         input.authorizationScopeFingerprint,
       ),
-    ...(input.disclosureGrantId === undefined
-      ? {}
-      : { disclosureGrantId: assertUuid(input.disclosureGrantId) }),
     message: input.message,
     escalationTriggers: Object.freeze([...input.escalationTriggers]),
     abortSignal: input.abortSignal,
   });
 };
 
-const persistedScope = (turn: TurnInput): PersistedTurnScope =>
+const snapshotConversationEntry = (raw: unknown): ConversationMemoryEntry => {
+  const value = asObject(snapshotJson(raw));
+  assertExactKeys(value, [
+    'id',
+    'conversationId',
+    'householdId',
+    'userId',
+    'role',
+    'content',
+    'createdAt',
+  ]);
+  if (
+    (value.role !== 'user' && value.role !== 'assistant') ||
+    typeof value.content !== 'string' ||
+    value.content.trim().length === 0 ||
+    value.content.length > 16_000 ||
+    typeof value.createdAt !== 'string' ||
+    !Number.isFinite(Date.parse(value.createdAt)) ||
+    new Date(value.createdAt).toISOString() !== value.createdAt
+  ) {
+    throw new Error('invalid-conversation-memory-entry');
+  }
+  return Object.freeze({
+    id: assertUuid(value.id),
+    conversationId: assertUuid(value.conversationId),
+    householdId: assertUuid(value.householdId),
+    userId: assertUuid(value.userId),
+    role: value.role,
+    content: value.content,
+    createdAt: value.createdAt,
+  });
+};
+
+const snapshotDisclosureSources = (
+  rawSources: readonly ModelDisclosureSource[],
+): readonly ModelDisclosureSource[] => {
+  if (
+    !Array.isArray(rawSources) ||
+    rawSources.length === 0 ||
+    rawSources.length > 256
+  ) {
+    throw new Error('invalid-model-disclosure-sources');
+  }
+  return Object.freeze(
+    rawSources.map((raw) => {
+      const source = asObject(snapshotJson(raw));
+      if (source.kind === 'conversation-message') {
+        assertExactKeys(source, ['kind', 'entry']);
+        return Object.freeze({
+          kind: 'conversation-message' as const,
+          entry: snapshotConversationEntry(source.entry),
+        });
+      }
+      if (source.kind === 'manager-plan') {
+        assertExactKeys(source, ['kind', 'plan']);
+        return Object.freeze({
+          kind: 'manager-plan' as const,
+          plan: snapshotJson(source.plan),
+        });
+      }
+      if (source.kind === 'specialist-delegation') {
+        assertExactKeys(source, ['kind', 'delegation']);
+        return Object.freeze({
+          kind: 'specialist-delegation' as const,
+          delegation: snapshotJson(source.delegation),
+        });
+      }
+      if (source.kind === 'specialist-outcome') {
+        assertExactKeys(source, ['kind', 'outcome']);
+        return Object.freeze({
+          kind: 'specialist-outcome' as const,
+          outcome: snapshotJson(source.outcome),
+        });
+      }
+      throw new Error('invalid-model-disclosure-sources');
+    }),
+  );
+};
+
+const disclosureSourceDataClass = (source: ModelDisclosureSource): string => {
+  switch (source.kind) {
+    case 'conversation-message':
+      return CONVERSATION_DATA_CLASS;
+    case 'manager-plan':
+      return MANAGER_PLAN_DATA_CLASS;
+    case 'specialist-delegation':
+      return DELEGATION_DATA_CLASS;
+    case 'specialist-outcome':
+      return SPECIALIST_OUTCOME_DATA_CLASS;
+  }
+};
+
+const persistedScope = (turn: PreparedTurnInput): PersistedTurnScope =>
   Object.freeze({
     requestId: turn.requestId,
     runId: turn.runId,
@@ -1586,10 +1769,8 @@ const persistedScope = (turn: TurnInput): PersistedTurnScope =>
     conversationId: turn.conversationId,
     spaceAccessGrantId: turn.spaceAccessGrantId,
     authorizationScopeFingerprint: turn.authorizationScopeFingerprint,
-    ...(turn.disclosureGrantId === undefined
-      ? {}
-      : { disclosureGrantId: turn.disclosureGrantId }),
     message: turn.message,
+    currentMessage: snapshotConversationEntry(turn.currentMessage),
   });
 
 const parseManagerPlan = (
@@ -2652,9 +2833,8 @@ export class AgentOrchestrator {
         ? { escalationTrigger: modelResolution.escalationTrigger }
         : {}),
     });
-    let managerRequest: Readonly<Record<string, JsonValue>>;
     try {
-      managerRequest = asObject(
+      asObject(
         snapshotJson(
           this.#manager.inputSchema.parse({ request: input.message }),
         ),
@@ -2674,20 +2854,49 @@ export class AgentOrchestrator {
       );
     }
     let memory: ManagerMemoryContext;
+    let currentMessage: ConversationMemoryEntry;
     try {
-      memory = await this.#memory.retrieveForManager({
+      const retrieved = await this.#memory.retrieveForManager({
         conversationId: input.conversationId,
         householdId: input.householdId,
         userId: input.userId,
         query: input.message,
       });
-      await this.#memory.appendManagerMessage({
-        conversationId: input.conversationId,
-        householdId: input.householdId,
-        userId: input.userId,
-        role: 'user',
-        content: input.message,
-      });
+      if (!Array.isArray(retrieved.entries) || retrieved.entries.length > 64) {
+        throw new Error('invalid-conversation-memory-result');
+      }
+      const entries = Object.freeze(
+        retrieved.entries.map((entry) => snapshotConversationEntry(entry)),
+      );
+      if (
+        entries.some(
+          (entry) =>
+            entry.conversationId !== input.conversationId ||
+            entry.householdId !== input.householdId ||
+            entry.userId !== input.userId,
+        )
+      ) {
+        throw new Error('conversation-memory-scope-mismatch');
+      }
+      memory = Object.freeze({ entries });
+      currentMessage = snapshotConversationEntry(
+        await this.#memory.appendManagerMessage({
+          conversationId: input.conversationId,
+          householdId: input.householdId,
+          userId: input.userId,
+          role: 'user',
+          content: input.message,
+        }),
+      );
+      if (
+        currentMessage.conversationId !== input.conversationId ||
+        currentMessage.householdId !== input.householdId ||
+        currentMessage.userId !== input.userId ||
+        currentMessage.role !== 'user' ||
+        currentMessage.content !== input.message
+      ) {
+        throw new Error('conversation-memory-append-mismatch');
+      }
     } catch {
       return this.#failed(
         input.runId,
@@ -2705,11 +2914,19 @@ export class AgentOrchestrator {
     await trace.record('memory.retrieved', {
       entryCount: memory.entries.length,
     });
+    const preparedTurn: PreparedTurnInput = Object.freeze({
+      ...input,
+      currentMessage,
+    });
     let activeResolution = modelResolution;
     let planningUsage = ZERO_USAGE;
     let plan: ManagerPlan | undefined;
     let lastPlanFailure: RuntimeFallbackCause = 'luna-execution-failed';
-    const planningInput = snapshotJson({ ...managerRequest, memory });
+    const planningSources = snapshotDisclosureSources(
+      [...memory.entries, currentMessage].map((entry) =>
+        Object.freeze({ kind: 'conversation-message' as const, entry }),
+      ),
+    );
     for (let attempt = 0; attempt < 2; attempt += 1) {
       let planning: RuntimeProviderResult | undefined;
       try {
@@ -2717,10 +2934,12 @@ export class AgentOrchestrator {
           'plan',
           this.#manager,
           activeResolution.resolvedModel,
-          planningInput,
-          input,
+          preparedTurn,
           trace,
-          { sourceDataClasses: [CONVERSATION_DATA_CLASS] },
+          {
+            phaseInvocationId: 'manager-plan',
+            sources: planningSources,
+          },
         );
       } catch {
         lastPlanFailure = 'luna-execution-failed';
@@ -2744,7 +2963,7 @@ export class AgentOrchestrator {
       }
       if (planning?.status === 'interrupted') {
         return this.#pause(
-          input,
+          preparedTurn,
           activeResolution,
           undefined,
           [],
@@ -2831,7 +3050,7 @@ export class AgentOrchestrator {
       delegationCount: plan.delegations.length,
     });
     return this.#executePlan(
-      input,
+      preparedTurn,
       activeResolution,
       plan,
       [],
@@ -2861,6 +3080,7 @@ export class AgentOrchestrator {
     }
     let scope: Omit<TurnInput, 'message' | 'escalationTriggers'> &
       Readonly<{
+        disclosureGrantId: string;
         disclosureGrantVersion: string;
         operationAuthorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
       }>;
@@ -3067,7 +3287,7 @@ export class AgentOrchestrator {
       );
     }
     const { selected, selectedAgent, state } = binding;
-    const resumeTurn: TurnInput = Object.freeze({
+    const resumeTurn: PreparedTurnInput = Object.freeze({
       requestId: scope.requestId,
       runId: scope.runId,
       householdId: scope.householdId,
@@ -3076,10 +3296,10 @@ export class AgentOrchestrator {
       conversationId: scope.conversationId,
       spaceAccessGrantId: scope.spaceAccessGrantId,
       authorizationScopeFingerprint: scope.authorizationScopeFingerprint,
-      disclosureGrantId: scope.disclosureGrantId,
       abortSignal: scope.abortSignal,
       message: state.turn.message,
       escalationTriggers: Object.freeze([]),
+      currentMessage: state.turn.currentMessage,
     });
     if (selected.execution.phase !== 'specialist') {
       return this.#failed(
@@ -3236,16 +3456,16 @@ export class AgentOrchestrator {
     phase: AgentExecutionPhase,
     agent: CompiledAgent,
     model: EmdoModelId,
-    input: JsonValue,
-    turn: TurnInput,
+    turn: PreparedTurnInput,
     trace: ActiveLocalTrace,
     options: Readonly<{
+      phaseInvocationId: string;
+      sources: readonly ModelDisclosureSource[];
       resume?: AgentProviderRequest['resume'];
       approvalDecisionId?: string;
       priorCapabilityCalls?: number;
-      sourceDataClasses?: readonly string[];
       turnProviderWriteLedger?: TurnProviderWriteEffectLedger;
-    }> = {},
+    }>,
   ): Promise<RuntimeProviderResult> {
     if (turn.abortSignal.aborted) throw new Error('agent-run-aborted');
     const purpose: ModelDisclosurePurpose =
@@ -3254,6 +3474,18 @@ export class AgentOrchestrator {
         : phase === 'synthesize'
           ? 'manager-synthesis'
           : 'specialist-execution';
+    const phaseInvocationId = assertIdentifier(options.phaseInvocationId);
+    const sources = snapshotDisclosureSources(options.sources);
+    const sourceDataClasses = uniqueDataClasses(
+      sources.map((source) => disclosureSourceDataClass(source)),
+    );
+    if (
+      sourceDataClasses.some(
+        (dataClass) => !agent.manifest.readableDataClasses.includes(dataClass),
+      )
+    ) {
+      throw new Error('model-disclosure-source-class-denied');
+    }
     let authorization: ModelDisclosureAuthorization;
     try {
       const decision = snapshotDisclosureAuthorization(
@@ -3268,16 +3500,9 @@ export class AgentOrchestrator {
             authorizationScopeFingerprint: turn.authorizationScopeFingerprint,
             agentId: agent.manifest.id,
             phasePurpose: purpose,
+            phaseInvocationId,
             provider: 'openai' as const,
-            ...(turn.disclosureGrantId === undefined ||
-            agent.manifest.readableDataClasses.length === 0
-              ? {}
-              : { requestedGrantId: turn.disclosureGrantId }),
-            requestedDataClasses: uniqueDataClasses(
-              agent.manifest.readableDataClasses,
-              options.sourceDataClasses ?? [],
-            ),
-            payload: snapshotJson(input),
+            sources,
           }),
         ),
       );
@@ -3304,16 +3529,24 @@ export class AgentOrchestrator {
         authorization.userId !== turn.userId ||
         authorization.agentId !== agent.manifest.id ||
         authorization.phasePurpose !== purpose ||
+        authorization.phaseInvocationId !== phaseInvocationId ||
+        sourceDataClasses.some(
+          (dataClass) =>
+            !authorization.records.some(
+              (record) => record.dataClass === dataClass,
+            ),
+        ) ||
+        authorization.records.some(
+          (record) => !sourceDataClasses.includes(record.dataClass),
+        ) ||
         authorization.provider !== 'openai'
       ) {
         throw new Error('model-disclosure-binding-mismatch');
       }
     } catch {
       await trace.record('disclosure.denied', {
-        ...(turn.disclosureGrantId === undefined
-          ? {}
-          : { grantId: turn.disclosureGrantId }),
         agentId: agent.manifest.id,
+        phaseInvocationId,
         reason: 'inactive-or-mismatched-disclosure-grant',
       });
       return Object.freeze({
@@ -3352,6 +3585,7 @@ export class AgentOrchestrator {
           agentId: authorization.agentId,
           purpose: authorization.disclosurePurpose,
           phasePurpose: authorization.phasePurpose,
+          phaseInvocationId: authorization.phaseInvocationId,
           dataClass: record.dataClass,
           recordId: record.recordId,
           fields: record.fields,
@@ -3450,10 +3684,10 @@ export class AgentOrchestrator {
   async #runSpecialistProvider(
     agent: CompiledAgent,
     modelResolution: Extract<ModelResolution, { status: 'resolved' }>,
-    input: JsonValue,
-    turn: TurnInput,
+    phaseInvocationId: string,
+    sources: readonly ModelDisclosureSource[],
+    turn: PreparedTurnInput,
     trace: ActiveLocalTrace,
-    sourceDataClasses: readonly string[],
     turnProviderWriteLedger: TurnProviderWriteEffectLedger,
   ): Promise<SpecialistProviderExecution> {
     let activeResolution = modelResolution;
@@ -3469,12 +3703,12 @@ export class AgentOrchestrator {
           'specialist',
           agent,
           activeResolution.resolvedModel,
-          input,
           turn,
           trace,
           {
+            phaseInvocationId,
+            sources,
             priorCapabilityCalls: capabilityCalls,
-            sourceDataClasses,
             turnProviderWriteLedger,
           },
         );
@@ -3636,7 +3870,7 @@ export class AgentOrchestrator {
   }
 
   async #executePlan(
-    turn: TurnInput,
+    turn: PreparedTurnInput,
     modelResolution: Extract<ModelResolution, { status: 'resolved' }>,
     plan: ManagerPlan,
     existingOutcomes: readonly SpecialistOutcome[],
@@ -3746,29 +3980,24 @@ export class AgentOrchestrator {
             const dependencyOutcomes = delegation.dependsOn.map((dependency) =>
               outcomes.get(dependency)!,
             );
-            const dependencyDataClasses = uniqueDataClasses(
-              [CONVERSATION_DATA_CLASS],
-              ...delegation.dependsOn.map((dependencyId) => {
-                const dependency = plan.delegations.find(
-                  (candidate) => candidate.id === dependencyId,
-                );
-                if (dependency === undefined) return [];
-                return (
-                  this.#specialists.get(dependency.specialistId)?.manifest
-                    .readableDataClasses ?? []
-                );
-              }),
-            );
             const execution = await this.#runSpecialistProvider(
               specialist,
               waveResolution,
-              snapshotJson({
-                delegation,
-                dependencyOutcomes,
-              }),
+              delegation.id,
+              snapshotDisclosureSources([
+                Object.freeze({
+                  kind: 'specialist-delegation' as const,
+                  delegation: snapshotJson(delegation),
+                }),
+                ...dependencyOutcomes.map((outcome) =>
+                  Object.freeze({
+                    kind: 'specialist-outcome' as const,
+                    outcome: snapshotJson(outcome),
+                  }),
+                ),
+              ]),
               turn,
               trace,
-              dependencyDataClasses,
               turnProviderWriteLedger,
             );
             return { delegation, specialist, execution };
@@ -4004,7 +4233,7 @@ export class AgentOrchestrator {
   }
 
   async #synthesize(
-    turn: TurnInput,
+    turn: PreparedTurnInput,
     modelResolution: Extract<ModelResolution, { status: 'resolved' }>,
     plan: ManagerPlan,
     outcomes: readonly SpecialistOutcome[],
@@ -4014,11 +4243,22 @@ export class AgentOrchestrator {
     let activeResolution = modelResolution;
     let totalUsage = usage;
     let lastFailure: RuntimeFallbackCause = 'luna-execution-failed';
-    const synthesisInput = snapshotJson({
-      message: turn.message,
-      plan,
-      outcomes,
-    });
+    const synthesisSources = snapshotDisclosureSources([
+      Object.freeze({
+        kind: 'conversation-message' as const,
+        entry: turn.currentMessage,
+      }),
+      Object.freeze({
+        kind: 'manager-plan' as const,
+        plan: snapshotJson(plan),
+      }),
+      ...outcomes.map((outcome) =>
+        Object.freeze({
+          kind: 'specialist-outcome' as const,
+          outcome: snapshotJson(outcome),
+        }),
+      ),
+    ]);
     for (let attempt = 0; attempt < 2; attempt += 1) {
       let synthesis: RuntimeProviderResult | undefined;
       try {
@@ -4026,18 +4266,11 @@ export class AgentOrchestrator {
           'synthesize',
           this.#manager,
           activeResolution.resolvedModel,
-          synthesisInput,
           turn,
           trace,
           {
-            sourceDataClasses: uniqueDataClasses(
-              [CONVERSATION_DATA_CLASS],
-              ...plan.delegations.map(
-                (delegation) =>
-                  this.#specialists.get(delegation.specialistId)?.manifest
-                    .readableDataClasses ?? [],
-              ),
-            ),
+            phaseInvocationId: 'manager-synthesis',
+            sources: synthesisSources,
           },
         );
       } catch {
@@ -4154,7 +4387,7 @@ export class AgentOrchestrator {
   }
 
   async #complete(
-    turn: TurnInput,
+    turn: PreparedTurnInput,
     modelResolution: Extract<ModelResolution, { status: 'resolved' }>,
     output: JsonValue,
     outcomes: readonly SpecialistOutcome[],
@@ -4203,7 +4436,7 @@ export class AgentOrchestrator {
   }
 
   async #pause(
-    turn: TurnInput,
+    turn: PreparedTurnInput,
     modelResolution: Extract<ModelResolution, { status: 'resolved' }>,
     plan: ManagerPlan | undefined,
     outcomes: readonly SpecialistOutcome[],
@@ -4442,21 +4675,18 @@ export class AgentOrchestrator {
       throw new Error('invalid-runtime-checkpoint');
     }
     const turn = asObject(value.turn);
-    assertExactKeys(
-      turn,
-      [
-        'requestId',
-        'runId',
-        'householdId',
-        'userId',
-        'authenticatedSessionId',
-        'conversationId',
-        'spaceAccessGrantId',
-        'authorizationScopeFingerprint',
-        'message',
-      ],
-      ['disclosureGrantId'],
-    );
+    assertExactKeys(turn, [
+      'requestId',
+      'runId',
+      'householdId',
+      'userId',
+      'authenticatedSessionId',
+      'conversationId',
+      'spaceAccessGrantId',
+      'authorizationScopeFingerprint',
+      'message',
+      'currentMessage',
+    ]);
     const model = asObject(value.modelResolution);
     if (
       model.status !== 'resolved' ||
@@ -4480,9 +4710,6 @@ export class AgentOrchestrator {
         EffectiveAuthorizationScopeFingerprintSchema.parse(
           turn.authorizationScopeFingerprint,
         ),
-      ...(turn.disclosureGrantId === undefined
-        ? {}
-        : { disclosureGrantId: assertUuid(turn.disclosureGrantId) }),
       message:
         typeof turn.message === 'string' &&
         turn.message.length <= MAX_MESSAGE_LENGTH
@@ -4490,7 +4717,17 @@ export class AgentOrchestrator {
           : (() => {
               throw new Error('invalid-runtime-checkpoint');
             })(),
+      currentMessage: snapshotConversationEntry(turn.currentMessage),
     });
+    if (
+      parsedTurn.currentMessage.conversationId !== parsedTurn.conversationId ||
+      parsedTurn.currentMessage.householdId !== parsedTurn.householdId ||
+      parsedTurn.currentMessage.userId !== parsedTurn.userId ||
+      parsedTurn.currentMessage.role !== 'user' ||
+      parsedTurn.currentMessage.content !== parsedTurn.message
+    ) {
+      throw new Error('invalid-runtime-checkpoint');
+    }
     const plan =
       value.plan === undefined
         ? undefined

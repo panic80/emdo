@@ -624,6 +624,7 @@ describe('production capability runtime conformance', () => {
       spaceAccessGrantId: IDS.spaceAccessGrant,
       authorizationScopeFingerprint,
       disclosureGrantId: IDS.grant,
+      disclosureGrantVersion: '1.0.0',
       sdkCallId: 'call-google-calendar-create-1',
       abortSignal: new AbortController().signal,
     } as const;
@@ -674,6 +675,62 @@ describe('production capability runtime conformance', () => {
     ).toHaveBeenLastCalledWith(expect.objectContaining({ authorityBinding }));
   });
 
+  it('requires and forwards the trusted disclosure policy version for proposal preparation', async () => {
+    const bindings = createBindings();
+    const runtime = createProductionCapabilityRuntime({
+      bindings,
+      providerWriteApprovalStore: approvalStore(),
+      ...authorityResolvers(),
+    });
+    const context = {
+      requestId: IDS.request,
+      runId: IDS.run,
+      householdId: IDS.household,
+      userId: IDS.user,
+      authenticatedSessionId: IDS.session,
+      spaceAccessGrantId: IDS.spaceAccessGrant,
+      authorizationScopeFingerprint,
+      disclosureGrantId: IDS.grant,
+      disclosureGrantVersion: '7.2.5',
+      sdkCallId: 'call-google-calendar-create-versioned',
+      abortSignal: new AbortController().signal,
+    } as const;
+
+    await expect(
+      runtime.materializeProviderWriteProposal({
+        capabilityId: CALENDAR_CREATE,
+        arguments: calendarCreateArguments,
+        context,
+      }),
+    ).resolves.toMatchObject({ sdkCallId: context.sdkCallId });
+    expect(
+      (
+        bindings['google-calendar.event.create'] as unknown as {
+          materializeProposal: ReturnType<typeof vi.fn>;
+        }
+      ).materializeProposal,
+    ).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        context: expect.objectContaining({ disclosureGrantVersion: '7.2.5' }),
+      }),
+    );
+
+    const {
+      disclosureGrantVersion: _disclosureGrantVersion,
+      ...withoutDisclosureGrantVersion
+    } = context as {
+      readonly disclosureGrantVersion: string;
+      readonly [key: string]: unknown;
+    };
+    await expect(
+      runtime.materializeProviderWriteProposal({
+        capabilityId: CALENDAR_CREATE,
+        arguments: calendarCreateArguments,
+        context: withoutDisclosureGrantVersion as never,
+      }),
+    ).rejects.toThrow();
+  });
+
   it('rejects proposal preparation when connector authority rotates or disappears', async () => {
     const bindings = createBindings();
     const rotatedAuthorityBinding = Object.freeze({
@@ -702,6 +759,7 @@ describe('production capability runtime conformance', () => {
       spaceAccessGrantId: IDS.spaceAccessGrant,
       authorizationScopeFingerprint,
       disclosureGrantId: IDS.grant,
+      disclosureGrantVersion: '1.0.0',
       sdkCallId: 'call-google-calendar-create-rotated',
       abortSignal: new AbortController().signal,
     } as const;

@@ -24,35 +24,6 @@ const event = {
   location: 'Clinic',
 };
 
-const allCalendarFields = [
-  'calendar-id',
-  'calendar-version',
-  'event-id',
-  'event-version',
-  'summary',
-  'start',
-  'end',
-  'time-zone',
-  'location',
-  'description',
-  'attendees',
-  'recurrence',
-] as const;
-
-const proposalScope = (...calendarIds: string[]) => ({
-  grantId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f201',
-  userId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f202',
-  householdId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f203',
-  runId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f204',
-  agentId: 'scheduler' as const,
-  provider: 'google-calendar' as const,
-  recordAllowlist: calendarIds.map((calendarId) => ({
-    dataClass: 'calendar.events' as const,
-    recordId: `${calendarId.length}:${calendarId}${event.eventId.length}:${event.eventId}`,
-    fields: allCalendarFields,
-  })),
-});
-
 const authorizationScopeFingerprint =
   EffectiveAuthorizationScopeFingerprintSchema.parse('e'.repeat(64));
 const providerAuthorityBinding = {
@@ -97,7 +68,6 @@ describe('CalendarProposalMaterializer', () => {
   it('materializes exact create, update, and delete previews and preconditions', async () => {
     const materializer = new CalendarProposalMaterializer(
       reader,
-      proposalScope('primary', 'secondary'),
       providerAuthorityBinding,
     );
     await expect(
@@ -245,7 +215,6 @@ describe('CalendarProposalMaterializer', () => {
   it('rejects capability mismatches, stale state, extra fields, and create overwrite', async () => {
     const materializer = new CalendarProposalMaterializer(
       reader,
-      proposalScope('primary', 'secondary'),
       providerAuthorityBinding,
     );
     await expect(
@@ -301,7 +270,6 @@ describe('CalendarProposalMaterializer', () => {
   it('does not invoke hostile argument accessors and freezes materialized output', async () => {
     const materializer = new CalendarProposalMaterializer(
       reader,
-      proposalScope('primary'),
       providerAuthorityBinding,
     );
     let getterCalls = 0;
@@ -344,7 +312,6 @@ describe('CalendarProposalMaterializer', () => {
           event: null,
         }),
       },
-      proposalScope('secondary'),
       providerAuthorityBinding,
     );
 
@@ -371,7 +338,6 @@ describe('CalendarProposalMaterializer', () => {
           event: null,
         }),
       },
-      proposalScope('secondary'),
       providerAuthorityBinding,
     );
     const recurringEvent = {
@@ -475,7 +441,6 @@ describe('CalendarProposalMaterializer', () => {
           event: null,
         }),
       },
-      proposalScope('secondary'),
       providerAuthorityBinding,
     );
 
@@ -515,7 +480,6 @@ describe('CalendarProposalMaterializer', () => {
           event: null,
         }),
       },
-      proposalScope('primary'),
       providerAuthorityBinding,
     );
     await expect(
@@ -544,16 +508,6 @@ describe('CalendarProposalMaterializer', () => {
           event: null,
         }),
       },
-      {
-        ...proposalScope(),
-        recordAllowlist: [
-          {
-            dataClass: 'calendar.events',
-            recordId: exactTarget,
-            fields: allCalendarFields,
-          },
-        ],
-      },
       providerAuthorityBinding,
     );
 
@@ -570,7 +524,96 @@ describe('CalendarProposalMaterializer', () => {
     ).resolves.toMatchObject({ targets: [{ id: exactTarget }] });
   });
 
-  it('rejects a server grant scoped to another calendar before repository access', async () => {
+  it('accepts the real scheduler delegation grant and keeps it out of the provider state request', async () => {
+    const readRequests: unknown[] = [];
+    const materializer = new ScopedCalendarProposalMaterializer(
+      {
+        readTargetState: async (request) => {
+          readRequests.push(request);
+          const { calendarId, eventId } = request;
+          return {
+          calendarId,
+          queriedEventId: eventId,
+          calendarVersion: 'calendar-v7',
+          event: null,
+          };
+        },
+      },
+      providerAuthorityBinding,
+    );
+    const disclosureGrant = {
+      schemaVersion: 1 as const,
+      id: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f111',
+      version: 1,
+      userId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f202',
+      householdId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f203',
+      agentId: 'scheduler',
+      purpose: 'Create the requested calendar appointment.',
+      runId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f204',
+      recordAllowlist: [
+        {
+          dataClass: 'agent.delegations',
+          recordId: 'scheduler-delegation-1',
+          fields: ['delegation'],
+        },
+      ],
+      provider: 'openai',
+      createdAt: '2026-08-09T12:00:00.000Z',
+      expiresAt: '2026-08-09T12:10:00.000Z',
+      oneRunOnly: true as const,
+    };
+    const input = {
+      capabilityId: 'google-calendar.event.create' as const,
+      capabilityFingerprint: 'c'.repeat(64),
+      canonicalArguments: {
+        operation: 'create' as const,
+        calendarId: 'primary',
+        expectedCalendarVersion: 'calendar-v7',
+        event,
+      },
+      disclosureGrant,
+      now: new Date('2026-08-09T12:05:00.000Z'),
+    };
+
+    await expect(materializer.materialize(input)).resolves.toMatchObject({
+      approvalDisplay: { title: 'Create Google Calendar event' },
+    });
+    expect(readRequests).toEqual([
+      { calendarId: 'primary', eventId: event.eventId },
+    ]);
+    await expect(
+      materializer.materialize({
+        ...input,
+        disclosureGrant: { ...disclosureGrant, provider: 'google-calendar' },
+      }),
+    ).rejects.toMatchObject({ code: 'calendar-authorization-invalid' });
+    await expect(
+      materializer.materialize({
+        ...input,
+        disclosureGrant: {
+          ...disclosureGrant,
+          householdId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f999',
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'calendar-authorization-invalid' });
+    await expect(
+      materializer.materialize({
+        ...input,
+        disclosureGrant: {
+          ...disclosureGrant,
+          recordAllowlist: [
+            {
+              dataClass: 'agent.delegations',
+              recordId: 'scheduler-delegation-1',
+              fields: ['other'],
+            },
+          ],
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'calendar-authorization-invalid' });
+  });
+
+  it('rejects a scheduler model grant without the delegation source before provider state access', async () => {
     let readCalls = 0;
     const scopedReader = {
       readTargetState: async ({
@@ -613,12 +656,12 @@ describe('CalendarProposalMaterializer', () => {
       runId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f104',
       recordAllowlist: [
         {
-          dataClass: 'calendar.events',
-          recordId: targetId('secondary'),
-          fields: ['summary'],
+          dataClass: 'agent.delegations',
+          recordId: 'scheduler-delegation-1',
+          fields: ['not-delegation'],
         },
       ],
-      provider: 'google-calendar',
+      provider: 'openai',
       createdAt: '2026-08-09T12:00:00.000Z',
       expiresAt: '2026-08-09T12:10:00.000Z',
       oneRunOnly: true as const,

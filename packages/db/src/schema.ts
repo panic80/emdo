@@ -2352,7 +2352,7 @@ export const managerTurns = emdoSchema.table(
     ),
     check(
       'manager_turns_runtime_check',
-      sql`length(${table.managerAgentVersion}) between 5 and 64 and ${table.managerAgentVersion} ~ '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' and ${table.requestedModel} in ('gpt-5.6-luna', 'gpt-5.6-terra') and ${table.ownershipTokenHash} ~ '^[a-f0-9]{64}$'`,
+      sql`length(${table.managerAgentVersion}) between 5 and 64 and ${table.managerAgentVersion} ~ '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' and ${table.requestedModel} in ('gpt-5.6-luna', 'gpt-5.6-terra', 'provider-free-mvp-v1') and ${table.ownershipTokenHash} ~ '^[a-f0-9]{64}$'`,
     ),
     check(
       'manager_turns_state_check',

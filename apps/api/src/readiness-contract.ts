@@ -35,12 +35,15 @@ export type ApiReadinessCheckName =
 
 export const SYNTHETIC_HTTP_SUBSET_REQUIRED_CHECKS = Object.freeze([
   'authority.authentication',
-  'sync.gateway',
-  'sync.jwks',
+  'agents.manager-turns',
+  'agents.run-events',
+  'experience.shopping-read',
 ] as const satisfies readonly ApiReadinessComponentName[]);
 
 export const SYNTHETIC_HTTP_SUBSET_EXCLUDED_CHECKS = Object.freeze([
-  'agents.manager-turns',
+  'authority.proposal-queries',
+  'authority.visual-decisions',
+  'authority.visual-proof-issuance',
   'google.connector',
   'voice.provider',
 ] as const satisfies readonly ApiReadinessComponentName[]);

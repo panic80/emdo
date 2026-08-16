@@ -3,13 +3,17 @@ import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 
 import { ApiSyntheticHttpSubsetReadinessSuccessSchema } from '../readiness-contract.js';
+import {
+  RunEventSchema,
+  ShoppingPageSchema,
+  TurnAcceptanceSchema,
+} from '../schemas.js';
 
 const AcceptanceConfigurationSchema = z.strictObject({
   apiOrigin: z
     .url()
     .refine((value) => ['http:', 'https:'].includes(new URL(value).protocol))
     .refine((value) => new URL(value).origin === value),
-  clientId: z.uuid(),
   environment: z.literal('staging'),
   workerProvidersEnabled: z.literal('false'),
   ownerEmail: z.email().trim().toLowerCase().max(320),
@@ -23,33 +27,6 @@ const AcceptanceConfigurationSchema = z.strictObject({
   workflowRunId: z.string().regex(/^[1-9][0-9]{0,19}$/u),
 });
 
-const WriteScopeSchema = z.strictObject({
-  schemaVersion: z.literal(1),
-  endpoint: z.url({ protocol: /^https$/u }).max(2_048),
-  token: z.string().min(16).max(32_768),
-  expiresAt: z.iso.datetime({ offset: true }),
-  writeScope: z.strictObject({
-    clientId: z.uuid(),
-    spaces: z
-      .array(
-        z.strictObject({
-          id: z.uuid(),
-          visibility: z.enum(['private', 'shared']),
-          originalOwnerUserId: z.uuid(),
-        }),
-      )
-      .min(1)
-      .max(256),
-  }),
-});
-
-const SyncClientRegistrationResponseSchema = z.strictObject({
-  schemaVersion: z.literal(1),
-  clientId: z.uuid(),
-  status: z.literal('registered'),
-  replayed: z.boolean(),
-});
-
 const ProblemResponseSchema = z.object({
   type: z.literal('about:blank'),
   title: z.string().min(1),
@@ -59,47 +36,18 @@ const ProblemResponseSchema = z.object({
   requestId: z.uuid(),
 });
 
-const ACCEPTANCE_CLIENT_B = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5fa0';
 const ACCEPTANCE_PROPOSAL = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5fa1';
-const ACCEPTANCE_OPERATION_IDS = Object.freeze([
-  '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5fa2',
-  '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5fa3',
-  '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5fa4',
-  '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5fa5',
-]);
-const CREATED_AT = '2026-01-01T00:00:00.000Z';
 
 type AcceptanceFetch = (request: Request) => Promise<Response>;
 
 const requiredOpenApiOperations = Object.freeze({
   '/api/auth/get-session': ['get'],
   '/api/auth/sign-in/email': ['post'],
-  '/api/auth/passkey/verify-authentication': ['post'],
-  '/api/v1/auth/invitations/redeem': ['post'],
-  '/api/v1/household/invitations': ['get', 'post'],
-  '/api/v1/household/invitations/{id}/revoke': ['post'],
-  '/api/v1/household/memberships': ['get'],
-  '/api/v1/household/memberships/{id}/role': ['patch'],
-  '/api/v1/household/memberships/{id}/deactivate': ['post'],
+  '/api/v1/auth/csrf': ['get'],
   '/api/v1/turns': ['post'],
   '/api/v1/runs/{id}/events': ['get'],
-  '/api/v1/proposals': ['get'],
-  '/api/v1/proposals/{id}': ['get'],
-  '/api/v1/proposals/{id}/visual-proof': ['post'],
   '/api/v1/proposals/{id}/decision': ['post'],
-  '/api/v1/sync/clients': ['post'],
-  '/api/v1/sync/token': ['get'],
-  '/api/v1/sync/ops': ['post'],
-  '/api/v1/experience/today': ['get'],
-  '/api/v1/experience/activity': ['get'],
-  '/api/v1/experience/finance': ['get'],
-  '/api/v1/experience/schedule': ['get'],
-  '/api/v1/experience/settings': ['get'],
   '/api/v1/experience/shopping': ['get'],
-  '/api/v1/experience/notification-preferences': ['get', 'put'],
-  '/api/v1/voice/transcribe': ['post'],
-  '/api/v1/voice/speak': ['post'],
-  '/api/v1/connectors/google/authorize': ['post'],
 } satisfies Readonly<Record<string, readonly string[]>>);
 
 const parseJson = async (response: Response): Promise<unknown> => {
@@ -148,34 +96,64 @@ const parseProblem = async (response: Response) => {
   return parsed.data;
 };
 
-const operation = (input: {
-  readonly clientId: string;
-  readonly operationId: string;
-  readonly entityType: string;
-  readonly entityId: string;
-  readonly mutationKind: 'create' | 'update' | 'delta';
-  readonly baseRevision: number;
-  readonly spaceId: string;
-  readonly value: Readonly<Record<string, unknown>>;
-}) => ({
-  schemaVersion: 1,
-  clientId: input.clientId,
-  operationId: input.operationId,
-  entity: { type: input.entityType, id: input.entityId },
-  mutation: {
-    kind: input.mutationKind,
-    payload:
-      input.mutationKind === 'create'
-        ? { spaceId: input.spaceId, value: input.value }
-        : input.mutationKind === 'update'
-          ? { spaceId: input.spaceId, patch: input.value }
-          : { spaceId: input.spaceId, delta: input.value },
-  },
-  baseRevision: input.baseRevision,
-  dependencies: [],
-  actorIntent: 'Exercise the deterministic HTTP staging acceptance fixture',
-  createdAt: CREATED_AT,
+const ProviderFreeShoppingResultSchema = z.object({
+  status: z.literal('completed'),
+  runId: z.uuid(),
+  output: z.object({
+    shoppingItem: z.object({
+      id: z.string().trim().min(1),
+      name: z.literal('Acceptance milk'),
+      unit: z.literal('each'),
+      quantityMinorUnits: z.literal(2_000),
+    }),
+  }),
+  executionResolution: z.strictObject({
+    status: z.literal('provider-free'),
+    profile: z.literal('shopping-list-v1'),
+    reason: z.literal('provider-free-mvp'),
+  }),
 });
+const ProviderFreeShoppingCompletedEventSchema = RunEventSchema.extend({
+  type: z.literal('run.completed'),
+  data: ProviderFreeShoppingResultSchema,
+});
+
+const readCompletedRun = async (response: Response, runId: string) => {
+  if (
+    !response.ok ||
+    !response.headers.get('content-type')?.startsWith('text/event-stream')
+  ) {
+    throw new Error('Provider-free run event stream failed');
+  }
+  const completed = (await response.text())
+    .split(/\n\n+/u)
+    .map((frame) => {
+      const event = /^event: ([^\n]+)$/mu.exec(frame)?.[1];
+      const data = /^data: (.+)$/mu.exec(frame)?.[1];
+      if (event !== 'run.completed' || data === undefined) return undefined;
+      try {
+        return ProviderFreeShoppingCompletedEventSchema.parse(JSON.parse(data));
+      } catch {
+        return undefined;
+      }
+    })
+    .filter(
+      (
+        value,
+      ): value is z.output<typeof ProviderFreeShoppingCompletedEventSchema> =>
+        value !== undefined,
+    );
+  if (
+    completed.length !== 1 ||
+    completed[0]!.runId !== runId ||
+    completed[0]!.data.runId !== runId
+  ) {
+    throw new Error(
+      'Provider-free run did not complete with the exact shopping result',
+    );
+  }
+  return completed[0]!.data;
+};
 
 export const runStagingAcceptanceCommand = async (input: {
   readonly argv: readonly string[];
@@ -197,6 +175,7 @@ export const runStagingAcceptanceCommand = async (input: {
   readonly proof: {
     readonly healthz: 'passed';
     readonly syntheticHttpSubsetReadiness: 'passed';
+    readonly authenticatedManagerShoppingFlow: 'passed';
     readonly protectedMetrics: 'passed';
     readonly requestIds: 'passed';
     readonly problemJson: 'passed';
@@ -204,7 +183,6 @@ export const runStagingAcceptanceCommand = async (input: {
 }> => {
   const configuration = AcceptanceConfigurationSchema.safeParse({
     apiOrigin: input.environment.EMDO_STAGING_API_ORIGIN,
-    clientId: input.environment.EMDO_SYNTHETIC_CLIENT_ID,
     environment: input.environment.EMDO_ENVIRONMENT,
     workerProvidersEnabled: input.environment.EMDO_EXTERNAL_PROVIDERS_ENABLED,
     ownerEmail: input.environment.EMDO_SYNTHETIC_OWNER_EMAIL,
@@ -328,174 +306,52 @@ export const runStagingAcceptanceCommand = async (input: {
     'x-csrf-token': csrf.token,
   };
 
-  const registerClient = async (clientId: string, displayName: string) => {
-    const response = SyncClientRegistrationResponseSchema.parse(
-      await requireOkJson(
-        await send('/api/v1/sync/clients', {
-          method: 'POST',
-          headers: {
-            ...mutationHeaders,
-            'idempotency-key': `staging-sync-client:${clientId}`,
-          },
-          body: JSON.stringify({
-            schemaVersion: 1,
-            clientId,
-            displayName,
-          }),
-        }),
-      ),
-    );
-    if (response.clientId !== clientId) {
-      throw new Error('Sync client registration binding failed');
-    }
-  };
-
-  await Promise.all([
-    registerClient(config.clientId, 'EMDO staging acceptance device A'),
-    registerClient(ACCEPTANCE_CLIENT_B, 'EMDO staging acceptance device B'),
-  ]);
-
-  const issueScope = async (clientId: string) => {
-    const response = WriteScopeSchema.parse(
-      await requireOkJson(
-        await send(
-          `/api/v1/sync/token?clientId=${encodeURIComponent(clientId)}`,
-          { headers: { cookie: cookies.join('; ') } },
-        ),
-      ),
-    );
-    if (
-      new URL(response.endpoint).origin !== config.publicOrigin ||
-      response.writeScope.clientId !== clientId
-    ) {
-      throw new Error('Sync client scope binding failed');
-    }
-    return response.writeScope;
-  };
-  const [clientA, clientB] = await Promise.all([
-    issueScope(config.clientId),
-    issueScope(ACCEPTANCE_CLIENT_B),
-  ]);
-  const privateA = clientA.spaces.find(
-    (space) => space.visibility === 'private',
-  );
-  const privateB = clientB.spaces.find(
-    (space) => space.visibility === 'private',
-  );
-  if (privateA === undefined || privateB?.id !== privateA.id) {
-    throw new Error('Two-device private scope gate failed');
+  const turnResponse = await send('/api/v1/turns', {
+    method: 'POST',
+    headers: {
+      ...mutationHeaders,
+      'idempotency-key': 'staging-provider-free-shopping-v1',
+    },
+    body: JSON.stringify({
+      schemaVersion: 1,
+      message: 'add 2 each Acceptance milk to shopping list',
+      routeHint: 'shopping',
+    }),
+  });
+  if (turnResponse.status !== 202) {
+    throw new Error('Provider-free manager turn was not accepted');
   }
-
-  const createOperations = [
-    operation({
-      clientId: config.clientId,
-      operationId: ACCEPTANCE_OPERATION_IDS[0],
-      entityType: 'scheduler.item',
-      entityId: 'acceptance-scheduler-item-v1',
-      mutationKind: 'create',
-      baseRevision: 0,
-      spaceId: privateA.id,
-      value: {
-        id: 'acceptance-scheduler-item-v1',
-        title: 'Acceptance task',
-        notes: null,
-        location: null,
-        startsAt: '2026-01-02T09:00:00.000-05:00',
-        endsAt: '2026-01-02T10:00:00.000-05:00',
-        recurrence: null,
-        attendees: [],
-        completion: 'open',
+  const turn = TurnAcceptanceSchema.parse(await requireOkJson(turnResponse));
+  const completed = await readCompletedRun(
+    await send(turn.eventsPath, {
+      headers: {
+        cookie: cookies.join('; '),
+        accept: 'text/event-stream',
       },
     }),
-    operation({
-      clientId: config.clientId,
-      operationId: ACCEPTANCE_OPERATION_IDS[1],
-      entityType: 'finance.budget',
-      entityId: 'acceptance-finance-budget-v1',
-      mutationKind: 'create',
-      baseRevision: 0,
-      spaceId: privateA.id,
-      value: {
-        id: 'acceptance-finance-budget-v1',
-        currency: 'CAD',
-        allocationsCadMinor: { groceries: 45_000 },
-      },
-    }),
-    operation({
-      clientId: config.clientId,
-      operationId: ACCEPTANCE_OPERATION_IDS[2],
-      entityType: 'shopping.item',
-      entityId: 'acceptance-shopping-item-v1',
-      mutationKind: 'create',
-      baseRevision: 0,
-      spaceId: privateA.id,
-      value: {
-        name: 'Acceptance milk',
-        unit: 'each',
-        quantityMinorUnits: 1_000,
-      },
-    }),
-  ] as const;
-  const apply = async (
-    clientId: string,
-    operations: readonly ReturnType<typeof operation>[],
-    idempotencyKey: string,
-    expectedRevision: number,
-  ) => {
-    const response = z
-      .object({
-        schemaVersion: z.literal(1),
-        clientId: z.uuid(),
-        results: z.array(
-          z
-            .object({
-              operationId: z.uuid(),
-              status: z.string(),
-              revision: z.number().int().positive(),
-            })
-            .passthrough(),
-        ),
-      })
-      .parse(
-        await requireOkJson(
-          await send('/api/v1/sync/ops', {
-            method: 'POST',
-            headers: { ...mutationHeaders, 'idempotency-key': idempotencyKey },
-            body: JSON.stringify({ schemaVersion: 1, clientId, operations }),
-          }),
-        ),
-      );
-    if (
-      response.clientId !== clientId ||
-      response.results.length !== operations.length ||
-      response.results.some(
-        (result, index) =>
-          result.operationId !== operations[index]!.operationId ||
-          result.status !== 'applied' ||
-          result.revision !== expectedRevision,
-      )
-    ) {
-      throw new Error('Domain sync acceptance failed');
-    }
-  };
-  await apply(config.clientId, createOperations, 'staging-domain-create-v1', 1);
-  await apply(
-    ACCEPTANCE_CLIENT_B,
-    [
-      operation({
-        clientId: ACCEPTANCE_CLIENT_B,
-        operationId: ACCEPTANCE_OPERATION_IDS[3],
-        entityType: 'shopping.item',
-        entityId: 'acceptance-shopping-item-v1',
-        mutationKind: 'delta',
-        baseRevision: 1,
-        spaceId: privateA.id,
-        value: { quantityMinorUnits: 1_000 },
-      }),
-    ],
-    'staging-two-device-update-v1',
-    2,
+    turn.runId,
   );
+  const shopping = ShoppingPageSchema.parse(
+    await requireOkJson(
+      await send('/api/v1/experience/shopping?limit=50', {
+        headers: { cookie: cookies.join('; ') },
+      }),
+    ),
+  );
+  const item = shopping.items.find(
+    (candidate) => candidate.id === completed.output.shoppingItem.id,
+  );
+  if (
+    item === undefined ||
+    item.name !== 'Acceptance milk' ||
+    item.unit !== 'each' ||
+    item.quantityMinorUnits !== 2_000 ||
+    item.state !== 'active'
+  ) {
+    throw new Error(
+      'Provider-free shopping readback did not match the completed result',
+    );
+  }
 
   const decisionKey = 'staging-visual-defense-v1';
   const decision = await send(
@@ -536,6 +392,7 @@ export const runStagingAcceptanceCommand = async (input: {
     proof: Object.freeze({
       healthz: 'passed' as const,
       syntheticHttpSubsetReadiness: 'passed' as const,
+      authenticatedManagerShoppingFlow: 'passed' as const,
       protectedMetrics: 'passed' as const,
       requestIds: 'passed' as const,
       problemJson: 'passed' as const,

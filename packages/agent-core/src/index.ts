@@ -113,6 +113,7 @@ export type {
   ModelDisclosureDenialReason,
   ModelDisclosureGateway,
   ModelDisclosurePurpose,
+  ModelDisclosureSource,
   ModelResolver,
   OpenAiAgentCostCalculator,
   OpenAiAgentInputTokenCounter,

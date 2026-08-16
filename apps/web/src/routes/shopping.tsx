@@ -143,7 +143,8 @@ export function ShoppingRoute() {
       <AskComposer
         compact
         onSubmit={async (message) => {
-          await conversation.submit(message, 'shopping');
+          const result = await conversation.submit(message, 'shopping');
+          if (result) loadShopping();
         }}
       />
       <DomainSyncStatus />

@@ -35,6 +35,8 @@ export const schedulerManifest: AgentManifest = AgentManifestSchema.parse({
   ],
   capabilityAllowlist: schedulerCapabilityReferences.map(({ id }) => id),
   readableDataClasses: [
+    'agent.delegations',
+    'agent.specialist-outcomes',
     'calendar.events',
     'scheduler.tasks',
     'scheduler.reminders',

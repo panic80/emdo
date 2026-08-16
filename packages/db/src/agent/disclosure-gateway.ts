@@ -152,6 +152,19 @@ const AuthorizationInputSchema = z
     }
   });
 
+const SchedulerDisclosureGrantResolverScopeSchema = z.strictObject({
+  runId: UuidSchema,
+  householdId: UuidSchema,
+  userId: UuidSchema,
+  spaceAccessGrantId: UuidSchema,
+  agentId: z.literal('scheduler'),
+  phasePurpose: z.literal('specialist-execution'),
+  provider: z.literal('openai'),
+});
+export type SchedulerDisclosureGrantResolverScope = z.output<
+  typeof SchedulerDisclosureGrantResolverScopeSchema
+>;
+
 const CanonicalEnvelopeSchema = z
   .strictObject({
     schemaVersion: z.literal(1),
@@ -293,6 +306,16 @@ export class DataDisclosureGrantIssueError extends Error {
   }
 }
 
+export class SchedulerDisclosureGrantResolverError extends Error {
+  constructor(
+    readonly code: 'invalid-input' | 'invalid-result',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'SchedulerDisclosureGrantResolverError';
+  }
+}
+
 export interface IssuedDataDisclosureGrant {
   readonly grant: DataDisclosureGrant;
   readonly grantHash: string;
@@ -410,6 +433,112 @@ export class PostgresDataDisclosureGrantIssuer {
           phasePurpose: value.phase_purpose,
           spaceId: value.space_id,
         });
+      },
+    );
+  }
+}
+
+/**
+ * Curated, request-principal-bound resolution for the scheduler proposal
+ * lifecycle. It reuses the sole disclosure aggregate without authorizing or
+ * auditing any model disclosure.
+ */
+export class PostgresSchedulerDisclosureGrantResolver {
+  readonly #principal: Readonly<DurableRepositoryPrincipal>;
+  readonly #scope: Readonly<SchedulerDisclosureGrantResolverScope>;
+
+  constructor(
+    private readonly pool: DatabasePool,
+    principal: DurableRepositoryPrincipal,
+    scope: SchedulerDisclosureGrantResolverScope,
+  ) {
+    this.#principal = parseDurablePrincipal(principal);
+    const parsedScope = SchedulerDisclosureGrantResolverScopeSchema.safeParse(
+      scope,
+    );
+    if (
+      !parsedScope.success ||
+      parsedScope.data.householdId !== this.#principal.householdId ||
+      parsedScope.data.userId !== this.#principal.userId
+    ) {
+      throw new SchedulerDisclosureGrantResolverError(
+        'invalid-input',
+        'Scheduler disclosure resolver is not bound to the active principal',
+      );
+    }
+    this.#scope = deepFreeze(parsedScope.data);
+  }
+
+  async resolve(disclosureGrantId: string): Promise<DataDisclosureGrant | undefined> {
+    const grantId = UuidSchema.safeParse(disclosureGrantId);
+    if (!grantId.success) return undefined;
+    return withClaimedTransaction(
+      this.pool,
+      this.#principal,
+      async (client) => {
+        const row = firstResultRow(
+          await client.query(
+            `select * from emdo.resolve_model_disclosure_grant(
+             $1, $2, $3, $4, $5, $6, $7, $8, $9
+           )`,
+            [
+              grantId.data,
+              this.#scope.runId,
+              this.#scope.householdId,
+              this.#scope.userId,
+              this.#scope.spaceAccessGrantId,
+              this.#scope.agentId,
+              this.#scope.phasePurpose,
+              this.#scope.provider,
+              '[]',
+            ],
+          ),
+        );
+        if (row === undefined) return undefined;
+        const resolution = ResolutionRowSchema.safeParse(row);
+        if (!resolution.success) {
+          throw new SchedulerDisclosureGrantResolverError(
+            'invalid-result',
+            'Database returned a malformed scheduler disclosure resolution',
+          );
+        }
+        if (resolution.data.status !== 'active') return undefined;
+        const active = resolution.data;
+        const recordAllowlist = normalizeRecordAllowlist(active.record_allowlist);
+        const grant = DataDisclosureGrantSchema.safeParse({
+          schemaVersion: active.schema_version,
+          id: active.grant_id,
+          version: active.version,
+          userId: active.original_owner_user_id,
+          householdId: active.household_id,
+          agentId: active.agent_id,
+          purpose: active.purpose,
+          runId: active.run_id,
+          recordAllowlist,
+          provider: active.provider,
+          createdAt: active.created_at.toISOString(),
+          expiresAt: active.expires_at.toISOString(),
+          oneRunOnly: true,
+        });
+        if (
+          !grant.success ||
+          active.grant_id !== grantId.data ||
+          active.household_id !== this.#scope.householdId ||
+          active.original_owner_user_id !== this.#scope.userId ||
+          active.run_id !== this.#scope.runId ||
+          active.agent_id !== this.#scope.agentId ||
+          active.provider !== this.#scope.provider ||
+          active.expires_at.getTime() <= active.database_time.getTime() ||
+          JSON.stringify(active.record_allowlist) !==
+            JSON.stringify(recordAllowlist) ||
+          hashDataDisclosureGrant(grant.data) !== active.grant_hash
+        ) {
+          throw new SchedulerDisclosureGrantResolverError(
+            'invalid-result',
+            'Resolved scheduler disclosure grant does not match its binding',
+          );
+        }
+        return grant.data;
       },
     );
   }

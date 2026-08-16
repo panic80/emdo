@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { EmdoBetterAuthConfiguration } from '@emdo/auth/server';
+
 import type { AuthenticationBoundary } from '../services/contracts.js';
+import type { ProductionAuthenticationBoundaryOptions } from './auth-boundary.js';
 import {
   createProductionAuthenticationServiceBinding,
   type ProductionAuthenticationDependencies,
@@ -24,6 +27,16 @@ const validEnvironment = () => ({
   EMDO_RESEND_FROM_EMAIL: 'auth@emdo.example',
   EMDO_SESSION_SECRET: encodedSecret(23),
   EMDO_TRANSACTIONAL_EMAIL_PROVIDER: 'resend',
+});
+
+const coreEnvironment = () => ({
+  EMDO_API_AUTH_SECRET: encodedSecret(11),
+  EMDO_API_DATABASE_URL:
+    'postgresql://emdo_api_login:secret@postgres:5432/emdo_app?sslmode=disable',
+  EMDO_AUTH_DATABASE_URL:
+    'postgresql://emdo_auth_login:secret@postgres:5432/emdo_app?sslmode=disable',
+  EMDO_PUBLIC_ORIGIN: 'https://emdo.example',
+  EMDO_SESSION_SECRET: encodedSecret(23),
 });
 
 const authenticationBoundary = (): AuthenticationBoundary => ({
@@ -73,10 +86,22 @@ const dependencies = () => {
   };
   const csrfProtector = { issue: vi.fn(), verify: vi.fn() };
   const boundary = authenticationBoundary();
+  const captured: {
+    authenticationBoundaryOptions?: ProductionAuthenticationBoundaryOptions;
+    betterAuthConfiguration?: EmdoBetterAuthConfiguration;
+  } = {};
 
   const adapters = {
-    createAuthenticationBoundary: vi.fn(() => boundary),
-    createBetterAuth: vi.fn(() => auth),
+    createAuthenticationBoundary: vi.fn(
+      (options: ProductionAuthenticationBoundaryOptions) => {
+        captured.authenticationBoundaryOptions = options;
+        return boundary;
+      },
+    ),
+    createBetterAuth: vi.fn((configuration: EmdoBetterAuthConfiguration) => {
+      captured.betterAuthConfiguration = configuration;
+      return auth;
+    }),
     createCsrfProtector: vi.fn(() => csrfProtector as never),
     createDatabaseClient: vi.fn((input) => {
       const close = closes[databaseIndex++];
@@ -98,6 +123,7 @@ const dependencies = () => {
     adapters,
     auth,
     boundary,
+    captured,
     claimBridge,
     closes,
     csrfProtector,
@@ -130,13 +156,6 @@ describe('production authentication service composition', () => {
         EMDO_SESSION_SECRET: encodedSecret(11),
       },
     ],
-    [
-      'unsupported mail provider',
-      {
-        ...validEnvironment(),
-        EMDO_TRANSACTIONAL_EMAIL_PROVIDER: 'smtp',
-      },
-    ],
   ])('opens no database for %s', async (_label, environment) => {
     const harness = dependencies();
 
@@ -150,6 +169,78 @@ describe('production authentication service composition', () => {
     expect(
       harness.adapters.createTransactionalEmailTransport,
     ).not.toHaveBeenCalled();
+  });
+
+  it('disables an invalid optional provider bundle without disabling core authentication', async () => {
+    const harness = dependencies();
+
+    const result = await createProductionAuthenticationServiceBinding(
+      {
+        ...validEnvironment(),
+        EMDO_TRANSACTIONAL_EMAIL_PROVIDER: 'smtp',
+      },
+      harness.adapters,
+    );
+
+    expect(result.binding?.service).toBe(harness.boundary);
+    expect(harness.adapters.createDatabaseClient).toHaveBeenCalledTimes(2);
+    expect(
+      harness.adapters.createTransactionalEmailTransport,
+    ).not.toHaveBeenCalled();
+    expect(harness.adapters.createInvitationRedemptions).not.toHaveBeenCalled();
+  });
+
+  it('composes verified password/session authentication without optional identity, mail, or onboarding providers', async () => {
+    const harness = dependencies();
+
+    const result = await createProductionAuthenticationServiceBinding(
+      coreEnvironment(),
+      harness.adapters,
+    );
+
+    expect(harness.adapters.createDatabaseClient.mock.calls).toEqual([
+      [
+        expect.objectContaining({
+          applicationName: 'emdo-api-auth-scope',
+          connectionString: coreEnvironment().EMDO_API_DATABASE_URL,
+          max: 5,
+        }),
+      ],
+      [
+        expect.objectContaining({
+          applicationName: 'emdo-api-better-auth',
+          connectionString: coreEnvironment().EMDO_AUTH_DATABASE_URL,
+          max: 10,
+        }),
+      ],
+    ]);
+    expect(
+      harness.adapters.createTransactionalEmailTransport,
+    ).not.toHaveBeenCalled();
+    expect(harness.adapters.createEmailCallbacks).not.toHaveBeenCalled();
+    expect(harness.adapters.createInvitationRedemptions).not.toHaveBeenCalled();
+    expect(harness.adapters.createBetterAuth).toHaveBeenCalledWith(
+      expect.not.objectContaining({ googleIdentity: expect.anything() }),
+    );
+    await expect(
+      harness.captured.betterAuthConfiguration?.sendPasswordResetEmail(
+        {} as never,
+      ),
+    ).rejects.toThrow('authentication-email-unavailable');
+    await expect(
+      harness.captured.betterAuthConfiguration?.sendVerificationEmail(
+        {} as never,
+      ),
+    ).rejects.toThrow('authentication-email-unavailable');
+    await expect(
+      harness.captured.authenticationBoundaryOptions?.invitationRedemptions.redeem(
+        {} as never,
+      ),
+    ).rejects.toThrow('invitation-onboarding-unavailable');
+    await expect(result.binding?.check()).resolves.toBe(true);
+    expect(harness.transport.checkReady).not.toHaveBeenCalled();
+    expect(harness.invitationRedemptions.checkReady).not.toHaveBeenCalled();
+    expect(result.binding?.service).toBe(harness.boundary);
   });
 
   it('constructs the complete durable boundary from exact purpose-specific inputs', async () => {
@@ -248,7 +339,9 @@ describe('production authentication service composition', () => {
     );
 
     expect(result).toEqual({});
-    for (const close of harness.closes) expect(close).toHaveBeenCalledOnce();
+    expect(harness.closes[0]).toHaveBeenCalledOnce();
+    expect(harness.closes[1]).toHaveBeenCalledOnce();
+    expect(harness.closes[2]).not.toHaveBeenCalled();
   });
 
   it('closes all purpose-specific databases exactly once', async () => {

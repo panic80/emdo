@@ -7,8 +7,10 @@ import type {
 import {
   ALL_MANAGER_DELEGATION_CAPABILITY_IDS,
   ALL_SPECIALIST_CAPABILITY_IDS,
+  CORE_MVP_CAPABILITY_IDS,
   PROVIDER_WRITE_CAPABILITY_IDS,
   REQUIRED_CAPABILITY_BINDING_KINDS,
+  type CoreProductionCapabilityBindings,
   type ManagerDelegationCapabilityId,
   type ProductionCapabilityBinding,
   type ProductionCapabilityBindings,
@@ -50,6 +52,12 @@ export interface TrustedProductionCapabilityServices {
   readonly providerWrites: TrustedProviderWriteCapabilityBindings;
   /** Manager receives only these three delegation executors. */
   readonly delegations: TrustedManagerDelegationExecutors;
+}
+
+/** Exact MVP-only authority surface; it deliberately has no generic specialist map. */
+export interface CoreProductionCapabilityServices {
+  readonly schedulerDelegation: CapabilityExecutor<unknown, unknown>;
+  readonly calendarEventCreate: TrustedProviderWriteCapabilityBinding;
 }
 
 const assertPlainRecord: (
@@ -190,4 +198,52 @@ export const createProductionCapabilityBindings = (
   }
 
   return Object.freeze(bindings) as ProductionCapabilityBindings;
+};
+
+/**
+ * Produces the only capability map admissible for the manager+scheduler MVP
+ * graph. Finance, shopping, Maps, task writes, and other Calendar writes have
+ * no binding and therefore cannot be compiled or invoked.
+ */
+export const createCoreProductionCapabilityBindings = (
+  services: CoreProductionCapabilityServices,
+): CoreProductionCapabilityBindings => {
+  const input = assertExactKeys(
+    services,
+    ['calendarEventCreate', 'schedulerDelegation'],
+    'api-core-capability-services-invalid',
+  );
+  if (typeof input.schedulerDelegation !== 'function') {
+    throw new Error('api-core-capability-services-invalid');
+  }
+  const calendarEventCreate = validateProviderWriteBinding(
+    'google-calendar.event.create' as ProviderWriteCapabilityId,
+    input.calendarEventCreate,
+  );
+  if (
+    CORE_MVP_CAPABILITY_IDS.length !== 2 ||
+    !CORE_MVP_CAPABILITY_IDS.includes('agent.scheduler.delegate') ||
+    !CORE_MVP_CAPABILITY_IDS.includes('google-calendar.event.create')
+  ) {
+    throw new Error('api-core-capability-set-invalid');
+  }
+  return Object.freeze({
+    'agent.scheduler.delegate': Object.freeze({
+      kind: 'delegation' as const,
+      execute: input.schedulerDelegation as CapabilityExecutor<
+        unknown,
+        unknown
+      >,
+    }),
+    'google-calendar.event.create': Object.freeze({
+      kind: 'provider-write' as const,
+      executeProviderWrite:
+        calendarEventCreate.executeProviderWrite.bind(calendarEventCreate),
+      materializeProposal:
+        calendarEventCreate.materializeProposal.bind(calendarEventCreate),
+      providerWriteSafety: Object.freeze({
+        ...calendarEventCreate.providerWriteSafety,
+      }),
+    }),
+  }) as CoreProductionCapabilityBindings;
 };

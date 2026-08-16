@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DatabaseClient, DatabasePool } from '../scoped-repository.js';
 import {
   PostgresEncryptedGoogleCalendarGrantStore,
+  PostgresGoogleCalendarProposalAuthorityResolver,
   PostgresGoogleCalendarProviderAuthorityResolver,
   PostgresGoogleOAuthAuthorizationEpochStore,
   PostgresGoogleOAuthDisconnectOperationStore,
@@ -574,6 +575,86 @@ describe('durable Google OAuth persistence', () => {
     await expect(
       resolver.resolve({ ...input, householdId: actor.privateSpaceId }),
     ).resolves.toBeUndefined();
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        sql.includes('resolve_current_google_calendar_authority'),
+      ),
+    ).toHaveLength(1);
+    expect(
+      query.mock.calls.find(([sql]) =>
+        sql.includes('resolve_current_google_calendar_authority'),
+      )?.[1],
+    ).toEqual([spaceAccessGrantId, input.runId]);
+    await expect(
+      resolver.resolve({ ...input, sessionId: principal.requestId }),
+    ).resolves.toBeUndefined();
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        sql.includes('resolve_current_google_calendar_authority'),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('resolves a proposal-phase Calendar authority without a decision ID', async () => {
+    const spaceAccessGrantId = '70000000-0000-4000-8000-000000000016';
+    const authorizationScopeFingerprint = 'c'.repeat(64);
+    const { pool, query } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope')) {
+        return [{ authorized: true }];
+      }
+      if (sql.includes('resolve_current_google_calendar_authority')) {
+        return [
+          {
+            household_id: actor.householdId,
+            private_space_id: actor.privateSpaceId,
+            request_id: principal.requestId,
+            session_id: principal.sessionId,
+            user_id: principal.userId,
+            space_access_grant_id: spaceAccessGrantId,
+            authorization_scope_fingerprint: authorizationScopeFingerprint,
+            provider_grant_reference: 'gcal-grant-reference-proposal',
+            authorization_epoch: 5,
+          },
+        ];
+      }
+      return [];
+    });
+    const resolver = new PostgresGoogleCalendarProposalAuthorityResolver(
+      pool,
+      principal,
+    );
+    const input = {
+      requestId: principal.requestId,
+      runId: '70000000-0000-4000-8000-000000000017',
+      sessionId: principal.sessionId,
+      userId: actor.userId,
+      householdId: actor.householdId,
+      agentId: 'scheduler',
+      spaceAccessGrantId,
+      disclosureGrantId: '70000000-0000-4000-8000-000000000018',
+      capabilityId: 'google-calendar.event.create',
+      capabilityFingerprint: 'd'.repeat(64),
+    } as const;
+
+    await expect(resolver.resolve(input)).resolves.toEqual({
+      authorityBinding: {
+        kind: 'google-calendar-grant-v2',
+        householdId: actor.householdId,
+        privateSpaceId: actor.privateSpaceId,
+        authorizationScopeFingerprint,
+        providerGrantReference: 'gcal-grant-reference-proposal',
+        authorizationEpoch: 5,
+      },
+      operationScope: {
+        requestId: principal.requestId,
+        sessionId: principal.sessionId,
+        householdId: actor.householdId,
+        userId: principal.userId,
+        spaceAccessGrantId,
+        authorizationScopeFingerprint,
+      },
+    });
+    expect(Object.hasOwn(input, 'decisionId')).toBe(false);
     expect(
       query.mock.calls.filter(([sql]) =>
         sql.includes('resolve_current_google_calendar_authority'),

@@ -18,6 +18,7 @@ describe('@emdo/db production export boundaries', () => {
         'PostgresSpaceAccessGrantService',
         'PostgresDataDisclosureGrantIssuer',
         'PostgresModelDisclosureGateway',
+        'PostgresSchedulerDisclosureGrantResolver',
         'CanonicalRecordEnvelopeDisclosureFilter',
         'PostgresAgentMemoryRepository',
         'PostgresRunEventSource',
@@ -27,6 +28,7 @@ describe('@emdo/db production export boundaries', () => {
         'checkPostgresAudioSpendReadiness',
         'PostgresHouseholdAdministrationService',
         'PostgresInvitationRedemptionCoordinator',
+        'PostgresGoogleCalendarProposalAuthorityResolver',
         'PostgresGoogleCalendarProviderAuthorityResolver',
         'PostgresGoogleOAuthDisconnectOperationStore',
         'checkPostgresGoogleOAuthRuntimeReadiness',
@@ -35,6 +37,7 @@ describe('@emdo/db production export boundaries', () => {
         'AudioRequestCoordinatorError',
         'PostgresFinanceImportRepository',
         'FinanceImportPersistenceError',
+        'PostgresProviderFreeShoppingService',
       ]),
     );
     expect(api).not.toHaveProperty('PostgresDeterministicJobExecutionStore');

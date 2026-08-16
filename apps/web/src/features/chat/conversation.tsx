@@ -61,6 +61,11 @@ function textFromPayload(payload: unknown): string | undefined {
   const record = payload as Record<string, unknown>;
   if (typeof record.text === 'string') return record.text;
   if (typeof record.delta === 'string') return record.delta;
+  const output = record.output;
+  if (output && typeof output === 'object') {
+    const summary = (output as Record<string, unknown>).summary;
+    if (typeof summary === 'string') return summary;
+  }
   return undefined;
 }
 
@@ -137,7 +142,10 @@ export function ConversationProvider({ children }: PropsWithChildren) {
             ),
           );
         }
-        if (type === 'assistant.message' && text) {
+        if (
+          (type === 'assistant.message' || type === 'run.completed') &&
+          text
+        ) {
           assistantText = text;
           setMessages((current) =>
             current.map((item) =>

@@ -45,9 +45,11 @@ const readinessChecks = (status: ApiReadinessStatus) =>
 const syntheticHttpSubsetChecks = Object.freeze({
   ...readinessChecks('unavailable'),
   'authority.authentication': 'ok' as const,
-  sync: 'ok' as const,
-  'sync.gateway': 'ok' as const,
-  'sync.jwks': 'ok' as const,
+  agents: 'ok' as const,
+  'agents.manager-turns': 'ok' as const,
+  'agents.run-events': 'ok' as const,
+  experience: 'unavailable' as const,
+  'experience.shopping-read': 'ok' as const,
 });
 const EDGE_PROXY_SECRET =
   'edge-proxy-test-secret-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -1984,8 +1986,8 @@ describe('Fastify API boundary', () => {
       ready: false,
       checks: {
         ...syntheticHttpSubsetChecks,
-        sync: 'unavailable' as const,
-        'sync.jwks': 'unavailable' as const,
+        agents: 'unavailable' as const,
+        'agents.manager-turns': 'unavailable' as const,
       },
     }));
     const app = await createApp({

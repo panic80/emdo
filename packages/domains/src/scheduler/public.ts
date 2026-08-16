@@ -12,6 +12,5 @@ export type {
   CalendarEventRecord,
   CalendarProposalMaterialization,
   CalendarProposalReadRequest,
-  CalendarProposalReadScope,
   CalendarProposalStateReader,
 } from './proposals.js';

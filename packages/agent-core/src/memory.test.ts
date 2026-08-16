@@ -76,12 +76,12 @@ describe('ConversationMemoryService', () => {
       () => '018f1f5e-5555-7555-8555-555555555555',
     );
 
-    await service.appendManagerMessage({
+    const userEntry = await service.appendManagerMessage({
       ...ids,
       role: 'user',
       content: 'Remember oat milk.',
     });
-    await service.appendManagerMessage({
+    const assistantEntry = await service.appendManagerMessage({
       ...ids,
       role: 'assistant',
       content: 'I added oat milk to the plan.',
@@ -101,6 +101,20 @@ describe('ConversationMemoryService', () => {
       role: 'assistant',
       content: 'I added oat milk to the plan.',
       sourceAgentId: 'manager',
+      createdAt: '2026-08-09T21:00:00.000Z',
+    });
+    expect(userEntry).toEqual({
+      id: '018f1f5e-5555-7555-8555-555555555555',
+      ...ids,
+      role: 'user',
+      content: 'Remember oat milk.',
+      createdAt: '2026-08-09T21:00:00.000Z',
+    });
+    expect(assistantEntry).toEqual({
+      id: '018f1f5e-5555-7555-8555-555555555555',
+      ...ids,
+      role: 'assistant',
+      content: 'I added oat milk to the plan.',
       createdAt: '2026-08-09T21:00:00.000Z',
     });
   });

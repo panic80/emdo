@@ -2,9 +2,12 @@ import { createHash } from 'node:crypto';
 
 import {
   EffectiveAuthorizationScopeFingerprintSchema,
+  TrustedProviderWriteAuthorityResolutionSchema,
+  UuidSchema,
   deepFreeze,
   type DeepReadonly,
   type EffectiveAuthorizationScopeFingerprint,
+  type TrustedProviderWriteAuthorityResolution,
 } from '@emdo/contracts';
 import { z } from 'zod';
 
@@ -77,6 +80,15 @@ const ActorSchema: z.ZodType<GoogleCalendarOAuthActor> = z.strictObject({
   householdId: ReferenceSchema,
   privateSpaceId: ReferenceSchema,
   sessionId: ReferenceSchema,
+});
+const ProposalTargetReaderRequestSchema = z.strictObject({
+  requestId: UuidSchema,
+  spaceAccessGrantId: UuidSchema,
+  authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprintSchema,
+});
+const ProposalTargetReadInputSchema = z.strictObject({
+  calendarId: ReferenceSchema,
+  eventId: EventIdSchema,
 });
 const AccessTokenLeaseSchema = z.strictObject({
   accessToken: z.string().min(1).max(8_192),
@@ -1250,6 +1262,37 @@ const normalizeProviderEvent = (
   });
 };
 
+const normalizeProposalTargetEvent = (
+  input: unknown,
+): GoogleCalendarProviderState['event'] => {
+  const event = GoogleProviderEventSchema.safeParse(input);
+  if (!event.success || event.data.status === 'cancelled') {
+    throw new GoogleCalendarFetchError('response-invalid', true);
+  }
+  const recurrence = parseRrule(
+    event.data.recurrence,
+    event.data.extendedProperties?.private?.emdoDisambiguation,
+  );
+  return deepFreeze({
+    eventId: event.data.id,
+    summary: event.data.summary,
+    start: event.data.start.dateTime,
+    end: event.data.end.dateTime,
+    timeZone: 'America/Toronto' as const,
+    ...(event.data.location === undefined
+      ? {}
+      : { location: event.data.location }),
+    ...(event.data.description === undefined
+      ? {}
+      : { description: event.data.description }),
+    ...(event.data.attendees === undefined
+      ? {}
+      : { attendees: event.data.attendees.map(({ email }) => email) }),
+    ...(recurrence === undefined ? {} : { recurrence }),
+    eventVersion: event.data.etag,
+  });
+};
+
 const providerEventBody = (command: GoogleCalendarWriteCommand): string => {
   if (command.payload === null) {
     throw new Error('google-calendar-write-payload-missing');
@@ -1349,6 +1392,162 @@ const assertGatewayAuthorization = (
     throw new Error('google-calendar-write-authorization-invalid');
   }
 };
+
+const readProviderTargetState = async (input: {
+  readonly http: GoogleCalendarHttpClient;
+  readonly session: CredentialSession;
+  readonly calendarId: string;
+  readonly eventId: string;
+  readonly normalizeEvent: (input: unknown) => GoogleCalendarProviderState['event'];
+}): Promise<GoogleCalendarProviderState> => {
+  const collectionUrl = calendarEventsUrl(input.calendarId);
+  collectionUrl.searchParams.set('maxResults', '1');
+  collectionUrl.searchParams.set('showDeleted', 'true');
+  collectionUrl.searchParams.set('fields', 'etag');
+  const versionResult = await input.http.request(input.session, {
+    url: collectionUrl.toString(),
+    method: 'GET',
+    parseJsonStatuses: [200],
+  });
+  const rawVersion = assertSuccess(versionResult);
+  const version = CollectionVersionSchema.safeParse(rawVersion);
+  if (!version.success) {
+    throw new GoogleCalendarFetchError('response-invalid', true);
+  }
+
+  const eventUrl = calendarEventUrl(input.calendarId, input.eventId);
+  eventUrl.searchParams.set(
+    'fields',
+    'id,etag,status,summary,description,location,start,end,attendees(email),recurrence,extendedProperties(private)',
+  );
+  const eventResult = await input.http.request(input.session, {
+    url: eventUrl.toString(),
+    method: 'GET',
+    parseJsonStatuses: [200],
+  });
+  if (eventResult.status === 404) {
+    return deepFreeze({
+      calendarId: input.calendarId,
+      queriedEventId: input.eventId,
+      calendarVersion: version.data.etag,
+      event: null,
+    });
+  }
+  const rawEvent = assertSuccess(eventResult);
+  return deepFreeze({
+    calendarId: input.calendarId,
+    queriedEventId: input.eventId,
+    calendarVersion: version.data.etag,
+    event: input.normalizeEvent(rawEvent),
+  });
+};
+
+export interface GoogleCalendarProposalTargetReaderScope {
+  readonly actor: GoogleCalendarOAuthActor;
+  readonly request: Readonly<{
+    readonly requestId: string;
+    readonly spaceAccessGrantId: string;
+    readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
+  }>;
+  readonly authorityResolution: TrustedProviderWriteAuthorityResolution;
+}
+
+/**
+ * Pre-approval, target-only Calendar reader. Its scope is validated once at
+ * construction and cannot mint an approval permit or issue a mutation.
+ */
+export class GoogleCalendarProposalTargetReader {
+  readonly #actor: GoogleCalendarOAuthActor;
+  readonly #authority: TrustedProviderWriteAuthorityResolution;
+  readonly #http: GoogleCalendarHttpClient;
+
+  constructor(input: unknown) {
+    const snapshot = snapshotBoundedInput(
+      input,
+      [
+        'actor',
+        'request',
+        'authorityResolution',
+        'fetch',
+        'broker',
+        'timeoutMs',
+        'clock',
+      ],
+      ['actor', 'request', 'authorityResolution', 'fetch', 'broker'],
+    );
+    const actor = ActorSchema.safeParse(snapshot?.actor);
+    const request = ProposalTargetReaderRequestSchema.safeParse(
+      snapshot?.request,
+    );
+    const authority = TrustedProviderWriteAuthorityResolutionSchema.safeParse(
+      snapshot?.authorityResolution,
+    );
+    if (
+      snapshot === undefined ||
+      !actor.success ||
+      !request.success ||
+      !authority.success
+    ) {
+      throw new Error('invalid-google-calendar-proposal-target-reader');
+    }
+    const operationScope = authority.data.operationScope;
+    const authorityBinding = authority.data.authorityBinding;
+    if (
+      operationScope.requestId !== request.data.requestId ||
+      operationScope.sessionId !== actor.data.sessionId ||
+      operationScope.householdId !== actor.data.householdId ||
+      operationScope.userId !== actor.data.userId ||
+      operationScope.spaceAccessGrantId !== request.data.spaceAccessGrantId ||
+      operationScope.authorizationScopeFingerprint !==
+        request.data.authorizationScopeFingerprint ||
+      authorityBinding.householdId !== actor.data.householdId ||
+      authorityBinding.privateSpaceId !== actor.data.privateSpaceId ||
+      authorityBinding.authorizationScopeFingerprint !==
+        request.data.authorizationScopeFingerprint
+    ) {
+      throw new Error('invalid-google-calendar-proposal-target-reader');
+    }
+    const options = parseOptions({
+      fetch: snapshot.fetch,
+      broker: snapshot.broker,
+      ...(snapshot.timeoutMs === undefined
+        ? {}
+        : { timeoutMs: snapshot.timeoutMs }),
+      ...(snapshot.clock === undefined ? {} : { clock: snapshot.clock }),
+    });
+    this.#actor = deepFreeze(actor.data);
+    this.#authority = deepFreeze(authority.data);
+    this.#http = new GoogleCalendarHttpClient(options);
+  }
+
+  async readTargetState(input: unknown): Promise<GoogleCalendarProviderState> {
+    const snapshot = snapshotBoundedInput(input, ['calendarId', 'eventId']);
+    const target = ProposalTargetReadInputSchema.safeParse(snapshot);
+    if (!target.success) {
+      throw new GoogleCalendarFetchError('provider-rejected', false);
+    }
+    return this.#http.withCredential({
+      actor: this.#actor,
+      capability: 'calendar-event-write',
+      operation: async (session) => {
+        const binding = this.#authority.authorityBinding;
+        if (
+          session.grantReference !== binding.providerGrantReference ||
+          session.authorizationEpoch !== binding.authorizationEpoch
+        ) {
+          throw new GoogleCalendarFetchError('credential-unavailable', false);
+        }
+        return readProviderTargetState({
+          http: this.#http,
+          session,
+          calendarId: target.data.calendarId,
+          eventId: target.data.eventId,
+          normalizeEvent: normalizeProposalTargetEvent,
+        });
+      },
+    });
+  }
+}
 
 export class FetchGoogleCalendarConditionalGateway implements GoogleCalendarConditionalGateway {
   readonly #actor: GoogleCalendarOAuthActor;
@@ -1628,50 +1827,18 @@ export class FetchGoogleCalendarConditionalGateway implements GoogleCalendarCond
         if (!this.#sessionMatchesApproval(session, authorization)) {
           throw new GoogleCalendarFetchError('credential-unavailable', false);
         }
-        const collectionUrl = calendarEventsUrl(command.calendarId);
-        collectionUrl.searchParams.set('maxResults', '1');
-        collectionUrl.searchParams.set('showDeleted', 'true');
-        collectionUrl.searchParams.set('fields', 'etag');
-        const versionResult = await this.#http.request(session, {
-          url: collectionUrl.toString(),
-          method: 'GET',
-          parseJsonStatuses: [200],
-        });
-        const rawVersion = assertSuccess(versionResult);
-        const version = CollectionVersionSchema.safeParse(rawVersion);
-        if (!version.success) {
-          throw new GoogleCalendarFetchError('response-invalid', true);
-        }
-
-        const eventUrl = calendarEventUrl(command.calendarId, command.eventId);
-        eventUrl.searchParams.set(
-          'fields',
-          'id,etag,status,summary,description,location,start,end,attendees(email),recurrence,extendedProperties(private)',
-        );
-        const eventResult = await this.#http.request(session, {
-          url: eventUrl.toString(),
-          method: 'GET',
-          parseJsonStatuses: [200],
-        });
-        if (eventResult.status === 404) {
-          return deepFreeze({
-            calendarId: command.calendarId,
-            queriedEventId: command.eventId,
-            calendarVersion: version.data.etag,
-            event: null,
-          });
-        }
-        const rawEvent = assertSuccess(eventResult);
-        return deepFreeze({
+        return readProviderTargetState({
+          http: this.#http,
+          session,
           calendarId: command.calendarId,
-          queriedEventId: command.eventId,
-          calendarVersion: version.data.etag,
-          event: normalizeProviderEvent(
-            rawEvent,
-            command,
-            mode === 'readback' && command.operation !== 'delete',
-            mode === 'readback' && command.operation === 'create',
-          ),
+          eventId: command.eventId,
+          normalizeEvent: (input) =>
+            normalizeProviderEvent(
+              input,
+              command,
+              mode === 'readback' && command.operation !== 'delete',
+              mode === 'readback' && command.operation === 'create',
+            ),
         });
       },
     });

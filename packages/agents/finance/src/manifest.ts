@@ -36,6 +36,8 @@ export const financeManifest: AgentManifest = AgentManifestSchema.parse({
   ],
   capabilityAllowlist: financeCapabilityReferences.map(({ id }) => id),
   readableDataClasses: [
+    'agent.delegations',
+    'agent.specialist-outcomes',
     'finance.accounts',
     'finance.transactions',
     'finance.categories',

@@ -31,6 +31,7 @@ import {
   EffectiveAuthorizationScopeFingerprintSchema,
   IdentifierSchema,
   OpaqueReferenceSchema,
+  SemanticVersionSchema,
   TrustedProviderWriteAuthorityResolutionSchema,
   UuidSchema,
   createRuntimeSchemaRegistry,
@@ -71,6 +72,8 @@ export type SpecialistCapabilityId =
   SchedulerCapabilityId | FinanceCapabilityId | ShoppingCapabilityId;
 export type ProductionCapabilityId =
   SpecialistCapabilityId | ManagerDelegationCapabilityId;
+export type CoreProductionCapabilityId =
+  'agent.scheduler.delegate' | 'google-calendar.event.create';
 export type ProviderWriteCapabilityName = Extract<
   SchedulerCapabilityId,
   | 'google-calendar.event.create'
@@ -91,6 +94,11 @@ export const ALL_MANAGER_DELEGATION_CAPABILITY_IDS = Object.freeze(
     ({ id }) => id,
   ) as ManagerDelegationCapabilityId[],
 );
+
+export const CORE_MVP_CAPABILITY_IDS = Object.freeze([
+  'agent.scheduler.delegate',
+  'google-calendar.event.create',
+] as const satisfies readonly CoreProductionCapabilityId[]);
 
 const allReferences = [
   ...schedulerCapabilityReferences,
@@ -1150,6 +1158,7 @@ export interface ProviderProposalMaterializationContext {
   readonly spaceAccessGrantId: string;
   readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
   readonly disclosureGrantId: string;
+  readonly disclosureGrantVersion: string;
   readonly sdkCallId: string;
   readonly abortSignal: AbortSignal;
 }
@@ -1215,6 +1224,9 @@ export type ProductionCapabilityBinding =
 
 export type ProductionCapabilityBindings = Readonly<
   Record<ProductionCapabilityId, ProductionCapabilityBinding>
+>;
+export type CoreProductionCapabilityBindings = Readonly<
+  Record<CoreProductionCapabilityId, ProductionCapabilityBinding>
 >;
 
 const requiredDataClasses: Record<ProductionCapabilityId, readonly string[]> = {
@@ -1424,6 +1436,9 @@ const validateResolver = (
 
 const validateBindings = (
   rawBindings: unknown,
+  capabilityIds: readonly ProductionCapabilityId[] = Object.keys(
+    REQUIRED_CAPABILITY_BINDING_KINDS,
+  ) as ProductionCapabilityId[],
 ): {
   readonly registrations: readonly RegisteredCapability[];
   readonly materializers: ReadonlyMap<
@@ -1432,9 +1447,10 @@ const validateBindings = (
   >;
 } => {
   assertPlainRecord(rawBindings, 'api-capability-bindings-missing');
-  const requiredIds = Object.keys(REQUIRED_CAPABILITY_BINDING_KINDS);
+  const requiredIds = [...capabilityIds];
+  const allowedIds = new Set(requiredIds);
   for (const key of Object.keys(rawBindings)) {
-    if (!Object.hasOwn(REQUIRED_CAPABILITY_BINDING_KINDS, key)) {
+    if (!allowedIds.has(key as ProductionCapabilityId)) {
       throw new Error(`api-capability-binding-unexpected:${key}`);
     }
   }
@@ -1542,6 +1558,7 @@ const ProposalMaterializationRequestSchema = z.strictObject({
     spaceAccessGrantId: UuidSchema,
     authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprintSchema,
     disclosureGrantId: UuidSchema,
+    disclosureGrantVersion: SemanticVersionSchema,
     sdkCallId: OpaqueReferenceSchema,
     abortSignal: z.custom<AbortSignal>(
       (value) =>
@@ -1576,12 +1593,38 @@ export interface ProductionCapabilityRuntime {
   }): Promise<MaterializedProviderWriteProposal>;
 }
 
-export const createProductionCapabilityRuntime = (input: {
+export interface CoreProductionCapabilityRuntime {
+  readonly registry: CapabilityRegistry;
+  readonly schemas: ReturnType<typeof createRuntimeSchemaRegistry>;
+  readonly schemaResolver: AgentSchemaResolver;
+  readonly manifests: Readonly<{
+    manager: AgentManifest;
+    scheduler: AgentManifest;
+  }>;
+  materializeProviderWriteProposal(input: {
+    readonly capabilityId: ProviderWriteCapabilityId;
+    readonly arguments: unknown;
+    readonly context: ProviderProposalMaterializationContext;
+  }): Promise<MaterializedProviderWriteProposal>;
+}
+
+type CapabilityRuntimeConstructionInput<
+  Manifests extends Readonly<Record<string, AgentManifest>>,
+> = {
   readonly bindings: unknown;
   readonly providerWriteApprovalStore: unknown;
   readonly trustedProviderWriteAuthorityResolver: unknown;
   readonly trustedProviderProposalAuthorityResolver: unknown;
-}): ProductionCapabilityRuntime => {
+  readonly capabilityIds: readonly ProductionCapabilityId[];
+  readonly schemaRegistrations: readonly AgentRuntimeSchemaRegistration[];
+  readonly manifests: Manifests;
+};
+
+const createScopedProductionCapabilityRuntime = <
+  Manifests extends Readonly<Record<string, AgentManifest>>,
+>(
+  input: CapabilityRuntimeConstructionInput<Manifests>,
+) => {
   validateApprovalStore(input.providerWriteApprovalStore);
   const executionAuthorityResolver = validateResolver(
     input.trustedProviderWriteAuthorityResolver,
@@ -1591,14 +1634,11 @@ export const createProductionCapabilityRuntime = (input: {
     input.trustedProviderProposalAuthorityResolver,
     'api-provider-proposal-authority-resolver-missing',
   ) as TrustedProviderProposalAuthorityResolver;
-  const { registrations, materializers } = validateBindings(input.bindings);
-  const schemaRegistrations = [
-    ...managerSchemaRegistrations,
-    ...schedulerSchemaRegistrations,
-    ...financeSchemaRegistrations,
-    ...shoppingSchemaRegistrations,
-    ...capabilitySchemaRegistrations,
-  ] as const;
+  const { registrations, materializers } = validateBindings(
+    input.bindings,
+    input.capabilityIds,
+  );
+  const schemaRegistrations = input.schemaRegistrations;
   const schemas = createRuntimeSchemaRegistry(schemaRegistrations);
   const schemaResolver = createAgentSchemaResolver(
     schemaRegistrations as readonly AgentRuntimeSchemaRegistration[],
@@ -1607,14 +1647,9 @@ export const createProductionCapabilityRuntime = (input: {
     providerWriteApprovalStore: input.providerWriteApprovalStore,
     trustedProviderWriteAuthorityResolver: executionAuthorityResolver,
   });
-  const manifests = deepFreeze({
-    manager: managerManifest,
-    scheduler: schedulerManifest,
-    finance: financeManifest,
-    shopping: shoppingManifest,
-  });
+  const manifests = deepFreeze(input.manifests);
 
-  const materializeProviderWriteProposal: ProductionCapabilityRuntime['materializeProviderWriteProposal'] =
+  const materializeProviderWriteProposal: CoreProductionCapabilityRuntime['materializeProviderWriteProposal'] =
     async (rawInput) => {
       const request = ProposalMaterializationRequestSchema.parse(rawInput);
       const capabilityId = parseProductionProviderWriteCapabilityId(
@@ -1717,6 +1752,50 @@ export const createProductionCapabilityRuntime = (input: {
     materializeProviderWriteProposal,
   });
 };
+
+export const createProductionCapabilityRuntime = (input: {
+  readonly bindings: unknown;
+  readonly providerWriteApprovalStore: unknown;
+  readonly trustedProviderWriteAuthorityResolver: unknown;
+  readonly trustedProviderProposalAuthorityResolver: unknown;
+}): ProductionCapabilityRuntime =>
+  createScopedProductionCapabilityRuntime({
+    ...input,
+    capabilityIds: [
+      ...ALL_MANAGER_DELEGATION_CAPABILITY_IDS,
+      ...ALL_SPECIALIST_CAPABILITY_IDS,
+    ],
+    schemaRegistrations: [
+      ...managerSchemaRegistrations,
+      ...schedulerSchemaRegistrations,
+      ...financeSchemaRegistrations,
+      ...shoppingSchemaRegistrations,
+      ...capabilitySchemaRegistrations,
+    ],
+    manifests: {
+      manager: managerManifest,
+      scheduler: schedulerManifest,
+      finance: financeManifest,
+      shopping: shoppingManifest,
+    },
+  }) as ProductionCapabilityRuntime;
+
+export const createCoreProductionCapabilityRuntime = (input: {
+  readonly bindings: unknown;
+  readonly providerWriteApprovalStore: unknown;
+  readonly trustedProviderWriteAuthorityResolver: unknown;
+  readonly trustedProviderProposalAuthorityResolver: unknown;
+  readonly manifests: CoreProductionCapabilityRuntime['manifests'];
+}): CoreProductionCapabilityRuntime =>
+  createScopedProductionCapabilityRuntime({
+    ...input,
+    capabilityIds: CORE_MVP_CAPABILITY_IDS,
+    schemaRegistrations: [
+      ...managerSchemaRegistrations,
+      ...schedulerSchemaRegistrations,
+      ...capabilitySchemaRegistrations,
+    ],
+  }) as CoreProductionCapabilityRuntime;
 
 export const capabilityInvocationContextForServer = (input: {
   readonly requestId: string;

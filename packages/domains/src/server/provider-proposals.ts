@@ -1,4 +1,5 @@
 export {
+  createProposalLifecycleService,
   createProviderWriteReconciliationService,
   ProposalDecisionService,
   ProposalError,
@@ -14,6 +15,7 @@ export {
   type ProposalErrorCode,
   type ProposalExpectedRevision,
   type ProposalIdempotencyLookup,
+  type ProposalLifecycleService,
   type ProposalOperationScopeAssertion,
   type ProposalPreparationBinding,
   type ProviderWriteReconciliationService,

@@ -1985,11 +1985,160 @@ export type AbandonPreparedProposalResult =
   | { readonly status: 'already-abandoned' }
   | { readonly status: 'not-abandonable' };
 
+/**
+ * The post-preparation proposal lifecycle is deliberately independent from
+ * materialization. A request-scoped caller can therefore use the exact same
+ * repository and disclosure-grant resolver for proposal creation and provider
+ * approval/dispatch without inventing a second ProposalService materializer.
+ */
+export interface ProposalLifecycleService {
+  readonly approvalStore: ProviderWriteApprovalStore;
+  abandonPrepared(
+    input: AbandonPreparedProposalInput,
+  ): Promise<AbandonPreparedProposalResult>;
+}
+
+export const createProposalLifecycleService = (input: {
+  readonly repository: ProposalRepository;
+  readonly disclosureGrantResolver: TrustedDisclosureGrantResolver;
+  readonly now?: () => Date;
+}): ProposalLifecycleService => {
+  const repository = input.repository;
+  const resolveDisclosureGrant = input.disclosureGrantResolver.resolve.bind(
+    input.disclosureGrantResolver,
+  );
+  const currentTime = (input.now ?? (() => new Date())).bind(undefined);
+  const approvalStore = Object.freeze({
+    acquire: async (
+      rawBinding: ProviderWriteApprovalBinding,
+      rawOperationScope: ProviderWriteOperationScope,
+    ) => {
+      const binding = parseProviderWriteApprovalBinding(rawBinding);
+      const operationScope = parseProviderWriteOperationScope(rawOperationScope);
+      return binding === undefined || operationScope === undefined
+        ? ({ status: 'mismatch' } as const)
+        : acquireApproval(
+            repository,
+            binding,
+            operationScope,
+            currentTime,
+            resolveDisclosureGrant,
+          );
+    },
+    markDispatching: async (
+      rawBinding: ProviderWriteApprovalBinding,
+      attemptId: string,
+      rawOperationScope: ProviderWriteOperationScope,
+    ) => {
+      const binding = parseProviderWriteApprovalBinding(rawBinding);
+      const operationScope = parseProviderWriteOperationScope(rawOperationScope);
+      return binding === undefined || operationScope === undefined
+        ? ({ status: 'mismatch' } as const)
+        : markDispatchingApproval(
+            repository,
+            binding,
+            attemptId,
+            operationScope,
+            currentTime,
+            resolveDisclosureGrant,
+          );
+    },
+    finalize: async (
+      rawBinding: ProviderWriteApprovalBinding,
+      completion: ProviderWriteCompletion,
+    ) => {
+      const binding = parseProviderWriteApprovalBinding(rawBinding);
+      return binding === undefined
+        ? 'mismatch'
+        : finalizeApproval(repository, binding, completion, currentTime());
+    },
+    reconcile: async (
+      rawBinding: ProviderWriteApprovalBinding,
+      completion: ProviderWriteCompletion,
+    ) => {
+      const binding = parseProviderWriteApprovalBinding(rawBinding);
+      return binding === undefined
+        ? 'mismatch'
+        : reconcileApproval(repository, binding, completion, currentTime());
+    },
+  });
+
+  return Object.freeze({
+    approvalStore,
+    abandonPrepared: async (
+      input: AbandonPreparedProposalInput,
+    ): Promise<AbandonPreparedProposalResult> => {
+      const parsed = AbandonPreparedProposalInputSchema.safeParse(input);
+      if (!parsed.success) {
+        return { status: 'not-abandonable' };
+      }
+      const { reason, now, ...rawBinding } = parsed.data;
+      const binding = ProposalPreparationBindingSchema.parse(rawBinding);
+      const nowMs = now.getTime();
+      const expectedPreparation = storedPreparation(binding);
+      return repository.transaction(async (transaction) => {
+        const proposal = await transaction.getProposal(binding.proposalId);
+        const preparation = await transaction.getProposalPreparation(
+          binding.proposalId,
+        );
+        if (proposal === undefined || preparation === undefined) {
+          return { status: 'not-abandonable' };
+        }
+        if (
+          proposal.state === 'not-applied' &&
+          preparation.abandonment?.reason === reason &&
+          preparation.bindingHash === expectedPreparation.bindingHash
+        ) {
+          return { status: 'already-abandoned' };
+        }
+        if (
+          proposal.state !== 'pending' ||
+          nowMs < Date.parse(proposal.createdAt) ||
+          !preparationMatchesProposal(binding, proposal) ||
+          preparation.bindingHash !== expectedPreparation.bindingHash ||
+          preparation.abandonment !== undefined
+        ) {
+          return { status: 'not-abandonable' };
+        }
+        const abandonedAt = new Date(
+          Math.max(nowMs, Date.parse(proposal.createdAt)),
+        ).toISOString();
+        const next = prepareProposalTransition(proposal, 'not-applied');
+        const abandonedPreparation = deepFreeze({
+          ...expectedPreparation,
+          abandonment: {
+            reason,
+            abandonedAt,
+          },
+        });
+        const result = await transaction.abandonPrepared({
+          expected: expectedRevisionFor(proposal),
+          next,
+          preparation: abandonedPreparation,
+          event: {
+            proposalId: proposal.id,
+            eventType: 'proposal.not-applied',
+            occurredAt: abandonedAt,
+            application: 'not-applied',
+            outcomeReason: reason,
+          },
+        });
+        return result === 'created'
+          ? { status: 'abandoned' }
+          : result === 'duplicate'
+            ? { status: 'already-abandoned' }
+            : { status: 'not-abandonable' };
+      });
+    },
+  });
+};
+
 export class ProposalService {
   readonly approvalStore: ProviderWriteApprovalStore;
   private readonly materializeProposal: TrustedProposalMaterializer['materialize'];
   private readonly resolveDisclosureGrant: TrustedDisclosureGrantResolver['resolve'];
   private readonly currentTime: () => Date;
+  private readonly lifecycle: ProposalLifecycleService;
 
   constructor(
     materializer: TrustedProposalMaterializer,
@@ -2002,72 +2151,12 @@ export class ProposalService {
       disclosureGrantResolver,
     );
     this.currentTime = now.bind(undefined);
-    this.approvalStore = Object.freeze({
-      acquire: async (
-        rawBinding: ProviderWriteApprovalBinding,
-        rawOperationScope: ProviderWriteOperationScope,
-      ) => {
-        const binding = parseProviderWriteApprovalBinding(rawBinding);
-        const operationScope =
-          parseProviderWriteOperationScope(rawOperationScope);
-        return binding === undefined || operationScope === undefined
-          ? ({ status: 'mismatch' } as const)
-          : acquireApproval(
-              this.repository,
-              binding,
-              operationScope,
-              this.currentTime,
-              this.resolveDisclosureGrant,
-            );
-      },
-      markDispatching: async (
-        rawBinding: ProviderWriteApprovalBinding,
-        attemptId: string,
-        rawOperationScope: ProviderWriteOperationScope,
-      ) => {
-        const binding = parseProviderWriteApprovalBinding(rawBinding);
-        const operationScope =
-          parseProviderWriteOperationScope(rawOperationScope);
-        return binding === undefined || operationScope === undefined
-          ? ({ status: 'mismatch' } as const)
-          : markDispatchingApproval(
-              this.repository,
-              binding,
-              attemptId,
-              operationScope,
-              this.currentTime,
-              this.resolveDisclosureGrant,
-            );
-      },
-      finalize: async (
-        rawBinding: ProviderWriteApprovalBinding,
-        completion: ProviderWriteCompletion,
-      ) => {
-        const binding = parseProviderWriteApprovalBinding(rawBinding);
-        return binding === undefined
-          ? 'mismatch'
-          : finalizeApproval(
-              this.repository,
-              binding,
-              completion,
-              this.currentTime(),
-            );
-      },
-      reconcile: async (
-        rawBinding: ProviderWriteApprovalBinding,
-        completion: ProviderWriteCompletion,
-      ) => {
-        const binding = parseProviderWriteApprovalBinding(rawBinding);
-        return binding === undefined
-          ? 'mismatch'
-          : reconcileApproval(
-              this.repository,
-              binding,
-              completion,
-              this.currentTime(),
-            );
-      },
+    this.lifecycle = createProposalLifecycleService({
+      repository,
+      disclosureGrantResolver,
+      now: this.currentTime,
     });
+    this.approvalStore = this.lifecycle.approvalStore;
   }
 
   async getProposal(id: string): Promise<ActionProposal | undefined> {
@@ -2293,67 +2382,7 @@ export class ProposalService {
   async abandonPrepared(
     input: AbandonPreparedProposalInput,
   ): Promise<AbandonPreparedProposalResult> {
-    const parsed = AbandonPreparedProposalInputSchema.safeParse(input);
-    if (!parsed.success) {
-      return { status: 'not-abandonable' };
-    }
-    const { reason, now, ...rawBinding } = parsed.data;
-    const binding = ProposalPreparationBindingSchema.parse(rawBinding);
-    const nowMs = now.getTime();
-    const expectedPreparation = storedPreparation(binding);
-    return this.repository.transaction(async (transaction) => {
-      const proposal = await transaction.getProposal(binding.proposalId);
-      const preparation = await transaction.getProposalPreparation(
-        binding.proposalId,
-      );
-      if (proposal === undefined || preparation === undefined) {
-        return { status: 'not-abandonable' };
-      }
-      if (
-        proposal.state === 'not-applied' &&
-        preparation.abandonment?.reason === reason &&
-        preparation.bindingHash === expectedPreparation.bindingHash
-      ) {
-        return { status: 'already-abandoned' };
-      }
-      if (
-        proposal.state !== 'pending' ||
-        nowMs < Date.parse(proposal.createdAt) ||
-        !preparationMatchesProposal(binding, proposal) ||
-        preparation.bindingHash !== expectedPreparation.bindingHash ||
-        preparation.abandonment !== undefined
-      ) {
-        return { status: 'not-abandonable' };
-      }
-      const abandonedAt = new Date(
-        Math.max(nowMs, Date.parse(proposal.createdAt)),
-      ).toISOString();
-      const next = prepareProposalTransition(proposal, 'not-applied');
-      const abandonedPreparation = deepFreeze({
-        ...expectedPreparation,
-        abandonment: {
-          reason,
-          abandonedAt,
-        },
-      });
-      const result = await transaction.abandonPrepared({
-        expected: expectedRevisionFor(proposal),
-        next,
-        preparation: abandonedPreparation,
-        event: {
-          proposalId: proposal.id,
-          eventType: 'proposal.not-applied',
-          occurredAt: abandonedAt,
-          application: 'not-applied',
-          outcomeReason: reason,
-        },
-      });
-      return result === 'created'
-        ? { status: 'abandoned' }
-        : result === 'duplicate'
-          ? { status: 'already-abandoned' }
-          : { status: 'not-abandonable' };
-    });
+    return this.lifecycle.abandonPrepared(input);
   }
 
   static async decideWithRepository(

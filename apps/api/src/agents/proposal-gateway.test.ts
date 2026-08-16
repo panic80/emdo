@@ -360,6 +360,7 @@ describe('production provider proposal gateway', () => {
         requestId: ids.request,
         runId: ids.run,
         sdkCallId,
+        disclosureGrantVersion: '1.0.0',
       }),
     });
     await expect(

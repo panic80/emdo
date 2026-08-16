@@ -24,7 +24,9 @@ import {
   type AgentExecutionProvider,
   type AgentProviderRequest,
   type JsonValue,
+  type ModelDisclosureAuthorization,
   type ModelDisclosureGateway,
+  type ModelDisclosureSource,
   type ProviderWriteProposalGateway,
   type TurnInput,
 } from './runner.js';
@@ -81,7 +83,14 @@ const agent = (
           ? [`${id}.read`]
           : capabilities.map(({ descriptor }) => descriptor.id)),
     ],
-    readableDataClasses: kind === 'manager' ? [] : [`${id}.records`],
+    readableDataClasses:
+      kind === 'manager'
+        ? [
+            'conversation.messages',
+            'agent.manager-plans',
+            'agent.specialist-outcomes',
+          ]
+        : ['agent.delegations', 'agent.specialist-outcomes', `${id}.records`],
     riskCeiling: kind === 'manager' ? 'none' : 'provider-write',
     modelPolicy: Object.freeze({
       defaultModel: 'gpt-5.6-luna',
@@ -228,13 +237,84 @@ const capability = (
   });
 };
 
-const turn = (overrides: Partial<TurnInput> = {}): TurnInput => ({
-  ...ids,
-  message: 'Schedule a dentist visit and update my shopping plan.',
-  escalationTriggers: [],
-  abortSignal: new AbortController().signal,
-  ...overrides,
-});
+const turn = (overrides: Partial<TurnInput> = {}): TurnInput => {
+  return {
+    requestId: ids.requestId,
+    runId: ids.runId,
+    householdId: ids.householdId,
+    userId: ids.userId,
+    authenticatedSessionId: ids.authenticatedSessionId,
+    conversationId: ids.conversationId,
+    spaceAccessGrantId: ids.spaceAccessGrantId,
+    authorizationScopeFingerprint: ids.authorizationScopeFingerprint,
+    message: 'Schedule a dentist visit and update my shopping plan.',
+    escalationTriggers: [],
+    abortSignal: new AbortController().signal,
+    ...overrides,
+  };
+};
+
+const canonicalProjection = (
+  sources: readonly ModelDisclosureSource[],
+): Pick<ModelDisclosureAuthorization, 'records' | 'payload'> => {
+  const records = sources.map((source) => {
+    if (source.kind === 'conversation-message') {
+      return {
+        dataClass: 'conversation.messages',
+        recordId: source.entry.id,
+        fields: {
+          content: source.entry.content,
+          createdAt: source.entry.createdAt,
+          role: source.entry.role,
+        },
+      };
+    }
+    if (source.kind === 'manager-plan') {
+      return {
+        dataClass: 'agent.manager-plans',
+        recordId: 'manager-plan',
+        fields: { plan: source.plan },
+      };
+    }
+    if (source.kind === 'specialist-delegation') {
+      const delegation = source.delegation as Readonly<{ id?: JsonValue }>;
+      return {
+        dataClass: 'agent.delegations',
+        recordId: String(delegation.id),
+        fields: { delegation: source.delegation },
+      };
+    }
+    const outcome = source.outcome as Readonly<{ delegationId?: JsonValue }>;
+    return {
+      dataClass: 'agent.specialist-outcomes',
+      recordId: String(outcome.delegationId),
+      fields: { outcome: source.outcome },
+    };
+  });
+  const normalized = records
+    .map(({ dataClass, recordId, fields }) => ({
+      dataClass,
+      recordId,
+      fields: Object.fromEntries(
+        Object.entries(fields).sort(([left], [right]) =>
+          left.localeCompare(right),
+        ),
+      ),
+    }))
+    .sort((left, right) =>
+      `${left.dataClass}\0${left.recordId}`.localeCompare(
+        `${right.dataClass}\0${right.recordId}`,
+      ),
+    );
+  return {
+    records: normalized.map(({ dataClass, recordId, fields }) => ({
+      dataClass,
+      recordId,
+      fields: Object.keys(fields),
+    })),
+    payload: { schemaVersion: 1, records: normalized } as unknown as JsonValue,
+  };
+};
 
 const setup = (
   execute: AgentExecutionProvider['execute'],
@@ -275,9 +355,19 @@ const setup = (
   const appendManagerMessage = vi.fn(
     async (
       input: Parameters<ManagerConversationMemory['appendManagerMessage']>[0],
-    ) => {
-      void input;
-    },
+    ) =>
+      Object.freeze({
+        id:
+          input.role === 'user'
+            ? '018f1f5e-1000-7000-8000-000000000011'
+            : '018f1f5e-1000-7000-8000-000000000012',
+        conversationId: input.conversationId,
+        householdId: input.householdId,
+        userId: input.userId,
+        role: input.role,
+        content: input.content,
+        createdAt: '2026-08-09T22:30:00.000Z',
+      }),
   );
   const traceEvents: LocalTraceEvent[] = [];
   const traceRecorder = new LocalTraceRecorder(
@@ -424,7 +514,7 @@ const setup = (
     disclosureGateway: overrides.disclosureGateway ?? {
       authorize: vi.fn(
         async (input: Parameters<ModelDisclosureGateway['authorize']>[0]) => {
-          const { payload, ...scope } = input;
+          const projection = canonicalProjection(input.sources);
           const grantIds: Readonly<Record<string, string>> = {
             manager: '018f1f5e-1000-7000-8000-000000000008',
             scheduler: ids.disclosureGrantId,
@@ -433,31 +523,22 @@ const setup = (
           };
           return {
             status: 'authorized' as const,
-            grantId: grantIds[scope.agentId] ?? ids.disclosureGrantId,
+            grantId: grantIds[input.agentId] ?? ids.disclosureGrantId,
             grantVersion: '1.0.0',
-            runId: scope.runId,
-            householdId: scope.householdId,
-            userId: scope.userId,
-            agentId: scope.agentId,
-            phasePurpose: scope.phasePurpose,
+            runId: input.runId,
+            householdId: input.householdId,
+            userId: input.userId,
+            agentId: input.agentId,
+            phasePurpose: input.phasePurpose,
+            phaseInvocationId: input.phaseInvocationId,
             disclosurePurpose:
-              scope.agentId === 'scheduler'
+              input.agentId === 'scheduler'
                 ? 'schedule one appointment'
                 : 'manage this assistant turn',
-            provider: scope.provider,
+            provider: input.provider,
             expiresAt: '2026-08-09T22:40:00.000Z',
-            records: [
-              ...(scope.requestedDataClasses.length === 0
-                ? []
-                : [
-                    {
-                      dataClass: scope.requestedDataClasses[0]!,
-                      recordId: 'conversation.current-turn',
-                      fields: ['content'],
-                    },
-                  ]),
-            ],
-            payload,
+            records: projection.records,
+            payload: projection.payload,
           };
         },
       ),
@@ -519,10 +600,17 @@ describe('AgentOrchestrator', () => {
       'synthesize',
     ]);
     expect(requests[0]!.input).toMatchObject({
-      request: turn().message,
-      memory: {
-        entries: [{ content: 'The user prefers afternoon appointments.' }],
-      },
+      schemaVersion: 1,
+      records: [
+        {
+          dataClass: 'conversation.messages',
+          fields: { content: 'The user prefers afternoon appointments.' },
+        },
+        {
+          dataClass: 'conversation.messages',
+          fields: { content: turn().message, role: 'user' },
+        },
+      ],
     });
     expect(retrieveForManager).toHaveBeenCalledOnce();
     expect(appendManagerMessage).toHaveBeenCalledTimes(2);
@@ -536,42 +624,147 @@ describe('AgentOrchestrator', () => {
     });
   });
 
+  it('binds every model call to a distinct phase invocation and canonical durable records', async () => {
+    const authorizationInputs: Readonly<Record<string, unknown>>[] = [];
+    const providerInputs: AgentProviderRequest[] = [];
+    const authorize = vi.fn<ModelDisclosureGateway['authorize']>(
+      async (input) => {
+        authorizationInputs.push(
+          input as unknown as Readonly<Record<string, unknown>>,
+        );
+        const projection = canonicalProjection(input.sources);
+        return {
+          status: 'authorized',
+          grantId:
+            input.agentId === 'manager'
+              ? '018f1f5e-1000-7000-8000-000000000008'
+              : ids.disclosureGrantId,
+          grantVersion: '1.0.0',
+          runId: input.runId,
+          householdId: input.householdId,
+          userId: input.userId,
+          agentId: input.agentId,
+          phasePurpose: input.phasePurpose,
+          phaseInvocationId: input.phaseInvocationId,
+          disclosurePurpose: 'authorize one exact model dispatch',
+          provider: input.provider,
+          expiresAt: '2026-08-09T22:40:00.000Z',
+          records: projection.records,
+          payload: projection.payload,
+        };
+      },
+    );
+    const { orchestrator } = setup(
+      async (request) => {
+        providerInputs.push(request);
+        if (request.phase === 'plan') {
+          return completed({
+            delegations: [
+              {
+                id: 'schedule-dentist',
+                specialistId: 'scheduler',
+                input: { request: 'dentist' },
+                dependsOn: [],
+              },
+              {
+                id: 'schedule-optometrist',
+                specialistId: 'scheduler',
+                input: { request: 'optometrist' },
+                dependsOn: [],
+              },
+            ],
+          });
+        }
+        if (request.phase === 'specialist') {
+          return completed({ alternatives: ['Tuesday'] });
+        }
+        return completed({ message: 'Both requests are ready.' });
+      },
+      { disclosureGateway: { authorize } },
+    );
+
+    await expect(orchestrator.runTurn(turn())).resolves.toMatchObject({
+      status: 'completed',
+    });
+
+    expect(authorizationInputs.map((input) => input.phaseInvocationId)).toEqual(
+      [
+        'manager-plan',
+        'schedule-dentist',
+        'schedule-optometrist',
+        'manager-synthesis',
+      ],
+    );
+    expect(
+      authorizationInputs.every(
+        (input) => !Object.hasOwn(input, 'requestedGrantId'),
+      ),
+    ).toBe(true);
+    expect(providerInputs[0]?.input).toEqual({
+      schemaVersion: 1,
+      records: [
+        {
+          dataClass: 'conversation.messages',
+          recordId: '018f1f5e-1000-7000-8000-000000000010',
+          fields: {
+            content: 'The user prefers afternoon appointments.',
+            createdAt: '2026-08-09T18:00:00.000Z',
+            role: 'assistant',
+          },
+        },
+        {
+          dataClass: 'conversation.messages',
+          recordId: '018f1f5e-1000-7000-8000-000000000011',
+          fields: {
+            content: turn().message,
+            createdAt: '2026-08-09T22:30:00.000Z',
+            role: 'user',
+          },
+        },
+      ],
+    });
+  });
+
   it('sends only the gateway-filtered payload and audits authoritative record fields at dispatch', async () => {
     const providerInputs: AgentProviderRequest[] = [];
     const authorize = vi.fn<ModelDisclosureGateway['authorize']>(
-      async (input) => ({
-        status: 'authorized',
-        grantId:
-          input.agentId === 'scheduler'
-            ? ids.disclosureGrantId
-            : '018f1f5e-1000-7000-8000-000000000008',
-        grantVersion: '1.0.0',
-        runId: input.runId,
-        householdId: input.householdId,
-        userId: input.userId,
-        agentId: input.agentId,
-        phasePurpose: input.phasePurpose,
-        disclosurePurpose:
-          input.agentId === 'scheduler'
-            ? 'schedule one appointment'
-            : 'manage this assistant turn',
-        provider: input.provider,
-        expiresAt: '2026-08-09T22:40:00.000Z',
-        records:
-          input.agentId === 'scheduler'
-            ? [
-                {
-                  dataClass: 'scheduler.records',
-                  recordId: 'calendar.event-1',
-                  fields: ['startsAt', 'title'],
-                },
-              ]
-            : [],
-        payload:
-          input.agentId === 'scheduler'
-            ? { authorizedOnly: true }
-            : input.payload,
-      }),
+      async (input) => {
+        const projection = canonicalProjection(input.sources);
+        const specialistRecord = projection.records[0];
+        return {
+          status: 'authorized',
+          grantId:
+            input.agentId === 'scheduler'
+              ? ids.disclosureGrantId
+              : '018f1f5e-1000-7000-8000-000000000008',
+          grantVersion: '1.0.0',
+          runId: input.runId,
+          householdId: input.householdId,
+          userId: input.userId,
+          agentId: input.agentId,
+          phasePurpose: input.phasePurpose,
+          phaseInvocationId: input.phaseInvocationId,
+          disclosurePurpose:
+            input.agentId === 'scheduler'
+              ? 'schedule one appointment'
+              : 'manage this assistant turn',
+          provider: input.provider,
+          expiresAt: '2026-08-09T22:40:00.000Z',
+          records: projection.records,
+          payload:
+            input.agentId === 'scheduler' && specialistRecord !== undefined
+              ? {
+                  schemaVersion: 1,
+                  records: [
+                    {
+                      ...specialistRecord,
+                      fields: { delegation: { authorizedOnly: true } },
+                    },
+                  ],
+                }
+              : projection.payload,
+        };
+      },
     );
     const { orchestrator, traceEvents } = setup(
       async (request) => {
@@ -602,32 +795,42 @@ describe('AgentOrchestrator', () => {
 
     expect(
       providerInputs.find((request) => request.phase === 'specialist')?.input,
-    ).toEqual({ authorizedOnly: true });
+    ).toEqual({
+      schemaVersion: 1,
+      records: [
+        {
+          dataClass: 'agent.delegations',
+          recordId: 'schedule-safe',
+          fields: { delegation: { authorizedOnly: true } },
+        },
+      ],
+    });
     const specialistAuthorization = authorize.mock.calls
       .map(([input]) => input)
       .find((input) => input.agentId === 'scheduler');
     expect(specialistAuthorization).toMatchObject({
-      requestedGrantId: ids.disclosureGrantId,
-      requestedDataClasses: ['conversation.messages', 'scheduler.records'],
       phasePurpose: 'specialist-execution',
+      phaseInvocationId: 'schedule-safe',
       provider: 'openai',
+      sources: [{ kind: 'specialist-delegation' }],
     });
     expect(
       traceEvents.filter((event) => event.type === 'disclosure.sent'),
-    ).toEqual([
+    ).toContainEqual(
       expect.objectContaining({
         metadata: expect.objectContaining({
           grantId: ids.disclosureGrantId,
           agentId: 'scheduler',
           purpose: 'schedule one appointment',
           phasePurpose: 'specialist-execution',
-          dataClass: 'scheduler.records',
-          recordId: 'calendar.event-1',
-          fields: ['startsAt', 'title'],
+          phaseInvocationId: 'schedule-safe',
+          dataClass: 'agent.delegations',
+          recordId: 'schedule-safe',
+          fields: ['delegation'],
           expiresAt: '2026-08-09T22:40:00.000Z',
         }),
       }),
-    ]);
+    );
   });
 
   it('fails closed on a typed cross-run disclosure denial before specialist provider dispatch', async () => {
@@ -641,6 +844,7 @@ describe('AgentOrchestrator', () => {
               reason: 'grant-run-mismatch',
             }
           : {
+              ...canonicalProjection(input.sources),
               status: 'authorized',
               grantId: '018f1f5e-1000-7000-8000-000000000008',
               grantVersion: '1.0.0',
@@ -649,11 +853,12 @@ describe('AgentOrchestrator', () => {
               userId: input.userId,
               agentId: input.agentId,
               phasePurpose: input.phasePurpose,
+              phaseInvocationId: input.phaseInvocationId,
               disclosurePurpose: 'manage this assistant turn',
               provider: input.provider,
               expiresAt: '2026-08-09T22:40:00.000Z',
-              records: [],
-              payload: input.payload,
+              records: canonicalProjection(input.sources).records,
+              payload: canonicalProjection(input.sources).payload,
             },
     );
     const { orchestrator, traceEvents } = setup(
@@ -739,6 +944,45 @@ describe('AgentOrchestrator', () => {
     ).not.toHaveProperty('grantId');
   });
 
+  it('rejects a non-canonical authorized payload before any provider I/O', async () => {
+    const providerIo = vi.fn();
+    const { orchestrator } = setup(
+      async () => {
+        providerIo();
+        return completed({ delegations: [] });
+      },
+      {
+        disclosureGateway: {
+          authorize: async (input) => {
+            const projection = canonicalProjection(input.sources);
+            return {
+              status: 'authorized' as const,
+              grantId: '018f1f5e-1000-7000-8000-000000000008',
+              grantVersion: '1.0.0',
+              runId: input.runId,
+              householdId: input.householdId,
+              userId: input.userId,
+              agentId: input.agentId,
+              phasePurpose: input.phasePurpose,
+              phaseInvocationId: input.phaseInvocationId,
+              disclosurePurpose: 'manage this assistant turn',
+              provider: input.provider,
+              expiresAt: '2026-08-09T22:40:00.000Z',
+              records: projection.records,
+              payload: { arbitraryUnprovenPayload: true },
+            };
+          },
+        },
+      },
+    );
+
+    await expect(orchestrator.runTurn(turn())).resolves.toMatchObject({
+      status: 'failed',
+      safeError: { code: 'model-disclosure-denied', retryable: false },
+    });
+    expect(providerIo).not.toHaveBeenCalled();
+  });
+
   it('rejects a grant-bound disclosure denial that omits its grant ID', async () => {
     const providerIo = vi.fn();
     const { orchestrator, traceEvents } = setup(
@@ -766,7 +1010,6 @@ describe('AgentOrchestrator', () => {
       traceEvents.find((event) => event.type === 'disclosure.denied'),
     ).toMatchObject({
       metadata: {
-        grantId: ids.disclosureGrantId,
         agentId: 'manager',
         reason: 'inactive-or-mismatched-disclosure-grant',
       },
@@ -779,6 +1022,7 @@ describe('AgentOrchestrator', () => {
     const authorize = vi.fn<ModelDisclosureGateway['authorize']>(
       async (input) => {
         now = new Date('2026-08-09T22:41:00.000Z');
+        const projection = canonicalProjection(input.sources);
         return {
           status: 'authorized',
           grantId: ids.disclosureGrantId,
@@ -788,11 +1032,12 @@ describe('AgentOrchestrator', () => {
           userId: input.userId,
           agentId: input.agentId,
           phasePurpose: input.phasePurpose,
+          phaseInvocationId: input.phaseInvocationId,
           disclosurePurpose: 'manage this assistant turn',
           provider: input.provider,
           expiresAt: '2026-08-09T22:40:00.000Z',
-          records: [],
-          payload: input.payload,
+          records: projection.records,
+          payload: projection.payload,
         };
       },
     );
@@ -827,8 +1072,9 @@ describe('AgentOrchestrator', () => {
     const providerInputs: AgentProviderRequest[] = [];
     const authorize = vi.fn<ModelDisclosureGateway['authorize']>(
       async (input) => {
+        const projection = canonicalProjection(input.sources);
         const payload = JSON.parse(
-          JSON.stringify(input.payload),
+          JSON.stringify(projection.payload),
           (key: string, value: unknown) =>
             key === 'privateAccountNumber' ? undefined : value,
         ) as JsonValue;
@@ -846,20 +1092,11 @@ describe('AgentOrchestrator', () => {
           userId: input.userId,
           agentId: input.agentId,
           phasePurpose: input.phasePurpose,
+          phaseInvocationId: input.phaseInvocationId,
           disclosurePurpose: 'prepare a redacted household plan',
           provider: input.provider,
           expiresAt: '2026-08-09T22:40:00.000Z',
-          records: [
-            {
-              dataClass: 'finance.records',
-              recordId: 'finance.transaction-1',
-              fields:
-                input.phasePurpose === 'manager-synthesis' ||
-                input.agentId === 'shopping'
-                  ? ['total']
-                  : ['content'],
-            },
-          ],
+          records: projection.records,
           payload,
         };
       },
@@ -922,15 +1159,15 @@ describe('AgentOrchestrator', () => {
     const synthesisAuthorization = authorize.mock.calls
       .map(([input]) => input)
       .find((input) => input.phasePurpose === 'manager-synthesis');
-    expect(shoppingAuthorization?.requestedDataClasses).toEqual([
-      'conversation.messages',
-      'finance.records',
-      'shopping.records',
+    expect(shoppingAuthorization?.sources.map(({ kind }) => kind)).toEqual([
+      'specialist-delegation',
+      'specialist-outcome',
     ]);
-    expect(synthesisAuthorization?.requestedDataClasses).toEqual([
-      'conversation.messages',
-      'finance.records',
-      'shopping.records',
+    expect(synthesisAuthorization?.sources.map(({ kind }) => kind)).toEqual([
+      'conversation-message',
+      'manager-plan',
+      'specialist-outcome',
+      'specialist-outcome',
     ]);
     expect(
       traceEvents
@@ -1001,15 +1238,22 @@ describe('AgentOrchestrator', () => {
         });
       }
       if (request.phase === 'specialist') {
-        const input = request.input as {
-          readonly delegation: { readonly id: string };
+        const input = request.input as unknown as {
+          readonly records: readonly [
+            {
+              readonly fields: {
+                readonly delegation: { readonly id: string };
+              };
+            },
+          ];
         };
-        lifecycle.push(`start:${input.delegation.id}`);
-        if (input.delegation.id === 'budget') {
+        const delegation = input.records[0].fields.delegation;
+        lifecycle.push(`start:${delegation.id}`);
+        if (delegation.id === 'budget') {
           throw new Error('database password should never be exposed');
         }
-        lifecycle.push(`finish:${input.delegation.id}`);
-        return completed({ delegation: input.delegation.id });
+        lifecycle.push(`finish:${delegation.id}`);
+        return completed({ delegation: delegation.id });
       }
       synthesisInput = request.input;
       return completed({
@@ -1032,15 +1276,21 @@ describe('AgentOrchestrator', () => {
       lifecycle.indexOf('finish:calendar'),
     );
     expect(synthesisInput).toMatchObject({
-      outcomes: [
-        { delegationId: 'calendar', status: 'completed' },
-        {
-          delegationId: 'budget',
-          status: 'failed',
-          safeError: { code: 'specialist-execution-failed' },
-        },
-        { delegationId: 'shop-after-calendar', status: 'completed' },
-      ],
+      schemaVersion: 1,
+      records: expect.arrayContaining([
+        expect.objectContaining({
+          dataClass: 'agent.specialist-outcomes',
+          fields: expect.objectContaining({
+            outcome: expect.objectContaining({
+              delegationId: 'budget',
+              status: 'failed',
+              safeError: expect.objectContaining({
+                code: 'specialist-execution-failed',
+              }),
+            }),
+          }),
+        }),
+      ]),
     });
     expect(JSON.stringify(synthesisInput)).not.toContain('database password');
     expect(

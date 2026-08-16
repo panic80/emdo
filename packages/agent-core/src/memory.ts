@@ -48,7 +48,7 @@ export interface ManagerConversationMemory {
     readonly userId: string;
     readonly role: ConversationMemoryRole;
     readonly content: string;
-  }): Promise<void>;
+  }): Promise<ConversationMemoryEntry>;
 }
 
 const readExactObject = (
@@ -222,7 +222,7 @@ export class ConversationMemoryService implements ManagerConversationMemory {
     readonly userId: string;
     readonly role: ConversationMemoryRole;
     readonly content: string;
-  }): Promise<void> {
+  }): Promise<ConversationMemoryEntry> {
     const snapshot = readExactObject(input, [
       'conversationId',
       'householdId',
@@ -248,5 +248,14 @@ export class ConversationMemoryService implements ManagerConversationMemory {
       createdAt: now.toISOString(),
     });
     await this.#append(entry);
+    return Object.freeze({
+      id: entry.id,
+      conversationId: entry.conversationId,
+      householdId: entry.householdId,
+      userId: entry.userId,
+      role: entry.role,
+      content: entry.content,
+      createdAt: entry.createdAt,
+    });
   }
 }

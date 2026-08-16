@@ -27,7 +27,11 @@ export const managerManifest: AgentManifest = AgentManifestSchema.parse({
     ...managerSpecialtySkills.map(({ id }) => id),
   ],
   capabilityAllowlist: managerCapabilityReferences.map(({ id }) => id),
-  readableDataClasses: [],
+  readableDataClasses: [
+    'conversation.messages',
+    'agent.manager-plans',
+    'agent.specialist-outcomes',
+  ],
   modelPolicy: {
     defaultModel: 'gpt-5.6-luna',
     complexModel: 'gpt-5.6-terra',

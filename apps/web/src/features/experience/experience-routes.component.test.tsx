@@ -1,7 +1,7 @@
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   ActivityPage,
@@ -131,6 +131,86 @@ const shopping: ShoppingPage = {
   ],
 };
 
+const providerFreeRunId = '77777777-7777-4777-8777-777777777777';
+const providerFreeSummary = 'Added 2 each oat milk to the shopping list.';
+
+const createProviderFreeTurnFetcher = () =>
+  vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const path =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.pathname
+            : new URL(input.url).pathname;
+      if (path === '/api/v1/turns' && init?.method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            schemaVersion: 1,
+            runId: providerFreeRunId,
+            status: 'accepted',
+            replayed: false,
+            eventsPath: `/api/v1/runs/${providerFreeRunId}/events`,
+          }),
+          {
+            status: 202,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+      if (
+        path === `/api/v1/runs/${providerFreeRunId}/events` &&
+        init?.method === 'GET'
+      ) {
+        return new Response(
+          `id: 2\nevent: run.completed\ndata: ${JSON.stringify({
+            schemaVersion: 1,
+            runId: providerFreeRunId,
+            sequence: 2,
+            type: 'run.completed',
+            occurredAt: '2026-08-15T20:00:00.000Z',
+            data: {
+              status: 'completed',
+              runId: providerFreeRunId,
+              localTraceReference: `provider-free:${providerFreeRunId}`,
+              output: {
+                schemaVersion: 1,
+                summary: providerFreeSummary,
+                clarificationQuestion: null,
+                evidenceReferences: [],
+                derivedValueReferences: [],
+                actionProposalReferences: [],
+                shoppingItem: {
+                  id: 'shopping-oat-milk',
+                  name: 'oat milk',
+                  quantityMinorUnits: 2_000,
+                  unit: 'each',
+                },
+              },
+              specialistOutcomes: [],
+              hasPartialFailures: false,
+              usage: {
+                inputTokens: 0,
+                outputTokens: 0,
+                modelCostCadMinor: 0,
+              },
+              executionResolution: {
+                status: 'provider-free',
+                profile: 'shopping-list-v1',
+                reason: 'provider-free-mvp',
+              },
+            },
+          })}\n\n`,
+          {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' },
+          },
+        );
+      }
+      return new Response(null, { status: 404 });
+    },
+  );
+
 const createClient = (
   overrides: Partial<ExperienceApiClient> = {},
 ): ExperienceApiClient => ({
@@ -168,6 +248,8 @@ async function renderPath(path: string, client: ExperienceApiClient) {
 }
 
 describe('truthful experience routes', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it('renders Today only from the strict aggregate response', async () => {
     const client = createClient();
     await renderPath('/today', client);
@@ -408,5 +490,60 @@ describe('truthful experience routes', () => {
       { limit: 25 },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+  });
+
+  it('renders the provider-free durable completion summary in the manager conversation', async () => {
+    const fetcher = createProviderFreeTurnFetcher();
+    vi.stubGlobal('fetch', fetcher);
+    await renderPath('/ask', createClient());
+
+    await userEvent.type(
+      await screen.findByRole('textbox', { name: 'Ask EMDO' }),
+      'add 2 each oat milk to shopping list',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Ask EMDO' }));
+
+    expect(
+      await screen.findByText(providerFreeSummary, undefined, {
+        timeout: 5_000,
+      }),
+    ).toBeVisible();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshes the persisted shopping projection after a provider-free manager turn', async () => {
+    const fetcher = createProviderFreeTurnFetcher();
+    vi.stubGlobal('fetch', fetcher);
+    let readCount = 0;
+    const listShopping = vi.fn(async (): Promise<ShoppingPage> => {
+      readCount += 1;
+      return readCount === 1
+        ? { schemaVersion: 1, items: [] }
+        : {
+            schemaVersion: 1,
+            items: [
+              {
+                id: 'shopping-oat-milk',
+                name: 'oat milk',
+                unit: 'each',
+                quantityMinorUnits: 2_000,
+                state: 'active',
+              },
+            ],
+          };
+    });
+    await renderPath('/shopping', createClient({ listShopping }));
+    await screen.findByText('No shopping items have been saved yet.');
+
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Ask EMDO' }),
+      'add 2 each oat milk to shopping list',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Ask EMDO' }));
+
+    expect(
+      await screen.findByText('oat milk', undefined, { timeout: 5_000 }),
+    ).toBeVisible();
+    expect(listShopping).toHaveBeenCalledTimes(2);
   });
 });

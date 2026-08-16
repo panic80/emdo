@@ -367,7 +367,11 @@ describe('uniform agent package template', () => {
 
   it('gives the manager delegation references only', () => {
     expect(managerAgentDefinition.manifest.riskCeiling).toBe('none');
-    expect(managerAgentDefinition.manifest.readableDataClasses).toEqual([]);
+    expect(managerAgentDefinition.manifest.readableDataClasses).toEqual([
+      'conversation.messages',
+      'agent.manager-plans',
+      'agent.specialist-outcomes',
+    ]);
     expect(managerCapabilityReferences).toEqual([
       { id: 'agent.scheduler.delegate', version: '1.0.0', kind: 'delegation' },
       { id: 'agent.finance.delegate', version: '1.0.0', kind: 'delegation' },

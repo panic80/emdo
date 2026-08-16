@@ -1,13 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
-import type { EmdoDatabaseClient } from '@emdo/db/api';
+import type {
+  EmdoDatabaseClient,
+  PostgresProviderFreeShoppingService,
+} from '@emdo/db/api';
 
 import type {
   AuthenticatedPrincipal,
   VisualProposalDecisionGateway,
 } from '../services/contracts.js';
-import { createProductionAgentPersistence } from './production-persistence.js';
+import {
+  createProductionAgentPersistence,
+  createProviderFreeAgentPersistence,
+} from './production-persistence.js';
 import type { ProductionAgentRuntimeFactory } from './production-runtime.js';
 
 const ids = Object.freeze({
@@ -123,6 +129,71 @@ const collect = async <Value>(iterable: AsyncIterable<Value>) => {
 };
 
 describe('production agent persistence bridge', () => {
+  it('projects the authenticated principal into the strict provider-free shopping DB port', async () => {
+    const { pool } = poolFixture();
+    const create = vi.fn(
+      async (
+        input: Parameters<PostgresProviderFreeShoppingService['create']>[0],
+      ) => {
+        void input;
+        return {
+          status: 'applied' as const,
+          item: {
+            id: 'shopping-item-1',
+            name: 'Milk',
+            quantityMinorUnits: 2_000,
+            unit: 'each',
+            revision: 1,
+            updatedAt: '2026-08-15T12:00:00.000Z',
+          },
+        };
+      },
+    );
+    const shopping = {
+      create,
+      checkReady: vi.fn(async () => true),
+    };
+    const providerPrincipal: AuthenticatedPrincipal = Object.freeze({
+      ...principal,
+      privateSpaceId: ids.space,
+    });
+    const composition = createProviderFreeAgentPersistence({
+      pool,
+      shopping: shopping as never,
+    });
+
+    await composition.bindings.managerTurns.service.start({
+      request: {
+        schemaVersion: 1,
+        message: 'add 2 each Milk to shopping list',
+        routeHint: 'shopping',
+      },
+      principal: providerPrincipal,
+      requestId: ids.request,
+      idempotencyKey: 'provider-free-manager-turn-0001',
+    });
+
+    expect(shopping.create).toHaveBeenCalledOnce();
+    expect(shopping.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        principal: {
+          userId: ids.user,
+          sessionId: ids.session,
+          householdId: ids.household,
+          spaceAccessGrantId: ids.grant,
+        },
+        privateSpaceId: ids.space,
+      }),
+    );
+    const firstShoppingInput = shopping.create.mock.calls[0]?.[0];
+    expect(firstShoppingInput).toBeDefined();
+    if (firstShoppingInput === undefined) {
+      throw new Error('provider-free shopping call was not captured');
+    }
+    expect(firstShoppingInput.principal).not.toHaveProperty('role');
+    await expect(composition.bindings.managerTurns.check()).resolves.toBe(true);
+  });
+
   it('binds durable turns and finite event replay to the supplied request runtime', async () => {
     const { pool } = poolFixture();
     const runTurn = vi.fn(async (input: { readonly runId: string }) => ({
