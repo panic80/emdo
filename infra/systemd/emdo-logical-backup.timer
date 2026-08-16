@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the EMDO encrypted logical backup every day
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30m
+Persistent=true
+AccuracySec=5m
+Unit=emdo-logical-backup.service
+
+[Install]
+WantedBy=timers.target

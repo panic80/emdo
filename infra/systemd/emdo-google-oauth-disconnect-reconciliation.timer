@@ -1,0 +1,12 @@
+[Unit]
+Description=Reconcile stranded EMDO Google OAuth disconnects every five minutes
+
+[Timer]
+OnCalendar=*-*-* *:0/5:00
+RandomizedDelaySec=2m
+Persistent=true
+AccuracySec=1m
+Unit=emdo-google-oauth-disconnect-reconciliation.service
+
+[Install]
+WantedBy=timers.target

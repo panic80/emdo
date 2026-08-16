@@ -1,0 +1,17 @@
+[Unit]
+Description=Purge expired uncommitted EMDO finance-import previews
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/usr/local/sbin/emdo-dispatch-active-release purge-finance-imports
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/var/lib/emdo /etc/emdo
+ReadWritePaths=/var/lib/emdo/locks

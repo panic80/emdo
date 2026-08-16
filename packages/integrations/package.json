@@ -1,0 +1,23 @@
+{
+  "name": "@emdo/integrations",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./commerce": "./src/commerce/index.ts",
+    "./email": "./src/email/index.ts",
+    "./google-calendar": "./src/google/calendar.ts",
+    "./google-oauth-routes": "./src/google/oauth/routes.ts",
+    "./google-oauth-server": {
+      "node": "./src/google/oauth/server.ts"
+    },
+    "./maps": "./src/maps/public.ts",
+    "./openai": "./src/openai/index.ts",
+    "./push": "./src/push/index.ts"
+  },
+  "dependencies": {
+    "@emdo/contracts": "workspace:*",
+    "zod": "4.4.3"
+  }
+}

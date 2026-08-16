@@ -1,0 +1,17 @@
+[Unit]
+Description=Purge expired completed EMDO Google OAuth disconnect receipts
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/usr/local/sbin/emdo-dispatch-active-release purge-google-oauth-disconnect-receipts
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/var/lib/emdo /etc/emdo
+ReadWritePaths=/var/lib/emdo/locks

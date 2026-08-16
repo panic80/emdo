@@ -1,0 +1,91 @@
+{
+	admin localhost:2019
+	email {$ACME_EMAIL}
+	disable_crowdin
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+{$EMDO_DOMAIN} {
+	header {
+		-Server
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		Content-Security-Policy "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleusercontent.com; connect-src 'self'; media-src 'self' blob:; worker-src 'self' blob:; manifest-src 'self'"
+		Cross-Origin-Opener-Policy "same-origin-allow-popups"
+		Cross-Origin-Resource-Policy "same-origin"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), geolocation=(self), microphone=(self), payment=(), usb=()"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		X-Permitted-Cross-Domain-Policies "none"
+	}
+
+	@event_stream path_regexp event_stream ^/api/v1/runs/[^/]+/events$
+	handle @event_stream {
+		header {
+			Cache-Control "no-store, no-transform"
+			Pragma "no-cache"
+			X-Accel-Buffering "no"
+		}
+		reverse_proxy api:3000 {
+			header_up -Forwarded
+			header_up -X-Real-IP
+			header_up -X-Forwarded-For
+			header_up -X-Emdo-Edge-Proxy
+			header_up X-Forwarded-For {http.request.remote.host}
+			header_up X-Emdo-Edge-Proxy {$EMDO_EDGE_PROXY_SECRET}
+			flush_interval -1
+		}
+	}
+
+	@voice_audio path /api/v1/voice/transcribe /api/v1/voice/speak
+	handle @voice_audio {
+		request_body {
+			max_size 20MB
+		}
+		header {
+			Cache-Control "no-store, private, max-age=0"
+			Pragma "no-cache"
+			Expires "0"
+		}
+		reverse_proxy api:3000 {
+			header_up -Forwarded
+			header_up -X-Real-IP
+			header_up -X-Forwarded-For
+			header_up -X-Emdo-Edge-Proxy
+			header_up X-Forwarded-For {http.request.remote.host}
+			header_up X-Emdo-Edge-Proxy {$EMDO_EDGE_PROXY_SECRET}
+		}
+	}
+
+	@powersync path /powersync /powersync/*
+	handle @powersync {
+		uri strip_prefix /powersync
+		reverse_proxy powersync:8080
+	}
+
+	# Metrics are intentionally absent from public ingress. Operators reach the
+	# Metrics are never public. Operators use the API's loopback-only host bind
+	# through an authenticated SSH tunnel and still provide its bearer token.
+	@metrics path /metrics
+	respond @metrics 404
+
+	@api path /api/* /.well-known/jwks.json /openapi.json /healthz /readyz
+	handle @api {
+		encode zstd gzip
+		reverse_proxy api:3000 {
+			header_up -Forwarded
+			header_up -X-Real-IP
+			header_up -X-Forwarded-For
+			header_up -X-Emdo-Edge-Proxy
+			header_up X-Forwarded-For {http.request.remote.host}
+			header_up X-Emdo-Edge-Proxy {$EMDO_EDGE_PROXY_SECRET}
+		}
+	}
+
+	handle {
+		encode zstd gzip
+		reverse_proxy web:8080
+	}
+}

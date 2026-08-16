@@ -1,0 +1,41 @@
+{
+  "name": "emdo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=24 <26",
+    "pnpm": "9.x"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "tsc --project tsconfig.base.json --noEmit && pnpm --filter @emdo/web typecheck",
+    "test": "vitest run",
+    "test:e2e": "pnpm --filter @emdo/web test:e2e",
+    "test:integration": "vitest run tests/integration",
+    "test:postgres-integration": "vitest run packages/db/src/postgres-integration-orchestrator.integration.test.ts",
+    "evals": "vitest run --config evals/vitest.config.mjs && vitest run --config evals/vitest.agent-packages.config.mjs",
+    "build": "pnpm --recursive --if-present run build",
+    "dev": "pnpm --parallel --recursive --if-present run dev"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "24.13.3",
+    "eslint": "9.39.5",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "15.15.0",
+    "drizzle-kit": "0.31.10",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.66.0",
+    "vitest": "2.1.9"
+  }
+}

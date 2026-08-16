@@ -1,0 +1,5 @@
+Date,Description,Amount,Reference,Category
+2026-08-01,"Market, Toronto",-42.05,fit-1,category-groceries
+2026-08-02,Salary,1000.00,fit-2,category-income
+not-a-date,Malformed row,1.00,fit-3,category-other
+2026-08-01,Duplicate source row,-42.05,fit-1,category-groceries

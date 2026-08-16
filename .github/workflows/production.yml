@@ -1,0 +1,432 @@
+name: Protected production
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Deploy exact staging-tested images or roll back application images
+        required: true
+        default: deploy
+        type: choice
+        options: [deploy, rollback]
+      staging_run_id:
+        description: Successful On-demand staging workflow run ID (deploy only)
+        required: false
+        type: string
+      expected_image_lock_sha256:
+        description: SHA-256 of the reviewed staging-tested.env artifact (deploy only)
+        required: false
+        type: string
+      expected_acceptance_evidence_sha256:
+        description: Exact signed acceptance manifest SHA-256 reviewed for this deployment
+        required: false
+        type: string
+      hostinger_snapshot_reference:
+        description: Fresh manual pre-deployment Hostinger snapshot reference (deploy only)
+        required: false
+        type: string
+      hostinger_snapshot_confirmed_at:
+        description: Snapshot completion time in ISO-8601 UTC (deploy only)
+        required: false
+        type: string
+      initial_deployment:
+        description: One-time first production deployment request (deploy only)
+        required: true
+        default: false
+        type: boolean
+      initial_bootstrap_acknowledged:
+        description: Confirm no production state or resources exist and first current.env may be created
+        required: true
+        default: false
+        type: boolean
+      rollback_schema_compatible:
+        description: Confirm prior application images are compatible with the current database
+        required: false
+        default: false
+        type: boolean
+      rollback_reason:
+        description: Required operator reason for rollback
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  deployments: write
+
+concurrency:
+  group: emdo-production
+  cancel-in-progress: false
+
+jobs:
+  prepare_production:
+    name: Resolve exact production plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      api_image: ${{ steps.plan.outputs.api_image }}
+      caddy_image: ${{ steps.plan.outputs.caddy_image }}
+      ci_run_id: ${{ steps.plan.outputs.ci_run_id }}
+      evidence_digest: ${{ steps.plan.outputs.evidence_digest }}
+      evidence_run_id: ${{ steps.plan.outputs.evidence_run_id }}
+      operation: ${{ steps.plan.outputs.operation }}
+      plan_image_lock_sha256: ${{ steps.plan.outputs.plan_image_lock_sha256 }}
+      plan_summary: ${{ steps.plan.outputs.plan_summary }}
+      postgres_image: ${{ steps.plan.outputs.postgres_image }}
+      powersync_image: ${{ steps.plan.outputs.powersync_image }}
+      source_sha: ${{ steps.plan.outputs.source_sha }}
+      staging_infra_archive_sha256: ${{ steps.plan.outputs.staging_infra_archive_sha256 }}
+      web_image: ${{ steps.plan.outputs.web_image }}
+      worker_image: ${{ steps.plan.outputs.worker_image }}
+    steps:
+      - name: Validate operation and bootstrap inputs
+        env:
+          EXPECTED_EVIDENCE_DIGEST: ${{ inputs.expected_acceptance_evidence_sha256 }}
+          EXPECTED_IMAGE_LOCK_DIGEST: ${{ inputs.expected_image_lock_sha256 }}
+          INITIAL_BOOTSTRAP_ACKNOWLEDGED: ${{ inputs.initial_bootstrap_acknowledged }}
+          INITIAL_DEPLOYMENT: ${{ inputs.initial_deployment }}
+          OPERATION: ${{ inputs.operation }}
+          ROLLBACK_REASON: ${{ inputs.rollback_reason }}
+          ROLLBACK_SCHEMA_COMPATIBLE: ${{ inputs.rollback_schema_compatible }}
+          STAGING_RUN_ID: ${{ inputs.staging_run_id }}
+        run: |
+          [[ "$INITIAL_DEPLOYMENT" == true || "$INITIAL_DEPLOYMENT" == false ]]
+          [[ "$INITIAL_BOOTSTRAP_ACKNOWLEDGED" == true || "$INITIAL_BOOTSTRAP_ACKNOWLEDGED" == false ]]
+          if [[ "$OPERATION" == rollback ]]; then
+            [[ "$INITIAL_DEPLOYMENT" == false && "$INITIAL_BOOTSTRAP_ACKNOWLEDGED" == false ]]
+            [[ "$ROLLBACK_SCHEMA_COMPATIBLE" == true && -n "$ROLLBACK_REASON" ]]
+            [[ -z "$STAGING_RUN_ID" && -z "$EXPECTED_IMAGE_LOCK_DIGEST" && -z "$EXPECTED_EVIDENCE_DIGEST" ]]
+          else
+            [[ "$OPERATION" == deploy ]]
+            [[ "$INITIAL_DEPLOYMENT" == "$INITIAL_BOOTSTRAP_ACKNOWLEDGED" ]]
+            [[ "$STAGING_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
+            [[ "$EXPECTED_IMAGE_LOCK_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+            [[ "$EXPECTED_EVIDENCE_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+          fi
+      - name: Verify the staging acceptance run
+        id: source
+        if: inputs.operation == 'deploy'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          STAGING_RUN_ID: ${{ inputs.staging_run_id }}
+        with:
+          result-encoding: string
+          script: |
+            const runId = Number(process.env.STAGING_RUN_ID);
+            if (!Number.isSafeInteger(runId) || runId <= 0) throw new Error('Invalid staging run ID');
+            const { data: run } = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId,
+            });
+            if (run.path !== '.github/workflows/staging.yml' || run.event !== 'workflow_dispatch' || run.head_branch !== 'main' || run.conclusion !== 'success') {
+              throw new Error('The selected run is not a successful main staging acceptance run');
+            }
+            return run.head_sha;
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: inputs.operation == 'deploy'
+        with:
+          ref: ${{ steps.source.outputs.result }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: inputs.operation == 'deploy'
+        with:
+          name: staging-tested-images
+          path: release
+          run-id: ${{ inputs.staging_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve and validate the immutable staging plan
+        id: attestation
+        if: inputs.operation == 'deploy'
+        env:
+          EXPECTED_IMAGE_LOCK_DIGEST: ${{ inputs.expected_image_lock_sha256 }}
+          INITIAL_BOOTSTRAP_ACKNOWLEDGED: ${{ inputs.initial_bootstrap_acknowledged }}
+          INITIAL_DEPLOYMENT: ${{ inputs.initial_deployment }}
+          SELECTED_STAGING_RUN_ID: ${{ inputs.staging_run_id }}
+        run: |
+          [[ "$INITIAL_DEPLOYMENT" == "$INITIAL_BOOTSTRAP_ACKNOWLEDGED" ]]
+          grep -qx 'SOURCE_SHA=${{ steps.source.outputs.result }}' release/staging-tested.env
+          grep -Fqx "STAGING_WORKFLOW_RUN_ID=$SELECTED_STAGING_RUN_ID" release/staging-tested.env
+          grep -Fqx "INITIAL_DEPLOYMENT_BOOTSTRAP=$INITIAL_DEPLOYMENT" release/staging-tested.env
+          actual_lock_digest="$(sha256sum release/staging-tested.env | cut -d ' ' -f 1)"
+          [[ "$actual_lock_digest" == "$EXPECTED_IMAGE_LOCK_DIGEST" ]] || {
+            printf 'ERROR: staging attestation digest does not match the reviewed lock\n' >&2
+            exit 1
+          }
+          bash -c 'source infra/scripts/_common.sh; assert_staging_attestation_matches "$1" "$2"' \
+            _ release/staging-tested.env release/staging-tested.env
+          bash -c '
+            source infra/scripts/_common.sh
+            assert_digest_lock "$1"
+            printf "api_image=%s\nci_run_id=%s\nevidence_digest=%s\nevidence_run_id=%s\npostgres_image=%s\npowersync_image=%s\nsource_sha=%s\nstaging_infra_archive_sha256=%s\nweb_image=%s\nworker_image=%s\ncaddy_image=%s\n" \
+              "$(image_lock_value API_IMAGE)" \
+              "$(image_lock_value ACCEPTANCE_CI_RUN_ID)" \
+              "$(image_lock_value ACCEPTANCE_EVIDENCE_SHA256)" \
+              "$(image_lock_value ACCEPTANCE_EVIDENCE_RUN_ID)" \
+              "$(image_lock_value POSTGRES_IMAGE)" \
+              "$(image_lock_value POWERSYNC_IMAGE)" \
+              "$(image_lock_value SOURCE_SHA)" \
+              "$(image_lock_value STAGING_INFRA_ARCHIVE_SHA256)" \
+              "$(image_lock_value WEB_IMAGE)" \
+              "$(image_lock_value WORKER_IMAGE)" \
+              "$(image_lock_value CADDY_IMAGE)"
+          ' _ release/staging-tested.env >> "$GITHUB_OUTPUT"
+          printf 'plan_image_lock_sha256=%s\n' "$actual_lock_digest" >> "$GITHUB_OUTPUT"
+      - name: Verify the attested same-SHA CI run
+        if: inputs.operation == 'deploy'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          CI_RUN_ID: ${{ steps.attestation.outputs.ci_run_id }}
+          SOURCE_SHA: ${{ steps.source.outputs.result }}
+        with:
+          script: |
+            const runId = Number(process.env.CI_RUN_ID);
+            if (!Number.isSafeInteger(runId) || runId <= 0) throw new Error('Invalid attested CI run ID');
+            const { data: run } = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId,
+            });
+            if (run.path !== '.github/workflows/ci.yml' || run.event !== 'push' || run.head_branch !== 'main' || run.conclusion !== 'success' || run.head_sha !== process.env.SOURCE_SHA) {
+              throw new Error('The attested CI run is not a successful same-SHA main push run');
+            }
+      - name: Write the immutable production plan
+        id: plan
+        env:
+          API_IMAGE: ${{ steps.attestation.outputs.api_image }}
+          CADDY_IMAGE: ${{ steps.attestation.outputs.caddy_image }}
+          CI_RUN_ID: ${{ steps.attestation.outputs.ci_run_id }}
+          EVIDENCE_DIGEST: ${{ steps.attestation.outputs.evidence_digest }}
+          EVIDENCE_RUN_ID: ${{ steps.attestation.outputs.evidence_run_id }}
+          OPERATION: ${{ inputs.operation }}
+          PLAN_IMAGE_LOCK_DIGEST: ${{ steps.attestation.outputs.plan_image_lock_sha256 }}
+          POSTGRES_IMAGE: ${{ steps.attestation.outputs.postgres_image }}
+          POWERSYNC_IMAGE: ${{ steps.attestation.outputs.powersync_image }}
+          SOURCE_SHA: ${{ steps.attestation.outputs.source_sha }}
+          STAGING_RUN_ID: ${{ inputs.staging_run_id }}
+          STAGING_INFRA_ARCHIVE_SHA256: ${{ steps.attestation.outputs.staging_infra_archive_sha256 }}
+          WEB_IMAGE: ${{ steps.attestation.outputs.web_image }}
+          WORKER_IMAGE: ${{ steps.attestation.outputs.worker_image }}
+        run: |
+          printf 'operation=%s\n' "$OPERATION" >> "$GITHUB_OUTPUT"
+          if [[ "$OPERATION" == rollback ]]; then
+            printf 'plan_summary=rollback current to governed previous application digests\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [[ "$EVIDENCE_DIGEST" == '${{ inputs.expected_acceptance_evidence_sha256 }}' ]]
+          install -d -m 0700 release
+          printf '%s\n' \
+            'schema=emdo-production-plan-v1' \
+            'operation=deploy' \
+            "source_sha=$SOURCE_SHA" \
+            "staging_run_id=$STAGING_RUN_ID" \
+            "ci_run_id=$CI_RUN_ID" \
+            "image_lock_sha256=$PLAN_IMAGE_LOCK_DIGEST" \
+            "evidence_sha256=$EVIDENCE_DIGEST" \
+            "infra_archive_sha256=$STAGING_INFRA_ARCHIVE_SHA256" \
+            "api_image=$API_IMAGE" \
+            "worker_image=$WORKER_IMAGE" \
+            "web_image=$WEB_IMAGE" \
+            "postgres_image=$POSTGRES_IMAGE" \
+            "powersync_image=$POWERSYNC_IMAGE" \
+            "caddy_image=$CADDY_IMAGE" \
+            > release/production-plan.env
+          chmod 0600 release/production-plan.env
+          printf 'source_sha=%s\napi_image=%s\nworker_image=%s\nweb_image=%s\npostgres_image=%s\npowersync_image=%s\ncaddy_image=%s\nci_run_id=%s\nevidence_digest=%s\nevidence_run_id=%s\nplan_image_lock_sha256=%s\nstaging_infra_archive_sha256=%s\nplan_summary=deploy %.12s lock %.12s evidence %.12s\n' \
+            "$SOURCE_SHA" "$API_IMAGE" "$WORKER_IMAGE" "$WEB_IMAGE" \
+            "$POSTGRES_IMAGE" "$POWERSYNC_IMAGE" "$CADDY_IMAGE" \
+            "$CI_RUN_ID" "$EVIDENCE_DIGEST" "$EVIDENCE_RUN_ID" \
+            "$PLAN_IMAGE_LOCK_DIGEST" "$STAGING_INFRA_ARCHIVE_SHA256" "$SOURCE_SHA" \
+            "$PLAN_IMAGE_LOCK_DIGEST" "$EVIDENCE_DIGEST" \
+            >> "$GITHUB_OUTPUT"
+      - name: Upload immutable production plan
+        if: inputs.operation == 'deploy'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: production-deployment-plan
+          path: release
+          if-no-files-found: error
+          retention-days: 2
+
+  production:
+    needs: prepare_production
+    name: Approve exact ${{ needs.prepare_production.outputs.plan_summary }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: inputs.operation == 'deploy'
+        with:
+          ref: ${{ needs.prepare_production.outputs.source_sha }}
+          persist-credentials: false
+      - name: Download immutable production plan
+        if: inputs.operation == 'deploy'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: production-deployment-plan
+          path: release
+      - name: Revalidate the approved production plan
+        if: inputs.operation == 'deploy'
+        env:
+          API_IMAGE: ${{ needs.prepare_production.outputs.api_image }}
+          CADDY_IMAGE: ${{ needs.prepare_production.outputs.caddy_image }}
+          CI_RUN_ID: ${{ needs.prepare_production.outputs.ci_run_id }}
+          EVIDENCE_DIGEST: ${{ needs.prepare_production.outputs.evidence_digest }}
+          EXPECTED_EVIDENCE_DIGEST: ${{ inputs.expected_acceptance_evidence_sha256 }}
+          EXPECTED_IMAGE_LOCK_DIGEST: ${{ inputs.expected_image_lock_sha256 }}
+          EXPECTED_INFRA_ARCHIVE_SHA256: ${{ needs.prepare_production.outputs.staging_infra_archive_sha256 }}
+          PLAN_IMAGE_LOCK_DIGEST: ${{ needs.prepare_production.outputs.plan_image_lock_sha256 }}
+          POSTGRES_IMAGE: ${{ needs.prepare_production.outputs.postgres_image }}
+          POWERSYNC_IMAGE: ${{ needs.prepare_production.outputs.powersync_image }}
+          SOURCE_SHA: ${{ needs.prepare_production.outputs.source_sha }}
+          STAGING_RUN_ID: ${{ inputs.staging_run_id }}
+          WEB_IMAGE: ${{ needs.prepare_production.outputs.web_image }}
+          WORKER_IMAGE: ${{ needs.prepare_production.outputs.worker_image }}
+        run: |
+          [[ "$(wc -l < release/production-plan.env)" == 14 ]]
+          actual_lock_digest="$(sha256sum release/staging-tested.env | cut -d ' ' -f 1)"
+          [[ "$actual_lock_digest" == "$PLAN_IMAGE_LOCK_DIGEST" ]]
+          [[ "$actual_lock_digest" == "$EXPECTED_IMAGE_LOCK_DIGEST" ]]
+          [[ "$EVIDENCE_DIGEST" == "$EXPECTED_EVIDENCE_DIGEST" ]]
+          grep -Fqx 'schema=emdo-production-plan-v1' release/production-plan.env
+          grep -Fqx 'operation=deploy' release/production-plan.env
+          grep -Fqx "source_sha=$SOURCE_SHA" release/production-plan.env
+          grep -Fqx "staging_run_id=$STAGING_RUN_ID" release/production-plan.env
+          grep -Fqx "ci_run_id=$CI_RUN_ID" release/production-plan.env
+          grep -Fqx "image_lock_sha256=$PLAN_IMAGE_LOCK_DIGEST" release/production-plan.env
+          grep -Fqx "evidence_sha256=$EVIDENCE_DIGEST" release/production-plan.env
+          grep -Fqx "infra_archive_sha256=$EXPECTED_INFRA_ARCHIVE_SHA256" release/production-plan.env
+          grep -Fqx "api_image=$API_IMAGE" release/production-plan.env
+          grep -Fqx "worker_image=$WORKER_IMAGE" release/production-plan.env
+          grep -Fqx "web_image=$WEB_IMAGE" release/production-plan.env
+          grep -Fqx "postgres_image=$POSTGRES_IMAGE" release/production-plan.env
+          grep -Fqx "powersync_image=$POWERSYNC_IMAGE" release/production-plan.env
+          grep -Fqx "caddy_image=$CADDY_IMAGE" release/production-plan.env
+          bash -c 'source infra/scripts/_common.sh; assert_staging_attestation_matches "$1" "$2"' \
+            _ release/staging-tested.env release/staging-tested.env
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: inputs.operation == 'deploy'
+        with:
+          node-version: 24.13.0
+      - name: Validate signed complete release acceptance evidence
+        if: inputs.operation == 'deploy'
+        env:
+          ACCEPTANCE_EVIDENCE_PUBLIC_KEY: ${{ secrets.ACCEPTANCE_EVIDENCE_PUBLIC_KEY }}
+          CI_RUN_ID: ${{ needs.prepare_production.outputs.ci_run_id }}
+          EVIDENCE_DIGEST: ${{ needs.prepare_production.outputs.evidence_digest }}
+          EVIDENCE_RUN_ID: ${{ needs.prepare_production.outputs.evidence_run_id }}
+          EXPECTED_EVIDENCE_DIGEST: ${{ inputs.expected_acceptance_evidence_sha256 }}
+          SOURCE_SHA: ${{ needs.prepare_production.outputs.source_sha }}
+        run: |
+          [[ "$EVIDENCE_RUN_ID" == '${{ inputs.staging_run_id }}' ]]
+          public_key="$(mktemp)"
+          trap 'rm -f "$public_key"' EXIT
+          printf '%s\n' "$ACCEPTANCE_EVIDENCE_PUBLIC_KEY" > "$public_key"
+          chmod 0600 "$public_key"
+          recorded_digest="$(cut -d ' ' -f 1 release/acceptance-evidence/acceptance-evidence.json.sha256)"
+          [[ "$recorded_digest" == "$EVIDENCE_DIGEST" ]]
+          [[ "$recorded_digest" == "$EXPECTED_EVIDENCE_DIGEST" ]]
+          node scripts/release/validate-acceptance-evidence.mjs \
+            --manifest release/acceptance-evidence/acceptance-evidence.json \
+            --digest release/acceptance-evidence/acceptance-evidence.json.sha256 \
+            --signature release/acceptance-evidence/acceptance-evidence.json.sig \
+            --public-key "$public_key" \
+            --artifacts-root release/acceptance-evidence \
+            --image-lock release/staging-tested.env \
+            --source-sha "$SOURCE_SHA" \
+            --environment staging \
+            --producer-run-id '${{ inputs.staging_run_id }}' \
+            --producer-head-sha "$SOURCE_SHA" \
+            --producer-conclusion success \
+            --ci-run-id "$CI_RUN_ID" \
+            --ci-head-sha "$SOURCE_SHA" \
+            --ci-conclusion success
+      - name: Configure SSH
+        env:
+          SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+        run: |
+          install -d -m 0700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 0600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Upload reviewed deployment assets
+        if: inputs.operation == 'deploy'
+        env:
+          EXPECTED_INFRA_ARCHIVE_SHA256: ${{ needs.prepare_production.outputs.staging_infra_archive_sha256 }}
+          SOURCE_SHA: ${{ needs.prepare_production.outputs.source_sha }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.PRODUCTION_SSH_USER }}
+        run: |
+          archive="/tmp/emdo-production-infra-${{ github.run_id }}.tgz"
+          [[ -z "$(find infra -type l -print -quit)" ]]
+          tar --sort=name --format=gnu --mtime='@0' \
+            --owner=0 --group=0 --numeric-owner \
+            --use-compress-program='gzip -n' --create --file "$archive" \
+            infra/compose infra/caddy infra/powersync infra/scripts infra/systemd
+          archive_digest="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          [[ "$archive_digest" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$archive_digest" == "$EXPECTED_INFRA_ARCHIVE_SHA256" ]] || {
+            printf 'ERROR: production infrastructure archive differs from staging-tested bytes\n' >&2
+            exit 1
+          }
+          scp "$archive" "$VPS_USER@$VPS_HOST:/tmp/"
+          release="/opt/emdo/releases/$SOURCE_SHA-${{ github.run_id }}"
+          archive_name="$(basename "$archive")"
+          ssh "$VPS_USER@$VPS_HOST" "set -Eeuo pipefail; \
+            test \"\$(sha256sum /tmp/$archive_name | cut -d ' ' -f 1)\" = '$archive_digest'; \
+            sudo test \"\$(stat -c '%u:%a' /opt/emdo/releases)\" = '0:755'; \
+            sudo test ! -e '$release'; \
+            sudo install -d -o 0 -g 0 -m 0755 '$release'; \
+            sudo tar --extract --gzip --file '/tmp/$archive_name' --directory '$release' --no-same-owner --no-same-permissions; \
+            sudo test -z \"\$(find '$release' -type l -print -quit)\"; \
+            sudo chown -R root:root '$release'; \
+            sudo find '$release' -type d -exec chmod 0755 {} +; \
+            sudo find '$release' -type f -exec chmod 0644 {} +; \
+            sudo find '$release/infra/scripts' -type f -name '*.sh' -exec chmod 0755 {} +; \
+            printf '%s\n' '$archive_digest' | sudo tee '$release/.archive-sha256' >/dev/null; \
+            sudo chmod 0644 '$release/.archive-sha256'"
+      - name: Deploy exact staging-tested digests
+        if: inputs.operation == 'deploy'
+        env:
+          INITIAL_BOOTSTRAP_ACKNOWLEDGED: ${{ inputs.initial_bootstrap_acknowledged }}
+          INITIAL_DEPLOYMENT: ${{ inputs.initial_deployment }}
+          SNAPSHOT_CONFIRMED_AT: ${{ inputs.hostinger_snapshot_confirmed_at }}
+          SNAPSHOT_REFERENCE: ${{ inputs.hostinger_snapshot_reference }}
+          SOURCE_SHA: ${{ needs.prepare_production.outputs.source_sha }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.PRODUCTION_SSH_USER }}
+        run: |
+          release="/opt/emdo/releases/$SOURCE_SHA-${{ github.run_id }}"
+          scp release/staging-tested.env "$VPS_USER@$VPS_HOST:/tmp/candidate.env"
+          scp release/staging-tested.env "$VPS_USER@$VPS_HOST:/tmp/staging-tested.env"
+          printf -v remote_command \
+            'sudo env PRODUCTION_DEPLOYMENT_APPROVED=true EMDO_INITIAL_DEPLOYMENT=%q INITIAL_BOOTSTRAP_ACKNOWLEDGED=%q GITHUB_RUN_ID=%q HOSTINGER_SNAPSHOT_REFERENCE=%q HOSTINGER_SNAPSHOT_CONFIRMED_AT=%q %q %q %q' \
+            "$INITIAL_DEPLOYMENT" "$INITIAL_BOOTSTRAP_ACKNOWLEDGED" \
+            '${{ github.run_id }}' "$SNAPSHOT_REFERENCE" "$SNAPSHOT_CONFIRMED_AT" \
+            "$release/infra/scripts/deploy-production.sh" /tmp/candidate.env /tmp/staging-tested.env
+          ssh "$VPS_USER@$VPS_HOST" "$remote_command"
+      - name: Roll back application images without reversing migrations
+        if: inputs.operation == 'rollback'
+        env:
+          ROLLBACK_REASON: ${{ inputs.rollback_reason }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.PRODUCTION_SSH_USER }}
+        run: |
+          [[ '${{ inputs.rollback_schema_compatible }}' == true ]]
+          [[ -n "$ROLLBACK_REASON" ]]
+          rollback_entrypoint='
+            set -Eeuo pipefail
+            state_file=/var/lib/emdo/deployments/current.env
+            [[ -f "$state_file" && ! -L "$state_file" ]]
+            [[ "$(grep -c "^DEPLOYED_RELEASE_DIR=" "$state_file")" == 1 ]]
+            release_root="$(sed -n "s/^DEPLOYED_RELEASE_DIR=//p" "$state_file")"
+            [[ "$release_root" =~ ^/opt/emdo/releases/[0-9a-f]{40}-[0-9]{1,20}$ ]]
+            [[ -x "$release_root/infra/scripts/rollback.sh" ]]
+            exec "$release_root/infra/scripts/rollback.sh"
+          '
+          printf -v remote_command \
+            'sudo env PRODUCTION_DEPLOYMENT_APPROVED=true ROLLBACK_SCHEMA_COMPATIBLE=true GITHUB_RUN_ID=%q ROLLBACK_REASON=%q /bin/bash -c %q' \
+            '${{ github.run_id }}' "$ROLLBACK_REASON" "$rollback_entrypoint"
+          ssh "$VPS_USER@$VPS_HOST" "$remote_command"

@@ -1,0 +1,247 @@
+name: On-demand staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_run_id:
+        description: Successful Publish images workflow run ID from main
+        required: true
+        type: string
+      ci_run_id:
+        description: Successful same-SHA CI push workflow run ID from main
+        required: true
+        type: string
+      ttl_minutes:
+        description: Mandatory staging lifetime in minutes
+        required: true
+        default: '60'
+        type: choice
+        options: ['30', '60', '120', '240']
+      initial_deployment:
+        description: One-time bootstrap only; prove production is entirely absent instead of healthy
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: emdo-staging-vps
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: staging
+    env:
+      EMDO_SYNTHETIC_DATA_ONLY: true
+    steps:
+      - name: Verify the source publish run
+        id: source
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          PUBLISH_RUN_ID: ${{ inputs.publish_run_id }}
+        with:
+          result-encoding: string
+          script: |
+            const runId = Number(process.env.PUBLISH_RUN_ID);
+            if (!Number.isSafeInteger(runId) || runId <= 0) throw new Error('Invalid publish run ID');
+            const { data: run } = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId,
+            });
+            if (run.path !== '.github/workflows/publish.yml' || run.event !== 'push' || run.head_branch !== 'main' || run.conclusion !== 'success' || run.head_sha !== context.sha) {
+              throw new Error('The selected run is not a successful main Publish images run');
+            }
+            return run.head_sha;
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ steps.source.outputs.result }}
+          persist-credentials: false
+      - name: Verify the successful same-SHA CI run
+        id: ci
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          SOURCE_SHA: ${{ steps.source.outputs.result }}
+        with:
+          result-encoding: string
+          script: |
+            const runId = Number(process.env.CI_RUN_ID);
+            if (!Number.isSafeInteger(runId) || runId <= 0) throw new Error('Invalid CI run ID');
+            const { data: run } = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId,
+            });
+            if (run.path !== '.github/workflows/ci.yml' || run.event !== 'push' || run.head_branch !== 'main' || run.conclusion !== 'success' || run.head_sha !== process.env.SOURCE_SHA) {
+              throw new Error('The selected run is not a successful same-SHA main CI push run');
+            }
+            return String(run.id);
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-images
+          path: release
+          run-id: ${{ inputs.publish_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: acceptance-ci-receipts
+          path: release/acceptance-evidence
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Complete and validate the immutable image lock
+        env:
+          POSTGRES_IMAGE: ${{ vars.POSTGRES_IMAGE }}
+          POWERSYNC_IMAGE: ${{ vars.POWERSYNC_IMAGE }}
+          CADDY_IMAGE: ${{ vars.CADDY_IMAGE }}
+        run: |
+          grep -qx 'SOURCE_SHA=${{ steps.source.outputs.result }}' release/release-images.env
+          printf 'POSTGRES_IMAGE=%s\nPOWERSYNC_IMAGE=%s\nCADDY_IMAGE=%s\n' \
+            "$POSTGRES_IMAGE" "$POWERSYNC_IMAGE" "$CADDY_IMAGE" \
+            >> release/release-images.env
+          bash -c 'source infra/scripts/_common.sh; assert_digest_lock "$1"' _ release/release-images.env
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 0700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 0600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Upload deployment assets
+        id: release_assets
+        env:
+          RELEASE_ASSET_SIGNING_PRIVATE_KEY: ${{ secrets.RELEASE_ASSET_SIGNING_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.STAGING_SSH_USER }}
+        run: |
+          archive="/tmp/emdo-infra-${{ github.run_id }}.tgz"
+          descriptor="/tmp/emdo-release-${{ github.run_id }}.env"
+          signature="$descriptor.sig"
+          signing_key="$(mktemp)"
+          trap 'rm -f "$signing_key" "$descriptor" "$signature"' EXIT
+          [[ -z "$(find infra -type l -print -quit)" ]]
+          tar --sort=name --format=gnu --mtime='@0' \
+            --owner=0 --group=0 --numeric-owner \
+            --use-compress-program='gzip -n' --create --file "$archive" \
+            infra/compose infra/caddy infra/powersync infra/scripts infra/systemd
+          archive_digest="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          image_lock_digest="$(sha256sum release/release-images.env | cut -d ' ' -f 1)"
+          [[ "$archive_digest" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$image_lock_digest" =~ ^[0-9a-f]{64}$ ]]
+          printf 'archive_sha256=%s\n' "$archive_digest" >> "$GITHUB_OUTPUT"
+          printf 'schema=emdo-release-assets-v1\npurpose=staging\nsource_sha=%s\nworkflow_run_id=%s\narchive_sha256=%s\nimage_lock_sha256=%s\n' \
+            '${{ steps.source.outputs.result }}' '${{ github.run_id }}' \
+            "$archive_digest" "$image_lock_digest" > "$descriptor"
+          printf '%s\n' "$RELEASE_ASSET_SIGNING_PRIVATE_KEY" > "$signing_key"
+          chmod 0600 "$signing_key"
+          openssl pkeyutl -sign -inkey "$signing_key" -rawin \
+            -in "$descriptor" -out "$signature"
+          scp "$archive" release/release-images.env "$descriptor" "$signature" \
+            "$VPS_USER@$VPS_HOST:/tmp/"
+          archive_name="$(basename "$archive")"
+          descriptor_name="$(basename "$descriptor")"
+          signature_name="$(basename "$signature")"
+          ssh "$VPS_USER@$VPS_HOST" \
+            "sudo /usr/local/sbin/emdo-staging-operator install '/tmp/$archive_name' /tmp/release-images.env '/tmp/$descriptor_name' '/tmp/$signature_name'"
+      - name: Deploy isolated synthetic staging
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.STAGING_SSH_USER }}
+          INITIAL_STAGING_BOOTSTRAP: ${{ inputs.initial_deployment }}
+        run: |
+          [[ "$INITIAL_STAGING_BOOTSTRAP" == true || "$INITIAL_STAGING_BOOTSTRAP" == false ]]
+          ssh "$VPS_USER@$VPS_HOST" \
+            "sudo /usr/local/sbin/emdo-staging-operator deploy '${{ github.run_id }}' '$INITIAL_STAGING_BOOTSTRAP' '${{ inputs.ttl_minutes }}'"
+      - name: Run staging health acceptance
+        env:
+          EMDO_ACCEPTANCE_ENVIRONMENT: staging
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_HTTP_PORT: ${{ vars.STAGING_HTTP_PORT }}
+        run: |
+          [[ "$STAGING_HTTP_PORT" =~ ^[0-9]{2,5}$ ]]
+          ssh "$VPS_USER@$VPS_HOST" \
+            "sudo /usr/local/sbin/emdo-staging-operator accept '${{ github.run_id }}'" \
+            > release/staging-http-subset-probe.json
+          chmod 0600 release/staging-http-subset-probe.json
+          node scripts/release/write-staging-http-receipt.mjs \
+            --probe release/staging-http-subset-probe.json \
+            --image-lock release/release-images.env \
+            --receipts-root release/acceptance-evidence
+      - name: Assemble, sign, and verify the complete release evidence
+        env:
+          ACCEPTANCE_EVIDENCE_PRIVATE_KEY: ${{ secrets.ACCEPTANCE_EVIDENCE_PRIVATE_KEY }}
+          ACCEPTANCE_EVIDENCE_PUBLIC_KEY: ${{ secrets.ACCEPTANCE_EVIDENCE_PUBLIC_KEY }}
+        run: |
+          key_dir="$(mktemp -d)"
+          trap 'find "$key_dir" -type f -delete; rmdir "$key_dir"' EXIT
+          printf '%s\n' "$ACCEPTANCE_EVIDENCE_PRIVATE_KEY" > "$key_dir/private.pem"
+          printf '%s\n' "$ACCEPTANCE_EVIDENCE_PUBLIC_KEY" > "$key_dir/public.pem"
+          chmod 0600 "$key_dir/private.pem" "$key_dir/public.pem"
+          node scripts/release/assemble-acceptance-evidence.mjs \
+            --receipts-root release/acceptance-evidence \
+            --image-lock release/release-images.env \
+            --producer-run-id '${{ github.run_id }}' \
+            --producer-head-sha '${{ steps.source.outputs.result }}' \
+            --producer-conclusion success \
+            --ci-run-id '${{ inputs.ci_run_id }}' \
+            --ci-head-sha '${{ steps.source.outputs.result }}' \
+            --ci-conclusion success \
+            --output release/acceptance-evidence/acceptance-evidence.json
+          node scripts/release/sign-acceptance-evidence.mjs \
+            --manifest release/acceptance-evidence/acceptance-evidence.json \
+            --private-key "$key_dir/private.pem" \
+            --digest-output release/acceptance-evidence/acceptance-evidence.json.sha256 \
+            --signature-output release/acceptance-evidence/acceptance-evidence.json.sig
+          node scripts/release/validate-acceptance-evidence.mjs \
+            --manifest release/acceptance-evidence/acceptance-evidence.json \
+            --digest release/acceptance-evidence/acceptance-evidence.json.sha256 \
+            --signature release/acceptance-evidence/acceptance-evidence.json.sig \
+            --public-key "$key_dir/public.pem" \
+            --artifacts-root release/acceptance-evidence \
+            --image-lock release/release-images.env \
+            --source-sha '${{ steps.source.outputs.result }}' \
+            --environment staging \
+            --producer-run-id '${{ github.run_id }}' \
+            --producer-head-sha '${{ steps.source.outputs.result }}' \
+            --producer-conclusion success \
+            --ci-run-id '${{ inputs.ci_run_id }}' \
+            --ci-head-sha '${{ steps.source.outputs.result }}' \
+            --ci-conclusion success
+      - name: Record tested digests
+        env:
+          INITIAL_STAGING_BOOTSTRAP: ${{ inputs.initial_deployment }}
+        run: |
+          [[ "$INITIAL_STAGING_BOOTSTRAP" == true || "$INITIAL_STAGING_BOOTSTRAP" == false ]]
+          cp release/release-images.env release/staging-tested.env
+          evidence_digest="$(cut -d ' ' -f 1 release/acceptance-evidence/acceptance-evidence.json.sha256)"
+          [[ "$evidence_digest" =~ ^[0-9a-f]{64}$ ]]
+          printf 'STAGING_TESTED=true\nSTAGING_RUN_ID=%s\nSTAGING_WORKFLOW_RUN_ID=%s\nSTAGING_TESTED_AT=%s\nSTAGING_INFRA_ARCHIVE_SHA256=%s\nINITIAL_DEPLOYMENT_BOOTSTRAP=%s\nACCEPTANCE_EVIDENCE_SHA256=%s\nACCEPTANCE_EVIDENCE_RUN_ID=%s\nACCEPTANCE_CI_RUN_ID=%s\n' \
+            '${{ github.run_id }}' '${{ github.run_id }}' "$(date --utc +%FT%TZ)" \
+            '${{ steps.release_assets.outputs.archive_sha256 }}' "$INITIAL_STAGING_BOOTSTRAP" \
+            "$evidence_digest" '${{ github.run_id }}' '${{ inputs.ci_run_id }}' \
+            >> release/staging-tested.env
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: staging-tested-images
+          path: |
+            release/staging-tested.env
+            release/acceptance-evidence
+          if-no-files-found: error
+          retention-days: 14
+      - name: Tear down staging at the end of the test window
+        if: always()
+        continue-on-error: true
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.STAGING_SSH_USER }}
+        run: |
+          ssh "$VPS_USER@$VPS_HOST" \
+            "sudo /usr/local/sbin/emdo-staging-operator teardown '${{ github.run_id }}'"

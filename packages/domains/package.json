@@ -1,0 +1,20 @@
+{
+  "name": "@emdo/domains",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./conflicts": "./src/shared/conflicts-public.ts",
+    "./finance": "./src/finance/public.ts",
+    "./scheduler": "./src/scheduler/public.ts",
+    "./server/provider-proposals": "./src/server/provider-proposals.ts",
+    "./testing/provider-proposals": "./src/testing/provider-proposals.ts",
+    "./shopping": "./src/shopping/index.ts"
+  },
+  "dependencies": {
+    "@emdo/contracts": "workspace:*",
+    "@emdo/toolbox": "workspace:*",
+    "zod": "4.4.3"
+  }
+}

@@ -1,0 +1,49 @@
+# EMDO PowerSync service template.
+#
+# Compatibility target: journeyapps/powersync-service 1.23.3 and Sync Streams
+# edition 3. Production must pin an immutable image digest and validate this
+# file with tooling shipped for that exact image before deployment. See README.
+#
+# PowerSync understands the !env tag and only substitutes variables beginning
+# with PS_. Values are supplied by the deployment secret store; no credential
+# belongs in this repository.
+
+telemetry:
+  disable_telemetry_sharing: true
+
+replication:
+  connections:
+    - type: postgresql
+      # Canonical EMDO application database. This URI must authenticate as the
+      # dedicated read-only logical-replication role, never an API/owner role.
+      uri: !env PS_EMDO_APPLICATION_DATABASE_URI
+      # Suitable only while PostgreSQL is isolated on the same private Docker
+      # network and has no host-published port. Use verify-full with a CA when
+      # the connection crosses a host or untrusted network.
+      sslmode: disable
+
+storage:
+  type: postgresql
+  # Separate PowerSync bucket database and storage owner. This must not point
+  # at the canonical EMDO application database.
+  uri: !env PS_EMDO_BUCKET_DATABASE_URI
+  sslmode: disable
+
+port: 8080
+
+# The approved repository path retains the sync-rules.yaml name, but its
+# contents are Sync Streams (edition 3), not legacy bucket definitions.
+sync_config:
+  path: sync-rules.yaml
+
+client_auth:
+  # HTTPS JWKS endpoint exposed by EMDO's API. Static or symmetric signing keys
+  # must never be embedded here.
+  jwks_uri: !env PS_EMDO_JWKS_URI
+  audience:
+    - emdo-powersync
+
+system:
+  logging:
+    level: info
+    format: json

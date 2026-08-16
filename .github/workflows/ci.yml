@@ -1,0 +1,414 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.13.0
+      - name: Activate the pinned package manager
+        run: corepack enable && corepack prepare pnpm@9.15.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm --filter @emdo/agent-core test:package
+      - name: Record source-quality acceptance evidence
+        if: github.event_name == 'push' && success()
+        run: |
+          observed_at="$(date --utc +%Y-%m-%dT%H:%M:%S.000Z)"
+          node scripts/release/write-provider-free-ci-evidence.mjs \
+            --profile application \
+            --receipts-root release/acceptance-evidence \
+            --source-sha '${{ github.sha }}' \
+            --run-id '${{ github.run_id }}' \
+            --observed-at "$observed_at"
+      - name: Upload source-quality acceptance evidence
+        if: github.event_name == 'push' && success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: provider-free-ci-evidence-application
+          path: release/acceptance-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  postgres-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: pgvector/pgvector@sha256:7ae6051efd0e60444282c27c7e141af07f322ce033300e727a49c3dd11075e38
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: emdo-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      POSTGRES_INTEGRATION_ADMIN_URL: postgresql://postgres:emdo-ci-${{ github.run_id }}-${{ github.run_attempt }}@127.0.0.1:5432/postgres?sslmode=disable
+      POSTGRES_INTEGRATION_EVENT_NAME: ${{ github.event_name }}
+      POSTGRES_INTEGRATION_RUN_ID: ${{ github.run_id }}
+      POSTGRES_INTEGRATION_SOURCE_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.13.0
+      - name: Activate the pinned package manager
+        run: corepack enable && corepack prepare pnpm@9.15.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - name: Run isolated PostgreSQL 17 integration suites sequentially
+        run: pnpm test:postgres-integration
+      - name: Record live PostgreSQL CI evidence
+        if: github.event_name == 'push' && success()
+        run: |
+          node scripts/release/write-postgres-ci-evidence.mjs \
+            --raw-report output/postgres-integration/raw-probe.json \
+            --receipts-root release/acceptance-evidence \
+            --source-sha '${{ github.sha }}' \
+            --run-id '${{ github.run_id }}'
+      - name: Upload live PostgreSQL CI evidence
+        if: github.event_name == 'push' && success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: provider-free-ci-evidence-postgres-integration
+          path: release/acceptance-evidence
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload non-release PostgreSQL raw probe
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: postgres-integration-non-release-raw-probe
+          path: output/postgres-integration/raw-probe.json
+          if-no-files-found: error
+          retention-days: 14
+
+  agent-evals:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.13.0
+      - name: Activate the pinned package manager
+        run: corepack enable && corepack prepare pnpm@9.15.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - name: Run the explicit agent eval suites
+        env:
+          EVAL_CASE_REPORT: ${{ github.workspace }}/output/agent-evals/cases.json
+          EVAL_RUNTIME_REPORT: ${{ github.workspace }}/output/agent-evals/runtime-vitest.json
+          EVAL_BUDGET_REPORT: ${{ github.workspace }}/output/agent-evals/budget-vitest.json
+        run: |
+          mkdir -p output/agent-evals
+          EMDO_AGENT_EVAL_CASE_REPORT="$EVAL_CASE_REPORT" pnpm exec vitest run \
+            --config evals/vitest.config.mjs \
+            --reporter=json \
+            --outputFile="$EVAL_RUNTIME_REPORT"
+          pnpm exec vitest run --config evals/vitest.agent-packages.config.mjs
+          pnpm exec vitest run packages/agent-core/src/runner.sdk.test.ts \
+            --reporter=json \
+            --outputFile="$EVAL_BUDGET_REPORT"
+      - name: Record provider-free agent runtime evidence
+        if: github.event_name == 'push' && success()
+        env:
+          EVAL_CASE_REPORT: ${{ github.workspace }}/output/agent-evals/cases.json
+          EVAL_RUNTIME_REPORT: ${{ github.workspace }}/output/agent-evals/runtime-vitest.json
+          EVAL_BUDGET_REPORT: ${{ github.workspace }}/output/agent-evals/budget-vitest.json
+        run: |
+          observed_at="$(date --utc +%Y-%m-%dT%H:%M:%S.000Z)"
+          node scripts/release/write-provider-free-ci-evidence.mjs \
+            --profile agent-evals \
+            --receipts-root release/acceptance-evidence \
+            --source-sha '${{ github.sha }}' \
+            --run-id '${{ github.run_id }}' \
+            --observed-at "$observed_at" \
+            --eval-case-report "$EVAL_CASE_REPORT" \
+            --eval-runtime-report "$EVAL_RUNTIME_REPORT" \
+            --eval-budget-report "$EVAL_BUDGET_REPORT"
+      - name: Upload provider-free agent runtime evidence
+        if: github.event_name == 'push' && success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: provider-free-ci-evidence-agent-evals
+          path: release/acceptance-evidence
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload non-release agent eval execution reports
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: agent-eval-execution-reports
+          path: output/agent-evals
+          if-no-files-found: error
+          retention-days: 14
+
+  browser-production-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.13.0
+      - name: Activate the pinned package manager
+        run: corepack enable && corepack prepare pnpm@9.15.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - name: Install the pinned production-preview browser
+        run: pnpm --filter @emdo/web exec playwright install --with-deps chromium
+      - name: Run production-build browser checks
+        env:
+          EMDO_PLAYWRIGHT_EVIDENCE_REPORT: ${{ github.workspace }}/output/playwright-production.json
+        run: |
+          mkdir -p output
+          pnpm --filter @emdo/web run test:e2e:production
+      - name: Run notification preference source contracts
+        env:
+          NOTIFICATION_PREFERENCES_REPORT: ${{ github.workspace }}/output/notification-preferences-vitest.json
+        run: |
+          pnpm exec vitest run \
+            packages/db/src/experience/notification-preferences-migration.test.ts \
+            packages/db/src/experience/postgres-experience-read.test.ts \
+            packages/db/src/worker/postgres-runtime.test.ts \
+            packages/integrations/src/push/notification-push.test.ts \
+            packages/integrations/src/email/notification-email.test.ts \
+            --pool=forks \
+            --poolOptions.forks.minForks=1 \
+            --poolOptions.forks.maxForks=1 \
+            --reporter=json \
+            --outputFile="$NOTIFICATION_PREFERENCES_REPORT"
+      - name: Record production-preview browser evidence
+        if: github.event_name == 'push' && success()
+        env:
+          BROWSER_REPORT: ${{ github.workspace }}/output/playwright-production.json
+          NOTIFICATION_PREFERENCES_REPORT: ${{ github.workspace }}/output/notification-preferences-vitest.json
+        run: |
+          observed_at="$(date --utc +%Y-%m-%dT%H:%M:%S.000Z)"
+          node scripts/release/write-provider-free-ci-evidence.mjs \
+            --profile browser-production-preview \
+            --receipts-root release/acceptance-evidence \
+            --source-sha '${{ github.sha }}' \
+            --run-id '${{ github.run_id }}' \
+            --observed-at "$observed_at" \
+            --browser-report "$BROWSER_REPORT" \
+            --notification-preferences-report "$NOTIFICATION_PREFERENCES_REPORT"
+      - name: Upload production-preview browser evidence
+        if: github.event_name == 'push' && success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: provider-free-ci-evidence-browser-production-preview
+          path: release/acceptance-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  infrastructure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.13.0
+      - name: Activate the pinned package manager
+        run: corepack enable && corepack prepare pnpm@9.15.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+      - name: Validate shell scripts
+        run: |
+          find infra/scripts -type f -name '*.sh' -print0 | xargs -0 shellcheck
+          shellcheck infra/compose/provision-runtime.sh
+          find infra/scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+          bash -n infra/compose/provision-runtime.sh
+      - name: Render production and staging Compose configurations
+        run: |
+          secret_dir="$(mktemp -d)"
+          trap 'find "$secret_dir" -type f -delete; rmdir "$secret_dir"' EXIT
+          for file in postgres_superuser_password api_database_password auth_database_password onboarding_database_password worker_database_password worker_executor_database_password worker_dispatcher_database_password audio_reconciliation_database_password finance_import_retention_database_password google_oauth_disconnect_reconciliation_database_password google_oauth_disconnect_retention_database_password workflow_database_password visual_decision_database_password powersync_replication_password powersync_storage_password owner_bootstrap_database_password; do
+            printf 'ci-only-placeholder\n' > "$secret_dir/$file"
+          done
+          for file in migration.env api.env worker.env powersync.env synthetic.env synthetic-bootstrap.env; do
+            printf 'CI_CONFIG_RENDER_ONLY=true\n' > "$secret_dir/$file"
+          done
+          printf '%s\n' \
+            'EMDO_FINANCE_IMPORT_RETENTION_DATABASE_URL=postgresql://emdo_finance_import_retention_login:ci-only-placeholder@postgres:5432/emdo_app?sslmode=disable' \
+            'EMDO_FINANCE_IMPORT_RETENTION_LIMIT=100' \
+            > "$secret_dir/finance-import-retention.env"
+          printf '%s\n' \
+            'EMDO_GOOGLE_OAUTH_DISCONNECT_RECONCILIATION_DATABASE_URL=postgresql://emdo_google_oauth_disconnect_reconciliation_login:ci-only-placeholder@postgres:5432/emdo_app?sslmode=disable' \
+            'EMDO_GOOGLE_OAUTH_DISCONNECT_RECONCILIATION_LIMIT=25' \
+            > "$secret_dir/google-oauth-disconnect-reconciliation.env"
+          printf '%s\n' \
+            'EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_DATABASE_URL=postgresql://emdo_google_oauth_disconnect_retention_login:ci-only-placeholder@postgres:5432/emdo_app?sslmode=disable' \
+            'EMDO_GOOGLE_OAUTH_DISCONNECT_RETENTION_LIMIT=100' \
+            > "$secret_dir/google-oauth-disconnect-retention.env"
+          printf 'EMDO_EDGE_PROXY_SECRET=%s\n' 'ci-edge-proxy-secret-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ' > "$secret_dir/edge-proxy.env"
+          digest="$(printf '1%.0s' {1..64})"
+          export SOURCE_SHA="$(printf '1%.0s' {1..40})"
+          export API_IMAGE="ghcr.io/panic80/emdo-api@sha256:$digest"
+          export WORKER_IMAGE="ghcr.io/panic80/emdo-worker@sha256:$digest"
+          export WEB_IMAGE="ghcr.io/panic80/emdo-web@sha256:$digest"
+          export POSTGRES_IMAGE="pgvector/pgvector@sha256:$digest"
+          export POWERSYNC_IMAGE="journeyapps/powersync-service@sha256:$digest"
+          export CADDY_IMAGE="caddy@sha256:$digest"
+          export SECRETS_DIR="$secret_dir"
+          export DEPLOYMENT_NAMESPACE=ci
+          export EMDO_DOMAIN=ci.invalid
+          export ACME_EMAIL=ci@invalid.example
+          export POWERSYNC_JWKS_URI=https://ci.invalid/.well-known/jwks.json
+          export STAGING_RUN_ID=1
+          export EMDO_STAGING_SOURCE_SHA="$SOURCE_SHA"
+          export EMDO_STAGING_WORKFLOW_RUN_ID="$STAGING_RUN_ID"
+          export STAGING_HTTP_PORT=18080
+          docker compose -f infra/compose/compose.yml config --quiet
+          docker compose -f infra/compose/compose.yml -f infra/compose/compose.staging.yml config --quiet
+      - name: Run infrastructure policy tests
+        run: pnpm exec vitest run infra/tests
+      - name: Record infrastructure static-security evidence
+        if: github.event_name == 'push' && success()
+        run: |
+          observed_at="$(date --utc +%Y-%m-%dT%H:%M:%S.000Z)"
+          node scripts/release/write-provider-free-ci-evidence.mjs \
+            --profile infrastructure \
+            --receipts-root release/acceptance-evidence \
+            --source-sha '${{ github.sha }}' \
+            --run-id '${{ github.run_id }}' \
+            --observed-at "$observed_at"
+      - name: Upload infrastructure static-security evidence
+        if: github.event_name == 'push' && success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: provider-free-ci-evidence-infrastructure
+          path: release/acceptance-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  container-build:
+    needs:
+      [application, agent-evals, browser-production-preview, infrastructure]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: true
+      matrix:
+        target: [api, worker, web]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.13.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build ${{ matrix.target }} release target without publishing
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile
+          target: ${{ matrix.target }}
+          push: false
+          tags: emdo-${{ matrix.target }}:ci-${{ github.sha }}
+          build-args: |
+            SOURCE_SHA=${{ github.sha }}
+            BUILD_CREATED=ci
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+      - name: Record ${{ matrix.target }} release-package evidence
+        if: github.event_name == 'push' && success()
+        run: |
+          observed_at="$(date --utc +%Y-%m-%dT%H:%M:%S.000Z)"
+          node scripts/release/write-provider-free-ci-evidence.mjs \
+            --profile container-build-${{ matrix.target }} \
+            --receipts-root release/acceptance-evidence \
+            --source-sha '${{ github.sha }}' \
+            --run-id '${{ github.run_id }}' \
+            --observed-at "$observed_at"
+      - name: Upload ${{ matrix.target }} release-package evidence
+        if: github.event_name == 'push' && success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: provider-free-ci-evidence-container-build-${{ matrix.target }}
+          path: release/acceptance-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  acceptance-ci-receipts:
+    if: github.event_name == 'push'
+    needs:
+      [
+        application,
+        infrastructure,
+        container-build,
+        browser-production-preview,
+        agent-evals,
+        postgres-integration,
+      ]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.13.0
+      - name: Download the receipts emitted by successful jobs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: provider-free-ci-evidence-*
+          path: release/acceptance-evidence
+          merge-multiple: true
+      - name: Verify the fixed provider-free receipt set is complete
+        run: |
+          test -z "$(find release/acceptance-evidence -type l -print -quit)"
+          for id in application infrastructure container-build-api container-build-worker container-build-web browser-production-preview agent-evals postgres-integration; do
+            test -f "release/acceptance-evidence/artifacts/ci/$id.json"
+            test -f "release/acceptance-evidence/descriptors/ci/$id.json"
+          done
+          for id in production-preview-browser voice-ptt-storage-playback service-worker-safe-update web-push-preferences agent-evals-provider-free agent-evals-production-runtime; do
+            test -f "release/acceptance-evidence/artifacts/gates/$id.json"
+            test -f "release/acceptance-evidence/descriptors/gates/$id.json"
+          done
+          test ! -e release/acceptance-evidence/artifacts/providers
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: acceptance-ci-receipts
+          path: release/acceptance-evidence
+          if-no-files-found: error
+          retention-days: 14

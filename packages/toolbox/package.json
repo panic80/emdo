@@ -1,0 +1,13 @@
+{
+  "name": "@emdo/toolbox",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@emdo/contracts": "workspace:*",
+    "zod": "4.4.3"
+  }
+}

@@ -1,0 +1,704 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import type { DatabaseClient, DatabasePool } from '../scoped-repository.js';
+import {
+  PostgresEncryptedGoogleCalendarGrantStore,
+  PostgresGoogleCalendarProposalAuthorityResolver,
+  PostgresGoogleCalendarProviderAuthorityResolver,
+  PostgresGoogleOAuthAuthorizationEpochStore,
+  PostgresGoogleOAuthDisconnectOperationStore,
+  PostgresGoogleOAuthFlowStore,
+  PostgresGoogleOAuthGrantLease,
+  checkPostgresGoogleOAuthRuntimeReadiness,
+} from './oauth-persistence.js';
+
+const actor = {
+  userId: '70000000-0000-4000-8000-000000000001',
+  householdId: '70000000-0000-4000-8000-000000000002',
+  privateSpaceId: '70000000-0000-4000-8000-000000000003',
+  sessionId: '70000000-0000-4000-8000-000000000004',
+};
+const principal = {
+  userId: actor.userId,
+  householdId: actor.householdId,
+  sessionId: actor.sessionId,
+  requestId: '70000000-0000-4000-8000-000000000005',
+};
+const requestAuthority = {
+  ...principal,
+  privateSpaceId: actor.privateSpaceId,
+};
+
+const poolFor = (
+  respond: (
+    sql: string,
+    values: readonly unknown[],
+  ) => readonly Record<string, unknown>[],
+) => {
+  const query = vi.fn(async (sql: string, values: readonly unknown[] = []) => ({
+    rowCount: sql.startsWith('delete') ? 1 : 1,
+    rows: respond(sql, values),
+  }));
+  const client: DatabaseClient = { query, release: vi.fn() };
+  const pool: DatabasePool = { connect: vi.fn(async () => client) };
+  return { pool, query, client };
+};
+
+describe('durable Google OAuth persistence', () => {
+  it('fails readiness closed unless the exact database runtime probe returns true', async () => {
+    const ready = poolFor((sql) =>
+      sql.includes('google_oauth_runtime_ready')
+        ? [{ oauth_ready: true, disconnect_ready: true }]
+        : [],
+    );
+    await expect(
+      checkPostgresGoogleOAuthRuntimeReadiness(ready.pool),
+    ).resolves.toBe(true);
+    expect(ready.query.mock.calls[0]?.[0]).toContain(
+      'emdo.google_oauth_disconnect_ready() as disconnect_ready',
+    );
+
+    const malformed = poolFor(() => [
+      { oauth_ready: true, disconnect_ready: 'yes' },
+    ]);
+    await expect(
+      checkPostgresGoogleOAuthRuntimeReadiness(malformed.pool),
+    ).resolves.toBe(false);
+    expect(malformed.client.release).toHaveBeenCalledWith(true);
+  });
+
+  it('stores an authorization start and PKCE flow through one idempotent aggregate', async () => {
+    const result = {
+      status: 'authorization-required' as const,
+      authorizationUrl: `https://accounts.google.com/o/oauth2/v2/auth?state=v1.${'a'.repeat(43)}.${'s'.repeat(43)}`,
+      expiresAt: '2026-08-10T12:10:00.000Z',
+    };
+    const { pool, query } = poolFor((sql) =>
+      sql.includes('commit_google_oauth_authorization_start')
+        ? [{ status: 'stored', result }]
+        : sql.includes('lock_active_request_scope')
+          ? [{ authorized: true }]
+          : [],
+    );
+    const store = new PostgresGoogleOAuthFlowStore(pool, requestAuthority);
+
+    await expect(
+      store.storeAuthorizationStart({
+        actor,
+        purpose: 'calendar-read',
+        idempotencyKey: 'google-oauth-db-start-0001',
+        requestFingerprint: 'c'.repeat(64),
+        result,
+        flow: {
+          id: 'a'.repeat(43),
+          actor,
+          redirectUri: 'https://example.test/oauth/callback',
+          purpose: 'calendar-read',
+          requestedScopes: [
+            'https://www.googleapis.com/auth/calendar.freebusy',
+          ],
+          credentialRevisionAtStart: null,
+          authorizationEpochAtStart: 0,
+          codeVerifier: 'b'.repeat(43),
+          createdAt: new Date('2026-08-10T12:00:00.000Z'),
+          expiresAt: new Date('2026-08-10T12:10:00.000Z'),
+        },
+      }),
+    ).resolves.toEqual({ status: 'stored', result });
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        sql.includes('commit_google_oauth_authorization_start'),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('claims, fences, and settles a disconnect through durable exact aggregates', async () => {
+    const operationId = '70000000-0000-4000-8000-000000000099';
+    const result = {
+      status: 'disconnected' as const,
+      providerRevocation: 'confirmed' as const,
+    };
+    const { pool, query } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope')) {
+        return [{ authorized: true }];
+      }
+      if (sql.includes('claim_google_oauth_disconnect')) {
+        return [
+          {
+            status: 'claimed',
+            operation_id: operationId,
+            credential_revision: 3,
+            authorization_epoch: 2,
+            result: null,
+          },
+        ];
+      }
+      if (sql.includes('mark_google_oauth_disconnect_dispatching')) {
+        return [{ status: 'dispatching', result: null }];
+      }
+      if (sql.includes('settle_google_oauth_disconnect')) {
+        return [{ status: 'stored', result }];
+      }
+      return [];
+    });
+    const store = new PostgresGoogleOAuthDisconnectOperationStore(
+      pool,
+      requestAuthority,
+    );
+
+    await expect(
+      store.claim({
+        actor,
+        idempotencyKey: 'google-oauth-disconnect-db-0001',
+        requestFingerprint: 'e'.repeat(64),
+      }),
+    ).resolves.toEqual({
+      status: 'claimed',
+      operationId,
+      credentialRevision: 3,
+      authorizationEpoch: 2,
+    });
+    await expect(
+      store.markDispatching({ actor, operationId }),
+    ).resolves.toEqual({ status: 'dispatching' });
+    await expect(
+      store.settle({
+        actor,
+        operationId,
+        providerRevocation: 'confirmed',
+      }),
+    ).resolves.toEqual({ status: 'stored', result });
+
+    expect(
+      query.mock.calls.some(([sql]) =>
+        sql.includes('insert into emdo.google_oauth_disconnect_operations'),
+      ),
+    ).toBe(false);
+    expect(
+      query.mock.calls.find(([sql]) =>
+        sql.includes('claim_google_oauth_disconnect'),
+      )?.[1],
+    ).toEqual([
+      actor.userId,
+      actor.householdId,
+      actor.privateSpaceId,
+      actor.sessionId,
+      'google-oauth-disconnect-db-0001',
+      'e'.repeat(64),
+    ]);
+  });
+
+  it('passes each PKCE binding only through the atomic start aggregate', async () => {
+    const result = {
+      status: 'authorization-required' as const,
+      authorizationUrl: `https://accounts.google.com/o/oauth2/v2/auth?state=v1.${'a'.repeat(43)}.${'s'.repeat(43)}`,
+      expiresAt: '2026-08-10T12:10:00.000Z',
+    };
+    const { pool, query } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope')) {
+        return [{ authorized: true }];
+      }
+      if (sql.includes('commit_google_oauth_authorization_start')) {
+        return [{ status: 'stored', result }];
+      }
+      return [];
+    });
+    const flowId = 'a'.repeat(43);
+
+    await expect(
+      new PostgresGoogleOAuthFlowStore(
+        pool,
+        requestAuthority,
+      ).storeAuthorizationStart({
+        actor,
+        purpose: 'calendar-event-write',
+        idempotencyKey: 'google-oauth-db-start-0002',
+        requestFingerprint: 'd'.repeat(64),
+        result,
+        flow: {
+          id: flowId,
+          actor,
+          redirectUri: 'https://example.test/oauth/callback',
+          purpose: 'calendar-event-write',
+          requestedScopes: ['https://www.googleapis.com/auth/calendar.events'],
+          credentialRevisionAtStart: 2,
+          authorizationEpochAtStart: 3,
+          codeVerifier: 'b'.repeat(43),
+          createdAt: new Date('2026-08-10T12:00:00.000Z'),
+          expiresAt: new Date('2026-08-10T12:10:00.000Z'),
+        },
+      }),
+    ).resolves.toEqual({ status: 'stored', result });
+
+    const aggregate = query.mock.calls.find(([sql]) =>
+      sql.includes('commit_google_oauth_authorization_start'),
+    );
+    expect(aggregate).toBeDefined();
+    expect(aggregate![1]).toHaveLength(9);
+    expect(aggregate![1]?.[8]).toMatchObject({
+      id: flowId,
+      credentialRevisionAtStart: 2,
+      authorizationEpochAtStart: 3,
+    });
+    expect(
+      query.mock.calls.some(([sql]) =>
+        sql.includes('insert into emdo.google_oauth_flows'),
+      ),
+    ).toBe(false);
+    expect(
+      query.mock.calls.find(([sql]) =>
+        sql.includes("set_config('emdo.user_id'"),
+      )?.[1],
+    ).toEqual([
+      requestAuthority.userId,
+      requestAuthority.sessionId,
+      requestAuthority.requestId,
+    ]);
+  });
+
+  it('atomically consumes an exact actor-bound PKCE flow through the narrow function', async () => {
+    const createdAt = new Date('2026-08-10T12:00:00.000Z');
+    const expiresAt = new Date('2026-08-10T12:10:00.000Z');
+    const { pool, query } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope'))
+        return [{ authorized: true }];
+      if (sql.includes('consume_google_oauth_flow')) {
+        return [
+          {
+            status: 'consumed',
+            flow: {
+              id: 'a'.repeat(43),
+              household_id: actor.householdId,
+              private_space_id: actor.privateSpaceId,
+              original_owner_user_id: actor.userId,
+              session_id: actor.sessionId,
+              redirect_uri: 'https://example.test/oauth/callback',
+              purpose: 'calendar-read',
+              requested_scopes: [
+                'https://www.googleapis.com/auth/calendar.freebusy',
+              ],
+              credential_revision_at_start: null,
+              authorization_epoch_at_start: 0,
+              code_verifier: 'b'.repeat(43),
+              created_at: createdAt,
+              expires_at: expiresAt,
+            },
+          },
+        ];
+      }
+      return [];
+    });
+
+    await expect(
+      new PostgresGoogleOAuthFlowStore(pool, requestAuthority).consume({
+        id: 'a'.repeat(43),
+        actor,
+      }),
+    ).resolves.toMatchObject({ status: 'consumed', flow: { actor } });
+    expect(
+      query.mock.calls.some(([sql]) =>
+        sql.includes('consume_google_oauth_flow'),
+      ),
+    ).toBe(true);
+  });
+
+  it('invalidates pending flows with the SQL function exact user-household-space binding', async () => {
+    const { pool, query } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope'))
+        return [{ authorized: true }];
+      if (sql.includes('invalidate_google_oauth_flows'))
+        return [{ deleted: 2 }];
+      return [];
+    });
+
+    await expect(
+      new PostgresGoogleOAuthFlowStore(pool, requestAuthority).invalidateActor(
+        actor,
+      ),
+    ).resolves.toBe(2);
+    expect(
+      query.mock.calls.find(([sql]) =>
+        sql.includes('invalidate_google_oauth_flows'),
+      )?.[1],
+    ).toEqual([actor.userId, actor.householdId, actor.privateSpaceId]);
+  });
+
+  it('advances the durable authorization epoch with compare-and-set semantics', async () => {
+    const { pool, query } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope'))
+        return [{ authorized: true }];
+      if (sql.includes('advance_google_oauth_authorization_epoch')) {
+        return [{ authorization_epoch: 4 }];
+      }
+      return [];
+    });
+
+    await expect(
+      new PostgresGoogleOAuthAuthorizationEpochStore(
+        pool,
+        requestAuthority,
+      ).advance({
+        actor,
+        expectedEpoch: 3,
+      }),
+    ).resolves.toEqual({ status: 'advanced', authorizationEpoch: 4 });
+    expect(
+      query.mock.calls.find(([sql]) =>
+        sql.includes('advance_google_oauth_authorization_epoch'),
+      ),
+    ).toBeDefined();
+  });
+
+  it('stores only encrypted Calendar grant payload through exact revision CAS', async () => {
+    const { pool, query } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope'))
+        return [{ authorized: true }];
+      if (sql.includes('compare_and_set_encrypted_google_calendar_grant')) {
+        return [{ revision: 2 }];
+      }
+      return [];
+    });
+    const store = new PostgresEncryptedGoogleCalendarGrantStore(
+      pool,
+      requestAuthority,
+    );
+    const payload = {
+      algorithm: 'aes-256-gcm' as const,
+      aadVersion: 1 as const,
+      ciphertext: 'ciphertext',
+      nonce: 'nonce',
+      authenticationTag: 'tag',
+      wrappedKey: 'wrapped',
+      keyVersion: 'k1',
+    };
+
+    await expect(
+      store.compareAndSet({
+        scope: {
+          householdId: actor.householdId,
+          spaceId: actor.privateSpaceId,
+          recordId: `google-calendar-oauth-v1-${'a'.repeat(64)}`,
+          provider: 'google',
+          grantType: 'calendar-authorization',
+        },
+        ownerUserId: actor.userId,
+        expectedRevision: 1,
+        authorizationEpoch: 3,
+        providerGrantReference: 'gcal-grant-reference-current',
+        payload,
+        now: new Date(),
+      }),
+    ).resolves.toEqual({ status: 'stored', revision: 2 });
+    const serialized = JSON.stringify(query.mock.calls);
+    expect(serialized).toContain('gcal-grant-reference-current');
+    expect(serialized).toContain(
+      'compare_and_set_encrypted_google_calendar_grant',
+    );
+    expect(serialized).toContain('ciphertext');
+    expect(serialized).not.toMatch(/access[_-]?token|refresh[_-]?token/i);
+  });
+
+  it('maps the active disconnect mutation fence to a bounded CAS conflict', async () => {
+    const { pool } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope')) {
+        return [{ authorized: true }];
+      }
+      if (sql.includes('compare_and_set_encrypted_google_calendar_grant')) {
+        throw Object.assign(new Error('sensitive disconnect fence detail'), {
+          code: '40001',
+        });
+      }
+      return [];
+    });
+
+    await expect(
+      new PostgresEncryptedGoogleCalendarGrantStore(
+        pool,
+        requestAuthority,
+      ).compareAndSet({
+        scope: {
+          householdId: actor.householdId,
+          spaceId: actor.privateSpaceId,
+          recordId: `google-calendar-oauth-v1-${'a'.repeat(64)}`,
+          provider: 'google',
+          grantType: 'calendar-authorization',
+        },
+        ownerUserId: actor.userId,
+        expectedRevision: null,
+        authorizationEpoch: 1,
+        providerGrantReference: 'gcal-grant-reference-reconnect',
+        payload: {
+          algorithm: 'aes-256-gcm',
+          aadVersion: 1,
+          ciphertext: 'ciphertext',
+          nonce: 'nonce',
+          authenticationTag: 'tag',
+          wrappedKey: 'wrapped',
+          keyVersion: 'k1',
+        },
+        now: new Date('2026-08-10T12:00:00.000Z'),
+      }),
+    ).resolves.toEqual({ status: 'conflict' });
+  });
+
+  it('rejects provider grant references that the database constraint rejects', async () => {
+    const { pool, query } = poolFor(() => []);
+    const store = new PostgresEncryptedGoogleCalendarGrantStore(
+      pool,
+      requestAuthority,
+    );
+
+    await expect(
+      store.compareAndSet({
+        scope: {
+          householdId: actor.householdId,
+          spaceId: actor.privateSpaceId,
+          recordId: `google-calendar-oauth-v1-${'a'.repeat(64)}`,
+          provider: 'google',
+          grantType: 'calendar-authorization',
+        },
+        ownerUserId: actor.userId,
+        expectedRevision: null,
+        authorizationEpoch: 0,
+        providerGrantReference: 'gcal-grant-reference\u0000poison',
+        payload: {
+          algorithm: 'aes-256-gcm',
+          aadVersion: 1,
+          ciphertext: 'ciphertext',
+          nonce: 'nonce',
+          authenticationTag: 'tag',
+          wrappedKey: 'wrapped',
+          keyVersion: 'k1',
+        },
+        now: new Date('2026-08-10T12:00:00.000Z'),
+      }),
+    ).rejects.toThrow();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('loads and advances authorization epochs only through narrow database functions', async () => {
+    const { pool, query } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope'))
+        return [{ authorized: true }];
+      if (sql.includes('load_google_oauth_authorization_epoch')) {
+        return [{ authorization_epoch: 3 }];
+      }
+      if (sql.includes('advance_google_oauth_authorization_epoch')) {
+        return [{ authorization_epoch: 4 }];
+      }
+      return [];
+    });
+    const store = new PostgresGoogleOAuthAuthorizationEpochStore(
+      pool,
+      requestAuthority,
+    );
+
+    await expect(store.load(actor)).resolves.toBe(3);
+    await expect(store.advance({ actor, expectedEpoch: 3 })).resolves.toEqual({
+      status: 'advanced',
+      authorizationEpoch: 4,
+    });
+
+    const statements = query.mock.calls.map(([sql]) => sql).join('\n');
+    expect(statements).toContain('load_google_oauth_authorization_epoch');
+    expect(statements).toContain('advance_google_oauth_authorization_epoch');
+    expect(statements).not.toContain(
+      'insert into emdo.google_oauth_authorization_epochs',
+    );
+  });
+
+  it('resolves only the current request-bound non-secret provider authority', async () => {
+    const spaceAccessGrantId = '70000000-0000-4000-8000-000000000006';
+    const authorizationScopeFingerprint = 'b'.repeat(64);
+    const { pool, query } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope'))
+        return [{ authorized: true }];
+      if (sql.includes('resolve_current_google_calendar_authority')) {
+        return [
+          {
+            household_id: actor.householdId,
+            private_space_id: actor.privateSpaceId,
+            request_id: principal.requestId,
+            session_id: principal.sessionId,
+            user_id: principal.userId,
+            space_access_grant_id: spaceAccessGrantId,
+            authorization_scope_fingerprint: authorizationScopeFingerprint,
+            provider_grant_reference: 'gcal-grant-reference-current',
+            authorization_epoch: 4,
+          },
+        ];
+      }
+      return [];
+    });
+    const resolver = new PostgresGoogleCalendarProviderAuthorityResolver(
+      pool,
+      principal,
+    );
+    const input = {
+      requestId: principal.requestId,
+      runId: '70000000-0000-4000-8000-000000000007',
+      sessionId: principal.sessionId,
+      userId: actor.userId,
+      householdId: actor.householdId,
+      agentId: 'scheduler',
+      spaceAccessGrantId,
+      disclosureGrantId: '70000000-0000-4000-8000-000000000008',
+      decisionId: '70000000-0000-4000-8000-000000000009',
+      capabilityId: 'google-calendar.event.create',
+      capabilityFingerprint: 'a'.repeat(64),
+    };
+
+    await expect(resolver.resolve(input)).resolves.toEqual({
+      authorityBinding: {
+        kind: 'google-calendar-grant-v2',
+        householdId: actor.householdId,
+        privateSpaceId: actor.privateSpaceId,
+        authorizationScopeFingerprint,
+        providerGrantReference: 'gcal-grant-reference-current',
+        authorizationEpoch: 4,
+      },
+      operationScope: {
+        requestId: principal.requestId,
+        sessionId: principal.sessionId,
+        householdId: actor.householdId,
+        userId: principal.userId,
+        spaceAccessGrantId,
+        authorizationScopeFingerprint,
+      },
+    });
+    await expect(
+      resolver.resolve({ ...input, requestId: actor.sessionId }),
+    ).resolves.toBeUndefined();
+    await expect(
+      resolver.resolve({ ...input, sessionId: principal.requestId }),
+    ).resolves.toBeUndefined();
+    await expect(
+      resolver.resolve({ ...input, householdId: actor.privateSpaceId }),
+    ).resolves.toBeUndefined();
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        sql.includes('resolve_current_google_calendar_authority'),
+      ),
+    ).toHaveLength(1);
+    expect(
+      query.mock.calls.find(([sql]) =>
+        sql.includes('resolve_current_google_calendar_authority'),
+      )?.[1],
+    ).toEqual([spaceAccessGrantId, input.runId]);
+    await expect(
+      resolver.resolve({ ...input, sessionId: principal.requestId }),
+    ).resolves.toBeUndefined();
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        sql.includes('resolve_current_google_calendar_authority'),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('resolves a proposal-phase Calendar authority without a decision ID', async () => {
+    const spaceAccessGrantId = '70000000-0000-4000-8000-000000000016';
+    const authorizationScopeFingerprint = 'c'.repeat(64);
+    const { pool, query } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope')) {
+        return [{ authorized: true }];
+      }
+      if (sql.includes('resolve_current_google_calendar_authority')) {
+        return [
+          {
+            household_id: actor.householdId,
+            private_space_id: actor.privateSpaceId,
+            request_id: principal.requestId,
+            session_id: principal.sessionId,
+            user_id: principal.userId,
+            space_access_grant_id: spaceAccessGrantId,
+            authorization_scope_fingerprint: authorizationScopeFingerprint,
+            provider_grant_reference: 'gcal-grant-reference-proposal',
+            authorization_epoch: 5,
+          },
+        ];
+      }
+      return [];
+    });
+    const resolver = new PostgresGoogleCalendarProposalAuthorityResolver(
+      pool,
+      principal,
+    );
+    const input = {
+      requestId: principal.requestId,
+      runId: '70000000-0000-4000-8000-000000000017',
+      sessionId: principal.sessionId,
+      userId: actor.userId,
+      householdId: actor.householdId,
+      agentId: 'scheduler',
+      spaceAccessGrantId,
+      disclosureGrantId: '70000000-0000-4000-8000-000000000018',
+      capabilityId: 'google-calendar.event.create',
+      capabilityFingerprint: 'd'.repeat(64),
+    } as const;
+
+    await expect(resolver.resolve(input)).resolves.toEqual({
+      authorityBinding: {
+        kind: 'google-calendar-grant-v2',
+        householdId: actor.householdId,
+        privateSpaceId: actor.privateSpaceId,
+        authorizationScopeFingerprint,
+        providerGrantReference: 'gcal-grant-reference-proposal',
+        authorizationEpoch: 5,
+      },
+      operationScope: {
+        requestId: principal.requestId,
+        sessionId: principal.sessionId,
+        householdId: actor.householdId,
+        userId: principal.userId,
+        spaceAccessGrantId,
+        authorizationScopeFingerprint,
+      },
+    });
+    expect(Object.hasOwn(input, 'decisionId')).toBe(false);
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        sql.includes('resolve_current_google_calendar_authority'),
+      ),
+    ).toHaveLength(1);
+    expect(
+      query.mock.calls.find(([sql]) =>
+        sql.includes('resolve_current_google_calendar_authority'),
+      )?.[1],
+    ).toEqual([spaceAccessGrantId, input.runId]);
+  });
+
+  it('holds and releases one session advisory lease around provider I/O', async () => {
+    const { pool, query, client } = poolFor((sql) =>
+      sql.includes('lock_active_request_scope') ? [{ authorized: true }] : [],
+    );
+    const operation = vi.fn(async () => 'done');
+
+    await expect(
+      new PostgresGoogleOAuthGrantLease(pool, requestAuthority).runExclusive(
+        actor,
+        operation,
+      ),
+    ).resolves.toBe('done');
+    const statements = query.mock.calls.map(([sql]) => sql);
+    expect(
+      statements.findIndex((sql) => sql.includes('pg_advisory_lock')),
+    ).toBeLessThan(
+      statements.findIndex((sql) => sql.includes('pg_advisory_unlock')),
+    );
+    expect(operation).toHaveBeenCalledOnce();
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+
+  it('rejects an OAuth actor that does not exactly match the request authority before SQL', async () => {
+    const { pool, query } = poolFor(() => []);
+    const store = new PostgresGoogleOAuthFlowStore(pool, requestAuthority);
+
+    await expect(
+      store.invalidateActor({
+        ...actor,
+        privateSpaceId: '70000000-0000-4000-8000-000000000099',
+      }),
+    ).rejects.toThrow('OAuth actor authority mismatch');
+    expect(query).not.toHaveBeenCalled();
+  });
+});

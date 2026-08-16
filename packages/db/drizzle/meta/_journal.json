@@ -1,0 +1,111 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1786316538923,
+      "tag": "0000_household_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786319149582,
+      "tag": "0001_identity_onboarding",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786320903356,
+      "tag": "0002_owner_bootstrap",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786327716995,
+      "tag": "0003_durable_runtime_repositories",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786345200000,
+      "tag": "0004_audio_request_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786348800000,
+      "tag": "0005_household_administration",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786374622939,
+      "tag": "0006_sync_conflict_outcomes",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786375847710,
+      "tag": "0007_experience_notification_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786380000000,
+      "tag": "0008_finance_import_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786665600000,
+      "tag": "0009_google_oauth_authorization_starts",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786752000000,
+      "tag": "0010_google_oauth_disconnect_operations",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786838400000,
+      "tag": "0011_finance_import_retention_runner",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786924800000,
+      "tag": "0012_google_oauth_disconnect_reconciliation_runner",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787011200000,
+      "tag": "0013_google_oauth_disconnect_retention_runner",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1787097600000,
+      "tag": "0014_audio_spend_readiness",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">EMDO</title>
+  <rect width="512" height="512" rx="96" fill="#07162f"/>
+  <path d="M126 138h260v58H190v31h156v55H190v34h196v58H126z" fill="#fff"/>
+  <path d="M386 138v236h-58V138z" fill="#087154"/>
+</svg>
