@@ -210,7 +210,7 @@ services:
     volumes:
       - ./provision-runtime.sh:/opt/emdo/provision-runtime.sh:ro
       - ./provision-runtime.sql:/opt/emdo/provision-runtime.sql:ro
-    entrypoint: ['/opt/emdo/provision-runtime.sh']
+    entrypoint: ['/bin/bash', '/opt/emdo/provision-runtime.sh']
     depends_on:
       postgres:
         condition: service_healthy
