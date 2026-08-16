@@ -244,6 +244,91 @@ describe('container and edge configuration', () => {
     );
   });
 
+  it('copies only PostgreSQL role passwords into a private server-readable tmpfs before initialization', async () => {
+    const [compose, initialization, provision, entrypoint] = await Promise.all([
+      read('infra/compose/compose.yml'),
+      read('infra/compose/postgres-init.sql'),
+      read('infra/compose/provision-runtime.sql'),
+      read('infra/scripts/postgres-entrypoint.sh'),
+    ]);
+    const postgresService = compose.match(
+      /\n {2}postgres:\n[\s\S]+?\n {2}migrate:\n/u,
+    )?.[0];
+    const rolePasswordSecrets = [
+      'api_database_password',
+      'auth_database_password',
+      'onboarding_database_password',
+      'worker_database_password',
+      'worker_executor_database_password',
+      'worker_dispatcher_database_password',
+      'audio_reconciliation_database_password',
+      'finance_import_retention_database_password',
+      'google_oauth_disconnect_reconciliation_database_password',
+      'google_oauth_disconnect_retention_database_password',
+      'workflow_database_password',
+      'visual_decision_database_password',
+      'powersync_replication_password',
+      'powersync_storage_password',
+      'owner_bootstrap_database_password',
+    ];
+
+    expect(postgresService).toBeDefined();
+    expect(postgresService).toContain(
+      '../scripts/postgres-entrypoint.sh:/opt/emdo/postgres-entrypoint.sh:ro',
+    );
+    expect(postgresService).toContain(
+      "entrypoint: ['/opt/emdo/postgres-entrypoint.sh']",
+    );
+    expect(postgresService).toContain(
+      '/run/emdo-role-passwords:size=64k,noexec,nosuid,nodev,mode=0700',
+    );
+    expect(entrypoint).toContain('install -d -o postgres -g postgres -m 0700');
+    expect(entrypoint).toContain('install -o postgres -g postgres -m 0400');
+    expect(entrypoint).toContain(
+      'exec /usr/local/bin/docker-entrypoint.sh "$@"',
+    );
+    expect(entrypoint).not.toMatch(/\b(?:cat|echo|printenv)\b/u);
+    expect(entrypoint).not.toContain('POSTGRES_PASSWORD=');
+
+    const wrapperSecretList = entrypoint
+      .slice(
+        entrypoint.indexOf('readonly -a role_password_secrets=('),
+        entrypoint.indexOf(')\n\nif [['),
+      )
+      .split('\n')
+      .slice(1)
+      .map((line) => line.trim())
+      .filter((line) => line !== '');
+    expect(wrapperSecretList).toEqual(rolePasswordSecrets);
+
+    for (const secret of rolePasswordSecrets) {
+      expect(entrypoint).toContain(secret);
+      expect(initialization).toContain(
+        `pg_read_file('/run/emdo-role-passwords/${secret}')`,
+      );
+      expect(initialization).not.toContain(
+        `pg_read_file('/run/secrets/${secret}')`,
+      );
+    }
+    expect(entrypoint).not.toContain('postgres_superuser_password');
+    expect(initialization).not.toContain('/run/secrets/');
+
+    const privateRolePasswordPaths = rolePasswordSecrets
+      .map((secret) => `/run/emdo-role-passwords/${secret}`)
+      .sort();
+    const readPaths = (source: string) =>
+      [
+        ...new Set(
+          [...source.matchAll(/pg_read_file\('([^']+)'\)/gu)].map(
+            ([, path]) => path,
+          ),
+        ),
+      ].sort();
+    expect(readPaths(initialization)).toEqual(privateRolePasswordPaths);
+    expect(readPaths(provision)).toEqual(privateRolePasswordPaths);
+    expect(provision).not.toContain('/run/secrets/');
+  });
+
   it('isolates and caps ephemeral staging with synthetic data only', async () => {
     const [staging, common] = await Promise.all([
       read('infra/compose/compose.staging.yml'),
@@ -362,7 +447,9 @@ describe('container and edge configuration', () => {
       'owner_bootstrap_database_password',
     ]) {
       expect(compose).toContain(`- ${secret}`);
-      expect(provision).toContain(`pg_read_file('/run/secrets/${secret}')`);
+      expect(provision).toContain(
+        `pg_read_file('/run/emdo-role-passwords/${secret}')`,
+      );
     }
     const provisionService = compose.match(
       /\n {2}provision:\n[\s\S]+?\n {2}api:\n/u,
@@ -524,7 +611,7 @@ describe('container and edge configuration', () => {
       'CREATE ROLE emdo_finance_import_retention_login LOGIN',
     );
     expect(initialization).toContain(
-      "pg_read_file('/run/secrets/finance_import_retention_database_password')",
+      "pg_read_file('/run/emdo-role-passwords/finance_import_retention_database_password')",
     );
     expect(provision).toContain(
       'ALTER ROLE emdo_finance_import_retention_login LOGIN NOSUPERUSER',
@@ -615,7 +702,7 @@ describe('container and edge configuration', () => {
       'CREATE ROLE emdo_google_oauth_disconnect_reconciliation_login LOGIN',
     );
     expect(initialization).toContain(
-      "pg_read_file('/run/secrets/google_oauth_disconnect_reconciliation_database_password')",
+      "pg_read_file('/run/emdo-role-passwords/google_oauth_disconnect_reconciliation_database_password')",
     );
     expect(provision).toContain(
       'ALTER ROLE emdo_google_oauth_disconnect_reconciliation_login LOGIN NOSUPERUSER',
@@ -737,7 +824,7 @@ describe('container and edge configuration', () => {
       'CREATE ROLE emdo_google_oauth_disconnect_retention_login LOGIN',
     );
     expect(initialization).toContain(
-      "pg_read_file('/run/secrets/google_oauth_disconnect_retention_database_password')",
+      "pg_read_file('/run/emdo-role-passwords/google_oauth_disconnect_retention_database_password')",
     );
     expect(provision).toContain(
       'ALTER ROLE emdo_google_oauth_disconnect_retention_login LOGIN NOSUPERUSER',

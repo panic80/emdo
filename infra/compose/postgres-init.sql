@@ -8,7 +8,7 @@
 
 SELECT format(
   'CREATE ROLE emdo_api_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
-  trim(pg_read_file('/run/secrets/api_database_password'))
+  trim(pg_read_file('/run/emdo-role-passwords/api_database_password'))
 )
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles WHERE rolname = 'emdo_api_login'
@@ -16,7 +16,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
   'CREATE ROLE emdo_auth_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
-  trim(pg_read_file('/run/secrets/auth_database_password'))
+  trim(pg_read_file('/run/emdo-role-passwords/auth_database_password'))
 )
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles WHERE rolname = 'emdo_auth_login'
@@ -24,7 +24,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
   'CREATE ROLE emdo_onboarding_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
-  trim(pg_read_file('/run/secrets/onboarding_database_password'))
+  trim(pg_read_file('/run/emdo-role-passwords/onboarding_database_password'))
 )
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles WHERE rolname = 'emdo_onboarding_login'
@@ -32,7 +32,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
   'CREATE ROLE emdo_worker_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
-  trim(pg_read_file('/run/secrets/worker_database_password'))
+  trim(pg_read_file('/run/emdo-role-passwords/worker_database_password'))
 )
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles WHERE rolname = 'emdo_worker_login'
@@ -40,7 +40,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
   'CREATE ROLE emdo_worker_executor_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
-  trim(pg_read_file('/run/secrets/worker_executor_database_password'))
+  trim(pg_read_file('/run/emdo-role-passwords/worker_executor_database_password'))
 )
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles WHERE rolname = 'emdo_worker_executor_login'
@@ -48,7 +48,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
   'CREATE ROLE emdo_worker_dispatcher_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
-  trim(pg_read_file('/run/secrets/worker_dispatcher_database_password'))
+  trim(pg_read_file('/run/emdo-role-passwords/worker_dispatcher_database_password'))
 )
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles WHERE rolname = 'emdo_worker_dispatcher_login'
@@ -56,7 +56,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
   'CREATE ROLE emdo_audio_reconciliation_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
-  trim(pg_read_file('/run/secrets/audio_reconciliation_database_password'))
+  trim(pg_read_file('/run/emdo-role-passwords/audio_reconciliation_database_password'))
 )
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles
@@ -65,7 +65,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
   'CREATE ROLE emdo_finance_import_retention_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
-  trim(pg_read_file('/run/secrets/finance_import_retention_database_password'))
+  trim(pg_read_file('/run/emdo-role-passwords/finance_import_retention_database_password'))
 )
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles
@@ -74,7 +74,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
   'CREATE ROLE emdo_google_oauth_disconnect_reconciliation_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
-  trim(pg_read_file('/run/secrets/google_oauth_disconnect_reconciliation_database_password'))
+  trim(pg_read_file('/run/emdo-role-passwords/google_oauth_disconnect_reconciliation_database_password'))
 )
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles
@@ -83,7 +83,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
   'CREATE ROLE emdo_google_oauth_disconnect_retention_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
-  trim(pg_read_file('/run/secrets/google_oauth_disconnect_retention_database_password'))
+  trim(pg_read_file('/run/emdo-role-passwords/google_oauth_disconnect_retention_database_password'))
 )
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles
@@ -92,7 +92,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
   'CREATE ROLE emdo_workflow_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
-  trim(pg_read_file('/run/secrets/workflow_database_password'))
+  trim(pg_read_file('/run/emdo-role-passwords/workflow_database_password'))
 )
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles WHERE rolname = 'emdo_workflow_login'
@@ -100,7 +100,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
   'CREATE ROLE emdo_visual_decision_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
-  trim(pg_read_file('/run/secrets/visual_decision_database_password'))
+  trim(pg_read_file('/run/emdo-role-passwords/visual_decision_database_password'))
 )
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles
@@ -109,7 +109,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
   'CREATE ROLE emdo_owner_bootstrap_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
-  trim(pg_read_file('/run/secrets/owner_bootstrap_database_password'))
+  trim(pg_read_file('/run/emdo-role-passwords/owner_bootstrap_database_password'))
 )
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles
@@ -118,7 +118,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
   'CREATE ROLE emdo_powersync_replication LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT BYPASSRLS REPLICATION PASSWORD %L',
-  trim(pg_read_file('/run/secrets/powersync_replication_password'))
+  trim(pg_read_file('/run/emdo-role-passwords/powersync_replication_password'))
 )
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles
@@ -127,7 +127,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
   'CREATE ROLE emdo_powersync_storage LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION PASSWORD %L',
-  trim(pg_read_file('/run/secrets/powersync_storage_password'))
+  trim(pg_read_file('/run/emdo-role-passwords/powersync_storage_password'))
 )
 WHERE NOT EXISTS (
   SELECT FROM pg_catalog.pg_roles WHERE rolname = 'emdo_powersync_storage'

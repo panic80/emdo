@@ -18,6 +18,7 @@ services:
   postgres:
     image: '${POSTGRES_IMAGE:?POSTGRES_IMAGE must be an immutable pgvector PostgreSQL 17 image reference}'
     restart: unless-stopped
+    entrypoint: ['/opt/emdo/postgres-entrypoint.sh']
     shm_size: 128m
     command:
       - postgres
@@ -56,6 +57,9 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres-init.sql:/docker-entrypoint-initdb.d/010-emdo-principals.sql:ro
+      - ../scripts/postgres-entrypoint.sh:/opt/emdo/postgres-entrypoint.sh:ro
+    tmpfs:
+      - /run/emdo-role-passwords:size=64k,noexec,nosuid,nodev,mode=0700
     networks:
       - backend
       - google-oauth-reconciliation-db
