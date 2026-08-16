@@ -244,6 +244,14 @@ describe('container and edge configuration', () => {
     );
   });
 
+  it('runs the read-only provision script through an explicit trusted interpreter', async () => {
+    const compose = await read('infra/compose/compose.yml');
+
+    expect(compose).toContain(
+      "entrypoint: ['/bin/bash', '/opt/emdo/provision-runtime.sh']",
+    );
+  });
+
   it('copies only PostgreSQL role passwords into a private server-readable tmpfs before initialization', async () => {
     const [compose, initialization, provision, entrypoint] = await Promise.all([
       read('infra/compose/compose.yml'),
