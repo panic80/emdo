@@ -1362,6 +1362,7 @@ describe('GitHub delivery policy', () => {
     expect(staging).toContain('/usr/local/sbin/emdo-staging-operator accept');
     expect(staging).toContain('EMDO_SYNTHETIC_DATA_ONLY: true');
     expect(staging).toContain('initial_deployment:');
+    expect(staging).toContain('mvp_core_only:');
     expect(staging).toContain(
       'INITIAL_STAGING_BOOTSTRAP: ${{ inputs.initial_deployment }}',
     );
@@ -1369,6 +1370,15 @@ describe('GitHub delivery policy', () => {
       '[[ "$INITIAL_STAGING_BOOTSTRAP" == true || "$INITIAL_STAGING_BOOTSTRAP" == false ]]',
     );
     expect(staging).toContain('staging-tested-images');
+    expect(staging).toContain('mvp-staging-core-proof');
+    expect(staging).toContain('MVP_STAGING_TESTED=true');
+    expect(staging).toContain('MVP_RELEASE_ELIGIBLE=false');
+    expect(
+      staging.match(/if: \$\{\{ !inputs\.mvp_core_only \}\}/g),
+    ).toHaveLength(3);
+    expect(
+      staging.match(/if: \$\{\{ inputs\.mvp_core_only \}\}/g),
+    ).toHaveLength(2);
     expect(staging).toContain('if: always()');
     expect(staging).toContain('PUBLISH_RUN_ID: ${{ inputs.publish_run_id }}');
     expect(staging).toContain('CI_RUN_ID: ${{ inputs.ci_run_id }}');
@@ -1432,6 +1442,7 @@ describe('GitHub delivery policy', () => {
       'STAGING_WORKFLOW_RUN_ID=$SELECTED_STAGING_RUN_ID',
     );
     expect(production).toContain('staging-tested-images');
+    expect(production).not.toContain('mvp-staging-core-proof');
     expect(production).toContain('ACCEPTANCE_EVIDENCE_PUBLIC_KEY');
     expect(production).toContain('validate-acceptance-evidence.mjs');
     expect(production).toMatch(
