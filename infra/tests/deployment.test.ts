@@ -236,6 +236,28 @@ describe('container and edge configuration', () => {
     );
   });
 
+  it('selects only image-compatible edge and PowerSync configuration', async () => {
+    const [compose, caddyfile] = await Promise.all([
+      read('infra/compose/compose.yml'),
+      read('infra/caddy/Caddyfile'),
+    ]);
+    const powersyncService = compose.match(
+      /\n {2}powersync:\n[\s\S]+?\n {2}caddy:\n/u,
+    )?.[0];
+
+    expect(powersyncService).toBeDefined();
+    expect(powersyncService).toContain(
+      "command: ['start', '-r', 'unified', '--config-path', '/config/config.yaml']",
+    );
+    expect(powersyncService).toContain(
+      '../powersync/config.yaml:/config/config.yaml:ro',
+    );
+    expect(powersyncService).toContain(
+      '../powersync/sync-rules.yaml:/config/sync-rules.yaml:ro',
+    );
+    expect(caddyfile).not.toContain('disable_crowdin');
+  });
+
   it('checks PostgreSQL readiness over loopback TCP', async () => {
     const compose = await read('infra/compose/compose.yml');
 
