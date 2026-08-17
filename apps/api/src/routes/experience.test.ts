@@ -13,9 +13,20 @@ const principal: AuthenticatedPrincipal = {
   userId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f60',
   sessionId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f61',
   householdId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f62',
+  privateSpaceId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f64',
   role: 'owner',
   emailVerified: true,
   spaceAccessGrantId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f63',
+};
+const experiencePrincipal = {
+  collectionAuthorizationScopeFingerprint:
+    principal.collectionAuthorizationScopeFingerprint,
+  userId: principal.userId,
+  sessionId: principal.sessionId,
+  householdId: principal.householdId,
+  role: principal.role,
+  emailVerified: principal.emailVerified,
+  spaceAccessGrantId: principal.spaceAccessGrantId,
 };
 
 const cookie = { cookie: '__Secure-emdo.session_token=current' };
@@ -182,7 +193,7 @@ describe('authenticated experience read API', () => {
       expect(fixtures[gatewayName].list).toHaveBeenCalledWith({
         cursor: 'opaque-next',
         limit: 2,
-        principal,
+        principal: experiencePrincipal,
         requestId: expect.any(String),
       });
       await app.close();
@@ -207,7 +218,7 @@ describe('authenticated experience read API', () => {
     expect(response.json()).toEqual(today);
     expect(todayRead.read).toHaveBeenCalledWith({
       date: '2026-08-10',
-      principal,
+      principal: experiencePrincipal,
       requestId: expect.any(String),
     });
     await app.close();
@@ -256,7 +267,7 @@ describe('authenticated experience read API', () => {
     expect(activityRead.list).toHaveBeenCalledWith({
       cursor: 'opaque-cursor',
       limit: 2,
-      principal,
+      principal: experiencePrincipal,
       requestId: expect.any(String),
     });
     await app.close();
@@ -345,7 +356,7 @@ describe('authenticated experience read API', () => {
       expectedVersion: 3,
       preferences: payload.preferences,
       idempotencyKey: mutationHeaders['idempotency-key'],
-      principal,
+      principal: experiencePrincipal,
       requestId: expect.any(String),
     });
     await app.close();

@@ -386,6 +386,9 @@ describe('container and edge configuration', () => {
       /synthetic-data:[\s\S]*?synthetic\.env[\s\S]*?synthetic-bootstrap\.env/,
     );
     expect(staging).toMatch(/staging-acceptance:[\s\S]*?synthetic\.env/);
+    expect(staging).toMatch(
+      /staging-acceptance:[\s\S]*?EMDO_STAGING_SOURCE_SHA: \$\{EMDO_STAGING_SOURCE_SHA:\?EMDO_STAGING_SOURCE_SHA is required\}[\s\S]*?EMDO_STAGING_WORKFLOW_RUN_ID: \$\{EMDO_STAGING_WORKFLOW_RUN_ID:\?EMDO_STAGING_WORKFLOW_RUN_ID is required\}/,
+    );
     expect(staging.match(/network_mode: service:api/g)).toHaveLength(2);
     expect(staging).toMatch(
       /api:[\s\S]*?EMDO_ALLOW_LOOPBACK_API_INGRESS: ['"]true['"]/,
