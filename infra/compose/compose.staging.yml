@@ -107,7 +107,11 @@ services:
   caddy:
     restart: 'no'
     ports: !override
-      - '127.0.0.1:${STAGING_HTTP_PORT:?STAGING_HTTP_PORT is required}:8080'
+      - target: 8080
+        published: '${STAGING_HTTP_PORT:?STAGING_HTTP_PORT is required}'
+        host_ip: 127.0.0.1
+        protocol: tcp
+        mode: host
     deploy:
       resources:
         limits:
