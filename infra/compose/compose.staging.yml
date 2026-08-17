@@ -171,6 +171,7 @@ services:
       EMDO_ENVIRONMENT: staging
       EMDO_SYNTHETIC_DATA_ONLY: 'true'
       EMDO_EXTERNAL_PROVIDERS_ENABLED: 'false'
+      EMDO_STAGING_API_ORIGIN: 'http://127.0.0.1:8080'
       EMDO_STAGING_SOURCE_SHA: ${EMDO_STAGING_SOURCE_SHA:?EMDO_STAGING_SOURCE_SHA is required}
       EMDO_STAGING_WORKFLOW_RUN_ID: ${EMDO_STAGING_WORKFLOW_RUN_ID:?EMDO_STAGING_WORKFLOW_RUN_ID is required}
     command:
@@ -184,7 +185,7 @@ services:
     depends_on:
       api:
         condition: service_healthy
-    network_mode: service:api
+    network_mode: service:caddy
     deploy:
       resources:
         limits:
