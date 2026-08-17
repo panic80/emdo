@@ -1,5 +1,6 @@
 import { generateKeyPairSync } from 'node:crypto';
 
+import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { DatabaseClient, DatabasePool } from '../scoped-repository.js';
@@ -20,9 +21,12 @@ const principal = {
   userId: ids.user,
   sessionId: ids.session,
   householdId: ids.household,
+  privateSpaceId: ids.space,
   role: 'owner' as const,
   emailVerified: true as const,
   spaceAccessGrantId: ids.grant,
+  collectionAuthorizationScopeFingerprint:
+    EffectiveAuthorizationScopeFingerprintSchema.parse('a'.repeat(64)),
 };
 
 const now = new Date('2026-08-10T15:00:00.000Z');

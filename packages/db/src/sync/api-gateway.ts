@@ -1,11 +1,13 @@
 import { createHash, createPublicKey, KeyObject } from 'node:crypto';
 
 import {
+  EffectiveAuthorizationScopeFingerprintSchema,
   IdempotencyKeySchema,
   IsoDateTimeSchema,
   SyncOperationSchema,
   UuidSchema,
   deepFreeze,
+  type EffectiveAuthorizationScopeFingerprint,
   type SyncOperation,
 } from '@emdo/contracts';
 import { z } from 'zod';
@@ -53,9 +55,12 @@ const PrincipalSchema = z.strictObject({
   userId: UuidSchema,
   sessionId: UuidSchema,
   householdId: UuidSchema,
+  privateSpaceId: UuidSchema.optional(),
   role: z.enum(['owner', 'member']),
   emailVerified: z.literal(true),
   spaceAccessGrantId: UuidSchema,
+  collectionAuthorizationScopeFingerprint:
+    EffectiveAuthorizationScopeFingerprintSchema,
 });
 const RegistrationInputSchema = z.strictObject({
   clientId: UuidSchema,
@@ -193,9 +198,11 @@ export interface SyncGatewayPrincipal {
   readonly userId: string;
   readonly sessionId: string;
   readonly householdId: string;
+  readonly privateSpaceId?: string;
   readonly role: 'owner' | 'member';
   readonly emailVerified: true;
   readonly spaceAccessGrantId: string;
+  readonly collectionAuthorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
 }
 
 export interface PostgresSyncGatewayKeyRing {
