@@ -60,11 +60,12 @@
 		reverse_proxy powersync:8080
 	}
 
-	# Metrics are intentionally absent from public ingress. Operators reach the
 	# Metrics are never public. Operators use the API's loopback-only host bind
 	# through an authenticated SSH tunnel and still provide its bearer token.
 	@metrics path /metrics
-	respond @metrics 404
+	handle @metrics {
+		respond 404
+	}
 
 	@api path /api/* /.well-known/jwks.json /openapi.json /healthz /readyz /synthetic-staging/readyz
 	handle @api {
