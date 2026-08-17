@@ -130,7 +130,11 @@ type SyntheticSeedStage =
   | 'owner-bootstrap'
   | 'sign-in'
   | 'session-cookie'
-  | 'csrf'
+  | 'csrf-request'
+  | 'csrf-http-401'
+  | 'csrf-http-503'
+  | 'csrf-http-other'
+  | 'csrf-response'
   | 'sync-client'
   | 'sync-token'
   | 'private-space'
@@ -293,17 +297,25 @@ const executeSyntheticSeedCommand = async (input: {
     return values;
   });
 
-  const { csrf, csrfResponse } = await withinStage('csrf', async () => {
-    const response = await request(
+  const csrfResponse = await withinStage('csrf-request', async () =>
+    request(
       new Request(`${config.apiOrigin}/api/v1/auth/csrf`, {
         headers: { cookie: cookies.join('; '), origin: config.publicOrigin },
       }),
+    ),
+  );
+  if (!csrfResponse.ok) {
+    throw new SyntheticSeedFailure(
+      csrfResponse.status === 401
+        ? 'csrf-http-401'
+        : csrfResponse.status === 503
+          ? 'csrf-http-503'
+          : 'csrf-http-other',
     );
-    return {
-      csrf: await json(response, CsrfResponseSchema),
-      csrfResponse: response,
-    };
-  });
+  }
+  const csrf = await withinStage('csrf-response', async () =>
+    json(csrfResponse, CsrfResponseSchema),
+  );
   cookies.push(...responseCookies(csrfResponse));
 
   await withinStage('sync-client', async () => {

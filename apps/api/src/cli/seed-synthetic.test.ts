@@ -271,4 +271,73 @@ describe('synthetic staging seed CLI', () => {
       'Synthetic staging seed failed at stage=unexpected.\n',
     );
   });
+
+  it.each([
+    [401, 'csrf-http-401'],
+    [503, 'csrf-http-503'],
+    [418, 'csrf-http-other'],
+  ] as const)(
+    'reports a bounded CSRF HTTP stage for status %i',
+    async (status, stage) => {
+      const responseBody = `private-response-body-${status}`;
+      const fetch = vi.fn(async (request: Request) => {
+        if (new URL(request.url).pathname === '/api/auth/sign-in/email') {
+          return new Response('{}', {
+            status: 200,
+            headers: {
+              'set-cookie':
+                '__Secure-emdo.session_token=private-session; Path=/; Secure; HttpOnly',
+            },
+          });
+        }
+        return new Response(responseBody, { status });
+      });
+      let caught: unknown;
+      try {
+        await runSyntheticSeedCommand({
+          argv: ['--fail-if-nonempty', '--staging-only'],
+          environment: environment(),
+          bootstrapOwner: vi.fn(async () => 0),
+          fetch,
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(formatSyntheticSeedFailure(caught)).toBe(
+        `Synthetic staging seed failed at stage=${stage}.\n`,
+      );
+      expect(formatSyntheticSeedFailure(caught)).not.toContain(responseBody);
+    },
+  );
+
+  it('distinguishes an invalid successful CSRF response without logging it', async () => {
+    const responseBody = 'private-malformed-csrf-response';
+    const fetch = vi.fn(async (request: Request) => {
+      if (new URL(request.url).pathname === '/api/auth/sign-in/email') {
+        return new Response('{}', {
+          status: 200,
+          headers: {
+            'set-cookie':
+              '__Secure-emdo.session_token=private-session; Path=/; Secure; HttpOnly',
+          },
+        });
+      }
+      return new Response(responseBody, { status: 200 });
+    });
+    let caught: unknown;
+    try {
+      await runSyntheticSeedCommand({
+        argv: ['--fail-if-nonempty', '--staging-only'],
+        environment: environment(),
+        bootstrapOwner: vi.fn(async () => 0),
+        fetch,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(formatSyntheticSeedFailure(caught)).toBe(
+      'Synthetic staging seed failed at stage=csrf-response.\n',
+    );
+    expect(formatSyntheticSeedFailure(caught)).not.toContain(responseBody);
+  });
 });
