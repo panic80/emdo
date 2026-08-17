@@ -389,7 +389,10 @@ describe('container and edge configuration', () => {
     expect(staging).toMatch(
       /staging-acceptance:[\s\S]*?EMDO_STAGING_SOURCE_SHA: \$\{EMDO_STAGING_SOURCE_SHA:\?EMDO_STAGING_SOURCE_SHA is required\}[\s\S]*?EMDO_STAGING_WORKFLOW_RUN_ID: \$\{EMDO_STAGING_WORKFLOW_RUN_ID:\?EMDO_STAGING_WORKFLOW_RUN_ID is required\}/,
     );
-    expect(staging.match(/network_mode: service:api/g)).toHaveLength(2);
+    expect(staging.match(/network_mode: service:api/g)).toHaveLength(1);
+    expect(staging).toMatch(
+      /staging-acceptance:[\s\S]*?EMDO_STAGING_API_ORIGIN: ['"]http:\/\/127\.0\.0\.1:8080['"][\s\S]*?network_mode: service:caddy/,
+    );
     expect(staging).toMatch(
       /api:[\s\S]*?EMDO_ALLOW_LOOPBACK_API_INGRESS: ['"]true['"]/,
     );
@@ -466,8 +469,11 @@ describe('container and edge configuration', () => {
       caddyfile.slice(0, caddyfile.indexOf('@event_stream')),
     ).not.toContain('\tencode ');
     expect(caddyfile).toMatch(/handle @api \{\n\s+encode zstd gzip/);
-    expect(caddyfile).toMatch(/@api path[^\n]*\/openapi\.json/);
-    expect(caddyfile.match(/header_up -X-Emdo-Edge-Proxy/g)).toHaveLength(3);
+    expect(caddyfile).toMatch(
+      /@api path[^\n]*\/openapi\.json[^\n]*\/synthetic-staging\/readyz/,
+    );
+    expect(caddyfile).not.toContain('header_up -X-Emdo-Edge-Proxy');
+    expect(caddyfile).not.toContain('header_up -X-Forwarded-For');
     expect(
       caddyfile.match(
         /header_up X-Emdo-Edge-Proxy \{\$EMDO_EDGE_PROXY_SECRET\}/g,

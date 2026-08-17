@@ -30,8 +30,6 @@
 		reverse_proxy api:3000 {
 			header_up -Forwarded
 			header_up -X-Real-IP
-			header_up -X-Forwarded-For
-			header_up -X-Emdo-Edge-Proxy
 			header_up X-Forwarded-For {http.request.remote.host}
 			header_up X-Emdo-Edge-Proxy {$EMDO_EDGE_PROXY_SECRET}
 			flush_interval -1
@@ -51,8 +49,6 @@
 		reverse_proxy api:3000 {
 			header_up -Forwarded
 			header_up -X-Real-IP
-			header_up -X-Forwarded-For
-			header_up -X-Emdo-Edge-Proxy
 			header_up X-Forwarded-For {http.request.remote.host}
 			header_up X-Emdo-Edge-Proxy {$EMDO_EDGE_PROXY_SECRET}
 		}
@@ -70,14 +66,12 @@
 	@metrics path /metrics
 	respond @metrics 404
 
-	@api path /api/* /.well-known/jwks.json /openapi.json /healthz /readyz
+	@api path /api/* /.well-known/jwks.json /openapi.json /healthz /readyz /synthetic-staging/readyz
 	handle @api {
 		encode zstd gzip
 		reverse_proxy api:3000 {
 			header_up -Forwarded
 			header_up -X-Real-IP
-			header_up -X-Forwarded-For
-			header_up -X-Emdo-Edge-Proxy
 			header_up X-Forwarded-For {http.request.remote.host}
 			header_up X-Emdo-Edge-Proxy {$EMDO_EDGE_PROXY_SECRET}
 		}
