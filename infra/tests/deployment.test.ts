@@ -335,6 +335,19 @@ describe('container and edge configuration', () => {
     expect(readPaths(initialization)).toEqual(privateRolePasswordPaths);
     expect(readPaths(provision)).toEqual(privateRolePasswordPaths);
     expect(provision).not.toContain('/run/secrets/');
+
+    const newlineStrippedReads = (source: string) =>
+      source.match(
+        /rtrim\(\s*pg_read_file\('\/run\/emdo-role-passwords\/[^']+'\),\s*E'\\r\\n'\s*\)/gu,
+      ) ?? [];
+    expect(newlineStrippedReads(initialization)).toHaveLength(
+      [...initialization.matchAll(/pg_read_file\(/gu)].length,
+    );
+    expect(newlineStrippedReads(provision)).toHaveLength(
+      [...provision.matchAll(/pg_read_file\(/gu)].length,
+    );
+    expect(initialization).not.toMatch(/\btrim\(\s*pg_read_file\(/u);
+    expect(provision).not.toMatch(/\btrim\(\s*pg_read_file\(/u);
   });
 
   it('isolates and caps ephemeral staging with synthetic data only', async () => {
