@@ -417,6 +417,16 @@ describe('container and edge configuration', () => {
       /caddy:[\s\S]*?ports: !override\n\s+- target: 8080\n\s+published: '\$\{STAGING_HTTP_PORT:\?STAGING_HTTP_PORT is required\}'\n\s+host_ip: 127\.0\.0\.1\n\s+protocol: tcp\n\s+mode: host/,
     );
     expect(staging).toMatch(
+      /caddy:[\s\S]*?networks: !override\n\s+- edge\n\s+- loopback-ingress/,
+    );
+    expect(staging.match(/^\s+- loopback-ingress$/gm)).toHaveLength(1);
+    expect(staging).toMatch(
+      /loopback-ingress:\n\s+name: emdo-staging-\$\{STAGING_RUN_ID:\?STAGING_RUN_ID is required\}-loopback-ingress\n(?!\s+internal: true)/,
+    );
+    expect(common).toContain(
+      'for resource in edge egress auth-egress backend loopback-ingress; do',
+    );
+    expect(staging).toMatch(
       /api:[\s\S]*?networks: !override\n\s+- backend\n\s+- edge\n\s+- auth-egress/,
     );
     expect(staging).toMatch(/edge:[\s\S]*?internal: true/);
