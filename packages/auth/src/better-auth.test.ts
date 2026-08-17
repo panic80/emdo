@@ -340,8 +340,20 @@ describe('createEmdoBetterAuth', () => {
       .find((cookie) => cookie.startsWith('__Secure-emdo.session_token='));
     expect(sessionCookie).toBeDefined();
     const headers = new Headers({ cookie: sessionCookie! });
+    const runtimeApi = auth.api as unknown as {
+      readonly getActiveMember: (input: {
+        readonly headers: Headers;
+      }) => Promise<unknown>;
+      readonly getSession: (input: {
+        readonly headers: Headers;
+        readonly query: {
+          readonly disableCookieCache: true;
+          readonly disableRefresh: true;
+        };
+      }) => Promise<unknown>;
+    };
     await expect(
-      auth.api.getSession({
+      runtimeApi.getSession({
         headers,
         query: { disableCookieCache: true, disableRefresh: true },
       }),
@@ -349,7 +361,7 @@ describe('createEmdoBetterAuth', () => {
       session: { activeOrganizationId: singleHouseholdId, userId },
       user: { id: userId },
     });
-    await expect(auth.api.getActiveMember({ headers })).resolves.toEqual(
+    await expect(runtimeApi.getActiveMember({ headers })).resolves.toEqual(
       expect.objectContaining({
         id: memberId,
         organizationId: singleHouseholdId,

@@ -70,10 +70,15 @@ describe('production Better Auth boundary', () => {
           return {
             collectionAuthorizationScopeFingerprint:
               COLLECTION_SCOPE_FINGERPRINT,
+            emailVerified: true,
             householdId: HOUSEHOLD_ID,
+            membershipId: MEMBERSHIP_ID,
             privateSpaceId: PRIVATE_SPACE_ID,
+            requestId: REQUEST_ID,
             role: 'owner',
+            sessionId: SESSION_ID,
             spaceAccessGrantId: SPACE_GRANT_ID,
+            userId: USER_ID,
           };
         },
       },
@@ -151,10 +156,15 @@ describe('production Better Auth boundary', () => {
             ...(collectionAuthorizationScopeFingerprint === undefined
               ? {}
               : { collectionAuthorizationScopeFingerprint }),
+            emailVerified: true,
             householdId: HOUSEHOLD_ID,
+            membershipId: MEMBERSHIP_ID,
             privateSpaceId: PRIVATE_SPACE_ID,
+            requestId: REQUEST_ID,
             role: 'owner',
+            sessionId: SESSION_ID,
             spaceAccessGrantId: SPACE_GRANT_ID,
+            userId: USER_ID,
           }),
         },
       });
@@ -614,10 +624,15 @@ describe('production Better Auth boundary', () => {
       scopeResolver: {
         resolveActivePrincipalScope: async () => ({
           collectionAuthorizationScopeFingerprint: COLLECTION_SCOPE_FINGERPRINT,
+          emailVerified: true,
           householdId: HOUSEHOLD_ID,
+          membershipId: MEMBERSHIP_ID,
           privateSpaceId: PRIVATE_SPACE_ID,
+          requestId: REQUEST_ID,
           role: 'member',
+          sessionId: SESSION_ID,
           spaceAccessGrantId: SPACE_GRANT_ID,
+          userId: USER_ID,
         }),
       },
     });
