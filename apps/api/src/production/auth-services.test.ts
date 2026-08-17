@@ -58,6 +58,7 @@ const dependencies = () => {
   const claimBridge = {
     checkReady: vi.fn(async () => true),
     database: vi.fn(),
+    resolveExactlyOneActiveHousehold: vi.fn(async () => undefined),
     run: vi.fn(),
   };
   const scopeResolver = {

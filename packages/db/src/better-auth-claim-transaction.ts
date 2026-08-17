@@ -137,6 +137,79 @@ select
   pg_catalog.set_config('emdo.request_id', $3, true)
 `;
 
+const VERIFY_ACTIVE_HOUSEHOLD_RESOLVER_SQL = `
+select coalesce((
+  select
+    routine.prosecdef
+    and routine.provolatile = 's'
+    and owner.rolname = 'emdo_policy_reader'
+    and owner.rolcanlogin is false
+    and owner.rolinherit is false
+    and owner.rolsuper is false
+    and owner.rolbypassrls is false
+    and owner.rolcreatedb is false
+    and owner.rolcreaterole is false
+    and owner.rolreplication is false
+    and routine.proconfig @> array[
+      'search_path=pg_catalog, emdo',
+      'row_security=on'
+    ]::text[]
+    and pg_catalog.has_function_privilege(
+      session_user,
+      routine.oid,
+      'EXECUTE'
+    )
+    and pg_catalog.has_function_privilege(
+      'emdo_auth',
+      routine.oid,
+      'EXECUTE'
+    )
+    and not pg_catalog.has_function_privilege(
+      'public',
+      routine.oid,
+      'EXECUTE'
+    )
+    and not pg_catalog.has_function_privilege(
+      'emdo_app',
+      routine.oid,
+      'EXECUTE'
+    )
+    and not pg_catalog.has_function_privilege(
+      'emdo_worker',
+      routine.oid,
+      'EXECUTE'
+    )
+    and not pg_catalog.has_function_privilege(
+      'emdo_workflow',
+      routine.oid,
+      'EXECUTE'
+    )
+    and not pg_catalog.has_table_privilege(
+      'emdo_auth',
+      'emdo.household_memberships',
+      'SELECT'
+    )
+    and not exists (
+      select 1
+      from pg_catalog.pg_auth_members as membership
+      where owner.oid in (membership.roleid, membership.member)
+    )
+  from pg_catalog.pg_proc as routine
+  inner join pg_catalog.pg_roles as owner
+    on owner.oid = routine.proowner
+  where routine.oid = pg_catalog.to_regprocedure(
+    'emdo.resolve_exactly_one_active_household_for_auth_session(uuid)'
+  )
+), false) as ready
+`;
+
+const RESOLVE_ACTIVE_HOUSEHOLD_SQL = `
+select
+  emdo.resolve_exactly_one_active_household_for_auth_session(
+    $1::uuid
+  )::text as household_id
+`;
+
 interface DedicatedLoginRow {
   readonly auth_parent_admin_option: boolean;
   readonly auth_parent_inherit_option: boolean;
@@ -161,6 +234,14 @@ interface RevalidatedSessionRow {
   readonly user_id: string;
 }
 
+interface ActiveHouseholdResolverReadyRow {
+  readonly ready: boolean;
+}
+
+interface ActiveHouseholdResolutionRow {
+  readonly household_id: string | null;
+}
+
 export interface BetterAuthOrganizationClaimIdentity {
   readonly sessionId: string;
   readonly userId: string;
@@ -180,6 +261,9 @@ export interface PostgresBetterAuthOrganizationClaimTransaction {
 export interface PostgresBetterAuthOrganizationClaimBridge {
   readonly database: DBAdapterInstance;
   readonly checkReady: () => Promise<boolean>;
+  readonly resolveExactlyOneActiveHousehold: (
+    userId: string,
+  ) => Promise<string | undefined>;
   readonly run: <Result>(
     options: BetterAuthOptions,
     work: (
@@ -226,6 +310,14 @@ class InvalidClaimIdentityError extends Error {
 
   constructor(message = 'Session and user IDs must be valid UUIDs.') {
     super(message);
+  }
+}
+
+class InvalidActiveHouseholdResolutionError extends Error {
+  override readonly name = 'InvalidActiveHouseholdResolutionError';
+
+  constructor() {
+    super('The active household resolution was invalid.');
   }
 }
 
@@ -355,13 +447,52 @@ export const createPostgresBetterAuthOrganizationClaimBridge = async (
     if (client === undefined) return false;
     let destroy = false;
     try {
+      const currentLogin = await inspectDedicatedLogin(client);
+      const resolver = await client.query<ActiveHouseholdResolverReadyRow>(
+        VERIFY_ACTIVE_HOUSEHOLD_RESOLVER_SQL,
+      );
       const ready =
-        (await inspectDedicatedLogin(client)).login_role === loginRole;
+        currentLogin.login_role === loginRole &&
+        resolver.rows.length === 1 &&
+        resolver.rows[0]?.ready === true;
       destroy = !ready;
       return ready;
     } catch {
       destroy = true;
       return false;
+    } finally {
+      client.release(destroy ? true : undefined);
+    }
+  };
+
+  const resolveExactlyOneActiveHousehold = async (
+    userId: string,
+  ): Promise<string | undefined> => {
+    const normalizedUserId = normalizeUuid(userId);
+    const client = await connect();
+    let destroy = false;
+    try {
+      const currentLogin = await inspectDedicatedLogin(client);
+      if (currentLogin.login_role !== loginRole) {
+        throw new DedicatedAuthLoginRequiredError();
+      }
+      const result = await client.query<ActiveHouseholdResolutionRow>(
+        RESOLVE_ACTIVE_HOUSEHOLD_SQL,
+        [normalizedUserId],
+      );
+      const row = result.rows[0];
+      if (result.rows.length !== 1 || row === undefined) {
+        throw new InvalidActiveHouseholdResolutionError();
+      }
+      if (row.household_id === null) return undefined;
+      const householdId = UuidSchema.safeParse(row.household_id);
+      if (!householdId.success) {
+        throw new InvalidActiveHouseholdResolutionError();
+      }
+      return householdId.data.toLowerCase();
+    } catch (error) {
+      destroy = true;
+      throw error;
     } finally {
       client.release(destroy ? true : undefined);
     }
@@ -530,5 +661,10 @@ export const createPostgresBetterAuthOrganizationClaimBridge = async (
     }
   };
 
-  return Object.freeze({ checkReady, database, run });
+  return Object.freeze({
+    checkReady,
+    database,
+    resolveExactlyOneActiveHousehold,
+    run,
+  });
 };

@@ -58,8 +58,10 @@ describeDatabase(
       }
 
       const migrations = await loadOrderedMigrations();
-      expect(migrations).toHaveLength(15);
-      expect(migrations.at(-1)?.id).toBe('0014_audio_spend_readiness');
+      expect(migrations).toHaveLength(16);
+      expect(migrations.at(-1)?.id).toBe(
+        '0015_single_household_session_activation',
+      );
       for (const migration of migrations) await admin.query(migration.sql);
 
       await admin.query(

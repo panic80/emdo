@@ -34,7 +34,9 @@ const validRole = {
 interface FakeClientOptions {
   readonly commitError?: Error;
   readonly events: string[];
+  readonly householdResolverRows?: readonly Record<string, unknown>[];
   readonly label: string;
+  readonly resolverReady?: boolean;
   readonly role?: typeof validRole;
   readonly sessionRows?: readonly Record<string, unknown>[];
   readonly rollbackError?: Error;
@@ -45,6 +47,28 @@ const fakeClient = (options: FakeClientOptions) => {
     if (text.includes('from pg_catalog.pg_roles')) {
       options.events.push(`${options.label}:verify-role`);
       return { rowCount: 1, rows: [options.role ?? validRole] };
+    }
+    if (
+      text.includes('resolve_exactly_one_active_household_for_auth_session') &&
+      text.includes('pg_catalog.pg_proc')
+    ) {
+      options.events.push(`${options.label}:verify-resolver`);
+      return {
+        rowCount: 1,
+        rows: [{ ready: options.resolverReady ?? true }],
+      };
+    }
+    if (
+      text.includes('resolve_exactly_one_active_household_for_auth_session')
+    ) {
+      options.events.push(`${options.label}:resolve-household`);
+      expect(values).toEqual([userId]);
+      return {
+        rowCount: options.householdResolverRows?.length ?? 1,
+        rows: options.householdResolverRows ?? [
+          { household_id: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f004' },
+        ],
+      };
     }
     if (text === 'begin') options.events.push(`${options.label}:begin`);
     else if (text === 'set local role emdo_auth')
@@ -154,9 +178,77 @@ describe('PostgreSQL Better Auth organization claim bridge', () => {
       'preflight:release',
       'transaction:connect',
       'transaction:verify-role',
+      'transaction:verify-resolver',
       'transaction:release',
     ]);
     expect(test.runClient.query).not.toHaveBeenCalledWith('begin');
+  });
+
+  it('resolves exactly one active household through the dedicated auth aggregate', async () => {
+    const test = harness();
+    const bridge = await createPostgresBetterAuthOrganizationClaimBridge(
+      test.pool as never,
+      {
+        createDatabaseAdapter: test.createDatabaseAdapter,
+        createRequestId: test.createRequestId,
+        createTransactionAdapter: test.createTransactionAdapter,
+      },
+    );
+
+    await expect(bridge.resolveExactlyOneActiveHousehold(userId)).resolves.toBe(
+      '018f1f5e-6f47-7d61-a6dd-1e86f8b8f004',
+    );
+    expect(test.events).toEqual([
+      'preflight:connect',
+      'preflight:verify-role',
+      'preflight:release',
+      'transaction:connect',
+      'transaction:verify-role',
+      'transaction:resolve-household',
+      'transaction:release',
+    ]);
+  });
+
+  it('returns no household for an exact-one denial and destroys malformed resolver results', async () => {
+    const deniedEvents: string[] = [];
+    const deniedClient = fakeClient({
+      events: deniedEvents,
+      householdResolverRows: [{ household_id: null }],
+      label: 'transaction',
+    });
+    const denied = harness({ runClient: deniedClient });
+    const deniedBridge = await createPostgresBetterAuthOrganizationClaimBridge(
+      denied.pool as never,
+      {
+        createDatabaseAdapter: denied.createDatabaseAdapter,
+        createRequestId: denied.createRequestId,
+        createTransactionAdapter: denied.createTransactionAdapter,
+      },
+    );
+    await expect(
+      deniedBridge.resolveExactlyOneActiveHousehold(userId),
+    ).resolves.toBeUndefined();
+
+    const malformedEvents: string[] = [];
+    const malformedClient = fakeClient({
+      events: malformedEvents,
+      householdResolverRows: [{ household_id: 'not-a-uuid' }],
+      label: 'transaction',
+    });
+    const malformed = harness({ runClient: malformedClient });
+    const malformedBridge =
+      await createPostgresBetterAuthOrganizationClaimBridge(
+        malformed.pool as never,
+        {
+          createDatabaseAdapter: malformed.createDatabaseAdapter,
+          createRequestId: malformed.createRequestId,
+          createTransactionAdapter: malformed.createTransactionAdapter,
+        },
+      );
+    await expect(
+      malformedBridge.resolveExactlyOneActiveHousehold(userId),
+    ).rejects.toThrow(/household/i);
+    expect(malformedClient.release).toHaveBeenCalledWith(true);
   });
 
   it('reports auth readiness false if the checked-out login drifts', async () => {

@@ -26,6 +26,7 @@ const sessionB = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f202';
 const householdB = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f203';
 const unverifiedUser = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f301';
 const unverifiedSession = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f302';
+const multiHouseholdUser = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f303';
 const invitationA = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f401';
 const invitationB = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f402';
 const authSecret = 'claim-bridge-integration-secret-at-least-32-bytes';
@@ -108,8 +109,9 @@ describeDatabase(
            values
              ($1, 'Owner A', 'owner-a@example.test', true),
              ($2, 'Owner B', 'owner-b@example.test', true),
-             ($3, 'Unverified', 'unverified@example.test', false)`,
-          [userA, userB, unverifiedUser],
+             ($3, 'Unverified', 'unverified@example.test', false),
+             ($4, 'Multiple Households', 'multi@example.test', true)`,
+          [userA, userB, unverifiedUser, multiHouseholdUser],
         );
         await setupPool.query(
           `insert into emdo.households (id, name, slug, created_by_user_id)
@@ -123,8 +125,10 @@ describeDatabase(
              (household_id, user_id, role, status)
            values
              ($1, $2, 'owner', 'active'),
-             ($3, $4, 'owner', 'active')`,
-          [householdA, userA, householdB, userB],
+             ($3, $4, 'owner', 'active'),
+             ($1, $5, 'member', 'active'),
+             ($3, $5, 'member', 'active')`,
+          [householdA, userA, householdB, userB, multiHouseholdUser],
         );
         await setupPool.query(
           `insert into emdo.auth_sessions
@@ -251,6 +255,24 @@ describeDatabase(
         cookie: `__Secure-emdo.session_token=${token}.${signature}`,
       });
     };
+
+    it('resolves one active household and denies zero, multiple, and raw membership reads', async () => {
+      await expect(bridge.checkReady()).resolves.toBe(true);
+      await expect(
+        bridge.resolveExactlyOneActiveHousehold(userA),
+      ).resolves.toBe(householdA);
+      await expect(
+        bridge.resolveExactlyOneActiveHousehold(unverifiedUser),
+      ).resolves.toBeUndefined();
+      await expect(
+        bridge.resolveExactlyOneActiveHousehold(multiHouseholdUser),
+      ).resolves.toBeUndefined();
+      await expect(
+        authPool.query(
+          'select household_id from emdo.household_memberships limit 1',
+        ),
+      ).rejects.toMatchObject({ code: '42501' });
+    });
 
     it('uses the claimed PoolClient adapter and fails closed before activation', async () => {
       const result = await bridge.run(authOptions(), async (transaction) => {

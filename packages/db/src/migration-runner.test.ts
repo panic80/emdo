@@ -37,6 +37,7 @@ describe('database migration runner', () => {
       '0012_google_oauth_disconnect_reconciliation_runner',
       '0013_google_oauth_disconnect_retention_runner',
       '0014_audio_spend_readiness',
+      '0015_single_household_session_activation',
     ]);
     expect(migrations.map(({ index }) => index)).toEqual(
       migrations.map((_, index) => index),
@@ -80,6 +81,9 @@ describe('database migration runner', () => {
     );
     expect(migrations[14]?.sql).toContain(
       'CREATE OR REPLACE FUNCTION emdo.audio_spend_ready',
+    );
+    expect(migrations[15]?.sql).toContain(
+      'CREATE OR REPLACE FUNCTION emdo.resolve_exactly_one_active_household_for_auth_session',
     );
   });
 
