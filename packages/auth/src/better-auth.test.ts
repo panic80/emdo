@@ -6,6 +6,7 @@ import type {
   DBTransactionAdapter,
 } from 'better-auth';
 import { memoryAdapter } from 'better-auth/adapters/memory';
+import { hashPassword } from 'better-auth/crypto';
 import { organization } from 'better-auth/plugins';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -238,6 +239,129 @@ describe('createEmdoBetterAuth', () => {
     await expect(before?.(session, null)).rejects.toThrow(
       'database unavailable',
     );
+  });
+
+  it('persists the derived household through the real email sign-in session', async () => {
+    const now = new Date('2026-08-17T00:00:00.000Z');
+    const userId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f011';
+    const memberId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f012';
+    const password = 'real-sign-in-password-0123456789';
+    const storage = {
+      ...emptyAuthStorage(),
+      account: [
+        {
+          accountId: userId,
+          createdAt: now,
+          id: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f013',
+          password: await hashPassword(password),
+          providerId: 'credential',
+          updatedAt: now,
+          userId,
+        },
+      ],
+      member: [
+        {
+          createdAt: now,
+          id: memberId,
+          organizationId: singleHouseholdId,
+          role: 'owner',
+          userId,
+        },
+      ],
+      organization: [
+        {
+          createdAt: now,
+          id: singleHouseholdId,
+          logo: null,
+          metadata: null,
+          name: 'Home',
+          slug: 'home',
+        },
+      ],
+      user: [
+        {
+          createdAt: now,
+          email: 'real-sign-in@emdo.test',
+          emailVerified: true,
+          id: userId,
+          image: null,
+          name: 'Real Sign In',
+          updatedAt: now,
+        },
+      ],
+    };
+    const database = memoryAdapter(storage);
+    const auth = createEmdoBetterAuth({
+      appName: 'EMDO',
+      baseURL: 'https://assistant.emdo.test',
+      organizationClaimBridge: {
+        database,
+        resolveExactlyOneActiveHousehold: async () => singleHouseholdId,
+        run: async <Result>(
+          options: BetterAuthOptions,
+          work: (transaction: {
+            adapter: DBTransactionAdapter;
+            revalidateAndActivateClaims(identity: {
+              userId: string;
+              sessionId: string;
+            }): Promise<void>;
+          }) => Promise<Result>,
+        ) =>
+          database(options).transaction((adapter) =>
+            work({
+              adapter,
+              revalidateAndActivateClaims: async () => undefined,
+            }),
+          ),
+      },
+      secret: 'test-secret-that-is-at-least-thirty-two-bytes',
+      sendInvitationEmail: async () => undefined,
+      sendPasswordResetEmail: async () => undefined,
+      sendVerificationEmail: async () => undefined,
+      trustedOrigins: ['https://assistant.emdo.test'],
+    });
+    const signIn = await auth.handler(
+      new Request('https://assistant.emdo.test/api/auth/sign-in/email', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'https://assistant.emdo.test',
+        },
+        body: JSON.stringify({
+          email: 'real-sign-in@emdo.test',
+          password,
+        }),
+      }),
+    );
+    expect(signIn.status).toBe(200);
+    const sessionCookie = signIn.headers
+      .getSetCookie()
+      .map((cookie) => cookie.split(';', 1)[0]!)
+      .find((cookie) => cookie.startsWith('__Secure-emdo.session_token='));
+    expect(sessionCookie).toBeDefined();
+    const headers = new Headers({ cookie: sessionCookie! });
+    await expect(
+      auth.api.getSession({
+        headers,
+        query: { disableCookieCache: true, disableRefresh: true },
+      }),
+    ).resolves.toMatchObject({
+      session: { activeOrganizationId: singleHouseholdId, userId },
+      user: { id: userId },
+    });
+    await expect(auth.api.getActiveMember({ headers })).resolves.toEqual(
+      expect.objectContaining({
+        id: memberId,
+        organizationId: singleHouseholdId,
+        userId,
+      }),
+    );
+    expect(storage.session).toEqual([
+      expect.objectContaining({
+        activeHouseholdId: singleHouseholdId,
+        userId,
+      }),
+    ]);
   });
 
   it('limits Google sign-in to a separate identity-only grant', () => {

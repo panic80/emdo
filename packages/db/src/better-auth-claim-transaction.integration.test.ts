@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { BetterAuthOptions } from 'better-auth';
-import { makeSignature } from 'better-auth/crypto';
+import { hashPassword, makeSignature } from 'better-auth/crypto';
 import { organization } from 'better-auth/plugins';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -30,9 +30,20 @@ const multiHouseholdUser = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f303';
 const invitationA = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f401';
 const invitationB = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f402';
 const authSecret = 'claim-bridge-integration-secret-at-least-32-bytes';
+const ownerAPassword = 'claim-owner-a-password-0123456789';
 
 interface LiveEmdoAuth {
   readonly api: {
+    readonly getActiveMember: (input: {
+      readonly headers: Headers;
+    }) => Promise<unknown>;
+    readonly getSession: (input: {
+      readonly headers: Headers;
+      readonly query: {
+        readonly disableCookieCache: true;
+        readonly disableRefresh: true;
+      };
+    }) => Promise<unknown>;
     readonly listOrganizations: (input: {
       readonly headers: Headers;
     }) => Promise<unknown>;
@@ -112,6 +123,13 @@ describeDatabase(
              ($3, 'Unverified', 'unverified@example.test', false),
              ($4, 'Multiple Households', 'multi@example.test', true)`,
           [userA, userB, unverifiedUser, multiHouseholdUser],
+        );
+        await setupPool.query(
+          `insert into emdo.auth_accounts
+             (id, user_id, account_id, provider_id, password)
+           values (pg_catalog.gen_random_uuid(), $1::uuid, $1::text,
+                   'credential', $2::text)`,
+          [userA, await hashPassword(ownerAPassword)],
         );
         await setupPool.query(
           `insert into emdo.households (id, name, slug, created_by_user_id)
@@ -363,6 +381,57 @@ describeDatabase(
       ).resolves.toEqual([
         expect.objectContaining({ id: householdA, slug: 'claim-household-a' }),
       ]);
+    });
+
+    it('creates a household-active session through the real email sign-in path', async () => {
+      const signIn = await emdoAuth.handler(
+        new Request('https://claim-bridge.emdo.test/api/auth/sign-in/email', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            origin: 'https://claim-bridge.emdo.test',
+          },
+          body: JSON.stringify({
+            email: 'owner-a@example.test',
+            password: ownerAPassword,
+          }),
+        }),
+      );
+      expect(signIn.status).toBe(200);
+      const sessionCookie = signIn.headers
+        .getSetCookie()
+        .map((cookie) => cookie.split(';', 1)[0]!)
+        .find((cookie) => cookie.startsWith('__Secure-emdo.session_token='));
+      expect(sessionCookie).toBeDefined();
+      const headers = new Headers({ cookie: sessionCookie! });
+      await expect(
+        emdoAuth.api.getSession({
+          headers,
+          query: { disableCookieCache: true, disableRefresh: true },
+        }),
+      ).resolves.toMatchObject({
+        session: { activeOrganizationId: householdA, userId: userA },
+        user: { id: userA },
+      });
+      await expect(emdoAuth.api.getActiveMember({ headers })).resolves.toEqual(
+        expect.objectContaining({
+          organizationId: householdA,
+          role: 'owner',
+          userId: userA,
+        }),
+      );
+
+      const persisted = await authPool.query<{
+        active_household_id: string | null;
+      }>(
+        `select active_household_id::text
+           from emdo.auth_sessions
+          where user_id = $1::uuid
+          order by created_at desc
+          limit 1`,
+        [userA],
+      );
+      expect(persisted.rows[0]?.active_household_id).toBe(householdA);
     });
 
     it('rolls back an unverified identity and clears local role/claims on reuse', async () => {
