@@ -102,12 +102,15 @@ correction, captions, playback controls, and object-URL revocation. A separate
 content-agnostic persistence identity arms mutation traps for browser storage,
 Cache Storage, cookies, IndexedDB, and OPFS before the voice lifecycle, then
 requires both zero page-realm write attempts and an exact before/after digest
-of every enumerable durable value and file. The final-state comparison is
-independent of key names and representation, so transformed or encrypted bytes
-cannot remain hidden under a generic key. It does not claim that the separate
-service-worker realm never performed a transient write followed by deletion;
-it proves no voice or transcript state remains durably stored and that the page
-made no persistence write. Only a report containing both exact passing
+of every enumerable durable value except the validated cross-tab heartbeat
+timestamp and PowerSync's encrypted SQLite backing artifacts. Those artifacts
+perform independent checkpoint and journal housekeeping in a database worker.
+The companion lifecycle identity scans all enumerable durable stores, including
+the raw SQLite files, for the test's audio and transcript canaries. Together the
+identities prove the page made no persistence write and no tested voice material
+remains in inspectable browser storage; they do not claim a logical inspection
+inside encrypted PowerSync rows or that the service-worker realm never made a
+transient write followed by deletion. Only a report containing both exact passing
 identities can emit `voice-ptt-storage-playback`. This remains provider-free
 browser evidence: the test stubs transcription and speech, so it does not
 satisfy the separate `openai-transcription` or `openai-speech` provider

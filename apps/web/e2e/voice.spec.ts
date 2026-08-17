@@ -353,11 +353,32 @@ async function captureDurableBrowserState(
         entries,
       };
     };
+    const normalizeStorageValue = (key: string, value: string): string => {
+      if (!key.startsWith('emdo.offline.context.v1.')) return value;
+      try {
+        const parsed = JSON.parse(value) as Record<string, unknown>;
+        if (
+          Object.keys(parsed).sort().join(',') !==
+            'contextId,lastSeenAt,sessionBinding,version' ||
+          typeof parsed.contextId !== 'string' ||
+          !Number.isSafeInteger(parsed.lastSeenAt) ||
+          typeof parsed.sessionBinding !== 'string' ||
+          parsed.version !== 1
+        ) {
+          return value;
+        }
+        return JSON.stringify({ ...parsed, lastSeenAt: 0 });
+      } catch {
+        return value;
+      }
+    };
     const storageEntries = (storage: Storage): readonly (readonly string[])[] =>
       Array.from({ length: storage.length }, (_, index) => storage.key(index))
-        .flatMap((key) =>
-          key === null ? [] : [[key, storage.getItem(key) ?? ''] as const],
-        )
+        .flatMap((key) => {
+          if (key === null) return [];
+          const value = storage.getItem(key) ?? '';
+          return [[key, normalizeStorageValue(key, value)] as const];
+        })
         .sort(([left], [right]) => left.localeCompare(right, 'en'));
 
     const cacheEntries = [];
@@ -511,6 +532,21 @@ async function captureDurableBrowserState(
         }
         if (!isFileHandle(handle)) {
           throw new Error(`Unsupported OPFS handle: ${path}`);
+        }
+        if (
+          /^\/(?:emdo\.sqlite3(?:-(?:journal|shm|wal))?|\.ahp-[A-Za-z0-9._-]+(?:\/.*)?)$/u.test(
+            path,
+          )
+        ) {
+          opfsEntries.push({
+            kind: 'file',
+            lastModified: null,
+            mimeType: null,
+            path,
+            sha256: null,
+            size: null,
+          });
+          continue;
         }
         const file = await handle.getFile();
         opfsEntries.push({
