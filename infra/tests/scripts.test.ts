@@ -28,6 +28,25 @@ const validOpenAiAudioPricing = Buffer.from(
     },
   }),
 ).toString('base64url');
+const validExperienceCursorKeyring = Buffer.from(
+  JSON.stringify({
+    schemaVersion: 1,
+    current: {
+      keyId: 'experience.current-1',
+      keyB64url: Buffer.alloc(32, 17).toString('base64url'),
+    },
+    previous: [],
+  }),
+).toString('base64url');
+const validStagingCoreApiEnvironment = [
+  'EMDO_PUBLIC_ORIGIN=https://staging.example.invalid',
+  'EMDO_API_DATABASE_URL=postgresql://emdo_api_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+  'EMDO_AUTH_DATABASE_URL=postgresql://emdo_auth_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+  'EMDO_VISUAL_DECISION_DATABASE_URL=postgresql://emdo_visual_decision_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+  `EMDO_API_AUTH_SECRET=${'A'.repeat(43)}`,
+  `EMDO_SESSION_SECRET=${'B'.repeat(43)}`,
+  `EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL=${validExperienceCursorKeyring}`,
+];
 
 const validLock = (overrides: Readonly<Record<string, string>> = {}): string =>
   [
@@ -280,12 +299,7 @@ describe('deployment script trust boundaries', () => {
     'EMDO_OPENAI_AUDIO_PRICING_B64URL',
   ])('rejects %s from synthetic staging API secrets', async (forbiddenKey) => {
     const apiEnvironment = join(directory, 'api.env');
-    const valid = [
-      'EMDO_PUBLIC_ORIGIN=https://staging.example.invalid',
-      'EMDO_API_DATABASE_URL=postgresql://emdo_api_login:fixture@postgres:5432/emdo_app?sslmode=disable',
-      'EMDO_AUTH_DATABASE_URL=postgresql://emdo_auth_login:fixture@postgres:5432/emdo_app?sslmode=disable',
-      'EMDO_VISUAL_DECISION_DATABASE_URL=postgresql://emdo_visual_decision_login:fixture@postgres:5432/emdo_app?sslmode=disable',
-    ];
+    const valid = validStagingCoreApiEnvironment;
     await writeFile(apiEnvironment, `${valid.join('\n')}\n`);
     expect(
       runCommon('assert_staging_api_environment "$2"', apiEnvironment).status,
@@ -305,16 +319,27 @@ describe('deployment script trust boundaries', () => {
 
   it('accepts a core-only staging API environment and rejects optional provider bundles', async () => {
     const apiEnvironment = join(directory, 'api.env');
-    const core = [
-      'EMDO_PUBLIC_ORIGIN=https://staging.example.invalid',
-      'EMDO_API_DATABASE_URL=postgresql://emdo_api_login:fixture@postgres:5432/emdo_app?sslmode=disable',
-      'EMDO_AUTH_DATABASE_URL=postgresql://emdo_auth_login:fixture@postgres:5432/emdo_app?sslmode=disable',
-      'EMDO_VISUAL_DECISION_DATABASE_URL=postgresql://emdo_visual_decision_login:fixture@postgres:5432/emdo_app?sslmode=disable',
-    ];
+    const core = validStagingCoreApiEnvironment;
     await writeFile(apiEnvironment, `${core.join('\n')}\n`);
     expect(
       runCommon('assert_staging_api_environment "$2"', apiEnvironment).status,
     ).toBe(0);
+
+    for (const requiredKey of [
+      'EMDO_API_AUTH_SECRET',
+      'EMDO_SESSION_SECRET',
+      'EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL',
+    ]) {
+      await writeFile(
+        apiEnvironment,
+        `${core.filter((line) => !line.startsWith(`${requiredKey}=`)).join('\n')}\n`,
+      );
+      expect(
+        runCommon('assert_staging_api_environment "$2"', apiEnvironment).status,
+      ).not.toBe(0);
+    }
+
+    await writeFile(apiEnvironment, `${core.join('\n')}\n`);
 
     for (const optionalLine of [
       'EMDO_GOOGLE_IDENTITY_CLIENT_ID=123456789012-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com',

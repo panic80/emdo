@@ -591,6 +591,10 @@ assert_staging_api_environment() {
     EMDO_AUTH_DATABASE_URL emdo_auth_login emdo_app
   assert_internal_postgres_uri "$path" \
     EMDO_VISUAL_DECISION_DATABASE_URL emdo_visual_decision_login emdo_app
+  env_file_value "$path" EMDO_API_AUTH_SECRET >/dev/null
+  env_file_value "$path" EMDO_SESSION_SECRET >/dev/null
+  env_file_value \
+    "$path" EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL >/dev/null
   assert_staging_auth_provider_config "$path"
   assert_https_origin_value "$path" EMDO_PUBLIC_ORIGIN
 }
