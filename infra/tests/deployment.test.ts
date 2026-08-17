@@ -472,6 +472,10 @@ describe('container and edge configuration', () => {
     expect(caddyfile).toMatch(
       /@api path[^\n]*\/openapi\.json[^\n]*\/synthetic-staging\/readyz/,
     );
+    expect(caddyfile).toMatch(
+      /@metrics path \/metrics\n\s+handle @metrics \{\n\s+respond 404\n\s+\}/,
+    );
+    expect(caddyfile).not.toContain('respond @metrics 404');
     expect(caddyfile).not.toContain('header_up -X-Emdo-Edge-Proxy');
     expect(caddyfile).not.toContain('header_up -X-Forwarded-For');
     expect(

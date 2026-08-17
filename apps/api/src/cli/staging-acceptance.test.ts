@@ -131,7 +131,7 @@ describe('staging acceptance CLI', () => {
         return jsonWithRequestId(syntheticHttpSubsetReadiness);
       }
       if (url.pathname === '/metrics') {
-        return problem(401, 'metrics-auth-required');
+        return new Response(null, { status: 404 });
       }
       if (url.pathname === '/openapi.json') {
         return Response.json({
@@ -567,7 +567,7 @@ describe('staging acceptance CLI', () => {
         return jsonWithRequestId(syntheticHttpSubsetReadiness);
       }
       if (path === '/metrics') {
-        return problem(401, 'metrics-auth-required');
+        return new Response(null, { status: 404 });
       }
       if (path === '/openapi.json') {
         return Response.json({

@@ -235,11 +235,7 @@ export const runStagingAcceptanceCommand = async (input: {
     );
   }
   const metrics = await send('/metrics');
-  const metricsProblem = await parseProblem(metrics);
-  if (
-    metrics.status !== 401 ||
-    metricsProblem.code !== 'metrics-auth-required'
-  ) {
+  if (metrics.status !== 404) {
     throw new Error('Protected metrics gate failed');
   }
   const openapi = z
