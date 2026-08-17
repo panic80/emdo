@@ -223,6 +223,7 @@ const GATE_RECEIPT_DEFINITIONS = Object.freeze({
     proof: {
       healthz: 'passed',
       syntheticHttpSubsetReadiness: 'passed',
+      authenticatedManagerShoppingFlow: 'passed',
       protectedMetrics: 'passed',
       requestIds: 'passed',
       problemJson: 'passed',

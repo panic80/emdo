@@ -60,6 +60,7 @@ const environment = Object.freeze({
 const proof = () => ({
   healthz: 'passed',
   syntheticHttpSubsetReadiness: 'passed',
+  authenticatedManagerShoppingFlow: 'passed',
   protectedMetrics: 'passed',
   requestIds: 'passed',
   problemJson: 'passed',

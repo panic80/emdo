@@ -17,6 +17,7 @@ const STAGING_WORKFLOW_REF =
 const PROOF_KEYS = Object.freeze([
   'healthz',
   'syntheticHttpSubsetReadiness',
+  'authenticatedManagerShoppingFlow',
   'protectedMetrics',
   'requestIds',
   'problemJson',

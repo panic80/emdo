@@ -108,6 +108,7 @@ const gateProofs: Readonly<Record<string, Readonly<Record<string, unknown>>>> =
     'http-api-subset': {
       healthz: 'passed',
       syntheticHttpSubsetReadiness: 'passed',
+      authenticatedManagerShoppingFlow: 'passed',
       protectedMetrics: 'passed',
       requestIds: 'passed',
       problemJson: 'passed',
