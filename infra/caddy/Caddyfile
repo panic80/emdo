@@ -1,7 +1,6 @@
 {
 	admin localhost:2019
 	email {$ACME_EMAIL}
-	disable_crowdin
 	servers {
 		protocols h1 h2 h3
 	}
