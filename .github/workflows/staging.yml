@@ -22,6 +22,11 @@ on:
         required: true
         default: false
         type: boolean
+      mvp_core_only:
+        description: Prove only the non-release-eligible provider-free MVP core flow
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   actions: read
@@ -176,6 +181,7 @@ jobs:
             --image-lock release/release-images.env \
             --receipts-root release/acceptance-evidence
       - name: Assemble, sign, and verify the complete release evidence
+        if: ${{ !inputs.mvp_core_only }}
         env:
           ACCEPTANCE_EVIDENCE_PRIVATE_KEY: ${{ secrets.ACCEPTANCE_EVIDENCE_PRIVATE_KEY }}
           ACCEPTANCE_EVIDENCE_PUBLIC_KEY: ${{ secrets.ACCEPTANCE_EVIDENCE_PUBLIC_KEY }}
@@ -216,6 +222,7 @@ jobs:
             --ci-head-sha '${{ steps.source.outputs.result }}' \
             --ci-conclusion success
       - name: Record tested digests
+        if: ${{ !inputs.mvp_core_only }}
         env:
           INITIAL_STAGING_BOOTSTRAP: ${{ inputs.initial_deployment }}
         run: |
@@ -229,11 +236,39 @@ jobs:
             "$evidence_digest" '${{ github.run_id }}' '${{ inputs.ci_run_id }}' \
             >> release/staging-tested.env
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ !inputs.mvp_core_only }}
         with:
           name: staging-tested-images
           path: |
             release/staging-tested.env
             release/acceptance-evidence
+          if-no-files-found: error
+          retention-days: 14
+      - name: Record non-release-eligible MVP staging proof
+        if: ${{ inputs.mvp_core_only }}
+        run: |
+          receipt='release/acceptance-evidence/artifacts/gates/http-api-subset.json'
+          descriptor='release/acceptance-evidence/descriptors/gates/http-api-subset.json'
+          [[ -f "$receipt" && -f "$descriptor" ]]
+          receipt_digest="$(sha256sum "$receipt" | cut -d ' ' -f 1)"
+          descriptor_digest="$(sha256sum "$descriptor" | cut -d ' ' -f 1)"
+          [[ "$receipt_digest" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$descriptor_digest" =~ ^[0-9a-f]{64}$ ]]
+          cp release/release-images.env release/mvp-staging-tested.env
+          printf 'MVP_STAGING_TESTED=true\nMVP_RELEASE_ELIGIBLE=false\nMVP_STAGING_RUN_ID=%s\nMVP_STAGING_WORKFLOW_RUN_ID=%s\nMVP_STAGING_TESTED_AT=%s\nMVP_STAGING_INFRA_ARCHIVE_SHA256=%s\nMVP_STAGING_HTTP_RECEIPT_SHA256=%s\nMVP_STAGING_HTTP_DESCRIPTOR_SHA256=%s\nMVP_CI_RUN_ID=%s\n' \
+            '${{ github.run_id }}' '${{ github.run_id }}' "$(date --utc +%FT%TZ)" \
+            '${{ steps.release_assets.outputs.archive_sha256 }}' "$receipt_digest" \
+            "$descriptor_digest" '${{ inputs.ci_run_id }}' \
+            >> release/mvp-staging-tested.env
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ inputs.mvp_core_only }}
+        with:
+          name: mvp-staging-core-proof
+          path: |
+            release/mvp-staging-tested.env
+            release/staging-http-subset-probe.json
+            release/acceptance-evidence/artifacts/gates/http-api-subset.json
+            release/acceptance-evidence/descriptors/gates/http-api-subset.json
           if-no-files-found: error
           retention-days: 14
       - name: Tear down staging at the end of the test window
