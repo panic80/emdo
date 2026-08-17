@@ -1,5 +1,6 @@
 import { generateKeyPairSync } from 'node:crypto';
 
+import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { loadOrderedMigrations } from '../migrations.js';
@@ -36,9 +37,12 @@ const principal = Object.freeze({
   userId: ids.user,
   sessionId: ids.session,
   householdId: ids.household,
+  privateSpaceId: ids.space,
   role: 'owner' as const,
   emailVerified: true as const,
   spaceAccessGrantId: ids.grant,
+  collectionAuthorizationScopeFingerprint:
+    EffectiveAuthorizationScopeFingerprintSchema.parse('a'.repeat(64)),
 });
 
 const schedulerBase = Object.freeze({
