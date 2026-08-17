@@ -23,6 +23,7 @@ import {
 
 const WEEK_SECONDS = 7 * 24 * 60 * 60;
 const DAY_SECONDS = 24 * 60 * 60;
+const singleHouseholdId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f004';
 
 const emptyAuthStorage = () => ({
   account: [],
@@ -50,8 +51,12 @@ const createHarness = (
     kind: 'fake-auth-instance',
   };
   const database = memoryAdapter(emptyAuthStorage());
+  const resolveExactlyOneActiveHousehold = vi.fn<
+    (userId: string) => Promise<string | undefined>
+  >(async () => singleHouseholdId);
   const organizationClaimBridge: BetterAuthOrganizationClaimBridge = {
     database,
+    resolveExactlyOneActiveHousehold,
     run: async <Result>(
       options: BetterAuthOptions,
       work: (transaction: {
@@ -113,6 +118,7 @@ const createHarness = (
     captured,
     database,
     result,
+    resolveExactlyOneActiveHousehold,
     sendInvitationEmail,
     sendPasswordResetEmail,
     sendVerificationEmail,
@@ -131,6 +137,7 @@ const createRealAuth = () =>
       },
       organizationClaimBridge: {
         database,
+        resolveExactlyOneActiveHousehold: async () => singleHouseholdId,
         run: async <Result>(
           options: BetterAuthOptions,
           work: (transaction: {
@@ -187,6 +194,50 @@ describe('createEmdoBetterAuth', () => {
       storeSessionInDatabase: true,
       updateAge: DAY_SECONDS,
     });
+  });
+
+  it('derives the only active household before persisting a session and fails closed otherwise', async () => {
+    const { captured, resolveExactlyOneActiveHousehold } = createHarness();
+    const databaseHooks = captured.auth?.databaseHooks as {
+      session?: {
+        create?: {
+          before?: (
+            session: Record<string, unknown>,
+            context: unknown,
+          ) => Promise<false | { readonly data: Record<string, unknown> }>;
+        };
+      };
+    };
+    const before = databaseHooks.session?.create?.before;
+    expect(before).toBeTypeOf('function');
+
+    const session = {
+      activeOrganizationId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8ffff',
+      id: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f002',
+      token: 'opaque-session-token',
+      userId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f001',
+    };
+    await expect(before?.(session, null)).resolves.toEqual({
+      data: {
+        ...session,
+        activeOrganizationId: singleHouseholdId,
+      },
+    });
+    expect(resolveExactlyOneActiveHousehold).toHaveBeenCalledWith(
+      session.userId,
+    );
+
+    vi.mocked(resolveExactlyOneActiveHousehold).mockResolvedValueOnce(
+      undefined,
+    );
+    await expect(before?.(session, null)).resolves.toBe(false);
+
+    vi.mocked(resolveExactlyOneActiveHousehold).mockRejectedValueOnce(
+      new Error('database unavailable'),
+    );
+    await expect(before?.(session, null)).rejects.toThrow(
+      'database unavailable',
+    );
   });
 
   it('limits Google sign-in to a separate identity-only grant', () => {
@@ -586,6 +637,7 @@ describe('createEmdoBetterAuth', () => {
       instrumentAdapter(rawDatabase(options), 'unscoped');
     const organizationClaimBridge: BetterAuthOrganizationClaimBridge = {
       database,
+      resolveExactlyOneActiveHousehold: async () => singleHouseholdId,
       run: async <Result>(
         options: BetterAuthOptions,
         work: (transaction: {
@@ -722,6 +774,7 @@ describe('createEmdoBetterAuth', () => {
     });
     const organizationClaimBridge: BetterAuthOrganizationClaimBridge = {
       database,
+      resolveExactlyOneActiveHousehold: async () => singleHouseholdId,
       run: originalRun,
     };
     const auth = createEmdoBetterAuth(
@@ -773,6 +826,7 @@ describe('createEmdoBetterAuth', () => {
     const database = memoryAdapter(emptyAuthStorage());
     const organizationClaimBridge = {
       database,
+      resolveExactlyOneActiveHousehold: vi.fn(async () => singleHouseholdId),
       run: vi.fn(
         async <Result>(
           _options: BetterAuthOptions,
@@ -899,6 +953,7 @@ describe('createEmdoBetterAuth', () => {
           },
           organizationClaimBridge: {
             database,
+            resolveExactlyOneActiveHousehold: async () => singleHouseholdId,
             run: async <Result>(
               options: BetterAuthOptions,
               work: (transaction: {

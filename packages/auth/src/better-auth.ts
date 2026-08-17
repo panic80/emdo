@@ -152,6 +152,9 @@ export interface BetterAuthOrganizationClaimTransaction {
 
 export interface BetterAuthOrganizationClaimBridge {
   readonly database: DBAdapterInstance;
+  readonly resolveExactlyOneActiveHousehold: (
+    userId: string,
+  ) => Promise<string | undefined>;
   readonly run: <Result>(
     options: BetterAuthOptions,
     work: (
@@ -408,6 +411,8 @@ const validateConfiguration = (configuration: EmdoBetterAuthConfiguration) => {
   if (
     !isRecord(configuration.organizationClaimBridge) ||
     typeof configuration.organizationClaimBridge.database !== 'function' ||
+    typeof configuration.organizationClaimBridge
+      .resolveExactlyOneActiveHousehold !== 'function' ||
     typeof configuration.organizationClaimBridge.run !== 'function'
   ) {
     throw new Error(
@@ -961,6 +966,26 @@ export function createEmdoBetterAuth<TAuth>(
     basePath: '/api/auth',
     baseURL: validated.baseURL,
     database: organizationClaimBridge.database,
+    databaseHooks: {
+      session: {
+        create: {
+          before: async (session) => {
+            const householdId =
+              await configuration.organizationClaimBridge.resolveExactlyOneActiveHousehold(
+                session.userId,
+              );
+            const parsedHouseholdId = z.uuid().safeParse(householdId);
+            if (!parsedHouseholdId.success) return false;
+            return {
+              data: {
+                ...session,
+                activeOrganizationId: parsedHouseholdId.data.toLowerCase(),
+              },
+            };
+          },
+        },
+      },
+    },
     disabledPaths: [...BLOCKED_ORGANIZATION_MUTATION_PATHS],
     emailAndPassword: {
       autoSignIn: false,

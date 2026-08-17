@@ -106,6 +106,13 @@
       "when": 1787097600000,
       "tag": "0014_audio_spend_readiness",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1787101200000,
+      "tag": "0015_single_household_session_activation",
+      "breakpoints": true
     }
   ]
 }
