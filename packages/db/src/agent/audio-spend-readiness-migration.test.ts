@@ -23,7 +23,7 @@ describe('audio spend readiness migration', () => {
   it('is journaled as the additive no-table 0014 boundary', async () => {
     const migrations = await loadOrderedMigrations();
 
-    expect(migrations.at(-1)).toMatchObject({
+    expect(migrations[14]).toMatchObject({
       id: '0014_audio_spend_readiness',
       index: 14,
     });
