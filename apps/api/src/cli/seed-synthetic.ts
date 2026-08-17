@@ -125,6 +125,45 @@ const SYNTHETIC_CREATED_AT = '2026-01-01T00:00:00.000Z';
 type SeedFetch = (request: Request) => Promise<Response>;
 type BootstrapOwner = typeof runOwnerBootstrapCommand;
 
+type SyntheticSeedStage =
+  | 'configuration'
+  | 'owner-bootstrap'
+  | 'sign-in'
+  | 'session-cookie'
+  | 'csrf'
+  | 'sync-client'
+  | 'sync-token'
+  | 'private-space'
+  | 'sync-upload'
+  | 'unexpected';
+
+class SyntheticSeedFailure extends Error {
+  readonly stage: SyntheticSeedStage;
+
+  constructor(stage: SyntheticSeedStage) {
+    super(`Synthetic staging seed failed at stage=${stage}`);
+    this.name = 'SyntheticSeedFailure';
+    this.stage = stage;
+  }
+}
+
+const withinStage = async <Output>(
+  stage: SyntheticSeedStage,
+  operation: () => Promise<Output>,
+): Promise<Output> => {
+  try {
+    return await operation();
+  } catch {
+    throw new SyntheticSeedFailure(stage);
+  }
+};
+
+export const formatSyntheticSeedFailure = (error: unknown): string => {
+  const stage =
+    error instanceof SyntheticSeedFailure ? error.stage : 'unexpected';
+  return `Synthetic staging seed failed at stage=${stage}.\n`;
+};
+
 const json = async <Output>(response: Response, schema: z.ZodType<Output>) => {
   if (!response.ok) throw new Error('Synthetic seed API request failed');
   let value: unknown;
@@ -169,35 +208,38 @@ const operation = (input: {
   createdAt: input.createdAt,
 });
 
-export const runSyntheticSeedCommand = async (input: {
+const executeSyntheticSeedCommand = async (input: {
   readonly argv: readonly string[];
   readonly environment: Readonly<Record<string, string | undefined>>;
   readonly bootstrapOwner?: BootstrapOwner;
   readonly fetch?: SeedFetch;
 }): Promise<{ readonly status: 'seeded'; readonly operationCount: 3 }> => {
-  const configuration = SyntheticSeedConfigurationSchema.safeParse({
-    apiOrigin: input.environment.EMDO_STAGING_API_ORIGIN,
-    bootstrapDatabaseUrl: input.environment.EMDO_BOOTSTRAP_DATABASE_URL,
-    clientId: input.environment.EMDO_SYNTHETIC_CLIENT_ID,
-    environment: input.environment.EMDO_ENVIRONMENT,
-    externalProvidersEnabled: input.environment.EMDO_EXTERNAL_PROVIDERS_ENABLED,
-    householdName: input.environment.EMDO_BOOTSTRAP_HOUSEHOLD_NAME,
-    householdSlug: input.environment.EMDO_BOOTSTRAP_HOUSEHOLD_SLUG,
-    ownerEmail: input.environment.EMDO_SYNTHETIC_OWNER_EMAIL,
-    ownerName: input.environment.EMDO_BOOTSTRAP_OWNER_NAME,
-    ownerPassword: input.environment.EMDO_SYNTHETIC_OWNER_PASSWORD,
-    publicOrigin: input.environment.EMDO_PUBLIC_ORIGIN,
-    syntheticDataOnly: input.environment.EMDO_SYNTHETIC_DATA_ONLY,
+  const config = await withinStage('configuration', async () => {
+    const configuration = SyntheticSeedConfigurationSchema.safeParse({
+      apiOrigin: input.environment.EMDO_STAGING_API_ORIGIN,
+      bootstrapDatabaseUrl: input.environment.EMDO_BOOTSTRAP_DATABASE_URL,
+      clientId: input.environment.EMDO_SYNTHETIC_CLIENT_ID,
+      environment: input.environment.EMDO_ENVIRONMENT,
+      externalProvidersEnabled:
+        input.environment.EMDO_EXTERNAL_PROVIDERS_ENABLED,
+      householdName: input.environment.EMDO_BOOTSTRAP_HOUSEHOLD_NAME,
+      householdSlug: input.environment.EMDO_BOOTSTRAP_HOUSEHOLD_SLUG,
+      ownerEmail: input.environment.EMDO_SYNTHETIC_OWNER_EMAIL,
+      ownerName: input.environment.EMDO_BOOTSTRAP_OWNER_NAME,
+      ownerPassword: input.environment.EMDO_SYNTHETIC_OWNER_PASSWORD,
+      publicOrigin: input.environment.EMDO_PUBLIC_ORIGIN,
+      syntheticDataOnly: input.environment.EMDO_SYNTHETIC_DATA_ONLY,
+    });
+    if (
+      input.argv.length !== 2 ||
+      input.argv[0] !== '--fail-if-nonempty' ||
+      input.argv[1] !== '--staging-only' ||
+      !configuration.success
+    ) {
+      throw new Error('invalid');
+    }
+    return configuration.data;
   });
-  if (
-    input.argv.length !== 2 ||
-    input.argv[0] !== '--fail-if-nonempty' ||
-    input.argv[1] !== '--staging-only' ||
-    !configuration.success
-  ) {
-    throw new Error('Synthetic seed configuration is invalid');
-  }
-  const config = configuration.data;
   const bootstrapEnvironment: BootstrapOwnerEnvironment = {
     EMDO_BOOTSTRAP_CONFIRM: OWNER_BOOTSTRAP_CONFIRMATION,
     EMDO_BOOTSTRAP_DATABASE_URL: config.bootstrapDatabaseUrl,
@@ -207,95 +249,115 @@ export const runSyntheticSeedCommand = async (input: {
     EMDO_BOOTSTRAP_OWNER_NAME: config.ownerName,
     EMDO_BOOTSTRAP_OWNER_PASSWORD: config.ownerPassword,
   };
-  const bootstrapStatus = await (
-    input.bootstrapOwner ?? runOwnerBootstrapCommand
-  )({
-    environment: bootstrapEnvironment,
-    logger: { error: () => undefined, info: () => undefined },
+  await withinStage('owner-bootstrap', async () => {
+    const bootstrapStatus = await (
+      input.bootstrapOwner ?? runOwnerBootstrapCommand
+    )({
+      environment: bootstrapEnvironment,
+      logger: { error: () => undefined, info: () => undefined },
+    });
+    if (bootstrapStatus !== 0 && bootstrapStatus !== 2) {
+      throw new Error('failed');
+    }
   });
-  if (bootstrapStatus !== 0 && bootstrapStatus !== 2) {
-    throw new Error('Synthetic owner bootstrap failed');
-  }
 
   const request = input.fetch ?? ((value: Request) => globalThis.fetch(value));
-  const signIn = await request(
-    new Request(`${config.apiOrigin}/api/auth/sign-in/email`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        origin: config.publicOrigin,
-        'idempotency-key': 'synthetic-seed-sign-in-v1',
-      },
-      body: JSON.stringify({
-        email: config.ownerEmail,
-        password: config.ownerPassword,
-      }),
-      redirect: 'error',
-    }),
-  );
-  if (!signIn.ok) throw new Error('Synthetic owner sign-in failed');
-  const cookies = [...responseCookies(signIn)];
-  if (
-    !cookies.some((cookie) => cookie.startsWith('__Secure-emdo.session_token='))
-  ) {
-    throw new Error('Synthetic owner session was not issued');
-  }
-
-  const csrfResponse = await request(
-    new Request(`${config.apiOrigin}/api/v1/auth/csrf`, {
-      headers: { cookie: cookies.join('; '), origin: config.publicOrigin },
-    }),
-  );
-  const csrf = await json(csrfResponse, CsrfResponseSchema);
-  cookies.push(...responseCookies(csrfResponse));
-
-  const registration = await json(
-    await request(
-      new Request(`${config.apiOrigin}/api/v1/sync/clients`, {
+  const signIn = await withinStage('sign-in', async () => {
+    const response = await request(
+      new Request(`${config.apiOrigin}/api/auth/sign-in/email`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          cookie: cookies.join('; '),
           origin: config.publicOrigin,
-          'x-csrf-token': csrf.token,
-          'idempotency-key': 'synthetic-sync-client-registration-v1',
+          'idempotency-key': 'synthetic-seed-sign-in-v1',
         },
         body: JSON.stringify({
-          schemaVersion: 1,
-          clientId: config.clientId,
-          displayName: 'EMDO synthetic staging seed',
+          email: config.ownerEmail,
+          password: config.ownerPassword,
         }),
+        redirect: 'error',
       }),
-    ),
-    SyncClientRegistrationResponseSchema,
-  );
-  if (registration.clientId !== config.clientId) {
-    throw new Error('Synthetic sync registration is invalid');
-  }
+    );
+    if (!response.ok) throw new Error('failed');
+    return response;
+  });
+  const cookies = await withinStage('session-cookie', async () => {
+    const values = [...responseCookies(signIn)];
+    if (
+      !values.some((cookie) =>
+        cookie.startsWith('__Secure-emdo.session_token='),
+      )
+    ) {
+      throw new Error('missing');
+    }
+    return values;
+  });
 
-  const token = await json(
-    await request(
-      new Request(
-        `${config.apiOrigin}/api/v1/sync/token?clientId=${encodeURIComponent(config.clientId)}`,
-        { headers: { cookie: cookies.join('; ') } },
+  const { csrf, csrfResponse } = await withinStage('csrf', async () => {
+    const response = await request(
+      new Request(`${config.apiOrigin}/api/v1/auth/csrf`, {
+        headers: { cookie: cookies.join('; '), origin: config.publicOrigin },
+      }),
+    );
+    return {
+      csrf: await json(response, CsrfResponseSchema),
+      csrfResponse: response,
+    };
+  });
+  cookies.push(...responseCookies(csrfResponse));
+
+  await withinStage('sync-client', async () => {
+    const registration = await json(
+      await request(
+        new Request(`${config.apiOrigin}/api/v1/sync/clients`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: cookies.join('; '),
+            origin: config.publicOrigin,
+            'x-csrf-token': csrf.token,
+            'idempotency-key': 'synthetic-sync-client-registration-v1',
+          },
+          body: JSON.stringify({
+            schemaVersion: 1,
+            clientId: config.clientId,
+            displayName: 'EMDO synthetic staging seed',
+          }),
+        }),
       ),
-    ),
-    SyncTokenResponseSchema,
-  );
-  if (
-    new URL(token.endpoint).origin !== config.publicOrigin ||
-    token.writeScope.clientId !== config.clientId
-  ) {
-    throw new Error('Synthetic sync scope is invalid');
-  }
-  const privateSpaces = token.writeScope.spaces.filter(
-    (space) =>
-      space.visibility === 'private' && space.originalOwnerUserId.length > 0,
-  );
-  if (privateSpaces.length !== 1) {
-    throw new Error('Synthetic private space is unavailable');
-  }
-  const spaceId = privateSpaces[0]!.id;
+      SyncClientRegistrationResponseSchema,
+    );
+    if (registration.clientId !== config.clientId) {
+      throw new Error('invalid');
+    }
+  });
+
+  const token = await withinStage('sync-token', async () => {
+    const value = await json(
+      await request(
+        new Request(
+          `${config.apiOrigin}/api/v1/sync/token?clientId=${encodeURIComponent(config.clientId)}`,
+          { headers: { cookie: cookies.join('; ') } },
+        ),
+      ),
+      SyncTokenResponseSchema,
+    );
+    if (
+      new URL(value.endpoint).origin !== config.publicOrigin ||
+      value.writeScope.clientId !== config.clientId
+    ) {
+      throw new Error('invalid');
+    }
+    return value;
+  });
+  const spaceId = await withinStage('private-space', async () => {
+    const privateSpaces = token.writeScope.spaces.filter(
+      (space) =>
+        space.visibility === 'private' && space.originalOwnerUserId.length > 0,
+    );
+    if (privateSpaces.length !== 1) throw new Error('unavailable');
+    return privateSpaces[0]!.id;
+  });
   const createdAt = SYNTHETIC_CREATED_AT;
   const operations = [
     operation({
@@ -347,41 +409,54 @@ export const runSyntheticSeedCommand = async (input: {
       createdAt,
     }),
   ] as const;
-  const upload = await json(
-    await request(
-      new Request(`${config.apiOrigin}/api/v1/sync/ops`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          cookie: cookies.join('; '),
-          origin: config.publicOrigin,
-          'x-csrf-token': csrf.token,
-          'idempotency-key': 'synthetic-domain-seed-v1',
-        },
-        body: JSON.stringify({
-          schemaVersion: 1,
-          clientId: config.clientId,
-          operations,
+  await withinStage('sync-upload', async () => {
+    const upload = await json(
+      await request(
+        new Request(`${config.apiOrigin}/api/v1/sync/ops`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            cookie: cookies.join('; '),
+            origin: config.publicOrigin,
+            'x-csrf-token': csrf.token,
+            'idempotency-key': 'synthetic-domain-seed-v1',
+          },
+          body: JSON.stringify({
+            schemaVersion: 1,
+            clientId: config.clientId,
+            operations,
+          }),
         }),
-      }),
-    ),
-    SyncResultSchema,
-  );
-  if (
-    upload.clientId !== config.clientId ||
-    upload.results.length !== operations.length ||
-    upload.results.some(
-      (result, index) =>
-        result.operationId !== operations[index]!.operationId ||
-        result.status !== 'applied',
-    )
-  ) {
-    throw new Error('Synthetic domain seed was not applied exactly');
-  }
+      ),
+      SyncResultSchema,
+    );
+    if (
+      upload.clientId !== config.clientId ||
+      upload.results.length !== operations.length ||
+      upload.results.some(
+        (result, index) =>
+          result.operationId !== operations[index]!.operationId ||
+          result.status !== 'applied',
+      )
+    ) {
+      throw new Error('invalid');
+    }
+  });
   return Object.freeze({
     status: 'seeded' as const,
     operationCount: 3 as const,
   });
+};
+
+export const runSyntheticSeedCommand = async (
+  input: Parameters<typeof executeSyntheticSeedCommand>[0],
+): ReturnType<typeof executeSyntheticSeedCommand> => {
+  try {
+    return await executeSyntheticSeedCommand(input);
+  } catch (error) {
+    if (error instanceof SyntheticSeedFailure) throw error;
+    throw new SyntheticSeedFailure('unexpected');
+  }
 };
 
 const invokedPath = process.argv[1];
@@ -394,8 +469,8 @@ if (
     environment: process.env,
   })
     .then((result) => process.stdout.write(`${JSON.stringify(result)}\n`))
-    .catch(() => {
-      process.stderr.write('Synthetic staging seed failed.\n');
+    .catch((error: unknown) => {
+      process.stderr.write(formatSyntheticSeedFailure(error));
       process.exitCode = 1;
     });
 }
