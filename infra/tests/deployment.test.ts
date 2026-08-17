@@ -414,6 +414,9 @@ describe('container and edge configuration', () => {
     expect(staging.match(/restart: 'no'/g)).toHaveLength(6);
     expect(staging).toMatch(/api:[\s\S]*?ports: !override \[\]/);
     expect(staging).toMatch(
+      /caddy:[\s\S]*?ports: !override\n\s+- target: 8080\n\s+published: '\$\{STAGING_HTTP_PORT:\?STAGING_HTTP_PORT is required\}'\n\s+host_ip: 127\.0\.0\.1\n\s+protocol: tcp\n\s+mode: host/,
+    );
+    expect(staging).toMatch(
       /api:[\s\S]*?networks: !override\n\s+- backend\n\s+- edge\n\s+- auth-egress/,
     );
     expect(staging).toMatch(/edge:[\s\S]*?internal: true/);
