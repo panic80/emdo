@@ -731,7 +731,7 @@ assert_isolated_project_absent() {
     [[ -z "$existing_resources" ]] ||
       die "isolated project $project_name already has volume $resource_name"
   done
-  for resource in edge egress auth-egress backend; do
+  for resource in edge egress auth-egress backend loopback-ingress; do
     resource_name="emdo-$namespace-$resource"
     existing_resources="$(docker network ls --quiet --filter "name=^${resource_name}$")" ||
       die 'could not inspect Docker networks while proving project absence'

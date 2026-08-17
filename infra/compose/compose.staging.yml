@@ -112,6 +112,9 @@ services:
         host_ip: 127.0.0.1
         protocol: tcp
         mode: host
+    networks: !override
+      - edge
+      - loopback-ingress
     deploy:
       resources:
         limits:
@@ -194,6 +197,10 @@ networks:
   edge:
     name: emdo-staging-${STAGING_RUN_ID:?STAGING_RUN_ID is required}-edge
     internal: true
+  # Caddy alone joins this bridge so Docker can publish its listener on host
+  # loopback. Application services remain confined to internal networks.
+  loopback-ingress:
+    name: emdo-staging-${STAGING_RUN_ID:?STAGING_RUN_ID is required}-loopback-ingress
   egress:
     name: emdo-staging-${STAGING_RUN_ID:?STAGING_RUN_ID is required}-egress
     internal: true
