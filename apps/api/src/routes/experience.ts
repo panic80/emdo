@@ -22,10 +22,27 @@ import {
   TodayReadQuerySchema,
   TodayViewSchema,
 } from '../schemas.js';
-import type { ApiServices } from '../services/contracts.js';
+import type {
+  ApiServices,
+  AuthenticatedPrincipal,
+} from '../services/contracts.js';
 
 const uniqueIds = (items: readonly { readonly id: string }[]): boolean =>
   new Set(items.map(({ id }) => id)).size === items.length;
+
+const projectExperiencePrincipal = (
+  principal: AuthenticatedPrincipal,
+): Omit<AuthenticatedPrincipal, 'privateSpaceId'> =>
+  Object.freeze({
+    collectionAuthorizationScopeFingerprint:
+      principal.collectionAuthorizationScopeFingerprint,
+    emailVerified: principal.emailVerified,
+    householdId: principal.householdId,
+    role: principal.role,
+    sessionId: principal.sessionId,
+    spaceAccessGrantId: principal.spaceAccessGrantId,
+    userId: principal.userId,
+  });
 
 const experienceProblem = (error: unknown): ApiProblem | undefined => {
   const code =
@@ -85,7 +102,9 @@ export const registerExperienceRoutes = (
   maximumJsonBodyBytes: number,
 ): void => {
   app.get('/api/v1/experience/today', async (request, reply) => {
-    const principal = await requirePrincipal(request, services);
+    const principal = projectExperiencePrincipal(
+      await requirePrincipal(request, services),
+    );
     const query = parseRequest(TodayReadQuerySchema, request.query);
     const result = parseServiceResponse(
       TodayViewSchema,
@@ -109,7 +128,9 @@ export const registerExperienceRoutes = (
   });
 
   app.get('/api/v1/experience/activity', async (request, reply) => {
-    const principal = await requirePrincipal(request, services);
+    const principal = projectExperiencePrincipal(
+      await requirePrincipal(request, services),
+    );
     const query = parseRequest(ActivityReadQuerySchema, request.query);
     const result = parseServiceResponse(
       ActivityPageSchema,
@@ -133,7 +154,9 @@ export const registerExperienceRoutes = (
   });
 
   app.get('/api/v1/experience/finance', async (request, reply) => {
-    const principal = await requirePrincipal(request, services);
+    const principal = projectExperiencePrincipal(
+      await requirePrincipal(request, services),
+    );
     const query = parseRequest(ExperiencePageQuerySchema, request.query);
     const result = parseServiceResponse(
       FinancePageSchema,
@@ -157,7 +180,9 @@ export const registerExperienceRoutes = (
   });
 
   app.get('/api/v1/experience/shopping', async (request, reply) => {
-    const principal = await requirePrincipal(request, services);
+    const principal = projectExperiencePrincipal(
+      await requirePrincipal(request, services),
+    );
     const query = parseRequest(ExperiencePageQuerySchema, request.query);
     const result = parseServiceResponse(
       ShoppingPageSchema,
@@ -181,7 +206,9 @@ export const registerExperienceRoutes = (
   });
 
   app.get('/api/v1/experience/schedule', async (request, reply) => {
-    const principal = await requirePrincipal(request, services);
+    const principal = projectExperiencePrincipal(
+      await requirePrincipal(request, services),
+    );
     const query = parseRequest(ScheduleReadQuerySchema, request.query);
     const result = parseServiceResponse(
       SchedulePageSchema,
@@ -209,7 +236,9 @@ export const registerExperienceRoutes = (
   });
 
   app.get('/api/v1/experience/settings', async (request, reply) => {
-    const principal = await requirePrincipal(request, services);
+    const principal = projectExperiencePrincipal(
+      await requirePrincipal(request, services),
+    );
     const result = parseServiceResponse(
       SettingsViewSchema,
       await invokeExperience(() =>
@@ -222,7 +251,9 @@ export const registerExperienceRoutes = (
   app.get(
     '/api/v1/experience/notification-preferences',
     async (request, reply) => {
-      const principal = await requirePrincipal(request, services);
+      const principal = projectExperiencePrincipal(
+        await requirePrincipal(request, services),
+      );
       const result = parseServiceResponse(
         NotificationPreferencesViewSchema,
         await invokeExperience(() =>
@@ -243,7 +274,9 @@ export const registerExperienceRoutes = (
       onRequest: (request) => prepareAuthenticatedMutation(request, services),
     },
     async (request, reply) => {
-      const { idempotencyKey, principal } = takePreparedMutation(request);
+      const { idempotencyKey, principal: authenticatedPrincipal } =
+        takePreparedMutation(request);
+      const principal = projectExperiencePrincipal(authenticatedPrincipal);
       const input = parseRequest(
         NotificationPreferencesUpdateRequestSchema,
         request.body,

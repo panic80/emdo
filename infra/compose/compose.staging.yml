@@ -171,6 +171,8 @@ services:
       EMDO_ENVIRONMENT: staging
       EMDO_SYNTHETIC_DATA_ONLY: 'true'
       EMDO_EXTERNAL_PROVIDERS_ENABLED: 'false'
+      EMDO_STAGING_SOURCE_SHA: ${EMDO_STAGING_SOURCE_SHA:?EMDO_STAGING_SOURCE_SHA is required}
+      EMDO_STAGING_WORKFLOW_RUN_ID: ${EMDO_STAGING_WORKFLOW_RUN_ID:?EMDO_STAGING_WORKFLOW_RUN_ID is required}
     command:
       - node
       - dist/cli/staging-acceptance.js
