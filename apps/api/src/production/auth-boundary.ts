@@ -36,9 +36,14 @@ const ActiveMemberSchema = z.object({
 });
 
 const ActivePrincipalScopeSchema = z.strictObject({
+  userId: z.uuid(),
+  sessionId: z.uuid(),
+  requestId: z.uuid(),
   householdId: z.uuid(),
+  membershipId: z.uuid(),
   privateSpaceId: z.uuid(),
   role: z.enum(['owner', 'member']),
+  emailVerified: z.literal(true),
   spaceAccessGrantId: z.uuid(),
   collectionAuthorizationScopeFingerprint:
     EffectiveAuthorizationScopeFingerprintSchema,
@@ -269,7 +274,11 @@ export const createProductionAuthenticationBoundary = (
       );
       if (
         !scope.success ||
+        scope.data.userId !== session.data.user.id ||
+        scope.data.sessionId !== session.data.session.id ||
+        scope.data.requestId !== input.requestId ||
         scope.data.householdId !== activeMember.data.organizationId ||
+        scope.data.membershipId !== activeMember.data.id ||
         scope.data.role !== activeMember.data.role
       ) {
         return undefined;
