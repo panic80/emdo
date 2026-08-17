@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { SyncOperationSchema } from '@emdo/contracts';
 import { resolveDeterministicSyncOperation } from '@emdo/domains/conflicts';
 
-import { runSyntheticSeedCommand } from './seed-synthetic.js';
+import {
+  formatSyntheticSeedFailure,
+  runSyntheticSeedCommand,
+} from './seed-synthetic.js';
 
 const CLIENT_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f70';
 const USER_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f71';
@@ -218,9 +221,54 @@ describe('synthetic staging seed CLI', () => {
           bootstrapOwner,
           fetch,
         }),
-      ).rejects.toThrow('Synthetic seed configuration is invalid');
+      ).rejects.toThrow('Synthetic staging seed failed at stage=configuration');
     }
     expect(bootstrapOwner).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('reports only closed stage names and never includes caught values', async () => {
+    const secret =
+      'postgresql://stage-user:stage-password@postgres/emdo?cookie=session-secret&token=csrf-secret';
+
+    const bootstrapFailure = runSyntheticSeedCommand({
+      argv: ['--fail-if-nonempty', '--staging-only'],
+      environment: environment(),
+      bootstrapOwner: vi.fn(async () => {
+        throw new Error(secret);
+      }),
+      fetch: vi.fn(),
+    });
+    await expect(bootstrapFailure).rejects.toThrow(
+      'Synthetic staging seed failed at stage=owner-bootstrap',
+    );
+    await bootstrapFailure.catch((error: unknown) => {
+      expect(formatSyntheticSeedFailure(error)).toBe(
+        'Synthetic staging seed failed at stage=owner-bootstrap.\n',
+      );
+      expect(formatSyntheticSeedFailure(error)).not.toContain(secret);
+    });
+
+    const signInFailure = runSyntheticSeedCommand({
+      argv: ['--fail-if-nonempty', '--staging-only'],
+      environment: environment(),
+      bootstrapOwner: vi.fn(async () => 0),
+      fetch: vi.fn(async () => {
+        throw new Error(secret);
+      }),
+    });
+    await expect(signInFailure).rejects.toThrow(
+      'Synthetic staging seed failed at stage=sign-in',
+    );
+    await signInFailure.catch((error: unknown) => {
+      expect(formatSyntheticSeedFailure(error)).toBe(
+        'Synthetic staging seed failed at stage=sign-in.\n',
+      );
+      expect(formatSyntheticSeedFailure(error)).not.toContain(secret);
+    });
+
+    expect(formatSyntheticSeedFailure(new Error(secret))).toBe(
+      'Synthetic staging seed failed at stage=unexpected.\n',
+    );
   });
 });

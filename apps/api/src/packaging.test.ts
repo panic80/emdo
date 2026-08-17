@@ -161,7 +161,7 @@ describe('API production package', () => {
       [
         './dist/cli/seed-synthetic.js',
         ['--fail-if-nonempty', '--staging-only'],
-        'Synthetic staging seed failed.',
+        'Synthetic staging seed failed at stage=configuration.',
         1,
       ],
       [
