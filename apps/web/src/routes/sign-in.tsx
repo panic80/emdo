@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { Button } from '../components/button.js';
 import { Icon } from '../components/icon.js';
+import { ThemeToggle } from '../components/theme-toggle.js';
 import { AuthClientError } from '../features/auth/auth-client.js';
 import { useAuth } from '../features/auth/auth-context.js';
 import { useDomainData } from '../features/domains/domain-data.js';
@@ -51,9 +52,16 @@ export function SignInRoute() {
   return (
     <main className="auth-page">
       <section className="auth-panel" aria-labelledby="sign-in-heading">
-        <a className="auth-wordmark" href="/sign-in" aria-label="EMDO sign in">
-          EMDO
-        </a>
+        <div className="auth-masthead">
+          <a
+            className="auth-wordmark"
+            href="/sign-in"
+            aria-label="EMDO sign in"
+          >
+            EMDO
+          </a>
+          <ThemeToggle />
+        </div>
         <header>
           <p className="auth-eyebrow">Invite-only household assistant</p>
           <h1 id="sign-in-heading">Welcome back</h1>

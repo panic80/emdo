@@ -20,7 +20,9 @@ export type IconName =
   | 'stop'
   | 'sync'
   | 'user'
-  | 'wallet';
+  | 'wallet'
+  | 'sun'
+  | 'moon';
 
 type PathDefinition = readonly ReactElement[];
 
@@ -124,6 +126,14 @@ const paths: Record<IconName, PathDefinition> = {
     />,
     <path key="b" d="M15 11h5v4h-5a2 2 0 0 1 0-4Z" />,
   ],
+  sun: [
+    <circle key="a" cx="12" cy="12" r="5" />,
+    <path
+      key="b"
+      d="M12 1v6M12 17v6M23 12h-6M6 12H0M20.5 3.5L16 8M8 16l-4.5 4.5M20.5 20.5L16 16M8 8l-4.5-4.5"
+    />,
+  ],
+  moon: [<path key="a" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />],
 };
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {

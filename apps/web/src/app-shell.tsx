@@ -8,9 +8,11 @@ import {
   resolveNavigationState,
 } from './app-shell-model.js';
 import { Icon } from './components/icon.js';
+import { ThemeToggle } from './components/theme-toggle.js';
 import { ConversationProvider } from './features/chat/conversation.js';
 import { useAuth } from './features/auth/auth-context.js';
 import { useDomainData } from './features/domains/domain-data.js';
+import { listenToSystemThemeChanges } from './features/theme/theme.store.js';
 import { UpdateBanner } from './features/sync/update-banner.js';
 import { serviceWorkerUpdateCoordinator } from './features/sync/register-service-worker.js';
 
@@ -212,6 +214,7 @@ function TopBar({ openMore }: { readonly openMore: () => void }) {
         >
           <Icon name="bell" />
         </button>
+        <ThemeToggle />
         <button
           className="profile-button"
           type="button"
@@ -253,6 +256,7 @@ export function AppShell() {
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [moreOpen]);
+  useEffect(() => listenToSystemThemeChanges(), []);
 
   if (publicRoute) {
     return <Outlet />;
