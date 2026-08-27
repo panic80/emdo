@@ -49,6 +49,7 @@ const assertInvocationIdentityIsRequired = (abortSignal: AbortSignal): void => {
     householdId: ids.household,
     userId: ids.user,
     agentId: 'scheduler',
+    locale: 'en-CA',
     spaceAccessGrantId: operationScope.spaceAccessGrantId,
     abortSignal,
   };

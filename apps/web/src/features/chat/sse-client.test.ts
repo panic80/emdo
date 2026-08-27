@@ -210,6 +210,7 @@ describe('persisted run event streaming', () => {
         specialist: 'manager',
         idempotencyKey: 'turn-local-1',
         csrfToken: 'csrf-1',
+        locale: 'ja-JP',
       },
       { fetcher },
     );
@@ -230,6 +231,7 @@ describe('persisted run event streaming', () => {
     expect(JSON.parse(String(init.body))).toEqual({
       schemaVersion: 1,
       message: 'Plan my afternoon',
+      locale: 'ja-JP',
     });
   });
 
@@ -285,6 +287,7 @@ describe('persisted run event streaming', () => {
           specialist: 'manager',
           idempotencyKey: 'turn-2',
           csrfToken: 'csrf-2',
+          locale: 'en-CA',
         },
         { fetcher },
       ),

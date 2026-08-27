@@ -34,7 +34,7 @@ const collect = async <Value>(
 };
 
 describeDatabase(
-  'PostgreSQL 17 grant-bound manager run replay (isolated database only)',
+  'PostgreSQL 18 grant-bound manager run replay (isolated database only)',
   () => {
     let admin: import('pg').Client;
     let runtime: EmdoDatabaseClient;
@@ -59,8 +59,9 @@ describeDatabase(
       const version = await admin.query(
         `select current_setting('server_version_num')::integer as version`,
       );
-      if (Math.trunc(Number(version.rows[0]?.version) / 10_000) !== 17) {
-        throw new Error('TEST_RUN_EVENT_DATABASE_URL must use PostgreSQL 17');
+      const serverVersion = Number(version.rows[0]?.version);
+      if (serverVersion < 180_000 || serverVersion >= 190_000) {
+        throw new Error('TEST_RUN_EVENT_DATABASE_URL must use PostgreSQL 18');
       }
       const existingSchema = await admin.query(
         `select 1 from pg_catalog.pg_namespace where nspname = 'emdo'`,

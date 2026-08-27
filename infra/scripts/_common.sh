@@ -12,6 +12,10 @@ readonly INFRA_DIR
 readonly COMPOSE_DIR="$INFRA_DIR/compose"
 readonly PRODUCTION_STATE_DIR="/var/lib/emdo/deployments"
 readonly STAGING_STATE_ROOT="/var/lib/emdo/staging"
+readonly FINANCE_STAGING_MARKER_FILE="finance-synthetic-staging.env"
+readonly FINANCE_STAGING_SECRET_DIR="finance-secrets"
+readonly FINANCE_STAGING_DOCUMENT_STORE_DIRNAME="finance-documents"
+readonly FINANCE_STAGING_RESTORE_VERIFIER_INPUT_NAME="finance-staging-restore-verifier-input.env"
 readonly PRODUCTION_CONFIG_FILE="/etc/emdo/production/deployment.env"
 # Used by the deployment entrypoints that source this shared library.
 # shellcheck disable=SC2034
@@ -577,7 +581,7 @@ assert_staging_api_environment() {
   local path="$1"
   assert_env_file_allowed_keys "$path" \
     EMDO_PUBLIC_ORIGIN EMDO_METRICS_TOKEN EMDO_API_DATABASE_URL \
-    EMDO_AUTH_DATABASE_URL \
+    EMDO_AUTH_DATABASE_URL EMDO_ONBOARDING_DATABASE_URL \
     EMDO_VISUAL_DECISION_DATABASE_URL \
     EMDO_API_AUTH_SECRET EMDO_SESSION_SECRET EMDO_SYNC_JWT_KEYRING_B64URL \
     EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL \
@@ -591,6 +595,10 @@ assert_staging_api_environment() {
     EMDO_AUTH_DATABASE_URL emdo_auth_login emdo_app
   assert_internal_postgres_uri "$path" \
     EMDO_VISUAL_DECISION_DATABASE_URL emdo_visual_decision_login emdo_app
+  if env_file_has_key "$path" EMDO_ONBOARDING_DATABASE_URL; then
+    assert_internal_postgres_uri "$path" \
+      EMDO_ONBOARDING_DATABASE_URL emdo_onboarding_login emdo_app
+  fi
   env_file_value "$path" EMDO_API_AUTH_SECRET >/dev/null
   env_file_value "$path" EMDO_SESSION_SECRET >/dev/null
   env_file_value \
@@ -712,6 +720,362 @@ assert_staging_secret_manifest() {
   assert_https_origin_value "$1/synthetic.env" EMDO_PUBLIC_ORIGIN
 }
 
+assert_finance_synthetic_staging_flag() {
+  case "$1" in
+    true | false) ;;
+    *) die 'FINANCE_SYNTHETIC_STAGING must be true or false' ;;
+  esac
+}
+
+finance_staging_marker_is_valid() {
+  local state_dir="$1"
+  local marker="$state_dir/$FINANCE_STAGING_MARKER_FILE"
+  [[ -f "$marker" && ! -L "$marker" ]] || return 1
+  [[ "$(stat -c '%u:%a:%h' "$marker")" == '0:600:1' ]] || return 1
+  [[ "$(< "$marker")" == 'FINANCE_SYNTHETIC_STAGING=true' ]]
+}
+
+assert_finance_staging_api_environment() {
+  local path="$1"
+  local keyring review_key
+  assert_env_file_allowed_keys "$path" \
+    EMDO_FINANCE_DOCUMENTS_ENABLED \
+    EMDO_FINANCE_DOCUMENT_KEYRING_B64URL \
+    EMDO_FINANCE_DOCUMENT_REVIEW_HMAC_KEY_B64URL \
+    EMDO_ONBOARDING_DATABASE_URL
+  [[ "$(env_file_value "$path" EMDO_FINANCE_DOCUMENTS_ENABLED)" == true ]] ||
+    die "$path must enable Finance documents"
+  assert_internal_postgres_uri "$path" \
+    EMDO_ONBOARDING_DATABASE_URL emdo_onboarding_login emdo_app
+  keyring="$(env_file_value "$path" EMDO_FINANCE_DOCUMENT_KEYRING_B64URL)"
+  review_key="$(env_file_value "$path" EMDO_FINANCE_DOCUMENT_REVIEW_HMAC_KEY_B64URL)"
+  [[ ${#keyring} -le 8192 && "$keyring" =~ ^[A-Za-z0-9_-]+$ ]] ||
+    die "$path contains an invalid Finance document keyring"
+  [[ ${#review_key} == 43 && "$review_key" =~ ^[A-Za-z0-9_-]+$ ]] ||
+    die "$path contains an invalid Finance document review key"
+}
+
+assert_finance_staging_extraction_environment() {
+  local path="$1"
+  local keyring api_key
+  assert_env_file_allowed_keys "$path" \
+    EMDO_FINANCE_DOCUMENTS_ENABLED \
+    EMDO_WORKER_EXECUTOR_DATABASE_URL \
+    EMDO_FINANCE_DOCUMENT_KEYRING_B64URL \
+    EMDO_OPENAI_FINANCE_API_KEY
+  [[ "$(env_file_value "$path" EMDO_FINANCE_DOCUMENTS_ENABLED)" == true ]] ||
+    die "$path must enable Finance documents"
+  assert_internal_postgres_uri "$path" \
+    EMDO_WORKER_EXECUTOR_DATABASE_URL emdo_worker_executor_login emdo_app
+  keyring="$(env_file_value "$path" EMDO_FINANCE_DOCUMENT_KEYRING_B64URL)"
+  api_key="$(env_file_value "$path" EMDO_OPENAI_FINANCE_API_KEY)"
+  [[ ${#keyring} -le 8192 && "$keyring" =~ ^[A-Za-z0-9_-]+$ ]] ||
+    die "$path contains an invalid Finance document keyring"
+  [[ ${#api_key} -ge 16 && ${#api_key} -le 512 && "$api_key" =~ ^[A-Za-z0-9_-]+$ ]] ||
+    die "$path contains an invalid Finance OpenAI API key"
+}
+
+finance_staging_restore_verifier_input_path() {
+  local state_dir="$1"
+
+  [[ "$state_dir" == "$STAGING_STATE_ROOT/"* ]] ||
+    die 'Finance restore verifier handoff state path is invalid'
+  printf '%s' \
+    "$state_dir/$FINANCE_STAGING_SECRET_DIR/$FINANCE_STAGING_RESTORE_VERIFIER_INPUT_NAME"
+}
+
+assert_finance_restore_verifier_handoff_path() {
+  local state_dir="$1" path owner_uid owner_gid mode links bytes
+
+  path="$(finance_staging_restore_verifier_input_path "$state_dir")"
+  require_regular_file "$path"
+  [[ ! -L "$path" ]] || die 'Finance restore verifier handoff must not be a symlink'
+  read -r owner_uid owner_gid mode links bytes < <(stat -c '%u %g %a %h %s' "$path")
+  [[ "$mode" == 600 && "$links" == 1 ]] ||
+    die 'Finance restore verifier handoff mode or link count is unsafe'
+  case "$owner_uid:$owner_gid" in
+    10001:10001 | 0:0) ;;
+    *) die 'Finance restore verifier handoff owner is unsafe' ;;
+  esac
+  if ! [[ "$bytes" =~ ^[0-9]+$ ]] || ((10#$bytes > 16384)); then
+    die 'Finance restore verifier handoff size is unsafe'
+  fi
+}
+
+assert_finance_restore_verifier_handoff_empty() {
+  local state_dir="$1" path owner_uid owner_gid mode links bytes
+
+  path="$(finance_staging_restore_verifier_input_path "$state_dir")"
+  assert_finance_restore_verifier_handoff_path "$state_dir"
+  read -r owner_uid owner_gid mode links bytes < <(stat -c '%u %g %a %h %s' "$path")
+  [[ "$owner_uid:$owner_gid:$mode:$links:$bytes" == '10001:10001:600:1:0' ]] ||
+    die 'Finance restore verifier handoff was not left as its pre-created empty file'
+}
+
+assert_finance_restore_verifier_handoff_payload() {
+  local path="$1" line key value
+  local schema='' source_sha='' workflow_run_id='' document_id=''
+  local evidence_id='' expected_plaintext_sha256='' owner_cookie=''
+  local member_cookie='' seen='|'
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" == *=* ]] ||
+      die 'Finance restore verifier handoff contains a malformed line'
+    key="${line%%=*}"
+    value="${line#*=}"
+    case "$key" in
+      schema | source_sha | workflow_run_id | document_id | evidence_id | expected_plaintext_sha256 | owner_cookie | member_cookie) ;;
+      *) die 'Finance restore verifier handoff contains an unexpected key' ;;
+    esac
+    [[ -n "$value" && "$seen" != *"|$key|"* ]] ||
+      die 'Finance restore verifier handoff contains an empty or duplicate value'
+    seen="${seen}${key}|"
+    case "$key" in
+      schema) schema="$value" ;;
+      source_sha) source_sha="$value" ;;
+      workflow_run_id) workflow_run_id="$value" ;;
+      document_id) document_id="$value" ;;
+      evidence_id) evidence_id="$value" ;;
+      expected_plaintext_sha256) expected_plaintext_sha256="$value" ;;
+      owner_cookie) owner_cookie="$value" ;;
+      member_cookie) member_cookie="$value" ;;
+    esac
+  done < "$path"
+
+  [[ "$seen" == '|schema|source_sha|workflow_run_id|document_id|evidence_id|expected_plaintext_sha256|owner_cookie|member_cookie|' ]] ||
+    die 'Finance restore verifier handoff does not contain the exact required keys'
+  [[ "$schema" == emdo-finance-staging-restore-verifier-input-v1 ]] ||
+    die 'Finance restore verifier handoff schema is unsupported'
+  [[ "$source_sha" == "${IMAGE_LOCK_SOURCE_SHA:-}" ]] ||
+    die 'Finance restore verifier handoff source SHA does not bind this staging run'
+  [[ "$workflow_run_id" == "${STAGING_RUN_ID:-}" ]] ||
+    die 'Finance restore verifier handoff workflow run ID does not bind this staging run'
+  [[ "$document_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ||
+    die 'Finance restore verifier handoff document ID is invalid'
+  [[ "$evidence_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ||
+    die 'Finance restore verifier handoff evidence ID is invalid'
+  [[ "$expected_plaintext_sha256" =~ ^[0-9a-f]{64}$ ]] ||
+    die 'Finance restore verifier handoff plaintext digest is invalid'
+  [[ "$owner_cookie" =~ ^[A-Za-z0-9_.-]+=[A-Za-z0-9_.=-]+(\;\ [A-Za-z0-9_.-]+=[A-Za-z0-9_.=-]+)*$ ]] ||
+    die 'Finance restore verifier handoff owner session is invalid'
+  [[ "$member_cookie" =~ ^[A-Za-z0-9_.-]+=[A-Za-z0-9_.=-]+(\;\ [A-Za-z0-9_.-]+=[A-Za-z0-9_.=-]+)*$ ]] ||
+    die 'Finance restore verifier handoff member session is invalid'
+  [[ "$owner_cookie" != "$member_cookie" ]] ||
+    die 'Finance restore verifier handoff requires distinct sessions'
+}
+
+claim_finance_restore_verifier_handoff() {
+  local state_dir="$1" path owner_uid owner_gid mode links bytes
+
+  path="$(finance_staging_restore_verifier_input_path "$state_dir")"
+  assert_finance_restore_verifier_handoff_path "$state_dir"
+  read -r owner_uid owner_gid mode links bytes < <(stat -c '%u %g %a %h %s' "$path")
+  [[ "$owner_uid:$owner_gid:$mode:$links" == '10001:10001:600:1' &&
+    "$bytes" =~ ^[1-9][0-9]*$ ]] ||
+    die 'Finance restore verifier handoff was not written by the isolated acceptance process'
+  assert_finance_restore_verifier_handoff_payload "$path"
+  chown 0:0 "$path"
+  chmod 0600 "$path"
+  assert_root_owned_bounded_file "$path" 600 16384
+}
+
+clear_finance_restore_verifier_handoff() {
+  local state_dir="$1" path
+
+  path="$(finance_staging_restore_verifier_input_path "$state_dir")"
+  assert_finance_restore_verifier_handoff_path "$state_dir"
+  : > "$path"
+  chmod 0600 "$path"
+}
+
+prepare_finance_staging_finalize_handoff() {
+  local state_dir="$1" document_id="$2" evidence_id="$3" restore_receipt="$4"
+  local path secret_dir pending receipt_digest receipt_name owner_uid owner_gid mode links bytes extra
+
+  [[ "${IMAGE_LOCK_SOURCE_SHA:-}" =~ ^[0-9a-f]{40}$ &&
+    "${STAGING_RUN_ID:-}" =~ ^[1-9][0-9]{0,19}$ ]] ||
+    die 'Finance staging finalize handoff has no run binding'
+  [[ "$document_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ||
+    die 'Finance staging finalize document ID is invalid'
+  [[ "$evidence_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ||
+    die 'Finance staging finalize evidence ID is invalid'
+  receipt_name="$(basename -- "$restore_receipt")"
+  [[ "$(dirname -- "$restore_receipt")" == "$state_dir" &&
+    "$receipt_name" == finance-staging-restore-receipt.json ]] ||
+    die 'Finance staging finalize restore receipt path is invalid'
+  assert_root_owned_bounded_file "$restore_receipt" 600 262144
+  read -r receipt_digest extra < <(sha256sum "$restore_receipt")
+  [[ "$receipt_digest" =~ ^[0-9a-f]{64}$ && -n "${extra:-}" ]] ||
+    die 'Finance staging finalize restore receipt digest is invalid'
+
+  path="$(finance_staging_restore_verifier_input_path "$state_dir")"
+  assert_finance_restore_verifier_handoff_path "$state_dir"
+  read -r owner_uid owner_gid mode links bytes < <(stat -c '%u %g %a %h %s' "$path")
+  [[ "$owner_uid:$owner_gid:$mode:$links:$bytes" == '0:0:600:1:0' ]] ||
+    die 'Finance staging finalize handoff was not cleared by the root restore verifier'
+  secret_dir="$(dirname -- "$path")"
+  pending="$(mktemp "$secret_dir/.finance-finalize-input.XXXXXX")"
+  printf '%s\n' \
+    'schema=emdo-finance-staging-finalize-input-v1' \
+    "source_sha=$IMAGE_LOCK_SOURCE_SHA" \
+    "workflow_run_id=$STAGING_RUN_ID" \
+    "document_id=$document_id" \
+    "evidence_id=$evidence_id" \
+    "backup_restore_receipt_sha256=$receipt_digest" > "$pending"
+  chmod 0600 "$pending"
+  chown 10001:10001 "$pending"
+  mv -- "$pending" "$path"
+  assert_finance_restore_verifier_handoff_path "$state_dir"
+  read -r owner_uid owner_gid mode links bytes < <(stat -c '%u %g %a %h %s' "$path")
+  [[ "$owner_uid:$owner_gid:$mode:$links" == '10001:10001:600:1' &&
+    "$bytes" =~ ^[1-9][0-9]*$ ]] ||
+    die 'Finance staging finalize handoff was not prepared safely'
+}
+
+claim_consumed_finance_staging_finalize_handoff() {
+  local state_dir="$1" path owner_uid owner_gid mode links bytes
+
+  path="$(finance_staging_restore_verifier_input_path "$state_dir")"
+  assert_finance_restore_verifier_handoff_path "$state_dir"
+  read -r owner_uid owner_gid mode links bytes < <(stat -c '%u %g %a %h %s' "$path")
+  [[ "$owner_uid:$owner_gid:$mode:$links:$bytes" == '10001:10001:600:1:0' ]] ||
+    die 'Finance staging finalize input was not consumed by the isolated acceptance process'
+  chown 0:0 "$path"
+  chmod 0600 "$path"
+}
+
+assert_finance_synthetic_staging_state() {
+  local state_dir="$1"
+  local secret_dir="$state_dir/$FINANCE_STAGING_SECRET_DIR"
+  local document_store="$state_dir/$FINANCE_STAGING_DOCUMENT_STORE_DIRNAME"
+  local api_environment="$secret_dir/finance-api.env"
+  local extraction_environment="$secret_dir/finance-extraction.env"
+  local restore_verifier_input
+  local api_keyring extraction_keyring
+
+  assert_governed_parent_chain "$state_dir" "$STAGING_STATE_ROOT"
+  finance_staging_marker_is_valid "$state_dir" ||
+    die 'Finance synthetic staging marker is missing or unsafe'
+  require_directory "$secret_dir"
+  assert_directory_within "$secret_dir" "$state_dir" FINANCE_STAGING_SECRET_DIR
+  [[ "$(stat -c '%u:%g:%a' "$secret_dir")" == '0:0:700' ]] ||
+    die 'Finance staging secret directory must be root-owned with mode 0700'
+  assert_root_owned_bounded_file "$api_environment" 600 16384
+  assert_root_owned_bounded_file "$extraction_environment" 600 16384
+  assert_finance_staging_api_environment "$api_environment"
+  assert_finance_staging_extraction_environment "$extraction_environment"
+  api_keyring="$(env_file_value "$api_environment" EMDO_FINANCE_DOCUMENT_KEYRING_B64URL)"
+  extraction_keyring="$(env_file_value "$extraction_environment" EMDO_FINANCE_DOCUMENT_KEYRING_B64URL)"
+  [[ "$api_keyring" == "$extraction_keyring" ]] ||
+    die 'Finance staging keyring differs between API and extraction services'
+  require_directory "$document_store"
+  assert_directory_within "$document_store" "$state_dir" FINANCE_STAGING_DOCUMENT_STORE_DIR
+  [[ "$(stat -c '%u:%g:%a' "$document_store")" == '10001:10001:700' ]] ||
+    die 'Finance staging document store must be 10001:10001 with mode 0700'
+  restore_verifier_input="$(finance_staging_restore_verifier_input_path "$state_dir")"
+  assert_finance_restore_verifier_handoff_path "$state_dir"
+
+  export FINANCE_STAGING_API_ENV_FILE="$api_environment"
+  export FINANCE_STAGING_EXTRACTION_ENV_FILE="$extraction_environment"
+  export FINANCE_STAGING_DOCUMENT_STORE_DIR="$document_store"
+  export FINANCE_STAGING_RESTORE_VERIFIER_INPUT_FILE="$restore_verifier_input"
+  export EMDO_FINANCE_SYNTHETIC_STAGING=true
+}
+
+disable_finance_synthetic_staging() {
+  unset FINANCE_STAGING_API_ENV_FILE
+  unset FINANCE_STAGING_EXTRACTION_ENV_FILE
+  unset FINANCE_STAGING_DOCUMENT_STORE_DIR
+  unset FINANCE_STAGING_RESTORE_VERIFIER_INPUT_FILE
+  export EMDO_FINANCE_SYNTHETIC_STAGING=false
+}
+
+load_finance_synthetic_staging_state() {
+  local state_dir="$1"
+  if [[ -e "$state_dir/$FINANCE_STAGING_MARKER_FILE" ]]; then
+    assert_finance_synthetic_staging_state "$state_dir"
+  else
+    disable_finance_synthetic_staging
+  fi
+}
+
+prepare_finance_synthetic_staging_state() {
+  local state_dir="$1"
+  local secret_dir="$state_dir/$FINANCE_STAGING_SECRET_DIR"
+  local document_store="$state_dir/$FINANCE_STAGING_DOCUMENT_STORE_DIRNAME"
+  local marker="$state_dir/$FINANCE_STAGING_MARKER_FILE"
+  local pending_secret_dir pending_api pending_extraction pending_handoff pending_marker
+  local worker_executor_database_url onboarding_database_url document_key review_key keyring
+  local -a secret_lines=()
+
+  [[ "${EMDO_FINANCE_SYNTHETIC_STAGING:-false}" == true ]] ||
+    die 'Finance synthetic staging was not explicitly enabled'
+  assert_governed_parent_chain "$state_dir" "$STAGING_STATE_ROOT"
+  [[ ! -e "$secret_dir" && ! -e "$document_store" && ! -e "$marker" ]] ||
+    die 'Finance synthetic staging state already exists for this run'
+  require_command openssl
+  mapfile -t secret_lines
+  [[ "${#secret_lines[@]}" == 1 ]] ||
+    die 'Finance staging key must be supplied as exactly one protected stdin line'
+  [[ "${#secret_lines[0]}" -ge 16 && "${#secret_lines[0]}" -le 512 &&
+    "${secret_lines[0]}" =~ ^[A-Za-z0-9_-]+$ ]] ||
+    die 'Finance staging key has an invalid format'
+  worker_executor_database_url="$(env_file_value \
+    "$SECRETS_DIR/worker.env" EMDO_WORKER_EXECUTOR_DATABASE_URL)"
+  onboarding_database_url="$(env_file_value \
+    "$SECRETS_DIR/api.env" EMDO_ONBOARDING_DATABASE_URL)"
+  document_key="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
+  review_key="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
+  keyring="$(printf '%s' \
+    "{\"schemaVersion\":1,\"current\":{\"keyVersion\":\"finance-documents.v1\",\"keyB64url\":\"$document_key\"},\"previous\":[]}" |
+    openssl base64 -A | tr '+/' '-_' | tr -d '=\n')"
+  [[ ${#document_key} == 43 && ${#review_key} == 43 && ${#keyring} -le 8192 ]] ||
+    die 'could not generate Finance staging cryptographic material'
+
+  pending_secret_dir="$(mktemp -d "$state_dir/.finance-secrets.XXXXXX")"
+  chmod 0700 "$pending_secret_dir"
+  chown 0:0 "$pending_secret_dir"
+  pending_api="$(mktemp "$pending_secret_dir/.finance-api.env.XXXXXX")"
+  pending_extraction="$(mktemp "$pending_secret_dir/.finance-extraction.env.XXXXXX")"
+  pending_handoff="$pending_secret_dir/$FINANCE_STAGING_RESTORE_VERIFIER_INPUT_NAME"
+  printf '%s\n' \
+    'EMDO_FINANCE_DOCUMENTS_ENABLED=true' \
+    "EMDO_FINANCE_DOCUMENT_KEYRING_B64URL=$keyring" \
+    "EMDO_FINANCE_DOCUMENT_REVIEW_HMAC_KEY_B64URL=$review_key" \
+    "EMDO_ONBOARDING_DATABASE_URL=$onboarding_database_url" > "$pending_api"
+  printf '%s\n' \
+    'EMDO_FINANCE_DOCUMENTS_ENABLED=true' \
+    "EMDO_WORKER_EXECUTOR_DATABASE_URL=$worker_executor_database_url" \
+    "EMDO_FINANCE_DOCUMENT_KEYRING_B64URL=$keyring" \
+    "EMDO_OPENAI_FINANCE_API_KEY=${secret_lines[0]}" > "$pending_extraction"
+  chmod 0600 "$pending_api" "$pending_extraction"
+  chown 0:0 "$pending_api" "$pending_extraction"
+  mv -- "$pending_api" "$pending_secret_dir/finance-api.env"
+  mv -- "$pending_extraction" "$pending_secret_dir/finance-extraction.env"
+  install -o 10001 -g 10001 -m 0600 /dev/null "$pending_handoff"
+  install -d -o 10001 -g 10001 -m 0700 "$document_store"
+  mv -- "$pending_secret_dir" "$secret_dir"
+  pending_marker="$(mktemp "$state_dir/.finance-synthetic-staging.XXXXXX")"
+  printf '%s\n' 'FINANCE_SYNTHETIC_STAGING=true' > "$pending_marker"
+  chmod 0600 "$pending_marker"
+  chown 0:0 "$pending_marker"
+  mv -- "$pending_marker" "$marker"
+  secret_lines[0]=''
+  document_key=''
+  review_key=''
+  keyring=''
+  worker_executor_database_url=''
+  onboarding_database_url=''
+  assert_finance_synthetic_staging_state "$state_dir"
+}
+
+remove_staging_run_state() {
+  local state_dir="$1"
+  assert_governed_parent_chain "$state_dir" "$STAGING_STATE_ROOT"
+  find "$state_dir" -xdev -depth -mindepth 1 -delete
+  rmdir -- "$state_dir"
+}
+
 assert_isolated_project_absent() {
   local project_name="$1"
   local namespace="$2"
@@ -731,7 +1095,7 @@ assert_isolated_project_absent() {
     [[ -z "$existing_resources" ]] ||
       die "isolated project $project_name already has volume $resource_name"
   done
-  for resource in edge egress auth-egress backend loopback-ingress; do
+  for resource in edge egress auth-egress backend loopback-ingress finance-extraction-egress; do
     resource_name="emdo-$namespace-$resource"
     existing_resources="$(docker network ls --quiet --filter "name=^${resource_name}$")" ||
       die 'could not inspect Docker networks while proving project absence'
@@ -748,10 +1112,18 @@ production_compose() {
 }
 
 staging_compose() {
+  local -a compose_files=(
+    --file "$COMPOSE_DIR/compose.yml"
+    --file "$COMPOSE_DIR/compose.staging.yml"
+  )
+  case "${EMDO_FINANCE_SYNTHETIC_STAGING:-false}" in
+    true) compose_files+=(--file "$COMPOSE_DIR/compose.finance-staging.yml") ;;
+    false) ;;
+    *) die 'EMDO_FINANCE_SYNTHETIC_STAGING must be true or false' ;;
+  esac
   docker compose \
     --project-name "$COMPOSE_PROJECT_NAME" \
-    --file "$COMPOSE_DIR/compose.yml" \
-    --file "$COMPOSE_DIR/compose.staging.yml" \
+    "${compose_files[@]}" \
     "$@"
 }
 

@@ -11,10 +11,23 @@ import type {
   SchedulePage,
   SettingsView,
   ShoppingPage,
+  SupportedLocale,
   SyncOperation,
   TodayView,
 } from '@emdo/contracts';
 import type { z } from 'zod';
+import type {
+  FinanceDocumentDetail,
+  FinanceDocumentEvidenceList,
+  FinanceDocumentList,
+  FinanceDocumentMatchList,
+  FinanceDocumentReviewDraft,
+  FinanceDocumentSummary,
+  FinanceDocumentEnvelopeV1,
+  FinanceExperienceV1,
+  FinanceExperienceSnapshot,
+  FinanceLocale,
+} from '@emdo/domains/finance';
 
 import type {
   FinanceImportCommitRequestSchema,
@@ -117,6 +130,8 @@ export interface AuthenticationBoundary {
 export interface TurnRequest {
   readonly schemaVersion: 1;
   readonly conversationId?: string;
+  /** Validated at the API boundary; never persisted in manager-turn SQL. */
+  readonly locale: SupportedLocale;
   readonly message: string;
   /** A routing hint only. The manager remains authoritative. */
   readonly routeHint?: 'scheduler' | 'finance' | 'shopping';
@@ -798,6 +813,15 @@ export interface FinanceReadGateway {
     readonly principal: AuthenticatedPrincipal;
     readonly requestId: string;
   }): Promise<FinancePage>;
+  /**
+   * One owner-private, database-snapshot read for the Finance Overview.
+   * It is intentionally separate from the paginated legacy projection so
+   * aggregates cannot race a cursor walk or be silently clipped.
+   */
+  readSnapshot(input: {
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<FinanceExperienceSnapshot>;
 }
 
 type FinanceImportPreviewResponse = DeepReadonly<
@@ -838,6 +862,98 @@ export interface FinanceImportGateway {
     readonly principal: AuthenticatedPrincipal;
     readonly requestId: string;
   }): Promise<FinanceImportCommitResponse>;
+}
+
+export interface FinanceDocumentGateway {
+  list(input: {
+    readonly cursor?: string;
+    readonly limit: number;
+    readonly state?: string;
+    readonly documentType?: string;
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<FinanceDocumentList>;
+  get(input: {
+    readonly documentId: string;
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<FinanceDocumentDetail>;
+  upload(input: {
+    readonly displayName: string;
+    readonly declaredMimeType: string;
+    readonly source: AsyncIterable<Uint8Array>;
+    readonly idempotencyKey: string;
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<FinanceDocumentSummary>;
+  downloadOriginal(input: {
+    readonly documentId: string;
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<{
+    readonly displayName: string;
+    readonly mimeType: 'application/pdf' | 'image/jpeg' | 'image/png';
+    readonly byteSize: number;
+    readonly body: AsyncIterable<Uint8Array>;
+  }>;
+  retry(input: {
+    readonly documentId: string;
+    readonly idempotencyKey: string;
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<FinanceDocumentDetail>;
+  getReview(input: {
+    readonly documentId: string;
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<FinanceDocumentReviewDraft>;
+  updateReview(input: {
+    readonly documentId: string;
+    readonly expectedExtractionRevision: number;
+    readonly envelope: FinanceDocumentEnvelopeV1;
+    readonly idempotencyKey: string;
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<FinanceDocumentReviewDraft>;
+  commitReview(input: {
+    readonly documentId: string;
+    readonly reviewToken: string;
+    readonly idempotencyKey: string;
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<FinanceDocumentDetail>;
+  listMatches(input: {
+    readonly documentId: string;
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<FinanceDocumentMatchList>;
+  decideMatch(input: {
+    readonly matchId: string;
+    readonly decision: 'accept' | 'reject';
+    readonly reviewToken: string;
+    readonly idempotencyKey: string;
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<FinanceDocumentMatchList>;
+  getEvidence(input: {
+    readonly evidenceId: string;
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<FinanceDocumentEvidenceList>;
+  delete(input: {
+    readonly documentId: string;
+    readonly approvalDecisionId: string;
+    readonly idempotencyKey: string;
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<
+    Readonly<{ schemaVersion: 1; status: 'deleted' | 'pending-purge' }>
+  >;
+  readExperience(input: {
+    readonly locale?: FinanceLocale;
+    readonly principal: AuthenticatedPrincipal;
+    readonly requestId: string;
+  }): Promise<FinanceExperienceV1>;
 }
 
 export interface ShoppingReadGateway {
@@ -890,6 +1006,7 @@ export interface ApiServices {
   readonly activityRead: ActivityReadGateway;
   readonly financeRead: FinanceReadGateway;
   readonly financeImports: FinanceImportGateway;
+  readonly financeDocuments: FinanceDocumentGateway;
   readonly managerTurns: ManagerTurnGateway;
   readonly notificationPreferences: NotificationPreferencesGateway;
   readonly runEvents: PersistedRunEventGateway;

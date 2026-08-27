@@ -137,9 +137,9 @@ describeDatabase(
       });
       expect(
         Number(preflight.rows[0]?.server_version_num),
-      ).toBeGreaterThanOrEqual(170_000);
+      ).toBeGreaterThanOrEqual(180_000);
       expect(Number(preflight.rows[0]?.server_version_num)).toBeLessThan(
-        180_000,
+        190_000,
       );
       serverVersionNum = Number(preflight.rows[0]?.server_version_num);
 
@@ -493,7 +493,7 @@ describeDatabase(
         const probe = createRlsCrossHouseholdProbe({
           context: requiredProbeContext(),
           database: {
-            postgresqlMajor: 17,
+            postgresqlMajor: 18,
             serverVersionNum,
             pgvectorExtensionVersion,
           },

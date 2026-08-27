@@ -47,7 +47,7 @@ export const canonicalizeIpAddress = (value: string): string | undefined => {
   }
 };
 
-const isLoopback = (value: string): boolean => {
+export const isLoopbackIp = (value: string): boolean => {
   const lower = value.toLowerCase();
   return (
     lower === '::1' ||
@@ -77,7 +77,7 @@ export const resolveTrustedClientIp = (
   if (socketIp === undefined) throw ingressUnavailable();
 
   if (
-    isLoopback(request.ip) &&
+    isLoopbackIp(request.ip) &&
     (edgeProxySecret === undefined || allowLoopbackApiIngress)
   ) {
     return socketIp;

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 
+import { ApiProblem } from '../problem.js';
 import {
   parseRequest,
   parseServiceResponse,
@@ -11,7 +12,6 @@ import {
 } from '../request-context.js';
 import {
   FinanceImportCommitRequestSchema,
-  FinanceImportCommitResponseSchema,
   FinanceImportDestinationsSchema,
   FinanceImportPreviewRequestSchema,
   FinanceImportPreviewResponseSchema,
@@ -70,21 +70,16 @@ export const registerFinanceImportRoutes = (
       onRequest: (request) => prepareAuthenticatedMutation(request, services),
     },
     async (request, reply) => {
-      const { principal, idempotencyKey } = takePreparedMutation(request);
-      const input = parseRequest(
-        FinanceImportCommitRequestSchema,
-        request.body,
-      );
-      const result = parseServiceResponse(
-        FinanceImportCommitResponseSchema,
-        await services.financeImports.commit({
-          planId: input.planId,
-          idempotencyKey,
-          principal,
-          requestId: request.id,
-        }),
-      );
-      return reply.header('cache-control', 'no-store, private').send(result);
+      takePreparedMutation(request);
+      parseRequest(FinanceImportCommitRequestSchema, request.body);
+      reply.header('cache-control', 'no-store, private');
+      throw new ApiProblem({
+        status: 409,
+        code: 'approval-required',
+        title: 'EMDO confirmation required',
+        detail:
+          'Ask EMDO to prepare and confirm this reviewed statement import.',
+      });
     },
   );
 };

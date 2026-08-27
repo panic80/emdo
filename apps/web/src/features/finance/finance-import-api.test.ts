@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import {
-  FinanceImportApiError,
-  createFinanceImportApi,
-} from './finance-import-api.js';
+import { createFinanceImportApi } from './finance-import-api.js';
 
 const csrfToken = 'csrf-token-01234567890123456789';
 const accountId = 'account-a';
@@ -93,94 +90,13 @@ describe('finance import API', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it('rejects malformed responses and returns bounded request failures', async () => {
+  it('rejects malformed responses without exposing a direct commit client', async () => {
     const malformed = createFinanceImportApi({
       fetcher: vi.fn(async () => response({ schemaVersion: 1 })),
     });
     await expect(malformed.listDestinations()).rejects.toMatchObject({
       code: 'unsafe-response',
     });
-
-    const failed = createFinanceImportApi({
-      fetcher: vi.fn(async () => response({ detail: 'sensitive' }, 503)),
-    });
-    await expect(
-      failed.commit({
-        csrfToken,
-        idempotencyKey: 'import-plan-a-key',
-        planId: 'plan-a',
-      }),
-    ).rejects.toEqual(
-      new FinanceImportApiError(
-        'request-failed',
-        'Statement import is unavailable. Try again while online.',
-        503,
-      ),
-    );
-  });
-
-  it('commits with an explicit stable idempotency key', async () => {
-    const fetcher = vi.fn(async () =>
-      response({
-        schemaVersion: 1,
-        status: 'committed',
-        receipt: {
-          id: 'receipt-a',
-          planId: 'plan-a',
-          transactionCount: 2,
-          verified: true,
-        },
-        sourceDeletionAuthorized: true,
-      }),
-    );
-
-    await createFinanceImportApi({ fetcher }).commit({
-      csrfToken,
-      idempotencyKey: 'import-plan-a-key',
-      planId: 'plan-a',
-    });
-
-    expect(fetcher).toHaveBeenCalledWith('/api/v1/finance/imports/commit', {
-      method: 'POST',
-      credentials: 'same-origin',
-      cache: 'no-store',
-      headers: {
-        accept: 'application/json',
-        'content-type': 'application/json',
-        'idempotency-key': 'import-plan-a-key',
-        'x-csrf-token': csrfToken,
-      },
-      body: JSON.stringify({ schemaVersion: 1, planId: 'plan-a' }),
-    });
-  });
-
-  it('passes cancellation signals and rejects a mismatched commit receipt', async () => {
-    const controller = new AbortController();
-    const fetcher = vi.fn(async () =>
-      response({
-        schemaVersion: 1,
-        status: 'committed',
-        receipt: {
-          id: 'receipt-a',
-          planId: 'different-plan',
-          transactionCount: 2,
-          verified: true,
-        },
-        sourceDeletionAuthorized: true,
-      }),
-    );
-
-    await expect(
-      createFinanceImportApi({ fetcher }).commit({
-        csrfToken,
-        idempotencyKey: 'import-plan-a-key',
-        planId: 'plan-a',
-        signal: controller.signal,
-      }),
-    ).rejects.toMatchObject({ code: 'unsafe-response' });
-    expect(fetcher).toHaveBeenCalledWith(
-      '/api/v1/finance/imports/commit',
-      expect.objectContaining({ signal: controller.signal }),
-    );
+    expect(malformed).not.toHaveProperty('commit');
   });
 });

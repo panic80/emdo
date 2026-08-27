@@ -1,3 +1,8 @@
+import {
+  SupportedLocaleSchema,
+  type SupportedLocale,
+} from '@emdo/contracts/browser';
+
 export type AssistantSpecialist =
   'manager' | 'scheduler' | 'finance' | 'shopping';
 
@@ -6,6 +11,7 @@ export interface TurnRequest {
   readonly specialist: AssistantSpecialist;
   readonly idempotencyKey: string;
   readonly csrfToken: string;
+  readonly locale: SupportedLocale;
   readonly conversationId?: string;
 }
 
@@ -194,7 +200,11 @@ export class PersistedRunEventBuffer {
 }
 
 function assertTurnRequest(request: TurnRequest): void {
-  if (!request.message.trim() || !request.idempotencyKey.trim()) {
+  if (
+    !request.message.trim() ||
+    !request.idempotencyKey.trim() ||
+    !SupportedLocaleSchema.safeParse(request.locale).success
+  ) {
     throw new ChatClientError(
       'invalid-turn',
       'Enter a request before sending.',
@@ -242,6 +252,7 @@ export async function createTurn(
     body: JSON.stringify({
       schemaVersion: 1,
       message: request.message.trim(),
+      locale: request.locale,
       ...(request.conversationId
         ? { conversationId: request.conversationId }
         : {}),

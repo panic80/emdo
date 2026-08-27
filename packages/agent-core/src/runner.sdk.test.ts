@@ -83,6 +83,7 @@ const context: AgentExecutionContext = Object.freeze({
   authenticatedSessionId: '018f1f5e-1000-7000-8000-000000000008',
   spaceAccessGrantId: '018f1f5e-1000-7000-8000-000000000006',
   authorizationScopeFingerprint,
+  locale: 'en-CA',
   disclosureGrantId: '018f1f5e-1000-7000-8000-000000000007',
   disclosureGrantVersion: '1.0.0',
   agentId: 'scheduler',
@@ -298,6 +299,55 @@ const turnProviderWriteLedger = (
 });
 
 describe('OpenAI Agents SDK boundary', () => {
+  it('mints fixed synthesis locale guidance while preserving evidence source language', async () => {
+    const gateway = proposalGateway();
+    const base = compiledAgentWithCapability('read', gateway);
+    const materialize = vi.fn(base.materialize);
+    const agent: CompiledAgent<Agent<AgentExecutionContext, z.ZodObject>> = {
+      ...base,
+      materialize,
+    };
+    const runner: OpenAiAgentsRunnerPort = {
+      run: vi.fn(async () => ({
+        state: {
+          usage: { inputTokens: 1, outputTokens: 1 },
+          getInterruptions: () => [],
+          approve: vi.fn(),
+          reject: vi.fn(),
+          toString: () => JSON.stringify({ sdk: 'complete' }),
+        },
+        finalOutput: { summary: '完了しました。' },
+      })),
+    };
+    const provider = new OpenAiAgentsExecutionProvider({
+      proposalGateway: gateway,
+      costCalculator: { calculateCadMinor: () => 1 },
+      spendGuard: spendGuard(),
+      inputTokenCounter: { countUpperBound: () => 1 },
+      runner,
+    });
+
+    await expect(
+      provider.execute({
+        phase: 'synthesize',
+        agent,
+        model: 'gpt-5.6-luna',
+        input: { sourceExcerpt: 'facture originale' },
+        context: { ...context, locale: 'ja-JP' },
+        maxTurns: 12,
+      }),
+    ).resolves.toMatchObject({ status: 'completed' });
+
+    expect(materialize).toHaveBeenCalledWith(
+      'gpt-5.6-luna',
+      expect.objectContaining({
+        trustedInstructions: [
+          'Write the final EMDO synthesis in ja-JP. Keep evidence excerpts in their source language; do not translate those excerpts.',
+        ],
+      }),
+    );
+  });
+
   it('materializes real SDK agents and strict approval-aware function tools', async () => {
     const execute = vi.fn(async () => ({ ok: true }));
     const facade = createOpenAiAgentsSdkFacade();

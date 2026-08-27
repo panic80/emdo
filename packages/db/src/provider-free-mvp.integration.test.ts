@@ -72,6 +72,7 @@ describeDatabase(
       userId: string;
       sessionId: string;
       householdId: string;
+      privateSpaceId: string;
       role: 'owner';
       emailVerified: true;
       spaceAccessGrantId: string;
@@ -106,6 +107,7 @@ describeDatabase(
         userId: scope.userId,
         sessionId: scope.sessionId,
         householdId: scope.householdId,
+        privateSpaceId: scope.privateSpaceId,
         role: scope.role,
         emailVerified: scope.emailVerified,
         spaceAccessGrantId: scope.spaceAccessGrantId,
@@ -244,6 +246,263 @@ describeDatabase(
           await admin.query(`drop role ${loginRole}`);
         }
         await admin.end();
+      }
+    });
+
+    it('reads exact Finance Overview aggregates from one RLS-scoped snapshot while a writer is uncommitted', async () => {
+      const timestamp = '2026-08-01T12:00:00.000Z';
+      const transaction = (index: number) => ({
+        schemaVersion: 1,
+        id: `finance-snapshot-transaction-${String(index).padStart(3, '0')}`,
+        spaceId: ids.ownerPrivateSpace,
+        ownerUserId: ids.owner,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        recordType: 'transaction',
+        accountId: 'finance-snapshot-account',
+        categoryId: `finance-snapshot-category-${String(index % 25).padStart(2, '0')}`,
+        postedOn: '2026-08-01',
+        description: `Reviewed Finance transaction ${index}`,
+        annotation: null,
+        currency: 'CAD',
+        originalAmountCadMinor: 1,
+        effectiveAmountCadMinor: 1,
+        adjustments: [],
+        reversal: null,
+        appliedOperationIds: [],
+        source: { kind: 'manual' },
+        revision: 1,
+      });
+      const category = (id: string, name: string) => ({
+        householdId: ids.ownerHousehold,
+        spaceId: ids.ownerPrivateSpace,
+        ownerUserId: ids.owner,
+        entityType: 'finance.category',
+        entityId: id,
+        payload: {
+          schemaVersion: 1,
+          id,
+          spaceId: ids.ownerPrivateSpace,
+          ownerUserId: ids.owner,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          recordType: 'category',
+          name,
+          categoryKind: 'expense',
+          parentCategoryId: null,
+          active: true,
+        },
+      });
+      const categories = [
+        ...Array.from({ length: 25 }, (_value, index) =>
+          category(
+            `finance-snapshot-category-${String(index).padStart(2, '0')}`,
+            `Finance category ${String(index).padStart(2, '0')}`,
+          ),
+        ),
+        ...Array.from({ length: 101 }, (_value, index) =>
+          category(
+            `finance-snapshot-budget-category-${String(index).padStart(3, '0')}`,
+            `Budget category ${String(index).padStart(3, '0')}`,
+          ),
+        ),
+        category('finance-snapshot-reversed-category', 'Reversed category'),
+      ];
+      const rows = [
+        ...categories,
+        ...Array.from({ length: 55 }, (_value, index) => ({
+          householdId: ids.ownerHousehold,
+          spaceId: ids.ownerPrivateSpace,
+          ownerUserId: ids.owner,
+          entityType: 'finance.transaction',
+          entityId: `finance-snapshot-transaction-${String(index).padStart(3, '0')}`,
+          payload: transaction(index),
+        })),
+        {
+          householdId: ids.ownerHousehold,
+          spaceId: ids.ownerPrivateSpace,
+          ownerUserId: ids.owner,
+          entityType: 'finance.transaction',
+          entityId: 'finance-snapshot-reversed',
+          payload: {
+            ...transaction(900),
+            id: 'finance-snapshot-reversed',
+            categoryId: 'finance-snapshot-reversed-category',
+            originalAmountCadMinor: 3_000,
+            effectiveAmountCadMinor: 0,
+            reversal: {
+              operationId: '93000000-0000-4000-8000-000000000014',
+              reason: 'The transaction was reversed.',
+            },
+            appliedOperationIds: ['93000000-0000-4000-8000-000000000014'],
+          },
+        },
+        {
+          householdId: ids.ownerHousehold,
+          spaceId: ids.ownerPrivateSpace,
+          ownerUserId: ids.owner,
+          entityType: 'finance.transaction',
+          entityId: 'finance-snapshot-needs-review',
+          payload: {
+            recordType: 'transaction',
+            id: 'finance-snapshot-needs-review',
+            description: 'Legacy needs review transaction',
+            category: 'finance-snapshot-needs-review-category',
+            postedOn: '2026-08-01',
+            source: 'manual',
+            currency: 'CAD',
+            originalAmountCadMinor: 4_000,
+            effectiveAmountCadMinor: 4_000,
+            amountConflict: true,
+            adjustments: [],
+            reversal: null,
+            appliedOperationIds: [],
+          },
+        },
+        {
+          householdId: ids.ownerHousehold,
+          spaceId: ids.ownerPrivateSpace,
+          ownerUserId: ids.owner,
+          entityType: 'finance.transaction',
+          entityId: 'finance-snapshot-usd',
+          payload: {
+            ...transaction(901),
+            id: 'finance-snapshot-usd',
+            categoryId: 'finance-snapshot-usd-category',
+            currency: 'USD',
+          },
+        },
+        {
+          householdId: ids.ownerHousehold,
+          spaceId: ids.ownerPrivateSpace,
+          ownerUserId: ids.owner,
+          entityType: 'finance.budget',
+          entityId: 'finance-snapshot-budget-2024-12',
+          payload: {
+            schemaVersion: 1,
+            id: 'finance-snapshot-budget-2024-12',
+            spaceId: ids.ownerPrivateSpace,
+            ownerUserId: ids.owner,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            recordType: 'budget',
+            month: '2024-12',
+            currency: 'CAD',
+            allocations: Array.from({ length: 101 }, (_value, index) => ({
+              categoryId: `finance-snapshot-budget-category-${String(index).padStart(3, '0')}`,
+              amountCadMinor: index,
+            })),
+            revision: 1,
+          },
+        },
+        {
+          householdId: ids.ownerHousehold,
+          spaceId: ids.ownerPrivateSpace,
+          ownerUserId: ids.owner,
+          entityType: 'finance.budget',
+          entityId: 'finance-snapshot-legacy-budget-2025-01',
+          payload: {
+            id: 'finance-snapshot-legacy-budget-2025-01',
+            currency: 'CAD',
+            allocationsCadMinor: {
+              'legacy-groceries': 5_000,
+              'legacy-transit': 2_500,
+            },
+          },
+        },
+        {
+          householdId: ids.otherHousehold,
+          spaceId: ids.otherPrivateSpace,
+          ownerUserId: ids.otherOwner,
+          entityType: 'finance.transaction',
+          entityId: 'finance-snapshot-other-household',
+          payload: {
+            ...transaction(902),
+            id: 'finance-snapshot-other-household',
+            spaceId: ids.otherPrivateSpace,
+            ownerUserId: ids.otherOwner,
+            categoryId: 'finance-snapshot-other-category',
+            originalAmountCadMinor: 9_999,
+            effectiveAmountCadMinor: 9_999,
+          },
+        },
+      ];
+      await admin.query(
+        `insert into emdo.sync_entities
+           (household_id, space_id, original_owner_user_id, entity_type, entity_id,
+            payload, actor_intent, revision, created_at, updated_at)
+         select (item ->> 'householdId')::uuid, (item ->> 'spaceId')::uuid,
+                (item ->> 'ownerUserId')::uuid, item ->> 'entityType',
+                item ->> 'entityId', item -> 'payload',
+                'Finance snapshot integration fixture', 1,
+                pg_catalog.clock_timestamp(), pg_catalog.clock_timestamp()
+           from pg_catalog.jsonb_array_elements($1::jsonb) as source(item)`,
+        [JSON.stringify(rows)],
+      );
+
+      const experience = createPostgresExperienceReadGateways(
+        runtime.scopedPool,
+        cursorCodec(),
+      );
+      await admin.query('begin');
+      try {
+        await admin.query(
+          `update emdo.sync_entities
+              set payload = pg_catalog.jsonb_set(
+                              pg_catalog.jsonb_set(
+                                payload,
+                                '{originalAmountCadMinor}',
+                                '10000'::jsonb
+                              ),
+                              '{effectiveAmountCadMinor}',
+                              '10000'::jsonb
+                            )
+            where household_id = $1::uuid
+              and entity_id in (
+                'finance-snapshot-transaction-000',
+                'finance-snapshot-transaction-001'
+              )`,
+          [ids.ownerHousehold],
+        );
+        const snapshot = await experience.financeRead.readSnapshot({
+          principal: ownerPrincipal,
+          requestId: ids.firstRequest,
+        });
+        expect(snapshot.reviewedCadTotals).toHaveLength(25);
+        expect(
+          snapshot.reviewedCadTotals.reduce(
+            (total, entry) => total + entry.amountCadMinor,
+            0,
+          ),
+        ).toBe(55);
+        expect(snapshot.reviewedCadTotals.map(({ label }) => label)).toContain(
+          'Finance category 00',
+        );
+        expect(
+          snapshot.reviewedCadTotals.map(({ label }) => label),
+        ).not.toContain('finance-snapshot-category-00');
+        expect(
+          snapshot.reviewedCadTotals.map(({ label }) => label),
+        ).not.toContain('Reversed category');
+        expect(
+          snapshot.reviewedCadTotals.map(({ label }) => label),
+        ).not.toContain('finance-snapshot-usd-category');
+        expect(
+          snapshot.reviewedCadTotals.map(({ label }) => label),
+        ).not.toContain('finance-snapshot-other-category');
+        expect(snapshot.budgets).toHaveLength(103);
+        expect(snapshot.budgets).toContainEqual({
+          id: 'finance-snapshot-budget-2024-12:finance-snapshot-budget-category-100',
+          label: 'Budget category 100',
+          allocatedCadMinor: 100,
+        });
+        expect(snapshot.budgets).toContainEqual({
+          id: 'finance-snapshot-legacy-budget-2025-01:legacy-groceries',
+          label: 'legacy-groceries',
+          allocatedCadMinor: 5_000,
+        });
+      } finally {
+        await admin.query('rollback');
       }
     });
 

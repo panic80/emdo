@@ -419,7 +419,7 @@ const completionRecord = (
 };
 
 describeDatabase(
-  'PostgreSQL 17 provider proposal lifecycle (requires isolated POSTGRES_TEST_DATABASE_URL)',
+  'PostgreSQL 18 provider proposal lifecycle (requires isolated POSTGRES_TEST_DATABASE_URL)',
   () => {
     let admin: PgClient;
     let appPool: PgPool;
@@ -686,8 +686,8 @@ describeDatabase(
       );
       expect(
         Number(version.rows[0]?.server_version_num),
-      ).toBeGreaterThanOrEqual(170_000);
-      expect(Number(version.rows[0]?.server_version_num)).toBeLessThan(180_000);
+      ).toBeGreaterThanOrEqual(180_000);
+      expect(Number(version.rows[0]?.server_version_num)).toBeLessThan(190_000);
       const existing = await admin.query<{ emdo_schema: string | null }>(
         `select pg_catalog.to_regnamespace('emdo')::text as emdo_schema`,
       );

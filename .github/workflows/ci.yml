@@ -56,7 +56,7 @@ jobs:
     timeout-minutes: 25
     services:
       postgres:
-        image: pgvector/pgvector@sha256:7ae6051efd0e60444282c27c7e141af07f322ce033300e727a49c3dd11075e38
+        image: pgvector/pgvector@sha256:2ba9ca5f2e7daa0f0e7723cba1ee9167bab54efd3640516a44ac1a928dd67e7a
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: emdo-ci-${{ github.run_id }}-${{ github.run_attempt }}
@@ -83,7 +83,7 @@ jobs:
       - name: Activate the pinned package manager
         run: corepack enable && corepack prepare pnpm@9.15.0 --activate
       - run: pnpm install --frozen-lockfile
-      - name: Run isolated PostgreSQL 17 integration suites sequentially
+      - name: Run isolated PostgreSQL 18 integration suites sequentially
         run: pnpm test:postgres-integration
       - name: Record live PostgreSQL CI evidence
         if: github.event_name == 'push' && success()

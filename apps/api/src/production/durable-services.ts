@@ -34,15 +34,31 @@ import {
 } from '../agents/production-persistence.js';
 import type { ProductionAgentRuntimeFactory } from '../agents/production-runtime.js';
 import { createProductionApprovalCheckpointCipher } from './approval-checkpoint-keyring.js';
-import { createRequestScopedCoreAgentRuntimeFactory } from './core-agent-services.js';
+import {
+  createRequestScopedCoreAgentRuntimeFactory,
+  createRequestScopedManagerFinanceAgentRuntimeFactory,
+} from './core-agent-services.js';
 import { createProductionOpenAiAgentServiceBundle } from './core-openai-services.js';
 import { parseProductionExperienceCursorKeyring } from './experience-cursor-keyring.js';
+import {
+  createProductionFinanceDocumentComposition,
+  type ProductionFinanceDocumentComposition,
+} from './finance-document-production-composition.js';
+import {
+  createProductionFinanceSpecialistComposition,
+  type ProductionFinanceSpecialistComposition,
+} from './finance-specialist-production-composition.js';
 import {
   createProductionGoogleConnectorBinding,
   type ProductionGoogleConnectorComposition,
 } from './google-services.js';
 import { parseProductionProposalCursorKeyring } from './proposal-cursor-keyring.js';
 import { parseProductionSyncJwtKeyring } from './sync-keyring.js';
+import {
+  createSyntheticFinanceInvitationHandoff,
+  type SyntheticFinanceInvitationHandoff,
+} from './synthetic-finance-invitation-handoff.js';
+import { createFinanceSyntheticStagingAgentServiceBundle } from './finance-synthetic-staging-agent.js';
 import type { ProductionApiServiceBindings } from './unavailable-services.js';
 import { PostgresVisualProposalDecisionGateway } from './visual-approval-services.js';
 import { createProductionVisualProofTokenCodec } from './visual-proof-keyring.js';
@@ -102,6 +118,21 @@ export interface ProductionDurableServiceDependencies {
   readonly createFinanceImportRepository: (
     pool: DatabaseRuntime['scopedPool'],
   ) => ReadyFinanceImportRepository;
+  readonly createFinanceDocumentComposition?: (input: {
+    readonly environment: Readonly<Record<string, string | undefined>>;
+    readonly pool: DatabaseRuntime['scopedPool'];
+    readonly financeRead: Pick<
+      ApiServices['financeRead'],
+      'list' | 'readSnapshot'
+    >;
+    readonly webRoot: string;
+  }) => Promise<ProductionFinanceDocumentComposition | undefined>;
+  readonly createFinanceSpecialistComposition?: (input: {
+    readonly pool: DatabaseRuntime['scopedPool'];
+    readonly imports: ReadyFinanceImportRepository;
+    readonly documentGateway?: ProductionFinanceDocumentComposition['gateway'];
+    readonly embeddingQuery?: ProductionFinanceDocumentComposition['embeddingQuery'];
+  }) => ProductionFinanceSpecialistComposition;
   readonly createHouseholdAdministrationService: (
     pool: DatabaseRuntime['scopedPool'],
     sealer: HouseholdInvitationSecretSealer,
@@ -156,6 +187,12 @@ const defaultDependencies: ProductionDurableServiceDependencies = Object.freeze(
       new PostgresAudioRequestCoordinator(pool),
     createFinanceImportRepository: (pool: DatabaseRuntime['scopedPool']) =>
       new PostgresFinanceImportRepository(pool),
+    createFinanceDocumentComposition: (
+      input: Parameters<typeof createProductionFinanceDocumentComposition>[0],
+    ) => createProductionFinanceDocumentComposition(input),
+    createFinanceSpecialistComposition: (
+      input: Parameters<typeof createProductionFinanceSpecialistComposition>[0],
+    ) => createProductionFinanceSpecialistComposition(input),
     createHouseholdAdministrationService: (
       pool: DatabaseRuntime['scopedPool'],
       sealer: HouseholdInvitationSecretSealer,
@@ -331,6 +368,7 @@ const createDatabaseClose = (
 export interface ProductionDurableEnvironmentComposition {
   readonly bindings: ProductionApiServiceBindings;
   readonly close?: () => Promise<void>;
+  readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
 }
 
 export const createProductionDurableServiceBindings = async (
@@ -362,7 +400,14 @@ export const createProductionDurableServiceBindings = async (
   const providerFreeSyntheticStaging =
     environment.EMDO_ENVIRONMENT === 'staging' &&
     environment.EMDO_ALLOW_LOOPBACK_API_INGRESS === 'true' &&
-    environment.EMDO_SYNTHETIC_DATA_ONLY === 'true';
+    environment.EMDO_SYNTHETIC_DATA_ONLY === 'true' &&
+    environment.EMDO_FINANCE_DOCUMENTS_ENABLED !== 'true';
+  const financeSyntheticStaging =
+    environment.EMDO_ENVIRONMENT === 'staging' &&
+    environment.EMDO_ALLOW_LOOPBACK_API_INGRESS === 'true' &&
+    environment.EMDO_SYNTHETIC_DATA_ONLY === 'true' &&
+    environment.EMDO_FINANCE_SYNTHETIC_STAGING === 'true' &&
+    environment.EMDO_FINANCE_DOCUMENTS_ENABLED === 'true';
   if (providerFreeSyntheticStaging) {
     try {
       const shopping = dependencies.createProviderFreeShoppingService(
@@ -381,6 +426,7 @@ export const createProductionDurableServiceBindings = async (
 
   let google: ProductionGoogleConnectorComposition | undefined;
   let googleCloseIsOwnedByAgent = false;
+  let financeSpecialist: ProductionFinanceSpecialistComposition | undefined;
   try {
     const encodedExperienceCursorKeyring =
       environment.EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL;
@@ -454,19 +500,68 @@ export const createProductionDurableServiceBindings = async (
     // Voice remains fail-closed while other independently healthy ports load.
   }
 
+  let financeImports: ReadyFinanceImportRepository | undefined;
   try {
-    const financeImports = dependencies.createFinanceImportRepository(
+    financeImports = dependencies.createFinanceImportRepository(
       database.scopedPool,
     );
+    const configuredFinanceImports = financeImports;
     bindings.financeImports = {
-      service: financeImports,
-      check: coalesceProbe(() => financeImports.checkReady()),
+      service: configuredFinanceImports,
+      check: coalesceProbe(() => configuredFinanceImports.checkReady()),
     };
   } catch {
     // Import mutations remain fail-closed while the receipt boundary is unavailable.
   }
 
-  if (!providerFreeSyntheticStaging) {
+  try {
+    const financeRead = bindings.financeRead?.service;
+    if (financeRead !== undefined && financeImports !== undefined) {
+      const createFinanceDocuments =
+        dependencies.createFinanceDocumentComposition ??
+        defaultDependencies.createFinanceDocumentComposition!;
+      const financeDocuments = await createFinanceDocuments({
+        environment,
+        pool: database.scopedPool,
+        financeRead,
+        webRoot: process.cwd(),
+      });
+      if (financeDocuments !== undefined) {
+        bindings.financeDocuments = {
+          service: financeDocuments.gateway,
+          check: coalesceProbe(() => financeDocuments.gateway.checkReady()),
+        };
+        additionalCloses.push(financeDocuments.close);
+        const createFinanceSpecialist =
+          dependencies.createFinanceSpecialistComposition ??
+          defaultDependencies.createFinanceSpecialistComposition!;
+        financeSpecialist = createFinanceSpecialist({
+          pool: database.scopedPool,
+          imports: financeImports,
+          documentGateway: financeDocuments.gateway,
+          embeddingQuery: financeDocuments.embeddingQuery,
+        });
+      }
+    }
+  } catch {
+    // Encrypted documents remain fail-closed unless DB, volume, and key domains compose.
+  }
+
+  const createReadyFinanceServices = async (
+    principal: Parameters<
+      ProductionFinanceSpecialistComposition['createForPrincipal']
+    >[0],
+  ) => {
+    if (financeSpecialist === undefined) return undefined;
+    try {
+      if ((await financeSpecialist.checkReady()) !== true) return undefined;
+      return financeSpecialist.createForPrincipal(principal);
+    } catch {
+      return undefined;
+    }
+  };
+
+  if (!providerFreeSyntheticStaging && !financeSyntheticStaging) {
     try {
       google = dependencies.createGoogleConnectorBinding({
         environment,
@@ -478,7 +573,7 @@ export const createProductionDurableServiceBindings = async (
     }
   }
 
-  if (!providerFreeSyntheticStaging) {
+  if (!providerFreeSyntheticStaging && !financeSyntheticStaging) {
     try {
       const voice = dependencies.createVoiceProviderBinding({
         environment,
@@ -593,11 +688,12 @@ export const createProductionDurableServiceBindings = async (
   }
 
   let unusedWorkflowDatabase: DatabaseRuntime | undefined;
+  let authenticatedAgentComposed = false;
   let checkpointCipher:
     ReturnType<typeof createProductionApprovalCheckpointCipher> | undefined;
   let openAi = undefined as
     ReturnType<typeof createProductionOpenAiAgentServiceBundle> | undefined;
-  if (!providerFreeSyntheticStaging) {
+  if (!providerFreeSyntheticStaging && !financeSyntheticStaging) {
     try {
       const workflowDatabaseUrl = WorkflowDatabaseUrlSchema.safeParse(
         environment.EMDO_WORKFLOW_DATABASE_URL,
@@ -639,17 +735,17 @@ export const createProductionDurableServiceBindings = async (
         return workflow === true && googleReady === true;
       });
       const checkCoreAgent = coalesceProbe(async () => {
-        const [workflowAndGoogle, luna, terra] = await Promise.all([
+        const [workflowAndGoogle, terra] = await Promise.all([
           checkWorkflowAndGoogle(),
-          configuredOpenAi.modelAvailability.isAvailable('gpt-5.6-luna'),
           configuredOpenAi.modelAvailability.isAvailable('gpt-5.6-terra'),
         ]);
-        return workflowAndGoogle === true && luna === true && terra === true;
+        return workflowAndGoogle === true && terra === true;
       });
       const runtimeFactory: ProductionAgentRuntimeFactory = Object.freeze({
         create: async (
           input: Parameters<ProductionAgentRuntimeFactory['create']>[0],
         ) => {
+          const finance = await createReadyFinanceServices(input.principal);
           const factory = createRequestScopedCoreAgentRuntimeFactory({
             principal: input.principal,
             requestId: input.requestId,
@@ -667,6 +763,7 @@ export const createProductionDurableServiceBindings = async (
             openAi: configuredOpenAi,
             checkpointCipher: configuredCheckpointCipher,
             checkGlobalDependencies: checkWorkflowAndGoogle,
+            ...(finance === undefined ? {} : { finance }),
           });
           if (factory === undefined) {
             throw new Error('api-core-agent-runtime-unavailable');
@@ -681,6 +778,7 @@ export const createProductionDurableServiceBindings = async (
         visualDecisions,
       });
       Object.assign(bindings, agentPersistence.bindings);
+      authenticatedAgentComposed = true;
       databases.push(workflowDatabase);
       unusedWorkflowDatabase = undefined;
       agentResourceCloses.push(configuredOpenAi.close);
@@ -725,24 +823,238 @@ export const createProductionDurableServiceBindings = async (
     }
   }
 
+  if (!authenticatedAgentComposed && !providerFreeSyntheticStaging) {
+    let financeWorkflowDatabase: DatabaseRuntime | undefined;
+    let financeCheckpointCipher:
+      ReturnType<typeof createProductionApprovalCheckpointCipher> | undefined;
+    let financeOpenAi = undefined as
+      ReturnType<typeof createProductionOpenAiAgentServiceBundle> | undefined;
+    try {
+      const workflowDatabaseUrl = WorkflowDatabaseUrlSchema.safeParse(
+        environment.EMDO_WORKFLOW_DATABASE_URL,
+      );
+      const encodedCheckpointKeyring =
+        environment.EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL;
+      const visualDecisions = bindings.proposals?.service;
+      if (
+        !workflowDatabaseUrl.success ||
+        encodedCheckpointKeyring === undefined ||
+        visualDecisions === undefined ||
+        typeof visualDecisions.decideWithVisualProof !== 'function'
+      ) {
+        throw new Error('api-manager-finance-agent-configuration-unavailable');
+      }
+      financeOpenAi = financeSyntheticStaging
+        ? createFinanceSyntheticStagingAgentServiceBundle(environment)
+        : createProductionOpenAiAgentServiceBundle({ environment });
+      if (financeOpenAi === undefined) {
+        throw new Error('api-manager-finance-agent-configuration-unavailable');
+      }
+      financeCheckpointCipher = createProductionApprovalCheckpointCipher(
+        encodedCheckpointKeyring,
+      );
+      financeWorkflowDatabase = dependencies.createDatabaseClient({
+        connectionString: workflowDatabaseUrl.data,
+        applicationName: 'emdo-api-finance-workflow',
+      });
+      const configuredWorkflowDatabase = financeWorkflowDatabase;
+      const configuredOpenAi = financeOpenAi;
+      const configuredCheckpointCipher = financeCheckpointCipher;
+      const checkFinanceWorkflow = coalesceProbe(async () =>
+        checkPostgresProposalWorkflowReadiness(
+          configuredWorkflowDatabase.scopedPool,
+        ),
+      );
+      const checkManagerFinanceAgent = coalesceProbe(async () => {
+        const [workflow, terra, financeReady] = await Promise.all([
+          checkFinanceWorkflow(),
+          configuredOpenAi.modelAvailability.isAvailable('gpt-5.6-terra'),
+          financeSyntheticStaging
+            ? (financeSpecialist?.checkReady() ?? Promise.resolve(false))
+            : Promise.resolve(true),
+        ]);
+        return workflow === true && terra === true && financeReady === true;
+      });
+      const runtimeFactory: ProductionAgentRuntimeFactory = Object.freeze({
+        create: async (
+          input: Parameters<ProductionAgentRuntimeFactory['create']>[0],
+        ) => {
+          const finance = await createReadyFinanceServices(input.principal);
+          if (financeSyntheticStaging && finance === undefined) {
+            throw new Error('api-manager-finance-agent-runtime-unavailable');
+          }
+          const factory = createRequestScopedManagerFinanceAgentRuntimeFactory({
+            principal: input.principal,
+            requestId: input.requestId,
+            runId: input.runId,
+            conversationId: input.conversationId,
+            readPool: database.scopedPool,
+            workflowPool: configuredWorkflowDatabase.scopedPool,
+            openAi: configuredOpenAi,
+            checkpointCipher: configuredCheckpointCipher,
+            checkGlobalDependencies: checkFinanceWorkflow,
+            ...(finance === undefined ? {} : { finance }),
+          });
+          if (factory === undefined) {
+            throw new Error('api-manager-finance-agent-runtime-unavailable');
+          }
+          return factory.runtime;
+        },
+        check: checkManagerFinanceAgent,
+      });
+      const agentPersistence = createProductionAgentPersistence({
+        pool: database.scopedPool,
+        runtimeFactory,
+        visualDecisions,
+      });
+      Object.assign(bindings, agentPersistence.bindings);
+      databases.push(configuredWorkflowDatabase);
+      financeWorkflowDatabase = undefined;
+      agentResourceCloses.push(configuredOpenAi.close);
+      agentResourceCloses.push(async () => {
+        configuredCheckpointCipher.dispose();
+      });
+      financeOpenAi = undefined;
+      financeCheckpointCipher = undefined;
+      authenticatedAgentComposed = true;
+    } catch {
+      if (financeCheckpointCipher !== undefined) {
+        try {
+          financeCheckpointCipher.dispose();
+        } catch {
+          // A failed Finance-only composition retains no checkpoint authority.
+        }
+      }
+      if (financeOpenAi !== undefined) {
+        try {
+          await financeOpenAi.close();
+        } catch {
+          // A failed Finance-only composition retains no model transport.
+        }
+      }
+      if (financeWorkflowDatabase !== undefined) {
+        try {
+          await financeWorkflowDatabase.close();
+        } catch {
+          databases.push(financeWorkflowDatabase);
+        }
+      }
+      // Finance guarded actions require the same durable proposal/decision graph.
+    }
+  }
+
+  if (!authenticatedAgentComposed && !financeSyntheticStaging) {
+    let fallbackCheckpointCipher:
+      ReturnType<typeof createProductionApprovalCheckpointCipher> | undefined;
+    let fallbackOpenAi = undefined as
+      ReturnType<typeof createProductionOpenAiAgentServiceBundle> | undefined;
+    try {
+      const encodedCheckpointKeyring =
+        environment.EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL;
+      if (encodedCheckpointKeyring === undefined) {
+        throw new Error('api-manager-agent-configuration-unavailable');
+      }
+      fallbackOpenAi = createProductionOpenAiAgentServiceBundle({
+        environment,
+      });
+      if (fallbackOpenAi === undefined) {
+        throw new Error('api-manager-agent-configuration-unavailable');
+      }
+      fallbackCheckpointCipher = createProductionApprovalCheckpointCipher(
+        encodedCheckpointKeyring,
+      );
+      const configuredOpenAi = fallbackOpenAi;
+      const configuredCheckpointCipher = fallbackCheckpointCipher;
+      const checkManagerAgent = coalesceProbe(async () => {
+        return (
+          (await configuredOpenAi.modelAvailability.isAvailable(
+            'gpt-5.6-terra',
+          )) === true
+        );
+      });
+      const runtimeFactory: ProductionAgentRuntimeFactory = Object.freeze({
+        create: async (
+          input: Parameters<ProductionAgentRuntimeFactory['create']>[0],
+        ) => {
+          if (input.approvalResume !== undefined) {
+            throw new Error('api-manager-agent-approval-resume-unavailable');
+          }
+          const factory = createRequestScopedManagerFinanceAgentRuntimeFactory({
+            principal: input.principal,
+            requestId: input.requestId,
+            runId: input.runId,
+            conversationId: input.conversationId,
+            readPool: database.scopedPool,
+            openAi: configuredOpenAi,
+            checkpointCipher: configuredCheckpointCipher,
+            checkGlobalDependencies: async () => true,
+          });
+          if (factory === undefined) {
+            throw new Error('api-manager-agent-runtime-unavailable');
+          }
+          return factory.runtime;
+        },
+        check: checkManagerAgent,
+      });
+      const agentPersistence = createProductionAgentPersistence({
+        pool: database.scopedPool,
+        runtimeFactory,
+      });
+      Object.assign(bindings, agentPersistence.bindings);
+      agentResourceCloses.push(configuredOpenAi.close);
+      agentResourceCloses.push(async () => {
+        configuredCheckpointCipher.dispose();
+      });
+      fallbackOpenAi = undefined;
+      fallbackCheckpointCipher = undefined;
+      authenticatedAgentComposed = true;
+    } catch {
+      if (fallbackCheckpointCipher !== undefined) {
+        try {
+          fallbackCheckpointCipher.dispose();
+        } catch {
+          // The unavailable composition retains no usable checkpoint authority.
+        }
+      }
+      if (fallbackOpenAi !== undefined) {
+        try {
+          await fallbackOpenAi.close();
+        } catch {
+          // The unavailable composition retains no model transport.
+        }
+      }
+    }
+  }
+
   if (!googleCloseIsOwnedByAgent && google?.close !== undefined) {
     agentResourceCloses.push(google.close);
   }
 
+  let syntheticFinanceInvitationHandoff:
+    SyntheticFinanceInvitationHandoff | undefined;
   try {
+    const configuredSyntheticFinanceInvitationHandoff =
+      createSyntheticFinanceInvitationHandoff(environment);
     const sealer = await createInvitationDeliverySealer(environment);
     if (sealer !== undefined) {
       const householdAdministration =
         dependencies.createHouseholdAdministrationService(
           database.scopedPool,
-          sealer,
+          configuredSyntheticFinanceInvitationHandoff?.wrapSealer(sealer) ??
+            sealer,
         );
       bindings.householdAdministration = {
-        service: householdAdministration,
+        service:
+          configuredSyntheticFinanceInvitationHandoff?.wrapHouseholdAdministration(
+            householdAdministration,
+          ) ?? householdAdministration,
         check: () => householdAdministration.checkReady(),
       };
+      syntheticFinanceInvitationHandoff =
+        configuredSyntheticFinanceInvitationHandoff;
     }
   } catch {
+    syntheticFinanceInvitationHandoff = undefined;
     // Invalid administration dependencies do not disable read-only adapters.
   }
 
@@ -790,5 +1102,8 @@ export const createProductionDurableServiceBindings = async (
   return Object.freeze({
     bindings: Object.freeze(bindings),
     close,
+    ...(syntheticFinanceInvitationHandoff === undefined
+      ? {}
+      : { syntheticFinanceInvitationHandoff }),
   });
 };

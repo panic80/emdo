@@ -19,6 +19,7 @@ describe('@emdo/worker package boundary', () => {
     });
     expect(manifest.files).toEqual(['dist']);
     expect(manifest.dependencies).toEqual({
+      'pdf-parse': '2.4.5',
       pg: '8.23.0',
       'pg-boss': '12.27.0',
       zod: '4.4.3',

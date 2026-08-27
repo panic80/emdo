@@ -13,6 +13,7 @@ const CURRENT_DURABLE_SERVICE_NAMES = Object.freeze([
   'audioRequests',
   'financeRead',
   'financeImports',
+  'financeDocuments',
   'google',
   'householdAdministration',
   'managerTurns',
@@ -42,6 +43,7 @@ const selectCurrentDurableBindings = (
         if (
           !hasTrustedAuthentication &&
           (name === 'managerTurns' ||
+            name === 'financeDocuments' ||
             name === 'proposalQueries' ||
             name === 'proposals' ||
             name === 'runEvents' ||
@@ -164,6 +166,12 @@ export const assembleProductionApiServices = async (
       bindings,
       metricsToken,
       ...(close === undefined ? {} : { close }),
+      ...(durableComposition.syntheticFinanceInvitationHandoff === undefined
+        ? {}
+        : {
+            syntheticFinanceInvitationHandoff:
+              durableComposition.syntheticFinanceInvitationHandoff,
+          }),
     });
   } catch (error) {
     const close = combineCloses([

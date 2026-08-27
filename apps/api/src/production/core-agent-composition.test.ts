@@ -93,6 +93,7 @@ const calendarCreateContext = (): ProviderWriteCapabilityContext => {
     householdId: ids.household,
     sessionId: principal.sessionId,
     agentId: 'scheduler',
+    locale: 'en-CA',
     abortSignal: new AbortController().signal,
     providerWritePermit: ProviderWriteAuthorizationSchema.parse({
       proposalId: '42000000-0000-4000-8000-000000000011',

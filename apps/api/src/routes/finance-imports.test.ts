@@ -211,7 +211,7 @@ describe('finance import HTTP boundary', () => {
     await app.close();
   });
 
-  it('passes authenticated preview and commit through a healthy durable finance binding', async () => {
+  it('passes authenticated preview and holds direct commit for EMDO confirmation', async () => {
     const { services: sparseServices, financeImports } = buildServices();
     const check = vi.fn(async () => true);
     const services = createFailClosedApiServices({
@@ -237,7 +237,8 @@ describe('finance import HTTP boundary', () => {
       headers,
       payload: { schemaVersion: 1, planId: PLAN_ID },
     });
-    expect(commit.statusCode).toBe(200);
+    expect(commit.statusCode).toBe(409);
+    expect(commit.json()).toMatchObject({ code: 'approval-required' });
     expect(financeImports.preview).toHaveBeenCalledWith({
       accountId: ACCOUNT_ID,
       format: 'csv',
@@ -246,13 +247,8 @@ describe('finance import HTTP boundary', () => {
       requestId: expect.any(String),
       sourceText: SOURCE_TEXT,
     });
-    expect(financeImports.commit).toHaveBeenCalledWith({
-      idempotencyKey: IDEMPOTENCY_KEY,
-      planId: PLAN_ID,
-      principal,
-      requestId: expect.any(String),
-    });
-    expect(check).toHaveBeenCalledTimes(2);
+    expect(financeImports.commit).not.toHaveBeenCalled();
+    expect(check).toHaveBeenCalledOnce();
 
     await app.close();
   });
@@ -297,7 +293,7 @@ describe('finance import HTTP boundary', () => {
     await app.close();
   });
 
-  it('requires CSRF and an idempotency key before committing a preview', async () => {
+  it('requires mutation proof and still holds direct commit for EMDO confirmation', async () => {
     const { services, financeImports } = buildServices();
     const app = await createApp({ services });
 
@@ -310,24 +306,20 @@ describe('finance import HTTP boundary', () => {
     expect(rejected.statusCode).toBe(403);
     expect(financeImports.commit).not.toHaveBeenCalled();
 
-    const committed = await app.inject({
+    const held = await app.inject({
       method: 'POST',
       url: '/api/v1/finance/imports/commit',
       headers,
       payload: { schemaVersion: 1, planId: PLAN_ID },
     });
-    expect(committed.statusCode).toBe(200);
-    expect(financeImports.commit).toHaveBeenCalledWith({
-      idempotencyKey: IDEMPOTENCY_KEY,
-      planId: PLAN_ID,
-      principal,
-      requestId: expect.any(String),
-    });
+    expect(held.statusCode).toBe(409);
+    expect(held.json()).toMatchObject({ code: 'approval-required' });
+    expect(financeImports.commit).not.toHaveBeenCalled();
 
     await app.close();
   });
 
-  it('maps known durable finance outcomes to bounded client errors', async () => {
+  it('does not expose durable commit outcomes through the direct HTTP route', async () => {
     const { services, financeImports } = buildServices();
     financeImports.commit.mockRejectedValueOnce(
       Object.assign(new Error('emdo:finance-import-plan-expired'), {
@@ -344,13 +336,14 @@ describe('finance import HTTP boundary', () => {
       payload: { schemaVersion: 1, planId: PLAN_ID },
     });
 
-    expect(response.statusCode).toBe(410);
-    expect(response.json()).toMatchObject({ code: 'plan-expired' });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ code: 'approval-required' });
     expect(response.body).not.toContain('emdo:');
+    expect(financeImports.commit).not.toHaveBeenCalled();
     await app.close();
   });
 
-  it('keeps preview and commit bounded at 503 when the durable finance probe is unavailable', async () => {
+  it('keeps preview unavailable and direct commit held when the durable probe is unavailable', async () => {
     const { services: sparseServices, financeImports } = buildServices();
     const check = vi.fn(async () => false);
     const services = createFailClosedApiServices({
@@ -380,9 +373,9 @@ describe('finance import HTTP boundary', () => {
       headers,
       payload: { schemaVersion: 1, planId: PLAN_ID },
     });
-    expect(commit.statusCode).toBe(503);
-    expect(commit.json()).toMatchObject({ code: 'finance-import-unavailable' });
-    expect(check).toHaveBeenCalledTimes(2);
+    expect(commit.statusCode).toBe(409);
+    expect(commit.json()).toMatchObject({ code: 'approval-required' });
+    expect(check).toHaveBeenCalledOnce();
     expect(financeImports.preview).not.toHaveBeenCalled();
     expect(financeImports.commit).not.toHaveBeenCalled();
 

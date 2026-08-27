@@ -20,17 +20,22 @@ describe('integration package subpath exports', () => {
   });
 
   it('exposes production OpenAI, Maps, Calendar, and commerce facades', async () => {
-    const [openai, maps, calendar, commerce] = await Promise.all([
-      import('@emdo/integrations/openai'),
-      import('@emdo/integrations/maps'),
-      import('@emdo/integrations/google-calendar'),
-      import('@emdo/integrations/commerce'),
-    ]);
+    const [openai, maps, calendar, commerce, financeDocuments] =
+      await Promise.all([
+        import('@emdo/integrations/openai'),
+        import('@emdo/integrations/maps'),
+        import('@emdo/integrations/google-calendar'),
+        import('@emdo/integrations/commerce'),
+        import('@emdo/integrations/finance-documents'),
+      ]);
 
     expect(openai).toHaveProperty('OpenAiAudioAdapter');
     expect(openai).toHaveProperty('OpenAiFetchAudioTransport');
     expect(openai).toHaveProperty('ProductionOpenAiAudioCostCalculator');
     expect(openai).toHaveProperty('parseOpenAiAudioPricing');
+    expect(openai).toHaveProperty(
+      'OpenAiFetchFinanceDocumentExtractionTransport',
+    );
     expect(maps).toHaveProperty('GoogleRoutesTravelTimeClient');
     expect(maps).toHaveProperty('runGoogleRoutesDeploymentSmoke');
     expect(maps).not.toHaveProperty('RecordedMapsTravelTimeClient');
@@ -48,6 +53,9 @@ describe('integration package subpath exports', () => {
     expect(commerce).toHaveProperty('refreshOffersBeforeHandoff');
     expect(commerce).not.toHaveProperty('resolveApprovedCommerceConnector');
     expect(commerce).not.toHaveProperty('runFixtureConnectorConformance');
+    expect(financeDocuments).toHaveProperty('createFinanceDocumentStorage');
+    expect(financeDocuments).toHaveProperty('parseFinanceDocumentMetadata');
+    expect(financeDocuments).not.toHaveProperty('VaultCrypto');
   });
 
   it('exposes only the API-safe Google OAuth route facade', async () => {

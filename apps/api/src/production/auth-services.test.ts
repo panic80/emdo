@@ -244,6 +244,52 @@ describe('production authentication service composition', () => {
     expect(result.binding?.service).toBe(harness.boundary);
   });
 
+  it('enables invitation redemption without email only for exact Finance synthetic staging', async () => {
+    const harness = dependencies();
+    const environment = {
+      ...coreEnvironment(),
+      EMDO_ALLOW_LOOPBACK_API_INGRESS: 'true',
+      EMDO_ENVIRONMENT: 'staging',
+      EMDO_FINANCE_SYNTHETIC_STAGING: 'true',
+      EMDO_ONBOARDING_DATABASE_URL:
+        'postgresql://emdo_onboarding_login:secret@postgres:5432/emdo_app?sslmode=disable',
+      EMDO_SYNTHETIC_DATA_ONLY: 'true',
+    };
+
+    const result = await createProductionAuthenticationServiceBinding(
+      environment,
+      harness.adapters,
+    );
+
+    expect(harness.adapters.createDatabaseClient.mock.calls).toHaveLength(3);
+    expect(harness.adapters.createDatabaseClient).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        applicationName: 'emdo-api-onboarding',
+        connectionString: environment.EMDO_ONBOARDING_DATABASE_URL,
+      }),
+    );
+    expect(harness.adapters.createInvitationRedemptions).toHaveBeenCalledOnce();
+    expect(
+      harness.adapters.createTransactionalEmailTransport,
+    ).not.toHaveBeenCalled();
+    expect(harness.adapters.createEmailCallbacks).not.toHaveBeenCalled();
+    expect(
+      harness.captured.authenticationBoundaryOptions?.invitationRedemptions,
+    ).toBe(harness.invitationRedemptions);
+    await expect(result.binding?.check()).resolves.toBe(true);
+    expect(harness.invitationRedemptions.checkReady).toHaveBeenCalledOnce();
+    expect(harness.transport.checkReady).not.toHaveBeenCalled();
+
+    const missingLoopback = dependencies();
+    await createProductionAuthenticationServiceBinding(
+      { ...environment, EMDO_ALLOW_LOOPBACK_API_INGRESS: 'false' },
+      missingLoopback.adapters,
+    );
+    expect(
+      missingLoopback.adapters.createInvitationRedemptions,
+    ).not.toHaveBeenCalled();
+  });
+
   it('constructs the complete durable boundary from exact purpose-specific inputs', async () => {
     const harness = dependencies();
 

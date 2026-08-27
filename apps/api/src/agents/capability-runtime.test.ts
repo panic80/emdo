@@ -25,6 +25,7 @@ import {
   REQUIRED_CAPABILITY_BINDING_KINDS,
   capabilitySchemaRegistrations,
   createProductionCapabilityRuntime,
+  parseSpecialistCapabilityOutput,
   parseProductionProviderWriteCapabilityId,
   type ProductionCapabilityBindings,
   type SpecialistCapabilityId,
@@ -301,25 +302,22 @@ const specialistSchemaSamples = {
   'finance.statement.import': {
     input: {
       schemaVersion: 1,
-      request: {
-        kind: 'preview',
-        sourceReference: 'upload-1',
-        accountId: 'account-1',
-        mappingReference: 'mapping-1',
-      },
+      request: { kind: 'commit', planId: 'reviewed-plan-1' },
     },
     output: {
       schemaVersion: 1,
       result: {
-        status: 'preview-ready',
-        previewId: 'preview-1',
-        acceptedRows: 10,
-        rejectedRows: 1,
-        duplicateRows: 2,
+        status: 'confirmation-required',
+        proposal: {
+          state: 'proposed',
+          operation: 'finance-statement-import-commit',
+          channel: 'emdo-authenticated-visual',
+          canonicalHash: 'a'.repeat(64),
+        },
       },
     },
   },
-  'finance.budget.calculate': {
+  'finance.analytics.calculate': {
     input: { schemaVersion: 1, month: '2026-08' },
     output: {
       schemaVersion: 1,
@@ -335,6 +333,93 @@ const specialistSchemaSamples = {
           netCadMinor: 0,
         },
       },
+    },
+  },
+  'finance.documents.search': {
+    input: {
+      schemaVersion: 1,
+      query: 'Example Market',
+      documentTypes: ['receipt'],
+      from: '2026-08-01',
+      to: '2026-08-31',
+      limit: 10,
+    },
+    output: {
+      schemaVersion: 1,
+      hits: [
+        {
+          documentId: 'document-1',
+          documentType: 'receipt',
+          displayName: 'Example Market receipt',
+          occurredOn: '2026-08-11',
+          currency: 'CAD',
+          amountMinor: 1299,
+          score: 0.98,
+          evidence: [
+            {
+              evidenceId: 'evidence-1',
+              documentId: 'document-1',
+              documentType: 'receipt',
+              displayName: 'Example Market receipt',
+              page: 1,
+              excerpt: 'Groceries 12.99 CAD',
+              sourceLocale: 'en-CA',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  'finance.documents.read': {
+    input: {
+      schemaVersion: 1,
+      documentId: 'document-1',
+      evidenceIds: ['evidence-1'],
+    },
+    output: {
+      schemaVersion: 1,
+      document: {
+        id: 'document-1',
+        documentType: 'receipt',
+        displayName: 'Example Market receipt',
+        sourceLocale: 'en-CA',
+        currency: 'CAD',
+        summary: 'A receipt for groceries totaling 12.99 CAD.',
+        committedAt: instant,
+      },
+      evidence: [
+        {
+          evidenceId: 'evidence-1',
+          documentId: 'document-1',
+          documentType: 'receipt',
+          displayName: 'Example Market receipt',
+          page: 1,
+          excerpt: 'Groceries 12.99 CAD',
+          sourceLocale: 'en-CA',
+        },
+      ],
+    },
+  },
+  'finance.matches.read': {
+    input: {
+      schemaVersion: 1,
+      documentId: 'document-1',
+      states: ['suggested'],
+      limit: 25,
+    },
+    output: {
+      schemaVersion: 1,
+      matches: [
+        {
+          matchId: 'match-1',
+          documentId: 'document-1',
+          recordId: 'transaction-1',
+          recordType: 'transaction',
+          state: 'suggested',
+          score: 0.98,
+          reasons: ['Amount and merchant match the transaction.'],
+        },
+      ],
     },
   },
   'shopping.items.read': {
@@ -473,8 +558,8 @@ describe('production capability runtime conformance', () => {
       ...authorityResolvers(),
     });
 
-    expect(runtime.registry.size).toBe(19);
-    expect(runtime.schemas.size).toBe(40);
+    expect(runtime.registry.size).toBe(22);
+    expect(runtime.schemas.size).toBe(46);
     expect(
       runtime.registry.resolveForAgent({
         manifest: runtime.manifests.scheduler,
@@ -486,7 +571,7 @@ describe('production capability runtime conformance', () => {
         manifest: runtime.manifests.finance,
         requestedCapabilityIds: runtime.manifests.finance.capabilityAllowlist,
       }),
-    ).toHaveLength(4);
+    ).toHaveLength(7);
     expect(
       runtime.registry.resolveForAgent({
         manifest: runtime.manifests.shopping,
@@ -588,6 +673,7 @@ describe('production capability runtime conformance', () => {
         householdId: IDS.household,
         sessionId: IDS.session,
         agentId: 'untrusted-agent-name',
+        locale: 'en-CA',
         spaceAccessGrantId: IDS.spaceAccessGrant,
         disclosureGrantId: IDS.grant,
         approvalDecisionId: IDS.decision,
@@ -815,16 +901,16 @@ describe('production capability runtime conformance', () => {
         ...ALL_MANAGER_DELEGATION_CAPABILITY_IDS,
       ].sort(),
     );
-    expect(new Set(ALL_SPECIALIST_CAPABILITY_IDS).size).toBe(16);
+    expect(new Set(ALL_SPECIALIST_CAPABILITY_IDS).size).toBe(19);
     expect(new Set(ALL_MANAGER_DELEGATION_CAPABILITY_IDS).size).toBe(3);
   });
 
   it('uses distinct strict schemas for every specialist capability', () => {
-    expect(capabilitySchemaRegistrations).toHaveLength(32);
+    expect(capabilitySchemaRegistrations).toHaveLength(38);
     const references = capabilitySchemaRegistrations.map(
       ({ reference }) => `${reference.id}@${reference.version}`,
     );
-    expect(new Set(references).size).toBe(32);
+    expect(new Set(references).size).toBe(38);
     expect(
       capabilitySchemaRegistrations.every(
         ({ schema, reference }) =>
@@ -877,6 +963,49 @@ describe('production capability runtime conformance', () => {
         ).toBe(false);
       }
     }
+  });
+
+  it('accepts only hash-bound EMDO Finance confirmation proposals', () => {
+    const proposal = {
+      schemaVersion: 1 as const,
+      result: {
+        status: 'confirmation-required' as const,
+        proposal: {
+          state: 'proposed' as const,
+          operation: 'finance-reversal' as const,
+          channel: 'emdo-authenticated-visual' as const,
+          canonicalHash: 'a'.repeat(64),
+        },
+      },
+    };
+
+    expect(
+      parseSpecialistCapabilityOutput('finance.records.write', proposal),
+    ).toEqual(proposal);
+    expect(
+      parseSpecialistCapabilityOutput('finance.statement.import', {
+        ...proposal,
+        result: {
+          ...proposal.result,
+          proposal: {
+            ...proposal.result.proposal,
+            operation: 'finance-statement-import-commit',
+          },
+        },
+      }),
+    ).toMatchObject({ result: { status: 'confirmation-required' } });
+    expect(() =>
+      parseSpecialistCapabilityOutput('finance.records.write', {
+        ...proposal,
+        result: {
+          ...proposal.result,
+          proposal: {
+            ...proposal.result.proposal,
+            channel: 'finance-specialist-direct',
+          },
+        },
+      }),
+    ).toThrow();
   });
 
   it('converts every specialist input and output through the real strict SDK tool boundary', () => {

@@ -16,6 +16,7 @@ export const API_READINESS_GROUPS = Object.freeze({
     'experience.activity-read',
     'experience.finance-read',
     'experience.finance-imports',
+    'experience.finance-documents',
     'experience.notification-preferences',
     'experience.schedule-read',
     'experience.settings-read',

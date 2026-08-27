@@ -403,6 +403,7 @@ const invocationContext = (decisionId: string) => ({
   userId: ids.user,
   householdId: ids.household,
   agentId: 'scheduler',
+  locale: 'en-CA' as const,
   spaceAccessGrantId: currentOperationScope.spaceAccessGrantId,
   disclosureGrantId: ids.grant,
   approvalDecisionId: decisionId,

@@ -29,6 +29,7 @@ const context: CapabilityInvocationContext = Object.freeze({
   sessionId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f105',
   householdId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f106',
   agentId: 'scheduler',
+  locale: 'en-CA',
   spaceAccessGrantId: 'opaque-space-access-grant',
   disclosureGrantId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f104',
   abortSignal: new AbortController().signal,
@@ -113,6 +114,16 @@ const calendarBlocks = Array.from({ length: 201 }, (_, index) => ({
   maskReason: 'free-busy-only' as const,
 }));
 
+const documentEvidence = Object.freeze({
+  evidenceId: 'evidence-1',
+  documentId: 'document-1',
+  documentType: 'receipt' as const,
+  displayName: 'Example Market receipt',
+  page: 1,
+  excerpt: 'Groceries 12.99 CAD',
+  sourceLocale: 'en-CA' as const,
+});
+
 const createServices = () =>
   ({
     readCalendarFreeBusy: vi.fn(async () => ({
@@ -138,16 +149,57 @@ const createServices = () =>
     })),
     executeStatementImport: vi.fn(async () => ({
       result: {
-        status: 'preview-ready',
-        previewId: 'preview-1',
-        acceptedRows: 1,
-        rejectedRows: 0,
-        duplicateRows: 0,
+        status: 'confirmation-required',
+        proposal: {
+          state: 'proposed',
+          operation: 'finance-statement-import-commit',
+          channel: 'emdo-authenticated-visual',
+          canonicalHash: 'a'.repeat(64),
+        },
       },
     })),
     loadFinanceBudgetInputs: vi.fn(async () => ({
       spaceId: 'private-space-1',
       transactions: [transaction],
+    })),
+    searchFinanceDocuments: vi.fn(async () => ({
+      hits: [
+        {
+          documentId: 'document-1',
+          documentType: 'receipt' as const,
+          displayName: 'Example Market receipt',
+          occurredOn: '2026-08-11',
+          currency: 'CAD',
+          amountMinor: 1_299,
+          score: 0.98,
+          evidence: [documentEvidence],
+        },
+      ],
+    })),
+    readFinanceDocument: vi.fn(async () => ({
+      document: {
+        id: 'document-1',
+        documentType: 'receipt' as const,
+        displayName: 'Example Market receipt',
+        sourceLocale: 'en-CA' as const,
+        currency: 'CAD',
+        summary: 'A receipt for groceries totaling 12.99 CAD.',
+        committedAt: instant,
+      },
+      evidence: [documentEvidence],
+    })),
+    readFinanceMatches: vi.fn(async () => ({
+      matches: [
+        {
+          matchId: 'match-1',
+          documentId: 'document-1',
+          recordId: 'transaction-1',
+          recordType: 'transaction' as const,
+          state: 'suggested' as const,
+          score: 0.98,
+          reasons: ['Amount and merchant match the transaction.'],
+        },
+      ],
     })),
     readShoppingItems: vi.fn(async () => ({ items: [], nextCursor: null })),
     writeShoppingItem: vi.fn(async () => ({
@@ -236,15 +288,38 @@ const invocations = [
     'finance.statement.import',
     {
       schemaVersion: 1,
-      request: {
-        kind: 'preview',
-        sourceReference: 'upload-1',
-        accountId: 'account-1',
-        mappingReference: 'mapping-1',
-      },
+      request: { kind: 'commit', planId: 'reviewed-plan-1' },
     },
   ],
-  ['finance.budget.calculate', { schemaVersion: 1, month: '2026-08' }],
+  ['finance.analytics.calculate', { schemaVersion: 1, month: '2026-08' }],
+  [
+    'finance.documents.search',
+    {
+      schemaVersion: 1,
+      query: 'Example Market',
+      documentTypes: ['receipt'],
+      from: '2026-08-01',
+      to: '2026-08-31',
+      limit: 10,
+    },
+  ],
+  [
+    'finance.documents.read',
+    {
+      schemaVersion: 1,
+      documentId: 'document-1',
+      evidenceIds: ['evidence-1'],
+    },
+  ],
+  [
+    'finance.matches.read',
+    {
+      schemaVersion: 1,
+      documentId: 'document-1',
+      states: ['suggested'],
+      limit: 25,
+    },
+  ],
   ['shopping.items.read', { schemaVersion: 1, kinds: ['grocery'], limit: 25 }],
   [
     'shopping.items.write',
@@ -278,11 +353,11 @@ const invocations = [
 ])[];
 
 describe('standard specialist Task6 adapters', () => {
-  it('executes all 13 non-provider capabilities through finite validated outputs', async () => {
+  it('executes all 16 non-provider capabilities through finite validated outputs', async () => {
     const services = createServices();
     const executors = createStandardSpecialistCapabilityExecutors(services);
 
-    expect(Object.keys(executors)).toHaveLength(13);
+    expect(Object.keys(executors)).toHaveLength(16);
     for (const [capabilityId, input] of invocations) {
       const output = await executors[capabilityId](input, context);
       expect(
@@ -303,9 +378,9 @@ describe('standard specialist Task6 adapters', () => {
     expect(freeBusy.omittedBlockCount).toBe(1);
 
     const budget = specialistCapabilitySchemas[
-      'finance.budget.calculate'
+      'finance.analytics.calculate'
     ].output.parse(
-      await executors['finance.budget.calculate'](
+      await executors['finance.analytics.calculate'](
         { schemaVersion: 1, month: '2026-08' },
         context,
       ),

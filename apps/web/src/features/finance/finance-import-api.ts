@@ -10,11 +10,6 @@ const ReferenceSchema = z
   .refine((value) => !/\p{Cc}/u.test(value));
 const OpaqueReferenceSchema = ReferenceSchema;
 const CsrfTokenSchema = z.string().trim().min(1).max(512);
-const IdempotencyKeySchema = z
-  .string()
-  .min(16)
-  .max(200)
-  .regex(/^[A-Za-z0-9:._-]+$/u);
 
 const CsvMappingSchema = z.strictObject({
   defaultCategoryId: ReferenceSchema.nullable(),
@@ -92,20 +87,7 @@ const PreviewResponseSchema = z.strictObject({
   }),
 });
 
-const CommitResponseSchema = z.strictObject({
-  schemaVersion: z.literal(1),
-  status: z.enum(['committed', 'replayed']),
-  receipt: z.strictObject({
-    id: OpaqueReferenceSchema,
-    planId: OpaqueReferenceSchema,
-    transactionCount: z.number().int().positive().max(100_000),
-    verified: z.literal(true),
-  }),
-  sourceDeletionAuthorized: z.literal(true),
-});
-
 export type FinanceImportPreview = z.output<typeof PreviewResponseSchema>;
-export type FinanceImportCommit = z.output<typeof CommitResponseSchema>;
 export type FinanceImportPreviewRequest =
   | {
       readonly format: 'csv';
@@ -129,12 +111,6 @@ export interface FinanceImportApi {
       readonly signal?: AbortSignal;
     },
   ): Promise<FinanceImportPreview>;
-  commit(input: {
-    readonly csrfToken: string;
-    readonly idempotencyKey: string;
-    readonly planId: string;
-    readonly signal?: AbortSignal;
-  }): Promise<FinanceImportCommit>;
 }
 
 export class FinanceImportApiError extends Error {
@@ -263,42 +239,6 @@ export function createFinanceImportApi({
         response,
         PreviewResponseSchema,
       )) as FinanceImportPreview;
-    },
-    async commit(input: {
-      readonly csrfToken: string;
-      readonly idempotencyKey: string;
-      readonly planId: string;
-      readonly signal?: AbortSignal;
-    }) {
-      if (
-        !CsrfTokenSchema.safeParse(input.csrfToken).success ||
-        !IdempotencyKeySchema.safeParse(input.idempotencyKey).success ||
-        !OpaqueReferenceSchema.safeParse(input.planId).success
-      ) {
-        throw invalidRequest(
-          'The authenticated import request is unavailable.',
-        );
-      }
-      const body = stringifyBounded({ schemaVersion: 1, planId: input.planId });
-      const response = await fetcher('/api/v1/finance/imports/commit', {
-        method: 'POST',
-        credentials: 'same-origin',
-        cache: 'no-store',
-        signal: input.signal,
-        headers: authorityHeaders(input.csrfToken, input.idempotencyKey),
-        body,
-      });
-      const result = (await parseJson(
-        response,
-        CommitResponseSchema,
-      )) as FinanceImportCommit;
-      if (result.receipt.planId !== input.planId) {
-        throw new FinanceImportApiError(
-          'unsafe-response',
-          'EMDO rejected an invalid import response.',
-        );
-      }
-      return result;
     },
   };
 }

@@ -8,6 +8,11 @@ import { Page, PageHeader } from '../components/page.js';
 import { useAuth } from '../features/auth/auth-context.js';
 import { useDomainData } from '../features/domains/domain-data.js';
 import { useExperienceApi } from '../features/experience/experience-api.js';
+import {
+  ACTIVE_LOCALE_OPTIONS,
+  setActiveLocale,
+  useActiveLocale,
+} from '../features/locale/locale-preference.js';
 import { NotificationPreferencesForm } from '../features/notifications/preferences-form.js';
 import { LogoutPanel } from '../features/sync/logout-panel.js';
 
@@ -30,6 +35,7 @@ export function SettingsRoute() {
   const api = useExperienceApi();
   const auth = useAuth();
   const domain = useDomainData();
+  const activeLocale = useActiveLocale();
   const [settings, setSettings] = useState<SettingsView>();
   const [settingsUnavailable, setSettingsUnavailable] = useState(false);
   const [passkeyName, setPasskeyName] = useState('This device');
@@ -88,6 +94,30 @@ export function SettingsRoute() {
           ) : (
             <p role="status">Loading household settings…</p>
           )}
+        </section>
+        <section
+          className="settings-section"
+          aria-labelledby="language-settings-heading"
+        >
+          <h2 id="language-settings-heading">Language</h2>
+          <label htmlFor="active-locale">EMDO responses</label>
+          <select
+            id="active-locale"
+            value={activeLocale}
+            onChange={(event) => {
+              const locale = ACTIVE_LOCALE_OPTIONS.find(
+                (option) => option.value === event.target.value,
+              )?.value;
+              if (locale !== undefined) setActiveLocale(locale);
+            }}
+          >
+            {ACTIVE_LOCALE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p>Stored only on this device and available while offline.</p>
         </section>
         <section
           className="settings-section"

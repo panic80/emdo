@@ -152,18 +152,27 @@ const AuthorizationInputSchema = z
     }
   });
 
-const SchedulerDisclosureGrantResolverScopeSchema = z.strictObject({
+const SpecialistDisclosureGrantResolverScopeSchema = z.strictObject({
   runId: UuidSchema,
   householdId: UuidSchema,
   userId: UuidSchema,
   spaceAccessGrantId: UuidSchema,
-  agentId: z.literal('scheduler'),
+  agentId: z.enum(['scheduler', 'finance']),
   phasePurpose: z.literal('specialist-execution'),
   provider: z.literal('openai'),
 });
-export type SchedulerDisclosureGrantResolverScope = z.output<
-  typeof SchedulerDisclosureGrantResolverScopeSchema
+export type SpecialistDisclosureGrantResolverScope = z.output<
+  typeof SpecialistDisclosureGrantResolverScopeSchema
 >;
+/**
+ * Retained for Scheduler callers that need the narrower compile-time scope.
+ * The resolver itself accepts only the two registered specialist identities.
+ */
+export type SchedulerDisclosureGrantResolverScope = Omit<
+  SpecialistDisclosureGrantResolverScope,
+  'agentId'
+> &
+  Readonly<{ readonly agentId: 'scheduler' }>;
 
 const CanonicalEnvelopeSchema = z
   .strictObject({
@@ -439,22 +448,22 @@ export class PostgresDataDisclosureGrantIssuer {
 }
 
 /**
- * Curated, request-principal-bound resolution for the scheduler proposal
- * lifecycle. It reuses the sole disclosure aggregate without authorizing or
- * auditing any model disclosure.
+ * Curated, request-principal-bound resolution for registered specialist
+ * proposal lifecycles. It reuses the sole disclosure aggregate without
+ * authorizing or auditing any model disclosure.
  */
 export class PostgresSchedulerDisclosureGrantResolver {
   readonly #principal: Readonly<DurableRepositoryPrincipal>;
-  readonly #scope: Readonly<SchedulerDisclosureGrantResolverScope>;
+  readonly #scope: Readonly<SpecialistDisclosureGrantResolverScope>;
 
   constructor(
     private readonly pool: DatabasePool,
     principal: DurableRepositoryPrincipal,
-    scope: SchedulerDisclosureGrantResolverScope,
+    scope: SpecialistDisclosureGrantResolverScope,
   ) {
     this.#principal = parseDurablePrincipal(principal);
     const parsedScope =
-      SchedulerDisclosureGrantResolverScopeSchema.safeParse(scope);
+      SpecialistDisclosureGrantResolverScopeSchema.safeParse(scope);
     if (
       !parsedScope.success ||
       parsedScope.data.householdId !== this.#principal.householdId ||

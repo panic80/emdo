@@ -13,9 +13,10 @@ await build({
   bundle: true,
   entryPoints: {
     index: 'src/index.ts',
+    'cli/finance-document-extraction': 'src/cli/finance-document-extraction.ts',
     'cli/migrate-jobs': 'src/cli/migrate-jobs.ts',
   },
-  external: ['pg', 'pg-boss', 'zod'],
+  external: ['pdf-parse', 'pg', 'pg-boss', 'zod'],
   format: 'esm',
   logLevel: 'info',
   legalComments: 'none',
@@ -42,7 +43,11 @@ const listFiles = async (directory, prefix = '') => {
 };
 
 const artifacts = await listFiles(outputDirectory);
-const expectedArtifacts = ['cli/migrate-jobs.js', 'index.js'];
+const expectedArtifacts = [
+  'cli/finance-document-extraction.js',
+  'cli/migrate-jobs.js',
+  'index.js',
+];
 if (JSON.stringify(artifacts) !== JSON.stringify(expectedArtifacts)) {
   throw new Error('Worker build produced an unexpected artifact set');
 }
@@ -121,6 +126,10 @@ const assertSafeDirectExecutionFailure = async (artifact, expectedStderr) => {
 
 await Promise.all([
   assertSafeDirectExecutionFailure('index.js', 'Worker startup failed.\n'),
+  assertSafeDirectExecutionFailure(
+    'cli/finance-document-extraction.js',
+    'Finance document extraction worker startup failed.\n',
+  ),
   assertSafeDirectExecutionFailure(
     'cli/migrate-jobs.js',
     'Job schema installation failed.\n',

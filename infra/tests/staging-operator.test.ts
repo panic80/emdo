@@ -34,6 +34,91 @@ afterEach(async () => {
 });
 
 describe('staging release operator', () => {
+  it('forwards an opted-in Finance key only through protected stdin', async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), 'emdo-staging-operator-finance-'),
+    );
+    temporaryDirectories.push(root);
+    const release = join(root, 'release');
+    const scriptDirectory = join(release, 'infra/scripts');
+    const receivedInput = join(root, 'received-input');
+    const receivedArguments = join(root, 'received-arguments');
+    await mkdir(scriptDirectory, { recursive: true });
+    await writeExecutable(
+      join(scriptDirectory, 'deploy-staging.sh'),
+      [
+        '#!/usr/bin/env bash',
+        'set -Eeuo pipefail',
+        '[[ -z "${EMDO_OPENAI_FINANCE_API_KEY:-}" ]]',
+        `printf '%s\\n' "$#" "$1" "$2" "$3" "$4" > '${receivedArguments}'`,
+        `IFS= read -r finance_key; printf '%s' "$finance_key" > '${receivedInput}'`,
+        '',
+      ].join('\n'),
+    );
+
+    const source = await readFile(operatorPath, 'utf8');
+    const transformed = source
+      .replace(
+        "((EUID == 0)) || die 'this fixed operator must run as root'",
+        ':',
+      )
+      .replace(
+        'readonly record_root=/var/lib/emdo/staging-releases',
+        `readonly record_root=${join(root, 'records')}`,
+      )
+      .replace(
+        'mapfile -t finance_key_lines',
+        'finance_key_lines=(); while IFS= read -r line || [[ -n "$line" ]]; do finance_key_lines+=("$line"); done',
+      )
+      .replace(
+        `action="${'${1:-}'}"
+shift || true
+case "$action" in
+  install) install_release "$@" ;;
+  deploy) deploy_release "$@" ;;
+  accept) accept_release "$@" ;;
+  finance-restore-receipt) finance_restore_receipt_release "$@" ;;
+  teardown) teardown_release "$@" ;;
+  *) die 'allowed actions are install, deploy, accept, finance-restore-receipt, and teardown' ;;
+esac`,
+        `load_record() {
+  RECORD_STATUS=installed
+  RECORD_RELEASE='${release}'
+  RECORD_SOURCE_SHA='${'a'.repeat(40)}'
+  RECORD_ARCHIVE_SHA='${'b'.repeat(64)}'
+}
+write_record() { :; }
+deploy_release "$@"`,
+      );
+    const scriptPath = join(root, 'operator.sh');
+    await writeExecutable(scriptPath, transformed);
+
+    const financeKey = 'finance_staging_openai_key_0123456789';
+    const result = spawnSync(
+      'bash',
+      [scriptPath, '123456789', 'false', '60', 'true'],
+      { encoding: 'utf8', input: `${financeKey}\n` },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(await readFile(receivedInput, 'utf8')).toBe(financeKey);
+    expect(await readFile(receivedArguments, 'utf8')).toBe(
+      '4\n123456789\n/release/images.env\n60\ntrue\n'.replace(
+        '/release',
+        release,
+      ),
+    );
+    expect(result.stderr).not.toContain(financeKey);
+
+    const invalid = spawnSync(
+      'bash',
+      [scriptPath, '987654321', 'false', '60', 'true'],
+      { encoding: 'utf8', input: 'not-a-valid Finance key\n' },
+    );
+    expect(invalid.status).not.toBe(0);
+    expect(invalid.stderr).not.toContain('not-a-valid Finance key');
+  });
+
   it('cleans temporary install state without dereferencing expired function locals', async () => {
     const root = await mkdtemp(join(tmpdir(), 'emdo-staging-operator-'));
     temporaryDirectories.push(root);

@@ -1,4 +1,5 @@
 import type {
+  CapabilityDescriptor,
   CapabilityExecutor,
   ProviderWriteCapabilityExecutor,
   ProviderWriteSafetyContract,
@@ -8,19 +9,28 @@ import {
   ALL_MANAGER_DELEGATION_CAPABILITY_IDS,
   ALL_SPECIALIST_CAPABILITY_IDS,
   CORE_MVP_CAPABILITY_IDS,
+  FINANCE_ONLY_CAPABILITY_IDS,
+  FINANCE_V1_CAPABILITY_IDS,
   PROVIDER_WRITE_CAPABILITY_IDS,
   REQUIRED_CAPABILITY_BINDING_KINDS,
   type CoreProductionCapabilityBindings,
+  type FinanceOnlyProductionCapabilityBindings,
+  type FinanceV1ProductionCapabilityBindings,
+  type GuardedActionProposalMaterializationContext,
   type ManagerDelegationCapabilityId,
+  type MaterializedGuardedActionProposal,
   type ProductionCapabilityBinding,
   type ProductionCapabilityBindings,
   type ProviderWriteCapabilityId,
 } from './capability-runtime.js';
 import {
+  createFinanceSpecialistCapabilityExecutors,
   createStandardSpecialistCapabilityExecutors,
   type StandardSpecialistCapabilityId,
   type TrustedStandardSpecialistServices,
+  type TrustedFinanceSpecialistServices,
 } from './specialist-capability-adapters.js';
+import { classifyFinanceGuardedAction } from '../production/finance-agent-services.js';
 
 type ProviderBinding = Extract<
   ProductionCapabilityBinding,
@@ -45,6 +55,24 @@ export type TrustedManagerDelegationExecutors = Readonly<
   Record<ManagerDelegationCapabilityId, CapabilityExecutor<unknown, unknown>>
 >;
 
+/**
+ * The request-scoped production composer owns this callback. It receives only
+ * parsed capability material and server-derived context, and must persist an
+ * immutable ActionProposal before returning. No client/model approval field is
+ * accepted here.
+ */
+export interface TrustedGuardedActionProposalMaterializer {
+  materializeProposal(
+    input: Readonly<{
+      capabilityId: string;
+      descriptor: CapabilityDescriptor;
+      arguments: unknown;
+      context: GuardedActionProposalMaterializationContext;
+      operation: string;
+    }>,
+  ): Promise<MaterializedGuardedActionProposal | undefined>;
+}
+
 export interface TrustedProductionCapabilityServices {
   /** Explicit Task6/API services; every method is named for one exact capability. */
   readonly specialists: TrustedStandardSpecialistServices;
@@ -52,12 +80,29 @@ export interface TrustedProductionCapabilityServices {
   readonly providerWrites: TrustedProviderWriteCapabilityBindings;
   /** Manager receives only these three delegation executors. */
   readonly delegations: TrustedManagerDelegationExecutors;
+  readonly guardedActionProposal?: TrustedGuardedActionProposalMaterializer;
 }
 
 /** Exact MVP-only authority surface; it deliberately has no generic specialist map. */
 export interface CoreProductionCapabilityServices {
   readonly schedulerDelegation: CapabilityExecutor<unknown, unknown>;
   readonly calendarEventCreate: TrustedProviderWriteCapabilityBinding;
+}
+
+/** Exact Manager + Scheduler + Finance v1 authority surface. */
+export interface FinanceV1ProductionCapabilityServices {
+  readonly schedulerDelegation: CapabilityExecutor<unknown, unknown>;
+  readonly financeDelegation: CapabilityExecutor<unknown, unknown>;
+  readonly calendarEventCreate: TrustedProviderWriteCapabilityBinding;
+  readonly finance: TrustedFinanceSpecialistServices;
+  readonly guardedActionProposal?: TrustedGuardedActionProposalMaterializer;
+}
+
+/** Exact Manager + Finance authority surface when Scheduler is unavailable. */
+export interface FinanceOnlyProductionCapabilityServices {
+  readonly financeDelegation: CapabilityExecutor<unknown, unknown>;
+  readonly finance: TrustedFinanceSpecialistServices;
+  readonly guardedActionProposal?: TrustedGuardedActionProposalMaterializer;
 }
 
 const assertPlainRecord: (
@@ -78,18 +123,49 @@ const assertExactKeys = (
   value: unknown,
   expected: readonly string[],
   errorCode: string,
+  optional: readonly string[] = [],
 ): Record<string, unknown> => {
   assertPlainRecord(value, errorCode);
   const actual = Object.keys(value).sort();
   const sortedExpected = [...expected].sort();
   if (
-    actual.length !== sortedExpected.length ||
-    actual.some((key, index) => key !== sortedExpected[index])
+    actual.some(
+      (key) => !sortedExpected.includes(key) && !optional.includes(key),
+    ) ||
+    sortedExpected.some((key) => !actual.includes(key))
   ) {
     throw new Error(errorCode);
   }
   return value;
 };
+
+const createFinanceGuardedActionMaterializer =
+  (adapter: TrustedGuardedActionProposalMaterializer | undefined) =>
+  async (
+    input: Readonly<{
+      capabilityId: string;
+      descriptor: CapabilityDescriptor;
+      arguments: unknown;
+      context: GuardedActionProposalMaterializationContext;
+    }>,
+  ): Promise<MaterializedGuardedActionProposal | undefined> => {
+    const capabilityId = input.capabilityId;
+    const arguments_ = input.arguments;
+    if (typeof capabilityId !== 'string') {
+      throw new Error('api-finance-guarded-action-materialization-invalid');
+    }
+    const classification = classifyFinanceGuardedAction({
+      capabilityId,
+      arguments: arguments_,
+    });
+    if (classification === undefined) return undefined;
+    if (typeof adapter?.materializeProposal !== 'function') {
+      throw new Error('api-finance-guarded-action-unavailable');
+    }
+    return adapter.materializeProposal(
+      Object.freeze({ ...input, operation: classification.operation }),
+    );
+  };
 
 const validateProviderWriteBinding = (
   capabilityId: ProviderWriteCapabilityId,
@@ -143,6 +219,8 @@ export const createProductionCapabilityBindings = (
   const standardExecutors = createStandardSpecialistCapabilityExecutors(
     services.specialists,
   );
+  const financeGuardedActionMaterializer =
+    createFinanceGuardedActionMaterializer(services.guardedActionProposal);
   const providerWrites = assertExactKeys(
     services.providerWrites,
     PROVIDER_WRITE_CAPABILITY_IDS,
@@ -165,6 +243,10 @@ export const createProductionCapabilityBindings = (
     bindings[capabilityId] = Object.freeze({
       kind,
       execute: standardExecutors[capabilityId],
+      ...(capabilityId === 'finance.records.write' ||
+      capabilityId === 'finance.statement.import'
+        ? { materializeProposal: financeGuardedActionMaterializer }
+        : {}),
     });
   }
   for (const capabilityId of PROVIDER_WRITE_CAPABILITY_IDS) {
@@ -246,4 +328,164 @@ export const createCoreProductionCapabilityBindings = (
       }),
     }),
   }) as CoreProductionCapabilityBindings;
+};
+
+export const createFinanceV1ProductionCapabilityBindings = (
+  services: FinanceV1ProductionCapabilityServices,
+): FinanceV1ProductionCapabilityBindings => {
+  const input = assertExactKeys(
+    services,
+    [
+      'calendarEventCreate',
+      'finance',
+      'financeDelegation',
+      'schedulerDelegation',
+    ],
+    'api-finance-v1-capability-services-invalid',
+    ['guardedActionProposal'],
+  );
+  if (
+    typeof input.schedulerDelegation !== 'function' ||
+    typeof input.financeDelegation !== 'function'
+  ) {
+    throw new Error('api-finance-v1-capability-services-invalid');
+  }
+  const calendarEventCreate = validateProviderWriteBinding(
+    'google-calendar.event.create' as ProviderWriteCapabilityId,
+    input.calendarEventCreate,
+  );
+  const financeExecutors = createFinanceSpecialistCapabilityExecutors(
+    input.finance as unknown as TrustedFinanceSpecialistServices,
+  );
+  const financeGuardedActionMaterializer =
+    createFinanceGuardedActionMaterializer(
+      input.guardedActionProposal as
+        TrustedGuardedActionProposalMaterializer | undefined,
+    );
+  if (
+    FINANCE_V1_CAPABILITY_IDS.length !== 10 ||
+    FINANCE_V1_CAPABILITY_IDS.includes('agent.shopping.delegate' as never)
+  ) {
+    throw new Error('api-finance-v1-capability-set-invalid');
+  }
+
+  const bindings: FinanceV1ProductionCapabilityBindings = Object.freeze({
+    'agent.scheduler.delegate': Object.freeze({
+      kind: 'delegation' as const,
+      execute: input.schedulerDelegation as CapabilityExecutor<
+        unknown,
+        unknown
+      >,
+    }),
+    'agent.finance.delegate': Object.freeze({
+      kind: 'delegation' as const,
+      execute: input.financeDelegation as CapabilityExecutor<unknown, unknown>,
+    }),
+    'google-calendar.event.create': Object.freeze({
+      kind: 'provider-write' as const,
+      executeProviderWrite:
+        calendarEventCreate.executeProviderWrite.bind(calendarEventCreate),
+      materializeProposal:
+        calendarEventCreate.materializeProposal.bind(calendarEventCreate),
+      providerWriteSafety: Object.freeze({
+        ...calendarEventCreate.providerWriteSafety,
+      }),
+    }),
+    'finance.records.read': Object.freeze({
+      kind: 'read' as const,
+      execute: financeExecutors['finance.records.read'],
+    }),
+    'finance.records.write': Object.freeze({
+      kind: 'local-write' as const,
+      execute: financeExecutors['finance.records.write'],
+      materializeProposal: financeGuardedActionMaterializer,
+    }),
+    'finance.statement.import': Object.freeze({
+      kind: 'import' as const,
+      execute: financeExecutors['finance.statement.import'],
+      materializeProposal: financeGuardedActionMaterializer,
+    }),
+    'finance.analytics.calculate': Object.freeze({
+      kind: 'read' as const,
+      execute: financeExecutors['finance.analytics.calculate'],
+    }),
+    'finance.documents.search': Object.freeze({
+      kind: 'read' as const,
+      execute: financeExecutors['finance.documents.search'],
+    }),
+    'finance.documents.read': Object.freeze({
+      kind: 'read' as const,
+      execute: financeExecutors['finance.documents.read'],
+    }),
+    'finance.matches.read': Object.freeze({
+      kind: 'read' as const,
+      execute: financeExecutors['finance.matches.read'],
+    }),
+  });
+  return bindings;
+};
+
+export const createFinanceOnlyProductionCapabilityBindings = (
+  services: FinanceOnlyProductionCapabilityServices,
+): FinanceOnlyProductionCapabilityBindings => {
+  const input = assertExactKeys(
+    services,
+    ['finance', 'financeDelegation'],
+    'api-finance-only-capability-services-invalid',
+    ['guardedActionProposal'],
+  );
+  if (typeof input.financeDelegation !== 'function') {
+    throw new Error('api-finance-only-capability-services-invalid');
+  }
+  const financeExecutors = createFinanceSpecialistCapabilityExecutors(
+    input.finance as unknown as TrustedFinanceSpecialistServices,
+  );
+  const financeGuardedActionMaterializer =
+    createFinanceGuardedActionMaterializer(
+      input.guardedActionProposal as
+        TrustedGuardedActionProposalMaterializer | undefined,
+    );
+  if (
+    FINANCE_ONLY_CAPABILITY_IDS.length !== 8 ||
+    FINANCE_ONLY_CAPABILITY_IDS.includes('agent.scheduler.delegate' as never) ||
+    FINANCE_ONLY_CAPABILITY_IDS.includes('agent.shopping.delegate' as never)
+  ) {
+    throw new Error('api-finance-only-capability-set-invalid');
+  }
+  return Object.freeze({
+    'agent.finance.delegate': Object.freeze({
+      kind: 'delegation' as const,
+      execute: input.financeDelegation as CapabilityExecutor<unknown, unknown>,
+    }),
+    'finance.records.read': Object.freeze({
+      kind: 'read' as const,
+      execute: financeExecutors['finance.records.read'],
+    }),
+    'finance.records.write': Object.freeze({
+      kind: 'local-write' as const,
+      execute: financeExecutors['finance.records.write'],
+      materializeProposal: financeGuardedActionMaterializer,
+    }),
+    'finance.statement.import': Object.freeze({
+      kind: 'import' as const,
+      execute: financeExecutors['finance.statement.import'],
+      materializeProposal: financeGuardedActionMaterializer,
+    }),
+    'finance.analytics.calculate': Object.freeze({
+      kind: 'read' as const,
+      execute: financeExecutors['finance.analytics.calculate'],
+    }),
+    'finance.documents.search': Object.freeze({
+      kind: 'read' as const,
+      execute: financeExecutors['finance.documents.search'],
+    }),
+    'finance.documents.read': Object.freeze({
+      kind: 'read' as const,
+      execute: financeExecutors['finance.documents.read'],
+    }),
+    'finance.matches.read': Object.freeze({
+      kind: 'read' as const,
+      execute: financeExecutors['finance.matches.read'],
+    }),
+  }) as FinanceOnlyProductionCapabilityBindings;
 };

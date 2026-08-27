@@ -32,6 +32,7 @@ import {
   IdentifierSchema,
   OpaqueReferenceSchema,
   SemanticVersionSchema,
+  Sha256Schema,
   TrustedProviderWriteAuthorityResolutionSchema,
   UuidSchema,
   createRuntimeSchemaRegistry,
@@ -47,6 +48,7 @@ import {
   type ProviderWriteCapabilityId as NominalProviderWriteCapabilityId,
   type ProviderWriteSafetyContract,
   type RegisteredCapability,
+  type SupportedLocale,
   type TrustedProviderWriteAuthorityResolution,
 } from '@emdo/contracts';
 import {
@@ -62,6 +64,12 @@ const VERSION = '1.0.0' as const;
 const PROVIDER_WRITE_TIMEOUT_MS = 30_000;
 const PROVIDER_WRITE_IDEMPOTENCY_TTL_MS = 86_400_000;
 
+/** These capability descriptors may classify individual inputs as guarded. */
+export const DYNAMIC_GUARDED_ACTION_CAPABILITY_IDS = Object.freeze([
+  'finance.records.write',
+  'finance.statement.import',
+] as const);
+
 type SchedulerCapabilityId =
   (typeof schedulerCapabilityReferences)[number]['id'];
 type FinanceCapabilityId = (typeof financeCapabilityReferences)[number]['id'];
@@ -74,6 +82,10 @@ export type ProductionCapabilityId =
   SpecialistCapabilityId | ManagerDelegationCapabilityId;
 export type CoreProductionCapabilityId =
   'agent.scheduler.delegate' | 'google-calendar.event.create';
+export type FinanceV1ProductionCapabilityId =
+  CoreProductionCapabilityId | 'agent.finance.delegate' | FinanceCapabilityId;
+export type FinanceOnlyProductionCapabilityId =
+  'agent.finance.delegate' | FinanceCapabilityId;
 export type ProviderWriteCapabilityName = Extract<
   SchedulerCapabilityId,
   | 'google-calendar.event.create'
@@ -99,6 +111,18 @@ export const CORE_MVP_CAPABILITY_IDS = Object.freeze([
   'agent.scheduler.delegate',
   'google-calendar.event.create',
 ] as const satisfies readonly CoreProductionCapabilityId[]);
+
+export const FINANCE_V1_CAPABILITY_IDS = Object.freeze([
+  'agent.scheduler.delegate',
+  'agent.finance.delegate',
+  'google-calendar.event.create',
+  ...financeCapabilityReferences.map(({ id }) => id),
+] as const satisfies readonly FinanceV1ProductionCapabilityId[]);
+
+export const FINANCE_ONLY_CAPABILITY_IDS = Object.freeze([
+  'agent.finance.delegate',
+  ...financeCapabilityReferences.map(({ id }) => id),
+] as const satisfies readonly FinanceOnlyProductionCapabilityId[]);
 
 const allReferences = [
   ...schedulerCapabilityReferences,
@@ -485,6 +509,19 @@ const FinanceUpdatableRecordDraftSchema = z.discriminatedUnion('recordType', [
   FinanceSubscriptionDraftSchema,
   FinanceGoalDraftSchema,
 ]);
+const FinanceTransactionPatchSchema = z
+  .strictObject({
+    description: z.string().trim().min(1).max(2_000).optional(),
+    categoryId: OpaqueIdSchema.nullable().optional(),
+    annotation: z.string().trim().min(1).max(2_000).nullable().optional(),
+  })
+  .refine(
+    (patch) =>
+      patch.description !== undefined ||
+      patch.categoryId !== undefined ||
+      patch.annotation !== undefined,
+    { message: 'A transaction patch must change an approved field' },
+  );
 const FinanceRecordMutationSchema = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('create'),
@@ -497,6 +534,12 @@ const FinanceRecordMutationSchema = z.discriminatedUnion('kind', [
     replacement: FinanceUpdatableRecordDraftSchema,
   }),
   z.strictObject({
+    kind: z.literal('patch-transaction'),
+    transactionId: OpaqueIdSchema,
+    expectedRevision: z.number().int().safe().nonnegative(),
+    patch: FinanceTransactionPatchSchema,
+  }),
+  z.strictObject({
     kind: z.literal('adjust'),
     transactionId: OpaqueIdSchema,
     amountCadMinor: CadMinorSchema.refine((value) => value !== 0),
@@ -507,7 +550,42 @@ const FinanceRecordMutationSchema = z.discriminatedUnion('kind', [
     transactionId: OpaqueIdSchema,
     reason: z.string().trim().min(3).max(1_000),
   }),
+  /**
+   * These three intents deliberately contain only opaque target references.
+   * The guarded Finance materializer loads every review, original, and match
+   * binding server-side before it can create an approval proposal.
+   */
+  z.strictObject({
+    kind: z.literal('commit-document-review'),
+    documentId: OpaqueIdSchema,
+  }),
+  z.strictObject({
+    kind: z.literal('accept-document-match'),
+    matchId: OpaqueIdSchema,
+  }),
+  z.strictObject({
+    kind: z.literal('delete-document'),
+    documentId: OpaqueIdSchema,
+  }),
 ]);
+const FinanceConfirmationRequiredSchema = z.strictObject({
+  status: z.literal('confirmation-required'),
+  proposal: z.strictObject({
+    state: z.literal('proposed'),
+    operation: z.enum([
+      'ambiguous-or-bulk-finance-write',
+      'finance-adjustment',
+      'finance-reversal',
+      'finance-statement-import-commit',
+      'finance-document-review-commit',
+      'finance-document-match-accept',
+      'finance-document-delete',
+      'unsupported-finance-write',
+    ]),
+    channel: z.literal('emdo-authenticated-visual'),
+    canonicalHash: Sha256Schema,
+  }),
+});
 const FinanceWriteResultSchema = z.strictObject({
   schemaVersion: z.literal(1),
   result: z.discriminatedUnion('status', [
@@ -520,7 +598,66 @@ const FinanceWriteResultSchema = z.strictObject({
       record: FinanceRecordSummarySchema.nullable(),
       safeError: SafeErrorSchema,
     }),
+    z.strictObject({
+      status: z.literal('document-committed'),
+      documentId: OpaqueIdSchema,
+      extractionRevision: z.number().int().positive(),
+    }),
+    z.strictObject({
+      status: z.literal('match-accepted'),
+      documentId: OpaqueIdSchema,
+      matchId: OpaqueIdSchema,
+    }),
+    z.strictObject({
+      status: z.enum(['document-deleted', 'document-purge-pending']),
+      documentId: OpaqueIdSchema,
+    }),
+    FinanceConfirmationRequiredSchema,
   ]),
+});
+
+const FinanceDocumentTypeSchema = z.enum([
+  'receipt',
+  'invoice',
+  'bank-statement',
+  'credit-statement',
+  'pay-stub',
+  'tax-slip',
+  'insurance',
+  'loan',
+  'investment-statement',
+  'other',
+]);
+const FinanceDocumentEvidenceSchema = z.strictObject({
+  evidenceId: OpaqueIdSchema,
+  documentId: OpaqueIdSchema,
+  documentType: FinanceDocumentTypeSchema,
+  displayName: z.string().trim().min(1).max(255),
+  page: z.number().int().min(1).max(250),
+  excerpt: z.string().trim().min(1).max(2_000),
+  sourceLocale: z.enum(['en-CA', 'fr-CA', 'ja-JP', 'ko-KR']),
+});
+const FinanceDocumentSearchHitSchema = z.strictObject({
+  documentId: OpaqueIdSchema,
+  documentType: FinanceDocumentTypeSchema,
+  displayName: z.string().trim().min(1).max(255),
+  occurredOn: DateOnlySchema.nullable(),
+  currency: z
+    .string()
+    .regex(/^[A-Z]{3}$/u)
+    .nullable(),
+  amountMinor: z.number().int().safe().nullable(),
+  score: z.number().min(0).max(1),
+  evidence: z.array(FinanceDocumentEvidenceSchema).min(1).max(8),
+});
+const FinanceDocumentMatchSchema = z.strictObject({
+  matchId: OpaqueIdSchema,
+  documentId: OpaqueIdSchema,
+  recordId: OpaqueIdSchema,
+  recordType: FinanceRecordTypeSchema,
+  state: z.enum(['suggested', 'accepted', 'rejected']),
+  score: z.number().min(0).max(1),
+  reasons: z.array(z.string().trim().min(1).max(200)).min(1).max(8),
 });
 
 const QuantityInputSchema = z.strictObject({
@@ -932,29 +1069,14 @@ export const specialistCapabilitySchemas = {
   'finance.statement.import': {
     input: z.strictObject({
       schemaVersion: z.literal(1),
-      request: z.discriminatedUnion('kind', [
-        z.strictObject({
-          kind: z.literal('preview'),
-          sourceReference: OpaqueIdSchema,
-          accountId: OpaqueIdSchema,
-          mappingReference: OpaqueIdSchema,
-        }),
-        z.strictObject({
-          kind: z.literal('commit'),
-          planId: OpaqueIdSchema,
-        }),
-      ]),
+      request: z.strictObject({
+        kind: z.literal('commit'),
+        planId: OpaqueIdSchema,
+      }),
     }),
     output: z.strictObject({
       schemaVersion: z.literal(1),
       result: z.discriminatedUnion('status', [
-        z.strictObject({
-          status: z.literal('preview-ready'),
-          previewId: OpaqueIdSchema,
-          acceptedRows: z.number().int().safe().nonnegative().max(100_000),
-          rejectedRows: z.number().int().safe().nonnegative().max(100_000),
-          duplicateRows: z.number().int().safe().nonnegative().max(100_000),
-        }),
         z.strictObject({
           status: z.enum(['committed', 'replayed']),
           receipt: z.strictObject({
@@ -970,12 +1092,14 @@ export const specialistCapabilitySchemas = {
           sourceDeletionAuthorized: z.literal(false),
           safeError: SafeErrorSchema,
         }),
+        FinanceConfirmationRequiredSchema,
       ]),
     }),
   },
-  'finance.budget.calculate': {
+  'finance.analytics.calculate': {
     input: z.strictObject({
       schemaVersion: z.literal(1),
+      calculation: z.literal('monthly-budget').default('monthly-budget'),
       month: MonthSchema,
     }),
     output: z.strictObject({
@@ -1007,6 +1131,72 @@ export const specialistCapabilitySchemas = {
           safeError: SafeErrorSchema,
         }),
       ]),
+    }),
+  },
+  'finance.documents.search': {
+    input: z
+      .strictObject({
+        schemaVersion: z.literal(1),
+        query: z.string().trim().min(1).max(1_000),
+        documentTypes: z.array(FinanceDocumentTypeSchema).max(10).optional(),
+        from: DateOnlySchema.optional(),
+        to: DateOnlySchema.optional(),
+        limit: z.number().int().min(1).max(25).default(10),
+      })
+      .superRefine((value, context) => {
+        if (
+          value.from !== undefined &&
+          value.to !== undefined &&
+          value.to < value.from
+        ) {
+          context.addIssue({
+            code: 'custom',
+            path: ['to'],
+            message: 'Document search end must not precede its start',
+          });
+        }
+      }),
+    output: z.strictObject({
+      schemaVersion: z.literal(1),
+      hits: z.array(FinanceDocumentSearchHitSchema).max(25),
+    }),
+  },
+  'finance.documents.read': {
+    input: z.strictObject({
+      schemaVersion: z.literal(1),
+      documentId: OpaqueIdSchema,
+      evidenceIds: z.array(OpaqueIdSchema).max(32),
+    }),
+    output: z.strictObject({
+      schemaVersion: z.literal(1),
+      document: z.strictObject({
+        id: OpaqueIdSchema,
+        documentType: FinanceDocumentTypeSchema,
+        displayName: z.string().trim().min(1).max(255),
+        sourceLocale: z.enum(['en-CA', 'fr-CA', 'ja-JP', 'ko-KR']),
+        currency: z
+          .string()
+          .regex(/^[A-Z]{3}$/u)
+          .nullable(),
+        summary: z.string().trim().min(1).max(4_000),
+        committedAt: IsoInstantSchema,
+      }),
+      evidence: z.array(FinanceDocumentEvidenceSchema).max(32),
+    }),
+  },
+  'finance.matches.read': {
+    input: z.strictObject({
+      schemaVersion: z.literal(1),
+      documentId: OpaqueIdSchema,
+      states: z
+        .array(z.enum(['suggested', 'accepted', 'rejected']))
+        .max(3)
+        .optional(),
+      limit: z.number().int().min(1).max(50).default(25),
+    }),
+    output: z.strictObject({
+      schemaVersion: z.literal(1),
+      matches: z.array(FinanceDocumentMatchSchema).max(50),
     }),
   },
   'shopping.items.read': {
@@ -1191,9 +1381,30 @@ export interface MaterializedProviderWriteProposal {
   readonly proposal: ActionProposal;
 }
 
+/**
+ * A local-write/import materializer returns undefined only after trusted
+ * classification has determined the concrete input is safe to execute
+ * directly. Any returned proposal is the durable visual-approval boundary.
+ */
+export interface MaterializedGuardedActionProposal {
+  readonly sdkCallId: string;
+  readonly proposal: ActionProposal;
+}
+
+export interface GuardedActionProposalMaterializationContext extends ProviderProposalMaterializationContext {
+  readonly agentId: string;
+}
+
 interface StandardProductionCapabilityBinding {
   readonly kind: 'delegation' | 'read' | 'local-write' | 'import';
   readonly execute: CapabilityExecutor<unknown, unknown>;
+  /** Present only for a descriptor with dynamic authenticated visual approval. */
+  readonly materializeProposal?: (input: {
+    readonly capabilityId: string;
+    readonly descriptor: CapabilityDescriptor;
+    readonly arguments: unknown;
+    readonly context: GuardedActionProposalMaterializationContext;
+  }) => Promise<MaterializedGuardedActionProposal | undefined>;
 }
 
 interface ProviderWriteProductionCapabilityBinding {
@@ -1228,6 +1439,15 @@ export type ProductionCapabilityBindings = Readonly<
 export type CoreProductionCapabilityBindings = Readonly<
   Record<CoreProductionCapabilityId, ProductionCapabilityBinding>
 >;
+export type FinanceV1ProductionCapabilityBindings = Readonly<
+  Record<FinanceV1ProductionCapabilityId, ProductionCapabilityBinding>
+>;
+export type FinanceOnlyProductionCapabilityBindings = Readonly<
+  Record<FinanceOnlyProductionCapabilityId, ProductionCapabilityBinding>
+>;
+export type ManagerOnlyProductionCapabilityBindings = Readonly<
+  Record<never, ProductionCapabilityBinding>
+>;
 
 const requiredDataClasses: Record<ProductionCapabilityId, readonly string[]> = {
   'scheduler.calendar.freebusy.read': ['calendar.events'],
@@ -1240,7 +1460,13 @@ const requiredDataClasses: Record<ProductionCapabilityId, readonly string[]> = {
   'finance.records.read': financeManifest.readableDataClasses,
   'finance.records.write': financeManifest.readableDataClasses,
   'finance.statement.import': ['finance.imports', 'finance.transactions'],
-  'finance.budget.calculate': ['finance.transactions', 'finance.budgets'],
+  'finance.analytics.calculate': ['finance.transactions', 'finance.budgets'],
+  'finance.documents.search': [
+    'finance.documents',
+    'finance.document-evidence',
+  ],
+  'finance.documents.read': ['finance.documents', 'finance.document-evidence'],
+  'finance.matches.read': ['finance.documents', 'finance.document-matches'],
   'shopping.items.read': ['shopping.items'],
   'shopping.items.write': ['shopping.items'],
   'commerce.offers.read': ['shopping.offers'],
@@ -1262,7 +1488,10 @@ const requiredScopes: Record<ProductionCapabilityId, readonly string[]> = {
   'finance.records.read': [],
   'finance.records.write': [],
   'finance.statement.import': [],
-  'finance.budget.calculate': [],
+  'finance.analytics.calculate': [],
+  'finance.documents.search': [],
+  'finance.documents.read': [],
+  'finance.matches.read': [],
   'shopping.items.read': [],
   'shopping.items.write': [],
   'commerce.offers.read': ['commerce.offers.read'],
@@ -1286,6 +1515,9 @@ const createDescriptor = (
   kind: ProductionCapabilityBinding['kind'],
 ) => {
   const isProviderWrite = kind === 'provider-write';
+  const isDynamicGuardedAction = DYNAMIC_GUARDED_ACTION_CAPABILITY_IDS.includes(
+    id as (typeof DYNAMIC_GUARDED_ACTION_CAPABILITY_IDS)[number],
+  );
   const isDelegation = kind === 'delegation';
   const isRead = kind === 'read';
   const schemaRefs = isDelegation
@@ -1323,12 +1555,13 @@ const createDescriptor = (
       scope: isProviderWrite ? 'provider-target' : 'actor',
       ttlMs: isProviderWrite ? PROVIDER_WRITE_IDEMPOTENCY_TTL_MS : 86_400_000,
     },
-    approval: isProviderWrite
-      ? {
-          rule: 'authenticated-visual-proposal',
-          expiresInSeconds: 600,
-        }
-      : { rule: 'none', expiresInSeconds: 0 },
+    approval:
+      isProviderWrite || isDynamicGuardedAction
+        ? {
+            rule: 'authenticated-visual-proposal',
+            expiresInSeconds: 600,
+          }
+        : { rule: 'none', expiresInSeconds: 0 },
     audit: {
       required: true,
       eventType: `${id}.${isProviderWrite ? 'provider-write' : 'invoked'}`,
@@ -1337,6 +1570,21 @@ const createDescriptor = (
     executorId: `${id}.v1`,
   });
 };
+
+/**
+ * Finance's execution leaf receives this descriptor binding from durable
+ * composition rather than trusting a permit's fingerprint. Keeping the
+ * descriptor source here makes a stale or substituted permit fail closed.
+ */
+export const financeGuardedActionCapabilityFingerprint = (
+  capabilityId: 'finance.records.write' | 'finance.statement.import',
+): string =>
+  hashCapabilityDescriptorBinding(
+    createDescriptor(
+      capabilityId,
+      capabilityId === 'finance.records.write' ? 'local-write' : 'import',
+    ),
+  );
 
 const productionProviderWriteCapabilityNames = Object.freeze(
   schedulerCapabilityReferences
@@ -1445,6 +1693,10 @@ const validateBindings = (
     string,
     ProviderWriteProductionCapabilityBinding['materializeProposal']
   >;
+  readonly guardedActionMaterializers: ReadonlyMap<
+    string,
+    NonNullable<StandardProductionCapabilityBinding['materializeProposal']>
+  >;
 } => {
   assertPlainRecord(rawBindings, 'api-capability-bindings-missing');
   const requiredIds = [...capabilityIds];
@@ -1458,6 +1710,10 @@ const validateBindings = (
   const materializers = new Map<
     string,
     ProviderWriteProductionCapabilityBinding['materializeProposal']
+  >();
+  const guardedActionMaterializers = new Map<
+    string,
+    NonNullable<StandardProductionCapabilityBinding['materializeProposal']>
   >();
   for (const capabilityId of requiredIds as ProductionCapabilityId[]) {
     const rawBinding = rawBindings[capabilityId];
@@ -1520,8 +1776,24 @@ const validateBindings = (
     if (descriptor.capabilityKind === 'provider-write') {
       throw new Error(`api-capability-descriptor-kind-invalid:${capabilityId}`);
     }
-    exactBindingKeys(rawBinding, ['kind', 'execute'], capabilityId);
+    const requiresGuardedActionMaterializer =
+      descriptor.approval.rule === 'authenticated-visual-proposal';
+    const hasGuardedActionMaterializer =
+      rawBinding.materializeProposal !== undefined;
+    exactBindingKeys(
+      rawBinding,
+      hasGuardedActionMaterializer
+        ? ['kind', 'execute', 'materializeProposal']
+        : ['kind', 'execute'],
+      capabilityId,
+    );
     if (typeof rawBinding.execute !== 'function') {
+      throw new Error(`api-capability-binding-invalid:${capabilityId}`);
+    }
+    if (
+      hasGuardedActionMaterializer &&
+      typeof rawBinding.materializeProposal !== 'function'
+    ) {
       throw new Error(`api-capability-binding-invalid:${capabilityId}`);
     }
     const execute = rawBinding.execute.bind(rawBinding) as CapabilityExecutor<
@@ -1535,10 +1807,20 @@ const validateBindings = (
         return execute(deepFreeze(arguments_), context);
       },
     });
+    if (requiresGuardedActionMaterializer && hasGuardedActionMaterializer) {
+      const materializeProposal = rawBinding.materializeProposal as NonNullable<
+        StandardProductionCapabilityBinding['materializeProposal']
+      >;
+      guardedActionMaterializers.set(
+        capabilityId,
+        materializeProposal.bind(rawBinding),
+      );
+    }
   }
   return Object.freeze({
     registrations: Object.freeze(registrations),
     materializers,
+    guardedActionMaterializers,
   });
 };
 
@@ -1569,7 +1851,38 @@ const ProposalMaterializationRequestSchema = z.strictObject({
   }),
 });
 
+const GuardedActionMaterializationRequestSchema = z.strictObject({
+  capabilityId: IdentifierSchema,
+  arguments: z.unknown(),
+  context: z.strictObject({
+    requestId: UuidSchema,
+    runId: UuidSchema,
+    householdId: UuidSchema,
+    userId: UuidSchema,
+    authenticatedSessionId: UuidSchema,
+    spaceAccessGrantId: UuidSchema,
+    authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprintSchema,
+    disclosureGrantId: UuidSchema,
+    disclosureGrantVersion: SemanticVersionSchema,
+    sdkCallId: OpaqueReferenceSchema,
+    agentId: IdentifierSchema,
+    abortSignal: z.custom<AbortSignal>(
+      (value) =>
+        value !== null &&
+        typeof value === 'object' &&
+        typeof (value as AbortSignal).aborted === 'boolean',
+    ),
+  }),
+});
+
 const MaterializedProviderWriteProposalSchema = z
+  .strictObject({
+    sdkCallId: OpaqueReferenceSchema,
+    proposal: ActionProposalSchema,
+  })
+  .transform(deepFreeze);
+
+const MaterializedGuardedActionProposalSchema = z
   .strictObject({
     sdkCallId: OpaqueReferenceSchema,
     proposal: ActionProposalSchema,
@@ -1591,6 +1904,11 @@ export interface ProductionCapabilityRuntime {
     readonly arguments: unknown;
     readonly context: ProviderProposalMaterializationContext;
   }): Promise<MaterializedProviderWriteProposal>;
+  materializeGuardedActionProposal(input: {
+    readonly capabilityId: string;
+    readonly arguments: unknown;
+    readonly context: GuardedActionProposalMaterializationContext;
+  }): Promise<MaterializedGuardedActionProposal | undefined>;
 }
 
 export interface CoreProductionCapabilityRuntime {
@@ -1606,6 +1924,69 @@ export interface CoreProductionCapabilityRuntime {
     readonly arguments: unknown;
     readonly context: ProviderProposalMaterializationContext;
   }): Promise<MaterializedProviderWriteProposal>;
+  materializeGuardedActionProposal(input: {
+    readonly capabilityId: string;
+    readonly arguments: unknown;
+    readonly context: GuardedActionProposalMaterializationContext;
+  }): Promise<MaterializedGuardedActionProposal | undefined>;
+}
+
+export interface FinanceV1ProductionCapabilityRuntime {
+  readonly registry: CapabilityRegistry;
+  readonly schemas: ReturnType<typeof createRuntimeSchemaRegistry>;
+  readonly schemaResolver: AgentSchemaResolver;
+  readonly manifests: Readonly<{
+    manager: AgentManifest;
+    scheduler: AgentManifest;
+    finance: AgentManifest;
+  }>;
+  materializeProviderWriteProposal(input: {
+    readonly capabilityId: ProviderWriteCapabilityId;
+    readonly arguments: unknown;
+    readonly context: ProviderProposalMaterializationContext;
+  }): Promise<MaterializedProviderWriteProposal>;
+  materializeGuardedActionProposal(input: {
+    readonly capabilityId: string;
+    readonly arguments: unknown;
+    readonly context: GuardedActionProposalMaterializationContext;
+  }): Promise<MaterializedGuardedActionProposal | undefined>;
+}
+
+export interface FinanceOnlyProductionCapabilityRuntime {
+  readonly registry: CapabilityRegistry;
+  readonly schemas: ReturnType<typeof createRuntimeSchemaRegistry>;
+  readonly schemaResolver: AgentSchemaResolver;
+  readonly manifests: Readonly<{
+    manager: AgentManifest;
+    finance: AgentManifest;
+  }>;
+  materializeProviderWriteProposal(input: {
+    readonly capabilityId: ProviderWriteCapabilityId;
+    readonly arguments: unknown;
+    readonly context: ProviderProposalMaterializationContext;
+  }): Promise<MaterializedProviderWriteProposal>;
+  materializeGuardedActionProposal(input: {
+    readonly capabilityId: string;
+    readonly arguments: unknown;
+    readonly context: GuardedActionProposalMaterializationContext;
+  }): Promise<MaterializedGuardedActionProposal | undefined>;
+}
+
+export interface ManagerOnlyProductionCapabilityRuntime {
+  readonly registry: CapabilityRegistry;
+  readonly schemas: ReturnType<typeof createRuntimeSchemaRegistry>;
+  readonly schemaResolver: AgentSchemaResolver;
+  readonly manifests: Readonly<{ manager: AgentManifest }>;
+  materializeProviderWriteProposal(input: {
+    readonly capabilityId: ProviderWriteCapabilityId;
+    readonly arguments: unknown;
+    readonly context: ProviderProposalMaterializationContext;
+  }): Promise<MaterializedProviderWriteProposal>;
+  materializeGuardedActionProposal(input: {
+    readonly capabilityId: string;
+    readonly arguments: unknown;
+    readonly context: GuardedActionProposalMaterializationContext;
+  }): Promise<MaterializedGuardedActionProposal | undefined>;
 }
 
 type CapabilityRuntimeConstructionInput<
@@ -1634,10 +2015,8 @@ const createScopedProductionCapabilityRuntime = <
     input.trustedProviderProposalAuthorityResolver,
     'api-provider-proposal-authority-resolver-missing',
   ) as TrustedProviderProposalAuthorityResolver;
-  const { registrations, materializers } = validateBindings(
-    input.bindings,
-    input.capabilityIds,
-  );
+  const { registrations, materializers, guardedActionMaterializers } =
+    validateBindings(input.bindings, input.capabilityIds);
   const schemaRegistrations = input.schemaRegistrations;
   const schemas = createRuntimeSchemaRegistry(schemaRegistrations);
   const schemaResolver = createAgentSchemaResolver(
@@ -1744,12 +2123,113 @@ const createScopedProductionCapabilityRuntime = <
       return materialized;
     };
 
+  const materializeGuardedActionProposal: CoreProductionCapabilityRuntime['materializeGuardedActionProposal'] =
+    async (rawInput) => {
+      const request = GuardedActionMaterializationRequestSchema.parse(rawInput);
+      assertBoundedModelArguments(request.arguments);
+      const descriptor = registrations.find(
+        ({ descriptor: candidate }) => candidate.id === request.capabilityId,
+      )?.descriptor;
+      if (
+        descriptor === undefined ||
+        descriptor.approval.rule !== 'authenticated-visual-proposal'
+      ) {
+        throw new Error('api-guarded-action-capability-unregistered');
+      }
+
+      if (descriptor.capabilityKind === 'provider-write') {
+        return materializeProviderWriteProposal({
+          capabilityId: parseProductionProviderWriteCapabilityId(
+            request.capabilityId,
+          ),
+          arguments: request.arguments,
+          context: {
+            requestId: request.context.requestId,
+            runId: request.context.runId,
+            householdId: request.context.householdId,
+            userId: request.context.userId,
+            authenticatedSessionId: request.context.authenticatedSessionId,
+            spaceAccessGrantId: request.context.spaceAccessGrantId,
+            authorizationScopeFingerprint:
+              request.context.authorizationScopeFingerprint,
+            disclosureGrantId: request.context.disclosureGrantId,
+            disclosureGrantVersion: request.context.disclosureGrantVersion,
+            sdkCallId: request.context.sdkCallId,
+            abortSignal: request.context.abortSignal,
+          },
+        });
+      }
+      if (
+        descriptor.capabilityKind !== 'local-write' &&
+        descriptor.capabilityKind !== 'import'
+      ) {
+        throw new Error('api-guarded-action-capability-invalid');
+      }
+      const matchingManifest = Object.values(manifests).find(
+        (manifest) =>
+          manifest.id === request.context.agentId &&
+          manifest.capabilityAllowlist.includes(descriptor.id),
+      );
+      if (
+        matchingManifest === undefined ||
+        matchingManifest.kind !== 'specialist'
+      ) {
+        throw new Error('api-guarded-action-agent-binding-invalid');
+      }
+      const materializer = guardedActionMaterializers.get(descriptor.id);
+      if (materializer === undefined) {
+        throw new Error(`api-capability-materializer-missing:${descriptor.id}`);
+      }
+      const arguments_ = schemas.parse<unknown>(
+        descriptor.inputSchema,
+        request.arguments,
+      );
+      const rawMaterialized = await materializer({
+        capabilityId: descriptor.id,
+        descriptor,
+        arguments: arguments_,
+        context: request.context,
+      });
+      if (rawMaterialized === undefined) return undefined;
+      const materialized =
+        MaterializedGuardedActionProposalSchema.parse(rawMaterialized);
+      const proposal = materialized.proposal;
+      const actionHash = hashCanonicalJson(arguments_);
+      if (
+        materialized.sdkCallId !== request.context.sdkCallId ||
+        proposal.runId !== request.context.runId ||
+        proposal.providerSdkCallId !== request.context.sdkCallId ||
+        proposal.capabilityId !== descriptor.id ||
+        proposal.capabilityFingerprint !==
+          hashCapabilityDescriptorBinding(descriptor) ||
+        proposal.authorizationScopeFingerprint !==
+          request.context.authorizationScopeFingerprint ||
+        proposal.payloadHash !== actionHash ||
+        hashCanonicalJson(proposal.canonicalArguments) !== actionHash ||
+        proposal.disclosureGrant.id !== request.context.disclosureGrantId ||
+        proposal.disclosureGrant.userId !== request.context.userId ||
+        proposal.disclosureGrant.householdId !== request.context.householdId ||
+        proposal.disclosureGrant.agentId !== request.context.agentId ||
+        proposal.guardedAction === undefined ||
+        proposal.guardedAction.capabilityVersion !== descriptor.version ||
+        proposal.guardedAction.actionHash !== actionHash ||
+        proposal.guardedAction.executionBindingHash !==
+          proposal.providerAuthorityBindingHash ||
+        proposal.state !== 'pending' ||
+        (proposal.beforePreview === null && proposal.afterPreview === null)
+      ) {
+        throw new Error('api-guarded-action-proposal-binding-invalid');
+      }
+      return materialized;
+    };
+
   return Object.freeze({
     registry,
     schemas,
     schemaResolver,
     manifests,
     materializeProviderWriteProposal,
+    materializeGuardedActionProposal,
   });
 };
 
@@ -1797,6 +2277,57 @@ export const createCoreProductionCapabilityRuntime = (input: {
     ],
   }) as CoreProductionCapabilityRuntime;
 
+export const createFinanceV1ProductionCapabilityRuntime = (input: {
+  readonly bindings: unknown;
+  readonly providerWriteApprovalStore: unknown;
+  readonly trustedProviderWriteAuthorityResolver: unknown;
+  readonly trustedProviderProposalAuthorityResolver: unknown;
+  readonly manifests: FinanceV1ProductionCapabilityRuntime['manifests'];
+}): FinanceV1ProductionCapabilityRuntime =>
+  createScopedProductionCapabilityRuntime({
+    ...input,
+    capabilityIds: FINANCE_V1_CAPABILITY_IDS,
+    schemaRegistrations: [
+      ...managerSchemaRegistrations,
+      ...schedulerSchemaRegistrations,
+      ...financeSchemaRegistrations,
+      ...capabilitySchemaRegistrations,
+    ],
+  }) as FinanceV1ProductionCapabilityRuntime;
+
+export const createFinanceOnlyProductionCapabilityRuntime = (input: {
+  readonly bindings: unknown;
+  readonly providerWriteApprovalStore: unknown;
+  readonly trustedProviderWriteAuthorityResolver: unknown;
+  readonly trustedProviderProposalAuthorityResolver: unknown;
+  readonly manifests: FinanceOnlyProductionCapabilityRuntime['manifests'];
+}): FinanceOnlyProductionCapabilityRuntime =>
+  createScopedProductionCapabilityRuntime({
+    ...input,
+    capabilityIds: FINANCE_ONLY_CAPABILITY_IDS,
+    schemaRegistrations: [
+      ...managerSchemaRegistrations,
+      ...financeSchemaRegistrations,
+      ...capabilitySchemaRegistrations,
+    ],
+  }) as FinanceOnlyProductionCapabilityRuntime;
+
+export const createManagerOnlyProductionCapabilityRuntime = (input: {
+  readonly bindings: unknown;
+  readonly providerWriteApprovalStore: unknown;
+  readonly trustedProviderWriteAuthorityResolver: unknown;
+  readonly trustedProviderProposalAuthorityResolver: unknown;
+  readonly manifests: ManagerOnlyProductionCapabilityRuntime['manifests'];
+}): ManagerOnlyProductionCapabilityRuntime =>
+  createScopedProductionCapabilityRuntime({
+    ...input,
+    capabilityIds: [],
+    schemaRegistrations: [
+      ...managerSchemaRegistrations,
+      ...capabilitySchemaRegistrations,
+    ],
+  }) as ManagerOnlyProductionCapabilityRuntime;
+
 export const capabilityInvocationContextForServer = (input: {
   readonly requestId: string;
   readonly runId: string;
@@ -1805,6 +2336,7 @@ export const capabilityInvocationContextForServer = (input: {
   readonly sessionId: string;
   readonly agentId: string;
   readonly spaceAccessGrantId: string;
+  readonly locale: SupportedLocale;
   readonly disclosureGrantId?: string;
   readonly approvalDecisionId?: string;
   readonly abortSignal: AbortSignal;

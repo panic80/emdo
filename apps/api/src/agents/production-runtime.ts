@@ -54,16 +54,31 @@ import {
   ALL_MANAGER_DELEGATION_CAPABILITY_IDS,
   ALL_SPECIALIST_CAPABILITY_IDS,
   CORE_MVP_CAPABILITY_IDS,
+  FINANCE_ONLY_CAPABILITY_IDS,
+  FINANCE_V1_CAPABILITY_IDS,
   createCoreProductionCapabilityRuntime,
+  createFinanceOnlyProductionCapabilityRuntime,
+  createFinanceV1ProductionCapabilityRuntime,
+  createManagerOnlyProductionCapabilityRuntime,
   createProductionCapabilityRuntime,
   type TrustedProviderProposalAuthorityResolver,
 } from './capability-runtime.js';
 import {
   createProductionCapabilityBindings,
   createCoreProductionCapabilityBindings,
+  createFinanceOnlyProductionCapabilityBindings,
+  createFinanceV1ProductionCapabilityBindings,
   type CoreProductionCapabilityServices,
+  type FinanceOnlyProductionCapabilityServices,
+  type FinanceV1ProductionCapabilityServices,
   type TrustedProductionCapabilityServices,
 } from './production-bindings.js';
+import {
+  createAvailableRegisteredAgentProfile,
+  financeV1FinanceDefinition,
+  financeV1ManagerDefinition,
+  financeV1SchedulerDefinition,
+} from './registered-agent-profile.js';
 import type { ProductionProviderProposalComposition } from './proposal-gateway.js';
 import type { ProviderFreeTurnResult } from './provider-free-runtime.js';
 
@@ -161,6 +176,54 @@ export interface CoreProductionAgentRuntime {
   readonly sdkVersion: typeof SDK_VERSION;
 }
 
+export interface FinanceV1ProductionAgentRuntimeDependencies extends Omit<
+  ProductionAgentRuntimeDependencies,
+  'capabilityServices'
+> {
+  readonly capabilityServices: FinanceV1ProductionCapabilityServices;
+  /** Server-owned model runner; the runtime never reads a process-global key. */
+  readonly executionRunner: OpenAiAgentsRunnerPort;
+}
+
+export interface FinanceV1ProductionAgentRuntime {
+  readonly orchestrator: AgentOrchestrator;
+  readonly agentIds: readonly ['manager', 'scheduler', 'finance'];
+  readonly capabilityIds: typeof FINANCE_V1_CAPABILITY_IDS;
+  readonly agentGraphHash: string;
+  readonly sdkVersion: typeof SDK_VERSION;
+}
+
+export interface FinanceOnlyProductionAgentRuntimeDependencies extends Omit<
+  ProductionAgentRuntimeDependencies,
+  'capabilityServices'
+> {
+  readonly capabilityServices: FinanceOnlyProductionCapabilityServices;
+  readonly executionRunner: OpenAiAgentsRunnerPort;
+}
+
+export interface FinanceOnlyProductionAgentRuntime {
+  readonly orchestrator: AgentOrchestrator;
+  readonly agentIds: readonly ['manager', 'finance'];
+  readonly capabilityIds: typeof FINANCE_ONLY_CAPABILITY_IDS;
+  readonly agentGraphHash: string;
+  readonly sdkVersion: typeof SDK_VERSION;
+}
+
+export interface ManagerOnlyProductionAgentRuntimeDependencies extends Omit<
+  ProductionAgentRuntimeDependencies,
+  'capabilityServices'
+> {
+  readonly executionRunner: OpenAiAgentsRunnerPort;
+}
+
+export interface ManagerOnlyProductionAgentRuntime {
+  readonly orchestrator: AgentOrchestrator;
+  readonly agentIds: readonly ['manager'];
+  readonly capabilityIds: readonly [];
+  readonly agentGraphHash: string;
+  readonly sdkVersion: typeof SDK_VERSION;
+}
+
 const graphDefinitions = Object.freeze([
   managerAgentDefinition,
   schedulerAgentDefinition,
@@ -193,6 +256,23 @@ const coreGraphDefinitions = Object.freeze([
   }),
 ] as const);
 
+const financeV1GraphDefinitions = Object.freeze([
+  financeV1ManagerDefinition,
+  financeV1SchedulerDefinition,
+  financeV1FinanceDefinition,
+] as const);
+const managerOnlyProfile = createAvailableRegisteredAgentProfile({});
+const financeOnlyProfile = createAvailableRegisteredAgentProfile({
+  finance: { readiness: async () => ({ status: 'ready' }) },
+});
+const managerOnlyGraphDefinitions = Object.freeze([
+  managerOnlyProfile.manager,
+] as const);
+const financeOnlyGraphDefinitions = Object.freeze([
+  financeOnlyProfile.manager,
+  financeOnlyProfile.specialists[0]!,
+] as const);
+
 const graphHashInput = (
   capabilityRuntime: ReturnType<typeof createProductionCapabilityRuntime>,
 ) => ({
@@ -218,6 +298,51 @@ const coreGraphHashInput = (
   schemaVersion: 1,
   sdkVersion: SDK_VERSION,
   agents: coreGraphDefinitions.map((definition) => ({
+    manifest: definition.manifest,
+    instructions: definition.instructions,
+    skills: definition.skills,
+    capabilityReferences: definition.capabilityReferences,
+    capabilityDescriptors: capabilityRuntime.registry
+      .resolveForAgent({
+        manifest: definition.manifest,
+        requestedCapabilityIds: definition.manifest.capabilityAllowlist,
+      })
+      .map(({ descriptor }) => descriptor),
+  })),
+});
+
+const financeV1GraphHashInput = (
+  capabilityRuntime: ReturnType<
+    typeof createFinanceV1ProductionCapabilityRuntime
+  >,
+) => ({
+  schemaVersion: 1,
+  sdkVersion: SDK_VERSION,
+  agents: financeV1GraphDefinitions.map((definition) => ({
+    manifest: definition.manifest,
+    instructions: definition.instructions,
+    skills: definition.skills,
+    capabilityReferences: definition.capabilityReferences,
+    capabilityDescriptors: capabilityRuntime.registry
+      .resolveForAgent({
+        manifest: definition.manifest,
+        requestedCapabilityIds: definition.manifest.capabilityAllowlist,
+      })
+      .map(({ descriptor }) => descriptor),
+  })),
+});
+
+const finiteGraphHashInput = (
+  definitions: readonly (typeof managerOnlyProfile.manager)[],
+  capabilityRuntime: Readonly<{
+    registry: ReturnType<
+      typeof createManagerOnlyProductionCapabilityRuntime
+    >['registry'];
+  }>,
+) => ({
+  schemaVersion: 1,
+  sdkVersion: SDK_VERSION,
+  agents: definitions.map((definition) => ({
     manifest: definition.manifest,
     instructions: definition.instructions,
     skills: definition.skills,
@@ -392,6 +517,222 @@ export const createCoreProductionAgentRuntime = (
   });
 };
 
+/** Compiles EMDO without section specialists for general conversation only. */
+export const createManagerOnlyProductionAgentRuntime = (
+  dependencies: ManagerOnlyProductionAgentRuntimeDependencies,
+): ManagerOnlyProductionAgentRuntime => {
+  const capabilityRuntime = createManagerOnlyProductionCapabilityRuntime({
+    bindings: Object.freeze({}),
+    providerWriteApprovalStore: dependencies.proposals.approvalStore,
+    trustedProviderWriteAuthorityResolver:
+      dependencies.trustedProviderWriteAuthorityResolver,
+    trustedProviderProposalAuthorityResolver:
+      dependencies.trustedProviderProposalAuthorityResolver,
+    manifests: Object.freeze({
+      manager: managerOnlyProfile.manager.manifest,
+    }),
+  });
+  const proposalGateway = dependencies.proposals.createGateway(
+    capabilityRuntime as unknown as Parameters<
+      ProductionProviderProposalComposition['createGateway']
+    >[0],
+  );
+  const sdk = createOpenAiAgentsSdkFacade({ proposalGateway });
+  const factory = new AgentFactory<OpenAiSdkAgent, OpenAiSdkFunctionTool>({
+    validateManifest: (value) => AgentManifestSchema.parse(value),
+    capabilityRegistry: capabilityRuntime.registry,
+    schemaResolver: capabilityRuntime.schemaResolver,
+    sharedSkills: FOUNDATIONAL_SKILLS,
+    sdk,
+  });
+  const manager = factory.compile(managerOnlyGraphDefinitions[0]);
+  manager.materialize(manager.manifest.modelPolicy.defaultModel);
+  const executionProvider = new OpenAiAgentsExecutionProvider({
+    proposalGateway,
+    costCalculator: dependencies.costCalculator,
+    spendGuard: dependencies.spendGuard,
+    runner: dependencies.executionRunner,
+  });
+  if (executionProvider.sdkVersion !== SDK_VERSION) {
+    throw new Error('api-agent-sdk-version-mismatch');
+  }
+  const agentGraphHash = hashCanonicalJson(
+    finiteGraphHashInput(managerOnlyGraphDefinitions, capabilityRuntime),
+  );
+  const orchestrator = new AgentOrchestrator({
+    manager,
+    specialists: [],
+    executionProvider,
+    modelRouter: new ModelRouter(dependencies.modelAvailability),
+    memory: dependencies.memory,
+    traceRecorder: new LocalTraceRecorder(dependencies.traceSink),
+    approvalCheckpoints: dependencies.approvalCheckpoints,
+    proposalGateway,
+    disclosureGateway: dependencies.disclosureGateway,
+    agentGraphHash,
+    sdkVersion: SDK_VERSION,
+  });
+  return Object.freeze({
+    orchestrator,
+    agentIds: Object.freeze(['manager'] as const),
+    capabilityIds: Object.freeze([] as const),
+    agentGraphHash,
+    sdkVersion: SDK_VERSION,
+  });
+};
+
+/** Compiles EMDO + Finance when Scheduler is not configured or ready. */
+export const createFinanceOnlyProductionAgentRuntime = (
+  dependencies: FinanceOnlyProductionAgentRuntimeDependencies,
+): FinanceOnlyProductionAgentRuntime => {
+  const bindings = createFinanceOnlyProductionCapabilityBindings(
+    dependencies.capabilityServices,
+  );
+  const capabilityRuntime = createFinanceOnlyProductionCapabilityRuntime({
+    bindings,
+    providerWriteApprovalStore: dependencies.proposals.approvalStore,
+    trustedProviderWriteAuthorityResolver:
+      dependencies.trustedProviderWriteAuthorityResolver,
+    trustedProviderProposalAuthorityResolver:
+      dependencies.trustedProviderProposalAuthorityResolver,
+    manifests: Object.freeze({
+      manager: financeOnlyProfile.manager.manifest,
+      finance: financeOnlyProfile.specialists[0]!.manifest,
+    }),
+  });
+  const proposalGateway = dependencies.proposals.createGateway(
+    capabilityRuntime as unknown as Parameters<
+      ProductionProviderProposalComposition['createGateway']
+    >[0],
+  );
+  const sdk = createOpenAiAgentsSdkFacade({ proposalGateway });
+  const factory = new AgentFactory<OpenAiSdkAgent, OpenAiSdkFunctionTool>({
+    validateManifest: (value) => AgentManifestSchema.parse(value),
+    capabilityRegistry: capabilityRuntime.registry,
+    schemaResolver: capabilityRuntime.schemaResolver,
+    sharedSkills: FOUNDATIONAL_SKILLS,
+    sdk,
+  });
+  const manager = factory.compile(financeOnlyGraphDefinitions[0]);
+  const finance = factory.compile(financeOnlyGraphDefinitions[1]);
+  for (const compiled of [manager, finance]) {
+    compiled.materialize(compiled.manifest.modelPolicy.defaultModel);
+  }
+  const executionProvider = new OpenAiAgentsExecutionProvider({
+    proposalGateway,
+    costCalculator: dependencies.costCalculator,
+    spendGuard: dependencies.spendGuard,
+    runner: dependencies.executionRunner,
+  });
+  if (executionProvider.sdkVersion !== SDK_VERSION) {
+    throw new Error('api-agent-sdk-version-mismatch');
+  }
+  const agentGraphHash = hashCanonicalJson(
+    finiteGraphHashInput(financeOnlyGraphDefinitions, capabilityRuntime),
+  );
+  const orchestrator = new AgentOrchestrator({
+    manager,
+    specialists: [finance],
+    executionProvider,
+    modelRouter: new ModelRouter(dependencies.modelAvailability),
+    memory: dependencies.memory,
+    traceRecorder: new LocalTraceRecorder(dependencies.traceSink),
+    approvalCheckpoints: dependencies.approvalCheckpoints,
+    proposalGateway,
+    disclosureGateway: dependencies.disclosureGateway,
+    agentGraphHash,
+    sdkVersion: SDK_VERSION,
+  });
+  return Object.freeze({
+    orchestrator,
+    agentIds: Object.freeze(['manager', 'finance'] as const),
+    capabilityIds: FINANCE_ONLY_CAPABILITY_IDS,
+    agentGraphHash,
+    sdkVersion: SDK_VERSION,
+  });
+};
+
+/**
+ * Compiles the finite Finance v1 graph. Its registry is server-owned and
+ * contains Manager, the existing Scheduler, and Finance only; Shopping and
+ * every unapproved capability are structurally absent.
+ */
+export const createFinanceV1ProductionAgentRuntime = (
+  dependencies: FinanceV1ProductionAgentRuntimeDependencies,
+): FinanceV1ProductionAgentRuntime => {
+  const bindings = createFinanceV1ProductionCapabilityBindings(
+    dependencies.capabilityServices,
+  );
+  const capabilityRuntime = createFinanceV1ProductionCapabilityRuntime({
+    bindings,
+    providerWriteApprovalStore: dependencies.proposals.approvalStore,
+    trustedProviderWriteAuthorityResolver:
+      dependencies.trustedProviderWriteAuthorityResolver,
+    trustedProviderProposalAuthorityResolver:
+      dependencies.trustedProviderProposalAuthorityResolver,
+    manifests: Object.freeze({
+      manager: financeV1ManagerDefinition.manifest,
+      scheduler: financeV1SchedulerDefinition.manifest,
+      finance: financeV1FinanceDefinition.manifest,
+    }),
+  });
+  const proposalGateway = dependencies.proposals.createGateway(
+    capabilityRuntime as unknown as Parameters<
+      ProductionProviderProposalComposition['createGateway']
+    >[0],
+  );
+  const sdk = createOpenAiAgentsSdkFacade({ proposalGateway });
+  const factory = new AgentFactory<OpenAiSdkAgent, OpenAiSdkFunctionTool>({
+    validateManifest: (value) => AgentManifestSchema.parse(value),
+    capabilityRegistry: capabilityRuntime.registry,
+    schemaResolver: capabilityRuntime.schemaResolver,
+    sharedSkills: FOUNDATIONAL_SKILLS,
+    sdk,
+  });
+  const [manager, scheduler, finance] = financeV1GraphDefinitions.map(
+    (definition) => factory.compile(definition),
+  ) as [
+    ReturnType<typeof factory.compile>,
+    ReturnType<typeof factory.compile>,
+    ReturnType<typeof factory.compile>,
+  ];
+  for (const compiled of [manager, scheduler, finance]) {
+    compiled.materialize(compiled.manifest.modelPolicy.defaultModel);
+  }
+  const executionProvider = new OpenAiAgentsExecutionProvider({
+    proposalGateway,
+    costCalculator: dependencies.costCalculator,
+    spendGuard: dependencies.spendGuard,
+    runner: dependencies.executionRunner,
+  });
+  if (executionProvider.sdkVersion !== SDK_VERSION) {
+    throw new Error('api-agent-sdk-version-mismatch');
+  }
+  const agentGraphHash = hashCanonicalJson(
+    financeV1GraphHashInput(capabilityRuntime),
+  );
+  const orchestrator = new AgentOrchestrator({
+    manager,
+    specialists: [scheduler, finance],
+    executionProvider,
+    modelRouter: new ModelRouter(dependencies.modelAvailability),
+    memory: dependencies.memory,
+    traceRecorder: new LocalTraceRecorder(dependencies.traceSink),
+    approvalCheckpoints: dependencies.approvalCheckpoints,
+    proposalGateway,
+    disclosureGateway: dependencies.disclosureGateway,
+    agentGraphHash,
+    sdkVersion: SDK_VERSION,
+  });
+  return Object.freeze({
+    orchestrator,
+    agentIds: Object.freeze(['manager', 'scheduler', 'finance'] as const),
+    capabilityIds: FINANCE_V1_CAPABILITY_IDS,
+    agentGraphHash,
+    sdkVersion: SDK_VERSION,
+  });
+};
+
 export type DurableManagerTurnClaim =
   | Readonly<{
       status: 'replay';
@@ -451,7 +792,8 @@ export interface DurableManagerTurnStore {
    * any runtime construction or model I/O. A replay never owns execution.
    */
   claim(input: {
-    readonly request: TurnRequest;
+    /** Locale is intentionally excluded from durable manager-turn SQL/idempotency. */
+    readonly request: Omit<TurnRequest, 'locale'>;
     readonly principal: AuthenticatedPrincipal;
     readonly requestId: string;
     readonly idempotencyKey: string;
@@ -590,9 +932,11 @@ export const createProductionAgentServiceBindingsFromDependencies = (
           runtimeFactory,
         });
   const startManagerTurn: ManagerTurnGateway['start'] = async (input) => {
+    const { locale, ...durableRequest } = input.request;
     const claim = parseDurableManagerTurnClaim(
       await turns.claim({
         ...input,
+        request: durableRequest,
         principal: projectDurableAgentPrincipal(input.principal),
       }),
     );
@@ -614,6 +958,7 @@ export const createProductionAgentServiceBindingsFromDependencies = (
         conversationId: claim.conversationId,
         spaceAccessGrantId: input.principal.spaceAccessGrantId,
         authorizationScopeFingerprint: claim.authorizationScopeFingerprint,
+        locale,
         message: input.request.message,
         escalationTriggers: claim.escalationTriggers,
         ...(input.request.routeHint === undefined

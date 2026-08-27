@@ -20,7 +20,7 @@ const ids = Object.freeze({
 });
 
 describeDatabase(
-  'PostgreSQL 17 finance import retention runner (requires isolated canonical TEST_FINANCE_RETENTION_DATABASE_URL)',
+  'PostgreSQL 18 finance import retention runner (requires isolated canonical TEST_FINANCE_RETENTION_DATABASE_URL)',
   () => {
     let admin: import('pg').Pool;
     let runner: import('pg').Pool;
@@ -46,9 +46,9 @@ describeDatabase(
            where role.rolname = current_user`);
       expect(server.rows[0]).toMatchObject({ is_superuser: true });
       expect(Number(server.rows[0]?.server_version_num)).toBeGreaterThanOrEqual(
-        170_000,
+        180_000,
       );
-      expect(Number(server.rows[0]?.server_version_num)).toBeLessThan(180_000);
+      expect(Number(server.rows[0]?.server_version_num)).toBeLessThan(190_000);
       const existing = await admin.query<{ emdo: string | null }>(
         "select pg_catalog.to_regnamespace('emdo')::text as emdo",
       );
@@ -59,10 +59,8 @@ describeDatabase(
       }
 
       const migrations = await loadOrderedMigrations();
-      expect(migrations).toHaveLength(16);
-      expect(migrations.at(-1)?.id).toBe(
-        '0015_single_household_session_activation',
-      );
+      expect(migrations).toHaveLength(17);
+      expect(migrations.at(-1)?.id).toBe('0016_finance_document_knowledge');
       for (const migration of migrations) await admin.query(migration.sql);
 
       await expect(

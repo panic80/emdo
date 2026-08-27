@@ -11,6 +11,7 @@ import {
   summarizePostgresProcessFailure,
   summarizePostgresSuiteFailure,
   type PostgresIntegrationDependencies,
+  type PostgresServerInspection,
 } from './postgres-integration-orchestrator.js';
 
 const sourceSha = 'a'.repeat(40);
@@ -23,6 +24,13 @@ const attackProof = Object.freeze({
   signedClaimScope: 'passed' as const,
   attackCaseCount: 15,
 });
+const validServer = Object.freeze({
+  adminDatabase: 'postgres',
+  adminIsSuperuser: true,
+  emdoRoleCount: 0,
+  pgvectorExtensionVersion: '0.8.6',
+  serverVersionNum: 180_010,
+} satisfies PostgresServerInspection);
 
 const expectedDatabaseName = (
   suite: (typeof POSTGRES_INTEGRATION_SUITES)[number],
@@ -35,11 +43,7 @@ const createDependencies = (
   events: string[],
 ): PostgresIntegrationDependencies => {
   const dependencies = {
-    inspectServer: vi.fn(async () => ({
-      emdoRoleCount: 0,
-      pgvectorExtensionVersion: '0.8.6',
-      serverVersionNum: 170_010,
-    })),
+    inspectServer: vi.fn(async () => validServer),
     createDatabase: vi.fn(async ({ suite }) => {
       events.push(`create:${suite.id}`);
       const databaseName = expectedDatabaseName(suite);
@@ -166,6 +170,7 @@ describe('PostgreSQL integration orchestrator', () => {
   });
 
   it('enrolls every dedicated live database authority suite', () => {
+    expect(POSTGRES_INTEGRATION_SUITES).toHaveLength(17);
     expect(POSTGRES_INTEGRATION_SUITES).toEqual(
       expect.arrayContaining([
         {
@@ -182,6 +187,11 @@ describe('PostgreSQL integration orchestrator', () => {
           id: 'finance-import-receipts',
           file: 'packages/db/src/finance/postgres-finance-import-repository.integration.test.ts',
           databaseEnvironment: 'TEST_FINANCE_IMPORT_DATABASE_URL',
+        },
+        {
+          id: 'finance-document-knowledge',
+          file: 'packages/db/src/finance/postgres-finance-document-repository.integration.test.ts',
+          databaseEnvironment: 'TEST_FINANCE_DOCUMENT_DATABASE_URL',
         },
         {
           id: 'finance-import-retention-runner',
@@ -239,8 +249,8 @@ describe('PostgreSQL integration orchestrator', () => {
       sourceSha,
       observedAt: '2026-08-10T14:00:00.000Z',
       database: {
-        postgresqlMajor: 17,
-        serverVersionNum: 170_010,
+        postgresqlMajor: 18,
+        serverVersionNum: 180_010,
         pgvectorExtensionVersion: '0.8.6',
       },
       execution: 'sequential',
@@ -322,16 +332,24 @@ describe('PostgreSQL integration orchestrator', () => {
     expect(dependencies.writeRawReport).not.toHaveBeenCalled();
   });
 
-  it('refuses a server outside PostgreSQL 17 or without pgvector before creating a database', async () => {
+  it('refuses PostgreSQL 17, PostgreSQL 19, or a server without pgvector before creating a database', async () => {
     for (const server of [
-      { pgvectorExtensionVersion: '0.8.6', serverVersionNum: 160_009 },
-      { pgvectorExtensionVersion: null, serverVersionNum: 170_010 },
-      { pgvectorExtensionVersion: '0.8.6', serverVersionNum: Number.NaN },
-      { pgvectorExtensionVersion: 'not-a-version', serverVersionNum: 170_010 },
+      { ...validServer, serverVersionNum: 170_010 },
+      { ...validServer, serverVersionNum: 190_000 },
+      { ...validServer, pgvectorExtensionVersion: null },
+      { ...validServer, serverVersionNum: Number.NaN },
+      { ...validServer, pgvectorExtensionVersion: 'not-a-version' },
       {
+        ...validServer,
         emdoRoleCount: 1,
-        pgvectorExtensionVersion: '0.8.6',
-        serverVersionNum: 170_010,
+      },
+      {
+        ...validServer,
+        adminDatabase: 'emdo_app',
+      },
+      {
+        ...validServer,
+        adminIsSuperuser: false,
       },
     ] as const) {
       const events: string[] = [];
@@ -347,7 +365,7 @@ describe('PostgreSQL integration orchestrator', () => {
           runId,
           sourceSha,
         }),
-      ).rejects.toThrow('PostgreSQL 17 with pgvector');
+      ).rejects.toThrow('PostgreSQL 18 with pgvector');
       expect(dependencies.createDatabase).not.toHaveBeenCalled();
     }
   });

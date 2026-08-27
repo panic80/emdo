@@ -21,6 +21,7 @@ const suiteIds = [
   'household-administration',
   'disclosure-authority',
   'finance-import-receipts',
+  'finance-document-knowledge',
   'finance-import-retention-runner',
   'google-oauth-authority',
   'manager-run-event-replay',
@@ -42,8 +43,8 @@ const rawReport = () => ({
     event: 'push',
   },
   database: {
-    postgresqlMajor: 17,
-    serverVersionNum: 170_010,
+    postgresqlMajor: 18,
+    serverVersionNum: 180_010,
     pgvectorExtensionVersion: '0.8.6',
   },
   execution: 'sequential',
@@ -123,6 +124,26 @@ describe('PostgreSQL CI evidence writer', () => {
     [
       'a missing suite',
       { suites: rawReport().suites.slice(0, rawReport().suites.length - 1) },
+    ],
+    [
+      'a PostgreSQL 17 server',
+      {
+        database: {
+          ...rawReport().database,
+          postgresqlMajor: 17,
+          serverVersionNum: 170_010,
+        },
+      },
+    ],
+    [
+      'a PostgreSQL 19 server',
+      {
+        database: {
+          ...rawReport().database,
+          postgresqlMajor: 19,
+          serverVersionNum: 190_000,
+        },
+      },
     ],
     [
       'a canonical suite with a generated database name',

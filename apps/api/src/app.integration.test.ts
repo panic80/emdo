@@ -247,6 +247,10 @@ const buildServices = () => {
     },
     financeRead: {
       list: vi.fn(async () => ({ schemaVersion: 1 as const, items: [] })),
+      readSnapshot: vi.fn(async () => ({
+        reviewedCadTotals: [],
+        budgets: [],
+      })),
     },
     financeImports: {
       listDestinations: vi.fn(async () => ({
@@ -277,6 +281,28 @@ const buildServices = () => {
         sourceDeletionAuthorized: true as const,
       })),
     },
+    financeDocuments: Object.fromEntries(
+      [
+        'list',
+        'get',
+        'upload',
+        'downloadOriginal',
+        'retry',
+        'getReview',
+        'updateReview',
+        'commitReview',
+        'listMatches',
+        'decideMatch',
+        'getEvidence',
+        'delete',
+        'readExperience',
+      ].map((name) => [
+        name,
+        vi.fn(async () => {
+          throw new Error('finance-document-test-service-not-configured');
+        }),
+      ]),
+    ) as unknown as ApiServices['financeDocuments'],
     managerTurns: {
       start: vi.fn(async () => ({
         schemaVersion: 1 as const,
@@ -858,7 +884,7 @@ describe('Fastify API boundary', () => {
       payload: {
         schemaVersion: 1,
         message: 'Plan tomorrow',
-        model: 'gpt-5.6-terra',
+        locale: 'en-US',
       },
     });
     expect(invalid.statusCode).toBe(400);
@@ -872,6 +898,7 @@ describe('Fastify API boundary', () => {
         schemaVersion: 1,
         conversationId: CONVERSATION_ID,
         message: 'Plan tomorrow around chores',
+        locale: 'ko-KR',
         routeHint: 'scheduler',
       },
     });
@@ -884,7 +911,22 @@ describe('Fastify API boundary', () => {
       expect.objectContaining({
         principal,
         idempotencyKey: IDEMPOTENCY_KEY,
-        request: expect.objectContaining({ routeHint: 'scheduler' }),
+        request: expect.objectContaining({
+          routeHint: 'scheduler',
+          locale: 'ko-KR',
+        }),
+      }),
+    );
+    const fallback = await app.inject({
+      method: 'POST',
+      url: '/api/v1/turns',
+      headers: { ...authenticatedHeaders, 'idempotency-key': IDEMPOTENCY_KEY },
+      payload: { schemaVersion: 1, message: 'Use the default locale' },
+    });
+    expect(fallback.statusCode).toBe(202);
+    expect(services.managerTurns.start).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        request: expect.objectContaining({ locale: 'en-CA' }),
       }),
     );
     await app.close();

@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
 import Fastify, { LogController, type FastifyInstance } from 'fastify';
+import multipart from '@fastify/multipart';
+
+import { FINANCE_DOCUMENT_LIMITS } from '@emdo/domains/finance';
 
 import { resolveApiLimits, type ApiLimits } from './config.js';
 import { createOpenApiDocument } from './openapi.js';
@@ -8,6 +11,7 @@ import { installProblemHandler } from './problem.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerExperienceRoutes } from './routes/experience.js';
 import { registerFinanceImportRoutes } from './routes/finance-imports.js';
+import { registerFinanceDocumentRoutes } from './routes/finance-documents.js';
 import { registerGoogleRoutes } from './routes/google.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerHouseholdAdministrationRoutes } from './routes/household-admin.js';
@@ -15,9 +19,11 @@ import { registerMetricsRoutes } from './routes/metrics.js';
 import { registerProposalRoutes } from './routes/proposals.js';
 import { registerRunRoutes } from './routes/runs.js';
 import { registerSyncRoutes } from './routes/sync.js';
+import { registerSyntheticFinanceInvitationHandoffRoute } from './routes/synthetic-finance-invitation-handoff.js';
 import { registerTurnRoutes } from './routes/turns.js';
 import { registerVoiceRoutes } from './routes/voice.js';
 import { CanonicalAppOriginSchema } from './schemas.js';
+import type { SyntheticFinanceInvitationHandoff } from './production/synthetic-finance-invitation-handoff.js';
 import type {
   ApiServices,
   AuthenticatedPrincipal,
@@ -37,6 +43,7 @@ export interface CreateAppOptions {
   readonly edgeProxySecret?: string;
   readonly allowLoopbackApiIngress?: boolean;
   readonly enableSyntheticHttpSubsetReadiness?: boolean;
+  readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
 }
 
 const requestId = (request: { readonly headers: Record<string, unknown> }) => {
@@ -96,6 +103,17 @@ export const createApp = async (
   });
 
   installProblemHandler(app);
+  await app.register(multipart, {
+    limits: {
+      fieldNameSize: 100,
+      fieldSize: 1,
+      fields: 0,
+      files: 1,
+      parts: 1,
+      headerPairs: 100,
+      fileSize: FINANCE_DOCUMENT_LIMITS.maximumBytesPerFile,
+    },
+  });
   registerAuthRoutes(
     app,
     options.services,
@@ -110,6 +128,7 @@ export const createApp = async (
     options.services,
     limits.maximumJsonBodyBytes,
   );
+  registerFinanceDocumentRoutes(app, options.services);
   registerHealthRoutes(
     app,
     options.services,
@@ -132,6 +151,13 @@ export const createApp = async (
     options.services,
     limits.maximumJsonBodyBytes,
   );
+  if (options.syntheticFinanceInvitationHandoff !== undefined) {
+    registerSyntheticFinanceInvitationHandoffRoute(
+      app,
+      options.services,
+      options.syntheticFinanceInvitationHandoff,
+    );
+  }
   app.get('/openapi.json', async (_request, reply) =>
     reply
       .header('cache-control', 'public, max-age=300')

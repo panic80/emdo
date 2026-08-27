@@ -13,6 +13,7 @@
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
+    "pdf-parse": "2.4.5",
     "pg": "8.23.0",
     "pg-boss": "12.27.0",
     "zod": "4.4.3"

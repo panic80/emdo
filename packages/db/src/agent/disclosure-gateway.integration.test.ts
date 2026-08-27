@@ -34,7 +34,7 @@ const loginRole = 'emdo_disclosure_integration_login';
 const loginPassword = `emdo-test-${randomUUID()}`;
 
 describeDatabase(
-  'PostgreSQL 17 disclosure authority (requires isolated TEST_DISCLOSURE_DATABASE_URL)',
+  'PostgreSQL 18 disclosure authority (requires isolated TEST_DISCLOSURE_DATABASE_URL)',
   () => {
     let admin: import('pg').Client;
     let runtime: EmdoDatabaseClient;

@@ -8,6 +8,7 @@ import {
   OpaqueReferenceSchema,
   EffectiveAuthorizationScopeFingerprintSchema,
   SchemaVersionSchema,
+  SemanticVersionSchema,
   Sha256Schema,
   UuidSchema,
   deepFreeze,
@@ -86,6 +87,23 @@ export type ActionProposalApprovalDisplay = DeepReadonly<
   z.input<typeof ActionProposalApprovalDisplayBaseSchema>
 >;
 
+/**
+ * Present only for an EMDO-owned local action that was dynamically determined
+ * to need visual approval. The execution binding itself stays server-owned;
+ * this immutable digest lets every later boundary detect a substituted actor,
+ * session, private space, grant, scope, or canonical action.
+ */
+const GuardedActionBindingSchema = z.strictObject({
+  capabilityVersion: SemanticVersionSchema,
+  operation: IdentifierSchema,
+  actionHash: Sha256Schema,
+  executionBindingHash: Sha256Schema,
+});
+
+export type GuardedActionBinding = DeepReadonly<
+  z.input<typeof GuardedActionBindingSchema>
+>;
+
 const ActionProposalBaseSchema = z
   .strictObject({
     schemaVersion: SchemaVersionSchema,
@@ -103,6 +121,7 @@ const ActionProposalBaseSchema = z
     providerPreconditions: z.array(ProviderPreconditionSchema).max(64),
     providerAuthorityBindingHash: Sha256Schema,
     providerSdkCallId: OpaqueReferenceSchema,
+    guardedAction: GuardedActionBindingSchema.optional(),
     payloadHash: Sha256Schema,
     approvalHash: Sha256Schema,
     disclosureGrant: DataDisclosureGrantSchema,
@@ -153,6 +172,19 @@ const ActionProposalBaseSchema = z
         code: 'custom',
         path: ['disclosureGrant', 'expiresAt'],
         message: 'Disclosure grant must remain valid through proposal expiry',
+      });
+    }
+    if (
+      value.guardedAction !== undefined &&
+      (value.guardedAction.actionHash !== value.payloadHash ||
+        value.guardedAction.executionBindingHash !==
+          value.providerAuthorityBindingHash)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['guardedAction'],
+        message:
+          'Guarded action binding must match the canonical payload and execution binding',
       });
     }
   });
