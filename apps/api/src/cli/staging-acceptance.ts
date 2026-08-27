@@ -108,6 +108,7 @@ const FinanceMemberInvitationDiagnosticSchema = z.enum([
   'member-invitation:request-or-network-failed',
   'member-invitation:http-401-authentication-required',
   'member-invitation:http-401-authentication-invalid',
+  'member-invitation:http-400-invalid-input',
   'member-invitation:http-403-mutation-proof-invalid',
   'member-invitation:http-403-household-owner-required',
   'member-invitation:http-403-authorization-revoked',
@@ -134,6 +135,7 @@ const FinanceMemberInvitationOutcome = Object.freeze({
     'http-401-authentication-required',
   'member-invitation:http-401-authentication-invalid':
     'http-401-authentication-invalid',
+  'member-invitation:http-400-invalid-input': 'http-400-invalid-input',
   'member-invitation:http-403-mutation-proof-invalid':
     'http-403-mutation-proof-invalid',
   'member-invitation:http-403-household-owner-required':
@@ -525,6 +527,7 @@ const parseProblem = async (response: Response) => {
 };
 
 const FinanceMemberInvitationProblemDiagnostic = Object.freeze({
+  '400:invalid-input': 'member-invitation:http-400-invalid-input',
   '401:authentication-required':
     'member-invitation:http-401-authentication-required',
   '401:authentication-invalid':
