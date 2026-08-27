@@ -383,6 +383,192 @@ describe('FinanceDocuments', () => {
     expect(saved.proposedRecord).toEqual(draft.envelope.proposedRecord);
   });
 
+  it('blocks saving an invalid proposed record until it is corrected', async () => {
+    const draft = reviewDraft({
+      proposedRecord: { kind: 'expense', description: 'Original record' },
+    });
+    const updateReview = vi.fn<FinanceDocumentApi['updateReview']>(
+      async (input) => ({ ...draft, envelope: input.envelope }),
+    );
+    const api = createApi({
+      list: vi.fn(async () => ({
+        schemaVersion: 1 as const,
+        items: [summary],
+      })),
+      readReview: vi.fn(async () => draft),
+      updateReview,
+    });
+    const user = userEvent.setup();
+    render(
+      <FinanceDocuments
+        api={api}
+        locale="en-CA"
+        online
+        csrfToken="csrf-current"
+        onRequestDeletion={vi.fn(() => true)}
+        onRequestCommit={vi.fn(() => true)}
+        onRequestMatchDecision={vi.fn(() => true)}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Review extraction' }),
+    );
+    const proposedRecord = screen.getByRole('textbox', {
+      name: 'Proposed record',
+    });
+    fireEvent.change(proposedRecord, { target: { value: '{not valid JSON' } });
+
+    expect(proposedRecord).toHaveAttribute('aria-invalid', 'true');
+    expect(
+      screen.getByText('Enter valid JSON before saving this review.'),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'Save reviewed changes' }),
+    ).toBeDisabled();
+    await user.click(
+      screen.getByRole('button', { name: 'Save reviewed changes' }),
+    );
+    expect(updateReview).not.toHaveBeenCalled();
+
+    fireEvent.change(proposedRecord, {
+      target: {
+        value: JSON.stringify({ kind: 'expense', description: 'Fixed' }),
+      },
+    });
+
+    expect(
+      screen.queryByText('Enter valid JSON before saving this review.'),
+    ).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Save reviewed changes' }),
+    ).not.toHaveAttribute('disabled');
+    await user.click(
+      screen.getByRole('button', { name: 'Save reviewed changes' }),
+    );
+    await waitFor(() => expect(updateReview).toHaveBeenCalledOnce());
+    expect(updateReview.mock.calls[0]?.[0].envelope.proposedRecord).toEqual({
+      kind: 'expense',
+      description: 'Fixed',
+    });
+  });
+
+  it('blocks saving an invalid collection item without discarding other items', async () => {
+    const draft = reviewDraft({
+      lineItems: [
+        { description: 'First item', quantity: 1, amount: null },
+        { description: 'Second item', quantity: 2, amount: null },
+      ],
+    });
+    const updateReview = vi.fn<FinanceDocumentApi['updateReview']>(
+      async (input) => ({ ...draft, envelope: input.envelope }),
+    );
+    const api = createApi({
+      list: vi.fn(async () => ({
+        schemaVersion: 1 as const,
+        items: [summary],
+      })),
+      readReview: vi.fn(async () => draft),
+      updateReview,
+    });
+    const user = userEvent.setup();
+    render(
+      <FinanceDocuments
+        api={api}
+        locale="en-CA"
+        online
+        csrfToken="csrf-current"
+        onRequestDeletion={vi.fn(() => true)}
+        onRequestCommit={vi.fn(() => true)}
+        onRequestMatchDecision={vi.fn(() => true)}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Review extraction' }),
+    );
+    const lineItems = screen.getByRole('group', { name: 'Line items' });
+    const firstItem = within(lineItems).getByLabelText('Item 1');
+    fireEvent.change(firstItem, { target: { value: '{not valid JSON' } });
+
+    await waitFor(() =>
+      expect(
+        within(
+          screen.getByRole('group', { name: 'Line items' }),
+        ).getByLabelText('Item 1'),
+      ).toHaveAttribute('aria-invalid', 'true'),
+    );
+    expect(
+      within(lineItems).getByText(
+        'Enter valid JSON before saving this review.',
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'Save reviewed changes' }),
+    ).toBeDisabled();
+    await user.click(
+      screen.getByRole('button', { name: 'Save reviewed changes' }),
+    );
+    expect(updateReview).not.toHaveBeenCalled();
+  });
+
+  it('resets invalid JSON editor state and draft text when the review draft is reopened', async () => {
+    const draft = reviewDraft({
+      proposedRecord: { kind: 'expense', description: 'Original record' },
+    });
+    const api = createApi({
+      list: vi.fn(async () => ({
+        schemaVersion: 1 as const,
+        items: [summary],
+      })),
+      readReview: vi.fn(async () => ({
+        ...draft,
+        envelope: { ...draft.envelope },
+      })),
+    });
+    const user = userEvent.setup();
+    render(
+      <FinanceDocuments
+        api={api}
+        locale="en-CA"
+        online
+        csrfToken="csrf-current"
+        onRequestDeletion={vi.fn(() => true)}
+        onRequestCommit={vi.fn(() => true)}
+        onRequestMatchDecision={vi.fn(() => true)}
+      />,
+    );
+
+    const reviewButton = await screen.findByRole('button', {
+      name: 'Review extraction',
+    });
+    await user.click(reviewButton);
+    const proposedRecord = screen.getByRole('textbox', {
+      name: 'Proposed record',
+    });
+    fireEvent.change(proposedRecord, { target: { value: '{not valid JSON' } });
+    expect(
+      screen.getByText('Enter valid JSON before saving this review.'),
+    ).toBeVisible();
+
+    await user.click(reviewButton);
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Enter valid JSON before saving this review.'),
+      ).toBeNull(),
+    );
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: 'Proposed record',
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe(JSON.stringify(draft.envelope.proposedRecord));
+    expect(
+      screen.getByRole('button', { name: 'Save reviewed changes' }),
+    ).not.toHaveAttribute('disabled');
+  });
+
   it('shows, edits, and preserves an invoice payment status in the review update', async () => {
     const draft = reviewDraft({
       documentType: 'invoice',

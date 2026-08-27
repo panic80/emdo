@@ -101,7 +101,7 @@ const createRepository = () => {
           currency: 'CAD' as string,
           pageStart: 1,
           pageEnd: 1,
-          fullTextRank: 1,
+          fullTextRank: 1 as number | null,
           vectorRank: 1 as number | null,
         },
       ],
@@ -186,6 +186,46 @@ describe('createProductionFinanceSpecialistDocumentPort', () => {
     expect(hits[0]!.evidence).toHaveLength(2);
     expect(hits[0]!.evidence[0]!.excerpt).toHaveLength(2_000);
     expect(hits[0]!.score).toBeGreaterThan(0);
+  });
+
+  it('preserves a semantic-only candidate when lexical rank is absent', async () => {
+    const repository = createRepository();
+    repository.search.mockResolvedValueOnce({
+      structured: [],
+      fullText: [
+        {
+          id: ids.chunk,
+          documentId: ids.document,
+          extractionRevision: 2,
+          documentType: 'receipt',
+          currency: 'CAD',
+          pageStart: 1,
+          pageEnd: 1,
+          fullTextRank: null,
+          vectorRank: 1,
+        },
+      ],
+    });
+    const port = createProductionFinanceSpecialistDocumentPort({
+      owner,
+      repository,
+      embeddingQuery: {
+        query: vi.fn(async () => Array.from({ length: 1_536 }, () => 0)),
+      },
+    });
+
+    await expect(
+      port.searchCommitted({
+        scope,
+        query: 'vegetables',
+        limit: 1,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        documentId: ids.document,
+        evidence: [expect.objectContaining({ evidenceId: ids.evidenceOne })],
+      }),
+    ]);
   });
 
   it('reads only the exact committed evidence IDs requested for the document', async () => {

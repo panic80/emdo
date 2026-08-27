@@ -2848,7 +2848,7 @@ export class PostgresFinanceDocumentRepository {
         content: string;
         pageStart: number;
         pageEnd: number;
-        fullTextRank: number;
+        fullTextRank: number | null;
         vectorRank: number | null;
       }>[];
     }>
@@ -2883,43 +2883,80 @@ export class PostgresFinanceDocumentRepository {
           deepFreeze({ ...documentFromRow(row), structuredRank: index + 1 }),
         );
         const fullTextRows = await client.query(
-          `with ranked_chunks as (
-           select chunk.id::text as "id", chunk.document_id::text as "documentId",
-                  chunk.extraction_revision as "extractionRevision",
-                  document.document_type as "documentType", document.currency as "currency",
-                  chunk.content as "content", chunk.page_start as "pageStart",
-                  chunk.page_end as "pageEnd",
-                  row_number() over (
-                    order by pg_catalog.ts_rank_cd(
-                      chunk.search_vector,
-                      pg_catalog.websearch_to_tsquery('simple', $4)
-                    ) desc, chunk.id
-                  )::integer as "fullTextRank",
-                  case when $5::text is null or chunk.embedding is null then null
-                       else row_number() over (
-                         order by chunk.embedding <=> $5::vector, chunk.id
-                       )::integer
-                   end as "vectorRank"
-             from emdo.finance_document_chunks as chunk
-             join emdo.finance_documents as document
-               on document.id = chunk.document_id
-              and document.household_id = chunk.household_id
-              and document.space_id = chunk.space_id
-              and document.original_owner_user_id = chunk.original_owner_user_id
-            where chunk.household_id = $1
-              and chunk.space_id = $2
-              and chunk.original_owner_user_id = $3
-              and document.state = 'committed'
-              and document.deleted_at is null
-              and document.extraction_revision = chunk.extraction_revision
-              and chunk.deleted_at is null
-              and ($6::text[] = '{}'::text[] or document.document_type = any($6::text[]))
-              and ($7::text is null or document.currency = $7)
-              and chunk.search_vector @@ pg_catalog.websearch_to_tsquery('simple', $4)
-         )
-         select * from ranked_chunks
-          order by "fullTextRank", "id"
-          limit $8`,
+          `with eligible_chunks as not materialized (
+             select chunk.id::text as "id", chunk.document_id::text as "documentId",
+                    chunk.extraction_revision as "extractionRevision",
+                    document.document_type as "documentType", document.currency as "currency",
+                    chunk.content as "content", chunk.page_start as "pageStart",
+                    chunk.page_end as "pageEnd", chunk.search_vector,
+                    chunk.embedding
+               from emdo.finance_document_chunks as chunk
+               join emdo.finance_documents as document
+                 on document.id = chunk.document_id
+                and document.household_id = chunk.household_id
+                and document.space_id = chunk.space_id
+                and document.original_owner_user_id = chunk.original_owner_user_id
+              where chunk.household_id = $1
+                and chunk.space_id = $2
+                and chunk.original_owner_user_id = $3
+                and document.state = 'committed'
+                and document.deleted_at is null
+                and document.extraction_revision = chunk.extraction_revision
+                and chunk.deleted_at is null
+                and ($6::text[] = '{}'::text[] or document.document_type = any($6::text[]))
+                and ($7::text is null or document.currency = $7)
+           ),
+           full_text_candidates as (
+             select eligible.*,
+                    row_number() over (
+                      order by pg_catalog.ts_rank_cd(
+                        eligible.search_vector,
+                        pg_catalog.websearch_to_tsquery('simple', $4)
+                      ) desc, eligible."id"
+                    )::integer as "fullTextRank"
+               from eligible_chunks as eligible
+              where eligible.search_vector @@ pg_catalog.websearch_to_tsquery('simple', $4)
+              order by pg_catalog.ts_rank_cd(
+                eligible.search_vector,
+                pg_catalog.websearch_to_tsquery('simple', $4)
+              ) desc, eligible."id"
+              limit $8
+           ),
+           vector_candidates as (
+             select eligible.*,
+                    row_number() over (
+                      order by eligible.embedding <=> $5::vector, eligible."id"
+                    )::integer as "vectorRank"
+               from eligible_chunks as eligible
+              where $5::text is not null
+                and eligible.embedding is not null
+              order by eligible.embedding <=> $5::vector, eligible."id"
+              limit $8
+           ),
+           candidates as (
+             select coalesce(full_text."id", vector."id") as "id",
+                    coalesce(full_text."documentId", vector."documentId") as "documentId",
+                    coalesce(full_text."extractionRevision", vector."extractionRevision") as "extractionRevision",
+                    coalesce(full_text."documentType", vector."documentType") as "documentType",
+                    coalesce(full_text."currency", vector."currency") as "currency",
+                    coalesce(full_text."content", vector."content") as "content",
+                    coalesce(full_text."pageStart", vector."pageStart") as "pageStart",
+                    coalesce(full_text."pageEnd", vector."pageEnd") as "pageEnd",
+                    full_text."fullTextRank" as "fullTextRank",
+                    vector."vectorRank" as "vectorRank"
+               from full_text_candidates as full_text
+               full outer join vector_candidates as vector
+                 on vector."id" = full_text."id"
+           )
+           select * from candidates
+            order by least(
+                       coalesce("fullTextRank", 2147483647),
+                       coalesce("vectorRank", 2147483647)
+                     ),
+                     coalesce("fullTextRank", 2147483647),
+                     coalesce("vectorRank", 2147483647),
+                     "id"
+            limit $8`,
           [
             ...scopeValues(principal),
             parsed.query,
@@ -2929,18 +2966,23 @@ export class PostgresFinanceDocumentRepository {
             parsed.limit,
           ],
         );
-        const FullTextRowSchema = z.strictObject({
-          id: UuidSchema,
-          documentId: UuidSchema,
-          extractionRevision: z.coerce.number().int().positive(),
-          documentType: FinanceDocumentTypeSchema,
-          currency: CurrencySchema.nullable(),
-          content: z.string().min(1).max(16_384),
-          pageStart: z.coerce.number().int().min(1).max(250),
-          pageEnd: z.coerce.number().int().min(1).max(250),
-          fullTextRank: z.coerce.number().int().positive(),
-          vectorRank: z.coerce.number().int().positive().nullable(),
-        });
+        const FullTextRowSchema = z
+          .strictObject({
+            id: UuidSchema,
+            documentId: UuidSchema,
+            extractionRevision: z.coerce.number().int().positive(),
+            documentType: FinanceDocumentTypeSchema,
+            currency: CurrencySchema.nullable(),
+            content: z.string().min(1).max(16_384),
+            pageStart: z.coerce.number().int().min(1).max(250),
+            pageEnd: z.coerce.number().int().min(1).max(250),
+            fullTextRank: z.coerce.number().int().positive().nullable(),
+            vectorRank: z.coerce.number().int().positive().nullable(),
+          })
+          .refine(
+            (row) => row.fullTextRank !== null || row.vectorRank !== null,
+            'A search candidate must have a lexical or vector rank',
+          );
         const fullText = fullTextRows.rows.map((row) => {
           const hit = parseResult(FullTextRowSchema, row, 'full-text search');
           return deepFreeze({

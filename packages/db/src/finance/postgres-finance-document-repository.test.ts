@@ -919,6 +919,119 @@ describe('PostgresFinanceDocumentRepository', () => {
     ).toBe(false);
   });
 
+  it('returns a semantic-only candidate from the bounded owner-scoped filtered set', async () => {
+    const semanticOnly = {
+      id: ids.chunk,
+      documentId: ids.document,
+      extractionRevision: 1,
+      documentType: 'receipt',
+      currency: 'CAD',
+      content: 'Fresh produce and household staples',
+      pageStart: 1,
+      pageEnd: 1,
+      fullTextRank: null,
+      vectorRank: 1,
+    };
+    const { pool, query } = poolFor((sql) => {
+      const lock = lockRows(sql);
+      if (lock !== undefined) return lock;
+      if (sql.includes('full_text_candidates')) return [semanticOnly];
+      return [];
+    });
+    const repository = new PostgresFinanceDocumentRepository(pool);
+
+    await expect(
+      repository.search({
+        principal,
+        requestId: ids.request,
+        query: 'vegetables',
+        documentTypes: ['receipt'],
+        currency: 'CAD',
+        vectorQuery: vector(0),
+        limit: 1,
+      }),
+    ).resolves.toEqual({
+      structured: [],
+      fullText: [
+        {
+          ...semanticOnly,
+          currencyLabel: 'cad',
+        },
+      ],
+    });
+
+    const search = query.mock.calls.find(([sql]) =>
+      String(sql).includes('full_text_candidates'),
+    );
+    const sql = String(search?.[0]);
+    expect(search?.[1]?.slice(0, 4)).toEqual([
+      ids.household,
+      ids.space,
+      ids.user,
+      'vegetables',
+    ]);
+    expect(search?.[1]?.[4]).toMatch(/^\[0(?:,0){1535}\]$/u);
+    expect(search?.[1]?.slice(5)).toEqual([['receipt'], 'CAD', 1]);
+    expect(sql).toContain('eligible_chunks as not materialized');
+    expect(sql.match(/from eligible_chunks as eligible/g)?.length).toBe(2);
+    expect(sql).toContain('chunk.household_id = $1');
+    expect(sql).toContain('chunk.space_id = $2');
+    expect(sql).toContain('chunk.original_owner_user_id = $3');
+    expect(sql).toContain("document.state = 'committed'");
+    expect(sql).toContain('document.deleted_at is null');
+    expect(sql).toContain(
+      'document.extraction_revision = chunk.extraction_revision',
+    );
+    expect(sql).toContain('chunk.deleted_at is null');
+    expect(sql).toContain(
+      "($6::text[] = '{}'::text[] or document.document_type = any($6::text[]))",
+    );
+    expect(sql).toContain('($7::text is null or document.currency = $7)');
+    expect(sql.match(/limit \$8/g)?.length).toBe(3);
+  });
+
+  it('keeps search lexical-only when no vector query is supplied', async () => {
+    const lexicalOnly = {
+      id: ids.chunk,
+      documentId: ids.document,
+      extractionRevision: 1,
+      documentType: 'receipt',
+      currency: 'CAD',
+      content: 'Vegetables receipt',
+      pageStart: 1,
+      pageEnd: 1,
+      fullTextRank: 1,
+      vectorRank: null,
+    };
+    const { pool, query } = poolFor((sql) => {
+      const lock = lockRows(sql);
+      if (lock !== undefined) return lock;
+      if (sql.includes('full_text_candidates')) return [lexicalOnly];
+      return [];
+    });
+    const repository = new PostgresFinanceDocumentRepository(pool);
+
+    await expect(
+      repository.search({
+        principal,
+        requestId: ids.request,
+        query: 'vegetables',
+        vectorQuery: null,
+        limit: 1,
+      }),
+    ).resolves.toMatchObject({
+      fullText: [
+        expect.objectContaining({ fullTextRank: 1, vectorRank: null }),
+      ],
+    });
+
+    const search = query.mock.calls.find(([sql]) =>
+      String(sql).includes('full_text_candidates'),
+    );
+    expect(search?.[1]?.[4]).toBeNull();
+    expect(String(search?.[0])).toContain('where $5::text is not null');
+  });
+
   it('rejects malformed vector input before opening an unscoped database session', async () => {
     const { pool } = poolFor(() => []);
     const repository = new PostgresFinanceDocumentRepository(pool);

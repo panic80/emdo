@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { loadOrderedMigrations } from '../migrations.js';
+import type { DatabasePool } from '../scoped-repository.js';
+import { PostgresFinanceDocumentRepository } from './postgres-finance-document-repository.js';
 
 const databaseUrl = process.env.TEST_FINANCE_DOCUMENT_DATABASE_URL;
 const describeDatabase = databaseUrl === undefined ? describe.skip : describe;
@@ -35,6 +37,14 @@ const ids = Object.freeze({
   deniedDocument: 'f2000000-0000-4000-8000-000000000016',
   ownerRequest: 'f2000000-0000-4000-8000-000000000017',
   collaboratorRequest: 'f2000000-0000-4000-8000-000000000018',
+  ownerSemanticDocument: 'f2000000-0000-4000-8000-000000000021',
+  ownerSemanticChunk: 'f2000000-0000-4000-8000-000000000022',
+  ownerFilteredDocument: 'f2000000-0000-4000-8000-000000000023',
+  ownerFilteredChunk: 'f2000000-0000-4000-8000-000000000024',
+  ownerStaleDocument: 'f2000000-0000-4000-8000-000000000025',
+  ownerStaleChunk: 'f2000000-0000-4000-8000-000000000026',
+  collaboratorSemanticDocument: 'f2000000-0000-4000-8000-000000000027',
+  collaboratorSemanticChunk: 'f2000000-0000-4000-8000-000000000028',
 });
 
 const sha256 = (character: string): string => character.repeat(64);
@@ -62,6 +72,22 @@ interface DocumentInput {
   readonly ciphertextHash: string;
 }
 
+interface CommittedDocumentInput extends DocumentInput {
+  readonly currency: 'CAD' | 'USD';
+  readonly documentType: 'invoice' | 'receipt';
+  readonly extractionRevision: number;
+}
+
+interface ChunkInput {
+  readonly content: string;
+  readonly documentId: string;
+  readonly embedding: string;
+  readonly extractionRevision: number;
+  readonly id: string;
+  readonly ownerUserId: string;
+  readonly spaceId: string;
+}
+
 const ownerPrincipal = Object.freeze({
   userId: ids.owner,
   sessionId: ids.ownerSession,
@@ -80,6 +106,12 @@ const loginConnectionString = (role: string, password: string): string => {
   url.password = password;
   return url.toString();
 };
+
+const databasePool = (pool: import('pg').Pool): DatabasePool =>
+  pool as unknown as DatabasePool;
+
+const embeddingLiteral = (value: number): string =>
+  `[${Array.from({ length: 1_536 }, () => value).join(',')}]`;
 
 const insertDocument = async (
   client: import('pg').PoolClient,
@@ -104,6 +136,64 @@ const insertDocument = async (
       input.displayName,
       input.plaintextHash,
       input.ciphertextHash,
+    ],
+  );
+};
+
+const insertCommittedDocument = async (
+  client: import('pg').Pool,
+  input: CommittedDocumentInput,
+): Promise<void> => {
+  await client.query(
+    `insert into emdo.finance_documents (
+       id, household_id, space_id, original_owner_user_id, storage_object_id,
+       display_name, mime_type, byte_size, page_count, plaintext_sha256,
+       ciphertext_sha256, wrapped_data_key, key_version, state, document_type,
+       source_locale, currency, extraction_revision
+     ) values (
+       $1, $2, $3, $4, $5, $6, 'application/pdf', 1024, 1, $7, $8,
+       '{"algorithm":"test"}'::jsonb, 'finance-document-test-key-v1',
+       'committed', $9, 'en-CA', $10, $11
+     )`,
+    [
+      input.id,
+      ids.household,
+      input.spaceId,
+      input.ownerUserId,
+      input.storageObjectId,
+      input.displayName,
+      input.plaintextHash,
+      input.ciphertextHash,
+      input.documentType,
+      input.currency,
+      input.extractionRevision,
+    ],
+  );
+};
+
+const insertCommittedChunk = async (
+  client: import('pg').Pool,
+  input: ChunkInput,
+): Promise<void> => {
+  await client.query(
+    `insert into emdo.finance_document_chunks (
+       id, document_id, extraction_revision, household_id, space_id,
+       original_owner_user_id, ordinal, page_start, page_end, content,
+       content_hash, embedding, committed_at
+     ) values (
+       $1, $2, $3, $4, $5, $6, 0, 1, 1, $7, $8, $9::vector,
+       pg_catalog.clock_timestamp()
+     )`,
+    [
+      input.id,
+      input.documentId,
+      input.extractionRevision,
+      ids.household,
+      input.spaceId,
+      input.ownerUserId,
+      input.content,
+      sha256(input.id.at(-1) ?? '0'),
+      input.embedding,
     ],
   );
 };
@@ -533,6 +623,153 @@ describeDatabase(
       expect(denied.matches.rows).toEqual([]);
       expect(denied.extractions.rows).toEqual([]);
       expect(denied.reviews.rows).toEqual([]);
+    });
+
+    it('returns an owner-scoped semantic-only current candidate and excludes filtered or private rows', async () => {
+      const queryEmbedding = embeddingLiteral(1);
+      await Promise.all([
+        insertCommittedDocument(admin, {
+          id: ids.ownerSemanticDocument,
+          ownerUserId: ids.owner,
+          spaceId: ids.ownerPrivateSpace,
+          storageObjectId: 'finance-document-owner-semantic-0001',
+          displayName: 'Owner semantic receipt.pdf',
+          plaintextHash: sha256('5'),
+          ciphertextHash: sha256('6'),
+          documentType: 'receipt',
+          currency: 'CAD',
+          extractionRevision: 1,
+        }),
+        insertCommittedDocument(admin, {
+          id: ids.ownerFilteredDocument,
+          ownerUserId: ids.owner,
+          spaceId: ids.ownerPrivateSpace,
+          storageObjectId: 'finance-document-owner-filtered-0001',
+          displayName: 'Owner filtered invoice.pdf',
+          plaintextHash: sha256('7'),
+          ciphertextHash: sha256('8'),
+          documentType: 'invoice',
+          currency: 'USD',
+          extractionRevision: 1,
+        }),
+        insertCommittedDocument(admin, {
+          id: ids.ownerStaleDocument,
+          ownerUserId: ids.owner,
+          spaceId: ids.ownerPrivateSpace,
+          storageObjectId: 'finance-document-owner-stale-0001',
+          displayName: 'Owner stale receipt.pdf',
+          plaintextHash: sha256('9'),
+          ciphertextHash: sha256('0'),
+          documentType: 'receipt',
+          currency: 'CAD',
+          extractionRevision: 2,
+        }),
+        insertCommittedDocument(admin, {
+          id: ids.collaboratorSemanticDocument,
+          ownerUserId: ids.collaborator,
+          spaceId: ids.collaboratorPrivateSpace,
+          storageObjectId: 'finance-document-collaborator-semantic-0001',
+          displayName: 'Collaborator semantic receipt.pdf',
+          plaintextHash: sha256('c'),
+          ciphertextHash: sha256('d'),
+          documentType: 'receipt',
+          currency: 'CAD',
+          extractionRevision: 1,
+        }),
+      ]);
+      await Promise.all([
+        insertCommittedChunk(admin, {
+          id: ids.ownerSemanticChunk,
+          documentId: ids.ownerSemanticDocument,
+          extractionRevision: 1,
+          ownerUserId: ids.owner,
+          spaceId: ids.ownerPrivateSpace,
+          content: 'Fresh produce and household staples',
+          embedding: queryEmbedding,
+        }),
+        insertCommittedChunk(admin, {
+          id: ids.ownerFilteredChunk,
+          documentId: ids.ownerFilteredDocument,
+          extractionRevision: 1,
+          ownerUserId: ids.owner,
+          spaceId: ids.ownerPrivateSpace,
+          content: 'Fresh produce and household staples',
+          embedding: queryEmbedding,
+        }),
+        insertCommittedChunk(admin, {
+          id: ids.ownerStaleChunk,
+          documentId: ids.ownerStaleDocument,
+          extractionRevision: 1,
+          ownerUserId: ids.owner,
+          spaceId: ids.ownerPrivateSpace,
+          content: 'Fresh produce and household staples',
+          embedding: queryEmbedding,
+        }),
+        insertCommittedChunk(admin, {
+          id: ids.collaboratorSemanticChunk,
+          documentId: ids.collaboratorSemanticDocument,
+          extractionRevision: 1,
+          ownerUserId: ids.collaborator,
+          spaceId: ids.collaboratorPrivateSpace,
+          content: 'Fresh produce and household staples',
+          embedding: queryEmbedding,
+        }),
+      ]);
+
+      const repository = new PostgresFinanceDocumentRepository(
+        databasePool(app),
+      );
+      const ownerResult = await repository.search({
+        principal: {
+          userId: ids.owner,
+          sessionId: ids.ownerSession,
+          householdId: ids.household,
+          privateSpaceId: ids.ownerPrivateSpace,
+          emailVerified: true,
+          spaceAccessGrantId: ids.ownerSpaceAccessGrant,
+          scopeFingerprint: sha256('f'),
+        },
+        requestId: ids.ownerRequest,
+        query: 'vegetables',
+        documentTypes: ['receipt'],
+        currency: 'CAD',
+        vectorQuery: Array.from({ length: 1_536 }, () => 1),
+        limit: 5,
+      });
+      expect(ownerResult.fullText).toEqual([
+        expect.objectContaining({
+          id: ids.ownerSemanticChunk,
+          documentId: ids.ownerSemanticDocument,
+          fullTextRank: null,
+          vectorRank: 1,
+        }),
+      ]);
+
+      const collaboratorResult = await repository.search({
+        principal: {
+          userId: ids.collaborator,
+          sessionId: ids.collaboratorSession,
+          householdId: ids.household,
+          privateSpaceId: ids.collaboratorPrivateSpace,
+          emailVerified: true,
+          spaceAccessGrantId: ids.ownerSpaceAccessGrant,
+          scopeFingerprint: sha256('f'),
+        },
+        requestId: ids.collaboratorRequest,
+        query: 'vegetables',
+        documentTypes: ['receipt'],
+        currency: 'CAD',
+        vectorQuery: Array.from({ length: 1_536 }, () => 1),
+        limit: 5,
+      });
+      expect(collaboratorResult.fullText).toEqual([
+        expect.objectContaining({
+          id: ids.collaboratorSemanticChunk,
+          documentId: ids.collaboratorSemanticDocument,
+          fullTextRank: null,
+          vectorRank: 1,
+        }),
+      ]);
     });
 
     it('enforces row-local lifecycle predicates and permits an explicit review invalidation', async () => {

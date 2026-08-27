@@ -128,6 +128,7 @@ export type FinanceCopy = {
   readonly reviewPreviousPage: string;
   readonly reviewNextPage: string;
   readonly reviewProposedRecordHint: string;
+  readonly reviewJsonInvalid: string;
   readonly reviewFieldFallback: string;
   readonly actionRequested: string;
   readonly actionRequestError: string;
@@ -246,6 +247,7 @@ export const financeCopy: Record<FinanceLocale, FinanceCopy> = {
     reviewNextPage: 'Next',
     reviewProposedRecordHint:
       'Edit the proposed record only when a reviewed correction is needed.',
+    reviewJsonInvalid: 'Enter valid JSON before saving this review.',
     reviewFieldFallback: 'Additional review field',
     actionRequested: 'Your request was sent to EMDO for approval.',
     actionRequestError:
@@ -423,6 +425,8 @@ export const financeCopy: Record<FinanceLocale, FinanceCopy> = {
     reviewNextPage: 'Suivant',
     reviewProposedRecordHint:
       'Ne modifiez l’enregistrement proposé que si une correction révisée est nécessaire.',
+    reviewJsonInvalid:
+      'Saisissez du JSON valide avant d’enregistrer cette révision.',
     reviewFieldFallback: 'Champ de révision supplémentaire',
     actionRequested: 'Votre demande a été envoyée à EMDO pour approbation.',
     actionRequestError:
@@ -604,6 +608,8 @@ export const financeCopy: Record<FinanceLocale, FinanceCopy> = {
     reviewNextPage: '次へ',
     reviewProposedRecordHint:
       '確認済みの修正が必要な場合にのみ、提案する記録を編集してください。',
+    reviewJsonInvalid:
+      'この確認を保存する前に、有効な JSON を入力してください。',
     reviewFieldFallback: '追加の確認項目',
     actionRequested: '承認のために EMDO へ依頼を送信しました。',
     actionRequestError:
@@ -781,6 +787,7 @@ export const financeCopy: Record<FinanceLocale, FinanceCopy> = {
     reviewNextPage: '다음',
     reviewProposedRecordHint:
       '검토된 수정이 필요한 경우에만 제안된 기록을 편집하세요.',
+    reviewJsonInvalid: '이 검토를 저장하기 전에 유효한 JSON을 입력하세요.',
     reviewFieldFallback: '추가 검토 필드',
     actionRequested: '승인을 위해 EMDO에 요청을 보냈습니다.',
     actionRequestError:

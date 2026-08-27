@@ -115,17 +115,22 @@ const StructuredSearchResultSchema = MetadataSchema.extend({
   structuredRank: z.number().int().positive(),
 });
 
-const FullTextSearchResultSchema = z.object({
-  id: UuidSchema,
-  documentId: UuidSchema,
-  extractionRevision: z.number().int().positive(),
-  documentType: FinanceDocumentTypeSchema,
-  currency: CurrencySchema.nullable(),
-  pageStart: z.number().int().positive().max(250),
-  pageEnd: z.number().int().positive().max(250),
-  fullTextRank: z.number().int().positive(),
-  vectorRank: z.number().int().positive().nullable(),
-});
+const FullTextSearchResultSchema = z
+  .object({
+    id: UuidSchema,
+    documentId: UuidSchema,
+    extractionRevision: z.number().int().positive(),
+    documentType: FinanceDocumentTypeSchema,
+    currency: CurrencySchema.nullable(),
+    pageStart: z.number().int().positive().max(250),
+    pageEnd: z.number().int().positive().max(250),
+    fullTextRank: z.number().int().positive().nullable(),
+    vectorRank: z.number().int().positive().nullable(),
+  })
+  .refine(
+    (row) => row.fullTextRank !== null || row.vectorRank !== null,
+    'A search candidate must have a lexical or vector rank',
+  );
 
 const SearchResultSchema = z.object({
   structured: z.array(StructuredSearchResultSchema).max(MAXIMUM_SEARCH_RESULTS),
@@ -322,6 +327,12 @@ export interface ProductionFinanceSpecialistDocumentPortDependencies {
 
 const unavailable = (): Error =>
   new Error('api-finance-specialist-document-port-unavailable');
+
+const minimumRank = (
+  left: number | null,
+  right: number | null,
+): number | null =>
+  left === null ? right : right === null ? left : Math.min(left, right);
 
 const bindScope = (
   owner: FixedOwner,
@@ -572,7 +583,7 @@ export const createProductionFinanceSpecialistDocumentPort = (
 
       const ranksByChunkId = new Map<
         string,
-        Readonly<{ fullTextRank: number; vectorRank: number | null }>
+        Readonly<{ fullTextRank: number | null; vectorRank: number | null }>
       >();
       for (const fullText of search.data.fullText) {
         const document = documents.get(fullText.documentId);
@@ -585,21 +596,19 @@ export const createProductionFinanceSpecialistDocumentPort = (
           continue;
         }
         const previous = ranksByChunkId.get(fullText.id);
-        if (
-          previous === undefined ||
-          fullText.fullTextRank < previous.fullTextRank ||
-          (fullText.fullTextRank === previous.fullTextRank &&
-            (fullText.vectorRank ?? Number.MAX_SAFE_INTEGER) <
-              (previous.vectorRank ?? Number.MAX_SAFE_INTEGER))
-        ) {
-          ranksByChunkId.set(
-            fullText.id,
-            deepFreeze({
-              fullTextRank: fullText.fullTextRank,
-              vectorRank: fullText.vectorRank,
-            }),
-          );
-        }
+        ranksByChunkId.set(
+          fullText.id,
+          deepFreeze({
+            fullTextRank: minimumRank(
+              previous?.fullTextRank ?? null,
+              fullText.fullTextRank,
+            ),
+            vectorRank: minimumRank(
+              previous?.vectorRank ?? null,
+              fullText.vectorRank,
+            ),
+          }),
+        );
       }
 
       const evidenceById = new Map<string, Evidence>();

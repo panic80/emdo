@@ -172,6 +172,13 @@ function formatReviewCollectionRange(
     .replace('{total}', numbers.format(total));
 }
 
+function reviewJsonEditorKey(
+  collection: ReviewCollectionField,
+  index: number,
+): string {
+  return `${collection}-${index}`;
+}
+
 function ReviewCollectionEditor({
   collection,
   items,
@@ -179,6 +186,7 @@ function ReviewCollectionEditor({
   disabled,
   page,
   revisionKey,
+  invalidJsonEditors,
   onPageChange,
   onChangeItem,
 }: {
@@ -188,6 +196,7 @@ function ReviewCollectionEditor({
   readonly disabled: boolean;
   readonly page: number;
   readonly revisionKey: string;
+  readonly invalidJsonEditors: ReadonlySet<string>;
   readonly onPageChange: (page: number) => void;
   readonly onChangeItem: (index: number, value: string) => void;
 }) {
@@ -241,12 +250,19 @@ function ReviewCollectionEditor({
       <ul>
         {pageItems.map((item, pageIndex) => {
           const index = startIndex + pageIndex;
+          const editorKey = reviewJsonEditorKey(collection, index);
+          const isInvalid = invalidJsonEditors.has(editorKey);
+          const editorId = `finance-review-${editorKey}`;
+          const errorId = `${editorId}-error`;
           return (
             <li key={index}>
               <label>
                 {copy.reviewCollectionItem} {index + 1}
                 <textarea
+                  aria-describedby={isInvalid ? errorId : undefined}
+                  aria-invalid={isInvalid || undefined}
                   defaultValue={JSON.stringify(item)}
+                  id={editorId}
                   key={`${revisionKey}-${collection}-${index}`}
                   onChange={(event) =>
                     onChangeItem(index, event.currentTarget.value)
@@ -254,6 +270,11 @@ function ReviewCollectionEditor({
                   disabled={disabled}
                 />
               </label>
+              {isInvalid ? (
+                <p className="inline-error" id={errorId} role="alert">
+                  {copy.reviewJsonInvalid}
+                </p>
+              ) : null}
             </li>
           );
         })}
@@ -267,12 +288,14 @@ function ReviewProposedRecordEditor({
   locale,
   disabled,
   revisionKey,
+  invalid,
   onChange,
 }: {
   readonly value: unknown;
   readonly locale: FinanceLocale;
   readonly disabled: boolean;
   readonly revisionKey: string;
+  readonly invalid: boolean;
   readonly onChange: (value: string) => void;
 }) {
   const copy = financeCopy[locale];
@@ -283,11 +306,25 @@ function ReviewProposedRecordEditor({
       <p>{copy.reviewProposedRecordHint}</p>
       <textarea
         aria-label={label}
+        aria-describedby={
+          invalid ? 'finance-review-proposed-record-error' : undefined
+        }
+        aria-invalid={invalid || undefined}
         defaultValue={JSON.stringify(value)}
+        id="finance-review-proposed-record"
         key={`${revisionKey}-proposed-record`}
         onChange={(event) => onChange(event.currentTarget.value)}
         disabled={disabled}
       />
+      {invalid ? (
+        <p
+          className="inline-error"
+          id="finance-review-proposed-record-error"
+          role="alert"
+        >
+          {copy.reviewJsonInvalid}
+        </p>
+      ) : null}
     </fieldset>
   );
 }
@@ -310,9 +347,15 @@ function ReviewEditor({
   const [collectionPages, setCollectionPages] = useState<
     Partial<Record<ReviewCollectionField, number>>
   >({});
+  const [invalidJsonEditors, setInvalidJsonEditors] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const [editorRevision, setEditorRevision] = useState(0);
   useEffect(() => {
     setEnvelope({ ...draft.envelope });
     setCollectionPages({});
+    setInvalidJsonEditors(new Set());
+    setEditorRevision((current) => current + 1);
   }, [draft]);
   const setField = (field: string, value: unknown) =>
     setEnvelope((current) => ({ ...current, [field]: value }));
@@ -340,8 +383,15 @@ function ReviewEditor({
     index: number,
     rawValue: string,
   ) => {
+    const editorKey = reviewJsonEditorKey(collection, index);
     try {
       const item = JSON.parse(rawValue) as unknown;
+      setInvalidJsonEditors((current) => {
+        if (!current.has(editorKey)) return current;
+        const next = new Set(current);
+        next.delete(editorKey);
+        return next;
+      });
       setEnvelope((current) => {
         const currentItems = current[collection];
         if (
@@ -355,14 +405,27 @@ function ReviewEditor({
         return { ...current, [collection]: nextItems };
       });
     } catch {
-      /* retain the complete, redacted item until its edit parses */
+      setInvalidJsonEditors((current) =>
+        current.has(editorKey) ? current : new Set(current).add(editorKey),
+      );
     }
   };
   const changeProposedRecord = (rawValue: string) => {
     try {
-      setField('proposedRecord', JSON.parse(rawValue) as unknown);
+      const proposedRecord = JSON.parse(rawValue) as unknown;
+      setInvalidJsonEditors((current) => {
+        if (!current.has('proposed-record')) return current;
+        const next = new Set(current);
+        next.delete('proposed-record');
+        return next;
+      });
+      setField('proposedRecord', proposedRecord);
     } catch {
-      /* retain the reviewed proposal until its edit parses */
+      setInvalidJsonEditors((current) =>
+        current.has('proposed-record')
+          ? current
+          : new Set(current).add('proposed-record'),
+      );
     }
   };
   return (
@@ -510,7 +573,8 @@ function ReviewEditor({
             key={collection}
             locale={locale}
             page={collectionPages[collection] ?? 0}
-            revisionKey={draft.payloadHash}
+            revisionKey={`${draft.payloadHash}-${editorRevision}`}
+            invalidJsonEditors={invalidJsonEditors}
             onChangeItem={(index, value) =>
               changeCollectionItem(collection, index, value)
             }
@@ -527,13 +591,14 @@ function ReviewEditor({
         <ReviewProposedRecordEditor
           disabled={disabled}
           locale={locale}
-          revisionKey={draft.payloadHash}
+          revisionKey={`${draft.payloadHash}-${editorRevision}`}
           value={envelope.proposedRecord}
+          invalid={invalidJsonEditors.has('proposed-record')}
           onChange={changeProposedRecord}
         />
       ) : null}
       <Button
-        disabled={disabled}
+        disabled={disabled || invalidJsonEditors.size > 0}
         onClick={() => onSave(envelope as FinanceDocumentEnvelopeV1)}
       >
         {copy.saveReview}
