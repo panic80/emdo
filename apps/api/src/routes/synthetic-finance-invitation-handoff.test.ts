@@ -96,16 +96,19 @@ const issueOneSyntheticMember = async () => {
   return handoff;
 };
 
+const authenticationBoundary = (): ApiServices['auth'] =>
+  ({
+    authenticate: vi.fn(async () => principal),
+    verifyMutation: vi.fn(async () => true),
+    handleBrowserRequest: vi.fn(),
+    issueMutationCsrf: vi.fn(),
+    issueInvitationCsrf: vi.fn(),
+    redeemInvitation: vi.fn(),
+  }) as unknown as ApiServices['auth'];
+
 const buildServices = () =>
   createFailClosedApiServices({
-    auth: {
-      authenticate: vi.fn(async () => principal),
-      verifyMutation: vi.fn(async () => true),
-      handleBrowserRequest: vi.fn(),
-      issueMutationCsrf: vi.fn(),
-      issueInvitationCsrf: vi.fn(),
-      redeemInvitation: vi.fn(),
-    } as unknown as ApiServices['auth'],
+    auth: authenticationBoundary(),
   });
 
 const headers = Object.freeze({
@@ -129,6 +132,47 @@ describe('Finance synthetic invitation handoff route', () => {
         EMDO_ENVIRONMENT: 'production',
       }),
     ).toBeUndefined();
+  });
+
+  it('preserves every household method when the wrapped gateway uses prototype methods', async () => {
+    const handoff = createSyntheticFinanceInvitationHandoff(environment);
+    if (handoff === undefined) throw new Error('handoff is unavailable');
+    const prototype = baseGateway();
+    const wrapped = handoff.wrapHouseholdAdministration(
+      Object.create(prototype) as HouseholdAdministrationGateway,
+    );
+
+    expect(wrapped).toEqual(
+      expect.objectContaining({
+        issueInvitation: expect.any(Function),
+        listInvitations: expect.any(Function),
+        revokeInvitation: expect.any(Function),
+        listMemberships: expect.any(Function),
+        changeMembershipRole: expect.any(Function),
+        deactivateMembership: expect.any(Function),
+      }),
+    );
+
+    await wrapped.listMemberships({ principal, requestId: IDS.invitation });
+    const services = createFailClosedApiServices({
+      auth: authenticationBoundary(),
+      bindings: {
+        householdAdministration: {
+          service: wrapped,
+          check: vi.fn(async () => true),
+        },
+      },
+    });
+    await expect(services.readiness.check()).resolves.toMatchObject({
+      checks: { 'authority.household-administration': 'ok' },
+    });
+    await services.householdAdministration.listInvitations({
+      principal,
+      requestId: IDS.invitation,
+    });
+
+    expect(prototype.listInvitations).toHaveBeenCalledOnce();
+    expect(prototype.listMemberships).toHaveBeenCalledOnce();
   });
 
   it('requires loopback owner mutation proof and returns an invitation token once', async () => {

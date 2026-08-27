@@ -1410,6 +1410,8 @@ describe('PostgresProposalRepository', () => {
     const workflowProbe = workflow.query.mock.calls.find(([sql]) =>
       sql.includes('has_function_privilege'),
     );
+    expect(workflowProbe?.[0]).toMatch(/\bcoalesce\(/u);
+    expect(workflowProbe?.[0]).not.toContain('pg_catalog.coalesce');
     expect(workflowProbe?.[1]?.[0]).toEqual([
       'emdo.commit_provider_proposal_create(text,jsonb)',
       'emdo.commit_provider_proposal_abandonment(jsonb)',
@@ -1465,6 +1467,8 @@ describe('PostgresProposalRepository', () => {
       'emdo.resolve_provider_proposal_decision_replay(uuid,uuid,text,text,uuid)',
     );
     expect(apiProbe).toContain('relforcerowsecurity');
+    expect(apiProbe).toMatch(/\bcoalesce\(/u);
+    expect(apiProbe).not.toContain('pg_catalog.coalesce');
 
     const decisionProbe = decision.query.mock.calls.find(([sql]) =>
       sql.includes('visual_decision_commit_readiness'),
@@ -1477,6 +1481,8 @@ describe('PostgresProposalRepository', () => {
     );
     expect(decisionProbe).toContain('has_table_privilege');
     expect(decisionProbe).toContain('pg_auth_members');
+    expect(decisionProbe).toMatch(/\bcoalesce\(/u);
+    expect(decisionProbe).not.toContain('pg_catalog.coalesce');
   });
 
   it('stays unavailable when either half of the visual-decision path fails', async () => {

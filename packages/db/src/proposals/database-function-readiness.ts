@@ -16,7 +16,7 @@ export const checkDatabaseFunctionPrivileges = async (
   try {
     client = await pool.connect();
     const result = await client.query(
-      `select pg_catalog.coalesce(
+      `select coalesce(
                 pg_catalog.bool_and(
                   resolved.procedure_oid is not null
                   and pg_catalog.has_function_privilege(

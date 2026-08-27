@@ -31,8 +31,12 @@ import {
 
 import { loadOrderedMigrations } from '../migrations.js';
 import type { DatabasePool } from '../scoped-repository.js';
+import { ProposalQueryCursorCodec } from './proposal-query-cursor-codec.js';
+import { PostgresProposalQueryRepository } from './postgres-proposal-query-repository.js';
 import {
   PostgresProposalRepository,
+  checkPostgresProposalWorkflowReadiness,
+  checkPostgresVisualDecisionReadiness,
   type ProposalRepositoryTransaction,
 } from './postgres-proposal-repository.js';
 import {
@@ -44,9 +48,11 @@ import { VisualDecisionProofTokenCodec } from './visual-decision-proof-token-cod
 const databaseUrl = process.env.POSTGRES_TEST_DATABASE_URL;
 const describeDatabase = databaseUrl ? describe.sequential : describe.skip;
 
+const API_LOGIN = 'emdo_api_login';
 const APP_LOGIN = 'emdo_proposal_integration_app';
 const WORKER_LOGIN = 'emdo_proposal_integration_worker';
 const WORKFLOW_LOGIN = 'emdo_workflow_login';
+const VISUAL_DECISION_LOGIN = 'emdo_visual_decision_login';
 const appPassword = `P${randomBytes(24).toString('hex')}`;
 const workerPassword = `P${randomBytes(24).toString('hex')}`;
 const workflowPassword = `P${randomBytes(24).toString('hex')}`;
@@ -168,6 +174,19 @@ const connectionUrl = (
 
 const databasePool = (pool: PgPool): DatabasePool =>
   pool as unknown as DatabasePool;
+
+const singleClientDatabasePool = (client: PgClient): DatabasePool => ({
+  connect: async () => ({
+    query: async (text, values) => {
+      const result = await client.query(
+        text,
+        values === undefined ? [] : [...values],
+      );
+      return { rowCount: result.rowCount, rows: result.rows };
+    },
+    release: () => undefined,
+  }),
+});
 
 const buildFixture = (
   actor: ActorIds,
@@ -429,6 +448,8 @@ describeDatabase(
     let workflowUrl: string;
     let fixtureA: Fixture;
     let fixtureB: Fixture;
+    let createdApiLogin = false;
+    let grantedApiMembership = false;
 
     const repositoryFor = (
       fixture: Fixture,
@@ -725,6 +746,61 @@ describeDatabase(
         }
       }
 
+      const existingApiLogin = await admin.query<{
+        rolbypassrls: boolean;
+        rolcanlogin: boolean;
+        rolcreatedb: boolean;
+        rolcreaterole: boolean;
+        rolinherit: boolean;
+        rolreplication: boolean;
+        rolsuper: boolean;
+      }>(
+        `select rolcanlogin, rolsuper, rolcreatedb, rolcreaterole,
+                rolinherit, rolbypassrls, rolreplication
+           from pg_catalog.pg_roles
+          where rolname = $1`,
+        [API_LOGIN],
+      );
+      if (existingApiLogin.rowCount === 0) {
+        await admin.query(`create role ${API_LOGIN} login inherit nosuperuser
+          nocreatedb nocreaterole nobypassrls noreplication`);
+        createdApiLogin = true;
+      } else {
+        expect(existingApiLogin.rows).toEqual([
+          {
+            rolbypassrls: false,
+            rolcanlogin: true,
+            rolcreatedb: false,
+            rolcreaterole: false,
+            rolinherit: true,
+            rolreplication: false,
+            rolsuper: false,
+          },
+        ]);
+      }
+      const apiMemberships = await admin.query<{ parentRole: string }>(
+        `select parent.rolname as "parentRole"
+           from pg_catalog.pg_auth_members as membership
+           join pg_catalog.pg_roles as parent
+             on parent.oid = membership.roleid
+           join pg_catalog.pg_roles as child
+             on child.oid = membership.member
+          where child.rolname = $1
+          order by parent.rolname`,
+        [API_LOGIN],
+      );
+      expect(
+        apiMemberships.rows.every(
+          ({ parentRole }) => parentRole === 'emdo_app',
+        ),
+      ).toBe(true);
+      if (
+        !apiMemberships.rows.some(({ parentRole }) => parentRole === 'emdo_app')
+      ) {
+        await admin.query(`grant emdo_app to ${API_LOGIN}`);
+        grantedApiMembership = true;
+      }
+
       await admin.query(`do $roles$
         begin
           if not exists (
@@ -781,6 +857,11 @@ describeDatabase(
         workerPool?.end(),
       ]);
       if (admin !== undefined) {
+        if (grantedApiMembership) {
+          await admin
+            .query(`revoke emdo_app from ${API_LOGIN}`)
+            .catch(() => undefined);
+        }
         await admin
           .query(`revoke emdo_app from ${APP_LOGIN}`)
           .catch(() => undefined);
@@ -793,6 +874,11 @@ describeDatabase(
         await admin
           .query(`drop role if exists ${WORKER_LOGIN}`)
           .catch(() => undefined);
+        if (createdApiLogin) {
+          await admin
+            .query(`drop role if exists ${API_LOGIN}`)
+            .catch(() => undefined);
+        }
         await admin
           .query('drop schema if exists emdo cascade')
           .catch(() => undefined);
@@ -1103,6 +1189,76 @@ describeDatabase(
           : transaction.commitCompletion(input);
       return { next, input, commit };
     };
+
+    it('executes every proposal readiness probe as its exact runtime principal', async () => {
+      const { Client } = await import('pg');
+      const apiClient = new Client({ connectionString: databaseUrl });
+      const readinessWorkflowClient = new Client({
+        connectionString: databaseUrl,
+      });
+      const decisionClient = new Client({ connectionString: databaseUrl });
+      try {
+        await Promise.all([
+          apiClient.connect(),
+          readinessWorkflowClient.connect(),
+          decisionClient.connect(),
+        ]);
+        await Promise.all([
+          apiClient.query(`set session authorization ${API_LOGIN}`),
+          readinessWorkflowClient.query(
+            `set session authorization ${WORKFLOW_LOGIN}`,
+          ),
+          decisionClient.query(
+            `set session authorization ${VISUAL_DECISION_LOGIN}`,
+          ),
+        ]);
+        const apiRolePool = singleClientDatabasePool(apiClient);
+        const workflowRolePool = singleClientDatabasePool(
+          readinessWorkflowClient,
+        );
+        const decisionRolePool = singleClientDatabasePool(decisionClient);
+        const proposalQueries = new PostgresProposalQueryRepository(
+          apiRolePool,
+          new ProposalQueryCursorCodec({
+            current: {
+              keyId: 'proposal-readiness-v1',
+              secret: new Uint8Array(32).fill(23),
+            },
+            previous: [],
+          }),
+        );
+        const visualProofs = new PostgresVisualDecisionProofStore(
+          apiRolePool,
+          new VisualDecisionProofTokenCodec({
+            current: {
+              keyId: 'proposal-readiness-v1',
+              secret: new Uint8Array(32).fill(29),
+            },
+            previous: [],
+          }),
+        );
+
+        await expect(proposalQueries.check()).resolves.toBe(true);
+        await expect(visualProofs.check()).resolves.toBe(true);
+        await expect(
+          checkPostgresProposalWorkflowReadiness(workflowRolePool),
+        ).resolves.toBe(true);
+        await expect(
+          checkPostgresVisualDecisionReadiness(apiRolePool, decisionRolePool),
+        ).resolves.toBe(true);
+      } finally {
+        await Promise.allSettled([
+          apiClient.query('reset session authorization'),
+          readinessWorkflowClient.query('reset session authorization'),
+          decisionClient.query('reset session authorization'),
+        ]);
+        await Promise.allSettled([
+          apiClient.end(),
+          readinessWorkflowClient.end(),
+          decisionClient.end(),
+        ]);
+      }
+    });
 
     it('denies direct claim issuance and aggregate access while app reads remain household scoped', async () => {
       await createPending(fixtureA, 'acl-a');
