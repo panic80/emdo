@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -642,7 +643,7 @@ describe('FinanceDocuments', () => {
     ).not.toBeDisabled();
   });
 
-  it('keeps the latest review request when an earlier read resolves last', async () => {
+  it('clears stale review controls while a newer document review is loading', async () => {
     const secondSummary = {
       ...summary,
       id: 'document-b',
@@ -659,7 +660,108 @@ describe('FinanceDocuments', () => {
       payloadHash: 'c'.repeat(64),
       reviewToken: 'C'.repeat(43),
     };
-    const firstRead = deferred<FinanceDocumentReviewDraft>();
+    const secondRead = deferred<FinanceDocumentReviewDraft>();
+    const onRequestCommit = vi.fn(() => true);
+    const updateReview = vi.fn<FinanceDocumentApi['updateReview']>();
+    const api = createApi({
+      list: vi.fn(async () => ({
+        schemaVersion: 1 as const,
+        items: [summary, secondSummary],
+      })),
+      readReview: vi.fn((id) =>
+        id === summary.id ? Promise.resolve(firstDraft) : secondRead.promise,
+      ),
+      updateReview,
+    });
+    const user = userEvent.setup();
+    render(
+      <FinanceDocuments
+        api={api}
+        locale="en-CA"
+        online
+        csrfToken="csrf-current"
+        onRequestDeletion={vi.fn(() => true)}
+        onRequestCommit={onRequestCommit}
+        onRequestMatchDecision={vi.fn(() => true)}
+      />,
+    );
+
+    const reviewButtons = await screen.findAllByRole('button', {
+      name: 'Review extraction',
+    });
+    await user.click(reviewButtons[0]!);
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole('textbox', {
+            name: 'Proposed record',
+          }) as HTMLTextAreaElement
+        ).value,
+      ).toBe(JSON.stringify(firstDraft.envelope.proposedRecord)),
+    );
+    const previousEditor = screen.getByRole('textbox', {
+      name: 'Proposed record',
+    });
+    const previousSave = screen.getByRole('button', {
+      name: 'Save reviewed changes',
+    });
+    const previousCommit = screen.getByRole('button', {
+      name: 'Commit reviewed document',
+    });
+    await user.click(reviewButtons[1]!);
+
+    expect(
+      screen.queryByRole('textbox', { name: 'Proposed record' }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Save reviewed changes' }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Commit reviewed document' }),
+    ).toBeNull();
+    const loadingReviewButtons = screen.getAllByRole('button', {
+      name: 'Review extraction',
+    });
+    expect(loadingReviewButtons[0]).not.toBeDisabled();
+    expect(loadingReviewButtons[1]).toBeDisabled();
+    fireEvent.change(previousEditor, {
+      target: {
+        value: JSON.stringify({ kind: 'expense', description: 'Old edit' }),
+      },
+    });
+    fireEvent.click(previousSave);
+    fireEvent.click(previousCommit);
+    expect(updateReview).not.toHaveBeenCalled();
+    expect(onRequestCommit).not.toHaveBeenCalled();
+
+    await act(async () => {
+      secondRead.resolve(secondDraft);
+      await secondRead.promise;
+    });
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: 'Proposed record',
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe(JSON.stringify(secondDraft.envelope.proposedRecord));
+    await user.click(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    );
+    expect(onRequestCommit).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: secondSummary.id }),
+    );
+  });
+
+  it('clears the current editor and leaves commit unavailable when the newest review read rejects', async () => {
+    const secondSummary = {
+      ...summary,
+      id: 'document-b',
+      displayName: 'Second.pdf',
+    };
+    const firstDraft = reviewDraft({
+      proposedRecord: { kind: 'expense', description: 'First review' },
+    });
     const secondRead = deferred<FinanceDocumentReviewDraft>();
     const onRequestCommit = vi.fn(() => true);
     const api = createApi({
@@ -668,7 +770,7 @@ describe('FinanceDocuments', () => {
         items: [summary, secondSummary],
       })),
       readReview: vi.fn((id) =>
-        id === summary.id ? firstRead.promise : secondRead.promise,
+        id === summary.id ? Promise.resolve(firstDraft) : secondRead.promise,
       ),
     });
     const user = userEvent.setup();
@@ -688,63 +790,144 @@ describe('FinanceDocuments', () => {
       name: 'Review extraction',
     });
     await user.click(reviewButtons[0]!);
+    await screen.findByRole('textbox', { name: 'Proposed record' });
     await user.click(reviewButtons[1]!);
-    secondRead.resolve(secondDraft);
-    await waitFor(() =>
-      expect(
-        (
-          screen.getByRole('textbox', {
-            name: 'Proposed record',
-          }) as HTMLTextAreaElement
-        ).value,
-      ).toBe(JSON.stringify(secondDraft.envelope.proposedRecord)),
+    await act(async () => {
+      secondRead.reject(new Error('unavailable'));
+      try {
+        await secondRead.promise;
+      } catch {
+        // The component handles the newest read rejection.
+      }
+    });
+
+    expect(
+      screen.getByText(
+        'The review could not be loaded. Try again while online.',
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('textbox', { name: 'Proposed record' }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Save reviewed changes' }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Commit reviewed document' }),
+    ).toBeNull();
+    expect(onRequestCommit).not.toHaveBeenCalled();
+  });
+
+  it('keeps an edited newer review unsaved when an older read settles without saving', async () => {
+    const secondSummary = {
+      ...summary,
+      id: 'document-b',
+      displayName: 'Second.pdf',
+    };
+    const firstRead = deferred<FinanceDocumentReviewDraft>();
+    const secondDraft: FinanceDocumentReviewDraft = {
+      ...reviewDraft({
+        proposedRecord: { kind: 'expense', description: 'Second review' },
+      }),
+      documentId: secondSummary.id,
+      payloadHash: 'c'.repeat(64),
+      reviewToken: 'C'.repeat(43),
+    };
+    const updateReview = vi.fn<FinanceDocumentApi['updateReview']>();
+    const onRequestCommit = vi.fn(() => true);
+    const api = createApi({
+      list: vi.fn(async () => ({
+        schemaVersion: 1 as const,
+        items: [summary, secondSummary],
+      })),
+      readReview: vi.fn((id) =>
+        id === summary.id ? firstRead.promise : Promise.resolve(secondDraft),
+      ),
+      updateReview,
+    });
+    const user = userEvent.setup();
+    render(
+      <FinanceDocuments
+        api={api}
+        locale="en-CA"
+        online
+        csrfToken="csrf-current"
+        onRequestDeletion={vi.fn(() => true)}
+        onRequestCommit={onRequestCommit}
+        onRequestMatchDecision={vi.fn(() => true)}
+      />,
     );
+
+    const reviewButtons = await screen.findAllByRole('button', {
+      name: 'Review extraction',
+    });
+    await user.click(reviewButtons[0]!);
+    await user.click(reviewButtons[1]!);
+    const editor = await screen.findByRole('textbox', {
+      name: 'Proposed record',
+    });
     await waitFor(() =>
       expect(
         screen.getByRole('button', { name: 'Commit reviewed document' }),
       ).not.toBeDisabled(),
     );
-
-    firstRead.resolve(firstDraft);
-    await waitFor(() =>
-      expect(
-        (
-          screen.getByRole('textbox', {
-            name: 'Proposed record',
-          }) as HTMLTextAreaElement
-        ).value,
-      ).toBe(JSON.stringify(secondDraft.envelope.proposedRecord)),
-    );
-    await user.click(
+    const editedRecord = { kind: 'expense', description: 'Edited review' };
+    fireEvent.change(editor, {
+      target: { value: JSON.stringify(editedRecord) },
+    });
+    expect(
       screen.getByRole('button', { name: 'Commit reviewed document' }),
+    ).toBeDisabled();
+
+    await act(async () => {
+      firstRead.resolve(
+        reviewDraft({
+          proposedRecord: { kind: 'expense', description: 'First review' },
+        }),
+      );
+      await firstRead.promise;
+    });
+    expect((editor as HTMLTextAreaElement).value).toBe(
+      JSON.stringify(editedRecord),
     );
-    expect(onRequestCommit).toHaveBeenCalledWith(
-      expect.objectContaining({ documentId: secondSummary.id }),
-    );
+    expect(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    ).toBeDisabled();
+    expect(updateReview).not.toHaveBeenCalled();
+    expect(onRequestCommit).not.toHaveBeenCalled();
   });
 
-  it('ignores a read that resolves after a newer save', async () => {
-    const initialDraft = reviewDraft({
-      proposedRecord: { kind: 'expense', description: 'Original review' },
-    });
-    const savedDraft = reviewDraft({
-      proposedRecord: { kind: 'expense', description: 'Saved review' },
-    });
-    const delayedRead = deferred<FinanceDocumentReviewDraft>();
-    const delayedSave = deferred<FinanceDocumentReviewDraft>();
-    let reads = 0;
+  it('ignores a late read after a newer edited review has been saved', async () => {
+    const secondSummary = {
+      ...summary,
+      id: 'document-b',
+      displayName: 'Second.pdf',
+    };
+    const firstRead = deferred<FinanceDocumentReviewDraft>();
+    const secondDraft: FinanceDocumentReviewDraft = {
+      ...reviewDraft({
+        proposedRecord: { kind: 'expense', description: 'Second review' },
+      }),
+      documentId: secondSummary.id,
+      payloadHash: 'c'.repeat(64),
+      reviewToken: 'C'.repeat(43),
+    };
+    const savedDraft: FinanceDocumentReviewDraft = {
+      ...secondDraft,
+      envelope: {
+        ...secondDraft.envelope,
+        proposedRecord: { kind: 'expense', description: 'Saved review' },
+      },
+    };
     const api = createApi({
       list: vi.fn(async () => ({
         schemaVersion: 1 as const,
-        items: [summary],
+        items: [summary, secondSummary],
       })),
-      readReview: vi.fn(() => {
-        reads += 1;
-        return reads === 1
-          ? Promise.resolve(initialDraft)
-          : delayedRead.promise;
-      }),
-      updateReview: vi.fn(() => delayedSave.promise),
+      readReview: vi.fn((id) =>
+        id === summary.id ? firstRead.promise : Promise.resolve(secondDraft),
+      ),
+      updateReview: vi.fn(async () => savedDraft),
     });
     const user = userEvent.setup();
     render(
@@ -759,35 +942,23 @@ describe('FinanceDocuments', () => {
       />,
     );
 
-    const reviewButton = await screen.findByRole('button', {
+    const reviewButtons = await screen.findAllByRole('button', {
       name: 'Review extraction',
     });
-    await user.click(reviewButton);
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Commit reviewed document' }),
-      ).not.toBeDisabled(),
-    );
-
-    await user.click(reviewButton);
-    expect(
-      screen.getByRole('button', { name: 'Commit reviewed document' }),
-    ).toBeDisabled();
+    await user.click(reviewButtons[0]!);
+    await user.click(reviewButtons[1]!);
+    await screen.findByRole('textbox', { name: 'Proposed record' });
     fireEvent.change(screen.getByRole('textbox', { name: 'Proposed record' }), {
       target: {
         value: JSON.stringify({ kind: 'expense', description: 'Saved review' }),
       },
     });
-    await user.click(
-      screen.getByRole('button', { name: 'Save reviewed changes' }),
-    );
-    delayedRead.resolve(initialDraft);
-    await waitFor(() => expect(api.updateReview).toHaveBeenCalledOnce());
     expect(
       screen.getByRole('button', { name: 'Commit reviewed document' }),
     ).toBeDisabled();
-
-    delayedSave.resolve(savedDraft);
+    await user.click(
+      screen.getByRole('button', { name: 'Save reviewed changes' }),
+    );
     await waitFor(() =>
       expect(
         (
@@ -802,26 +973,40 @@ describe('FinanceDocuments', () => {
         screen.getByRole('button', { name: 'Commit reviewed document' }),
       ).not.toBeDisabled(),
     );
+
+    await act(async () => {
+      firstRead.resolve(
+        reviewDraft({
+          proposedRecord: { kind: 'expense', description: 'First review' },
+        }),
+      );
+      await firstRead.promise;
+    });
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: 'Proposed record',
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe(JSON.stringify(savedDraft.envelope.proposedRecord));
+    expect(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    ).not.toBeDisabled();
   });
 
-  it('keeps commit blocked when the newest review read fails', async () => {
-    const initialDraft = reviewDraft({
+  it('keeps native review controls disabled while saving and recovers from a rejected save', async () => {
+    const draft = reviewDraft({
       proposedRecord: { kind: 'expense', description: 'Original review' },
     });
-    const delayedRead = deferred<FinanceDocumentReviewDraft>();
-    let reads = 0;
+    const delayedSave = deferred<FinanceDocumentReviewDraft>();
     const onRequestCommit = vi.fn(() => true);
     const api = createApi({
       list: vi.fn(async () => ({
         schemaVersion: 1 as const,
         items: [summary],
       })),
-      readReview: vi.fn(() => {
-        reads += 1;
-        return reads === 1
-          ? Promise.resolve(initialDraft)
-          : delayedRead.promise;
-      }),
+      readReview: vi.fn(async () => draft),
+      updateReview: vi.fn(() => delayedSave.promise),
     });
     const user = userEvent.setup();
     render(
@@ -840,30 +1025,155 @@ describe('FinanceDocuments', () => {
       name: 'Review extraction',
     });
     await user.click(reviewButton);
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Commit reviewed document' }),
-      ).not.toBeDisabled(),
+    await screen.findByRole('textbox', { name: 'Proposed record' });
+    await user.click(
+      screen.getByRole('button', { name: 'Save reviewed changes' }),
+    );
+    await waitFor(() => expect(api.updateReview).toHaveBeenCalledOnce());
+    expect(
+      screen.getByRole('textbox', { name: 'Proposed record' }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Save reviewed changes' }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Review extraction' }),
+    ).toBeDisabled();
+    await act(async () => {
+      delayedSave.reject(new Error('unavailable'));
+      try {
+        await delayedSave.promise;
+      } catch {
+        // The component handles this rejection and leaves the review unsaved.
+      }
+    });
+    expect(
+      screen.getByText(
+        'The review could not be loaded. Try again while online.',
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'Save reviewed changes' }),
+    ).not.toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    ).toBeDisabled();
+    expect(onRequestCommit).not.toHaveBeenCalled();
+  });
+
+  it('invalidates pending reviews when auth, API, or online scope changes and on unmount', async () => {
+    const initialRead = deferred<FinanceDocumentReviewDraft>();
+    const replacementRead = deferred<FinanceDocumentReviewDraft>();
+    const api = createApi({
+      list: vi.fn(async () => ({
+        schemaVersion: 1 as const,
+        items: [summary],
+      })),
+      readReview: vi.fn(() => initialRead.promise),
+    });
+    const replacementApi = createApi({
+      list: vi.fn(async () => ({
+        schemaVersion: 1 as const,
+        items: [summary],
+      })),
+      readReview: vi.fn(() => replacementRead.promise),
+    });
+    const onRequestDeletion = vi.fn(() => true);
+    const onRequestCommit = vi.fn(() => true);
+    const onRequestMatchDecision = vi.fn(() => true);
+    const view = render(
+      <FinanceDocuments
+        api={api}
+        locale="en-CA"
+        online
+        csrfToken="csrf-initial"
+        onRequestDeletion={onRequestDeletion}
+        onRequestCommit={onRequestCommit}
+        onRequestMatchDecision={onRequestMatchDecision}
+      />,
     );
 
-    await user.click(reviewButton);
-    expect(
-      screen.getByRole('button', { name: 'Commit reviewed document' }),
-    ).toBeDisabled();
-    delayedRead.reject(new Error('unavailable'));
-    await waitFor(() =>
-      expect(
-        screen.getByText(
-          'The review could not be loaded. Try again while online.',
-        ),
-      ).toBeVisible(),
+    await userEvent
+      .setup()
+      .click(await screen.findByRole('button', { name: 'Review extraction' }));
+    view.rerender(
+      <FinanceDocuments
+        api={api}
+        locale="en-CA"
+        online
+        csrfToken="csrf-replaced"
+        onRequestDeletion={onRequestDeletion}
+        onRequestCommit={onRequestCommit}
+        onRequestMatchDecision={onRequestMatchDecision}
+      />,
     );
-    expect(
-      screen.getByRole('button', { name: 'Commit reviewed document' }),
-    ).toBeDisabled();
-    await user.click(
-      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    await act(async () => {
+      initialRead.resolve(reviewDraft({ issuer: 'Old session' }));
+      await initialRead.promise;
+    });
+    expect(screen.queryByRole('textbox', { name: 'Currency' })).toBeNull();
+
+    view.rerender(
+      <FinanceDocuments
+        api={replacementApi}
+        locale="en-CA"
+        online
+        csrfToken="csrf-replaced"
+        onRequestDeletion={onRequestDeletion}
+        onRequestCommit={onRequestCommit}
+        onRequestMatchDecision={onRequestMatchDecision}
+      />,
     );
+    await userEvent
+      .setup()
+      .click(await screen.findByRole('button', { name: 'Review extraction' }));
+    view.rerender(
+      <FinanceDocuments
+        api={replacementApi}
+        locale="en-CA"
+        online={false}
+        csrfToken="csrf-replaced"
+        onRequestDeletion={onRequestDeletion}
+        onRequestCommit={onRequestCommit}
+        onRequestMatchDecision={onRequestMatchDecision}
+      />,
+    );
+    await act(async () => {
+      replacementRead.resolve(reviewDraft({ issuer: 'Old API scope' }));
+      await replacementRead.promise;
+    });
+    expect(screen.queryByRole('textbox', { name: 'Currency' })).toBeNull();
+
+    const unmountRead = deferred<FinanceDocumentReviewDraft>();
+    const unmountApi = createApi({
+      list: vi.fn(async () => ({
+        schemaVersion: 1 as const,
+        items: [summary],
+      })),
+      readReview: vi.fn(() => unmountRead.promise),
+    });
+    view.rerender(
+      <FinanceDocuments
+        api={unmountApi}
+        locale="en-CA"
+        online
+        csrfToken="csrf-replaced"
+        onRequestDeletion={onRequestDeletion}
+        onRequestCommit={onRequestCommit}
+        onRequestMatchDecision={onRequestMatchDecision}
+      />,
+    );
+    await userEvent
+      .setup()
+      .click(await screen.findByRole('button', { name: 'Review extraction' }));
+    view.unmount();
+    await act(async () => {
+      unmountRead.resolve(reviewDraft({ issuer: 'Unmounted review' }));
+      await unmountRead.promise;
+    });
     expect(onRequestCommit).not.toHaveBeenCalled();
   });
 

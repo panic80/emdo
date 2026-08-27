@@ -672,6 +672,9 @@ export function FinanceDocuments({
   const [actionError, setActionError] = useState<string>();
   const [reviewSaving, setReviewSaving] = useState(false);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewLoadingDocumentId, setReviewLoadingDocumentId] = useState<
+    string | undefined
+  >();
   const [reviewIsSaved, setReviewIsSaved] = useState(false);
   const [requestState, setRequestState] = useState<RequestState>('idle');
   const reviewGenerationRef = useRef(0);
@@ -680,12 +683,27 @@ export function FinanceDocuments({
     csrfToken: csrfToken ?? '',
     idempotencyKey: mutationKey(operation),
   });
-  const markReviewUnsaved = useCallback(() => {
+  const invalidateReviewGeneration = useCallback(() => {
     reviewGenerationRef.current += 1;
-    setReviewIsSaved(false);
-    setReviewLoading(false);
     return reviewGenerationRef.current;
   }, []);
+  const invalidateReview = useCallback(() => {
+    const generation = invalidateReviewGeneration();
+    setReview(undefined);
+    setReviewSaving(false);
+    setReviewLoading(false);
+    setReviewLoadingDocumentId(undefined);
+    setReviewIsSaved(false);
+    setRequestState('idle');
+    return generation;
+  }, [invalidateReviewGeneration]);
+  const markReviewUnsaved = useCallback(() => {
+    const generation = invalidateReviewGeneration();
+    setReviewIsSaved(false);
+    setReviewLoading(false);
+    setReviewLoadingDocumentId(undefined);
+    return generation;
+  }, [invalidateReviewGeneration]);
   const markReviewSaved = useCallback((generation: number) => {
     if (reviewGenerationRef.current === generation) setReviewIsSaved(true);
   }, []);
@@ -765,6 +783,12 @@ export function FinanceDocuments({
     else setState('unavailable');
     return () => controllerRef.current?.abort();
   }, [api, online]);
+  useEffect(() => {
+    invalidateReview();
+    return () => {
+      invalidateReviewGeneration();
+    };
+  }, [api, csrfToken, invalidateReview, invalidateReviewGeneration, online]);
   const upload = async (files: FileList | null) => {
     const selected = Array.from(files ?? []).slice(0, MAXIMUM_FILES);
     if (inputRef.current) inputRef.current.value = '';
@@ -789,9 +813,9 @@ export function FinanceDocuments({
     if (reviewSaving) return;
     setActionError(undefined);
     setMatches(undefined);
-    setRequestState('idle');
-    const generation = markReviewUnsaved();
+    const generation = invalidateReview();
     setReviewLoading(true);
+    setReviewLoadingDocumentId(document.id);
     try {
       const draft = await api.readReview(document.id);
       if (reviewGenerationRef.current !== generation) return;
@@ -800,7 +824,10 @@ export function FinanceDocuments({
       if (reviewGenerationRef.current === generation)
         setActionError(copy.reviewError);
     } finally {
-      if (reviewGenerationRef.current === generation) setReviewLoading(false);
+      if (reviewGenerationRef.current === generation) {
+        setReviewLoading(false);
+        setReviewLoadingDocumentId(undefined);
+      }
     }
   };
   const saveReview = async (envelope: FinanceDocumentEnvelopeV1) => {
@@ -931,7 +958,10 @@ export function FinanceDocuments({
                 {document.state === 'awaiting-review' ? (
                   <Button
                     variant="quiet"
-                    disabled={reviewSaving}
+                    disabled={
+                      reviewSaving ||
+                      (reviewLoading && reviewLoadingDocumentId === document.id)
+                    }
                     onClick={() => void openReview(document)}
                   >
                     {copy.review}
@@ -978,7 +1008,7 @@ export function FinanceDocuments({
             draft={review.draft}
             generation={review.generation}
             locale={locale}
-            disabled={!canMutate || reviewSaving}
+            disabled={!canMutate || reviewLoading || reviewSaving}
             onSave={(envelope) => void saveReview(envelope)}
             onReviewEdited={markReviewUnsaved}
             onReviewReset={markReviewSaved}
