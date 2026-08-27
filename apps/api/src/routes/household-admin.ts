@@ -118,6 +118,25 @@ const requireOwner = (
   return principal;
 };
 
+type HouseholdAdministrationPrincipal = Omit<
+  AuthenticatedPrincipal,
+  'privateSpaceId'
+>;
+
+const householdAdministrationPrincipal = (
+  principal: AuthenticatedPrincipal,
+): HouseholdAdministrationPrincipal =>
+  Object.freeze({
+    collectionAuthorizationScopeFingerprint:
+      principal.collectionAuthorizationScopeFingerprint,
+    emailVerified: principal.emailVerified,
+    householdId: principal.householdId,
+    role: principal.role,
+    sessionId: principal.sessionId,
+    spaceAccessGrantId: principal.spaceAccessGrantId,
+    userId: principal.userId,
+  });
+
 export const registerHouseholdAdministrationRoutes = (
   app: FastifyInstance,
   services: ApiServices,
@@ -134,7 +153,9 @@ export const registerHouseholdAdministrationRoutes = (
     },
     async (request, reply) => {
       const prepared = takePreparedMutation(request);
-      const principal = requireOwner(prepared.principal);
+      const principal = householdAdministrationPrincipal(
+        requireOwner(prepared.principal),
+      );
       const input = parseRequest(
         HouseholdInvitationIssueRequestSchema,
         request.body,
@@ -163,7 +184,9 @@ export const registerHouseholdAdministrationRoutes = (
   );
 
   app.get('/api/v1/household/invitations', async (request, reply) => {
-    const principal = requireOwner(await requirePrincipal(request, services));
+    const principal = householdAdministrationPrincipal(
+      requireOwner(await requirePrincipal(request, services)),
+    );
     const result = parseServiceResponse(
       HouseholdInvitationListResponseSchema,
       await invokeHouseholdAdministration(() =>
@@ -184,7 +207,9 @@ export const registerHouseholdAdministrationRoutes = (
     },
     async (request, reply) => {
       const prepared = takePreparedMutation(request);
-      const principal = requireOwner(prepared.principal);
+      const principal = householdAdministrationPrincipal(
+        requireOwner(prepared.principal),
+      );
       const { id: invitationId } = parseRequest(
         HouseholdInvitationParamsSchema,
         request.params,
@@ -216,7 +241,9 @@ export const registerHouseholdAdministrationRoutes = (
   );
 
   app.get('/api/v1/household/memberships', async (request, reply) => {
-    const principal = requireOwner(await requirePrincipal(request, services));
+    const principal = householdAdministrationPrincipal(
+      requireOwner(await requirePrincipal(request, services)),
+    );
     const result = parseServiceResponse(
       HouseholdMembershipListResponseSchema,
       await invokeHouseholdAdministration(() =>
@@ -237,7 +264,9 @@ export const registerHouseholdAdministrationRoutes = (
     },
     async (request, reply) => {
       const prepared = takePreparedMutation(request);
-      const principal = requireOwner(prepared.principal);
+      const principal = householdAdministrationPrincipal(
+        requireOwner(prepared.principal),
+      );
       const { id: membershipId } = parseRequest(
         HouseholdMembershipParamsSchema,
         request.params,
@@ -279,7 +308,9 @@ export const registerHouseholdAdministrationRoutes = (
     },
     async (request, reply) => {
       const prepared = takePreparedMutation(request);
-      const principal = requireOwner(prepared.principal);
+      const principal = householdAdministrationPrincipal(
+        requireOwner(prepared.principal),
+      );
       const { id: membershipId } = parseRequest(
         HouseholdMembershipParamsSchema,
         request.params,

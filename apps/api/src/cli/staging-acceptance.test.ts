@@ -1469,6 +1469,12 @@ describe('staging acceptance CLI', () => {
     },
     {
       failurePath: '/api/v1/household/invitations',
+      failure: { kind: 'problem', status: 400, code: 'invalid-input' },
+      expectedFailure:
+        'Staging acceptance failed at stage=member-invitation outcome=http-400-invalid-input.\n',
+    },
+    {
+      failurePath: '/api/v1/household/invitations',
       failure: { kind: 'problem', status: 500, code: 'internal-error' },
       expectedFailure:
         'Staging acceptance failed at stage=member-invitation outcome=http-500-internal-error.\n',
