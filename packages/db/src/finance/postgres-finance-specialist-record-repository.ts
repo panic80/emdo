@@ -48,6 +48,10 @@ const FinanceWriteOperationSchema = z.enum([
   'finance-transaction-adjustment',
   'finance-transaction-reversal',
 ]);
+const SyntheticStagingFinanceAccountId = 'synthetic-finance-account-v1';
+const SyntheticStagingFinanceAccountTimestamp = '2026-01-01T00:00:00.000Z';
+const SyntheticStagingFinanceAccountAuditEventType =
+  'finance.synthetic-staging-account-provisioned';
 const MonthSchema = z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/u);
 const AbortSignalSchema = z.custom<AbortSignal>(
   (value) =>
@@ -67,6 +71,14 @@ const ScopeSchema = z.strictObject({
   collectionAuthorizationScopeFingerprint: Sha256Schema,
   disclosureGrantId: UuidSchema.optional(),
   abortSignal: AbortSignalSchema,
+});
+const SyntheticStagingScopeSchema = ScopeSchema.omit({
+  runId: true,
+  disclosureGrantId: true,
+});
+const ProvisionSyntheticStagingAccountInputSchema = z.strictObject({
+  scope: SyntheticStagingScopeSchema,
+  idempotencyKey: IdempotencyKeySchema,
 });
 const AuditSchema = z.strictObject({
   eventType: z.literal('finance.agent.safe-write'),
@@ -161,13 +173,31 @@ const ReceiptRowSchema = z.strictObject({
   auditEventId: UuidSchema,
 });
 const AuditRowSchema = z.strictObject({ auditEventId: UuidSchema });
+const SyntheticStagingAccountAuditPayloadSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  entityId: z.literal(SyntheticStagingFinanceAccountId),
+  idempotencyKey: IdempotencyKeySchema,
+  scopeFingerprint: Sha256Schema,
+  resultingRevision: z.literal(1),
+});
+const SyntheticStagingAccountAuditRowSchema = z.strictObject({
+  auditEventId: UuidSchema,
+  eventType: z.literal(SyntheticStagingFinanceAccountAuditEventType),
+  payload: SyntheticStagingAccountAuditPayloadSchema,
+});
 const ReadinessRowSchema = z.strictObject({ ready: z.boolean() });
 
 type FinanceRecordType = z.output<typeof FinanceRecordTypeSchema>;
 type FinanceEntityType = z.output<typeof FinanceEntityTypeSchema>;
 type FinanceWriteOperation = z.output<typeof FinanceWriteOperationSchema>;
 type FinanceScope = z.output<typeof ScopeSchema>;
+type SyntheticStagingScope = z.output<typeof SyntheticStagingScopeSchema>;
+type ScopedFinanceScope = FinanceScope | SyntheticStagingScope;
 type ParsedEntityRow = z.output<typeof EntityRowSchema>;
+type FinanceAccountRecord = Extract<
+  FinanceRecord,
+  { readonly recordType: 'account' }
+>;
 
 const entityTypeByRecordType: Readonly<
   Record<FinanceRecordType, FinanceEntityType>
@@ -326,7 +356,7 @@ const mapError = (error: unknown): never => {
 };
 
 const durablePrincipalFor = (
-  scope: FinanceScope,
+  scope: ScopedFinanceScope,
 ): Readonly<DurableRepositoryPrincipal> =>
   deepFreeze({
     userId: scope.userId,
@@ -335,10 +365,10 @@ const durablePrincipalFor = (
     householdId: scope.householdId,
   });
 
-const scopeValues = (scope: FinanceScope) =>
+const scopeValues = (scope: ScopedFinanceScope) =>
   [scope.householdId, scope.privateSpaceId, scope.userId] as const;
 
-const assertNotAborted = (scope: FinanceScope) => {
+const assertNotAborted = (scope: ScopedFinanceScope) => {
   if (scope.abortSignal.aborted) {
     throw new FinanceSpecialistRecordRepositoryError(
       'authorization-revoked',
@@ -370,7 +400,7 @@ const asRecordObject = (value: unknown): Record<string, unknown> | undefined =>
 
 const financeRecordFromEntity = (
   row: ParsedEntityRow,
-  scope: FinanceScope,
+  scope: ScopedFinanceScope,
 ): FinanceRecord => {
   const raw = asRecordObject(row.payload);
   const payload =
@@ -645,6 +675,61 @@ const assertBudgetUpdate = (input: {
 };
 
 const recordActorIntent = 'Finance specialist safe write';
+const syntheticStagingAccountActorIntent =
+  'Provision the deterministic Finance synthetic-staging account';
+
+const syntheticStagingAccountFor = (
+  scope: SyntheticStagingScope,
+): FinanceAccountRecord => {
+  const validated = validateFinanceRecord({
+    schemaVersion: 1,
+    id: SyntheticStagingFinanceAccountId,
+    spaceId: scope.privateSpaceId,
+    ownerUserId: scope.userId,
+    createdAt: SyntheticStagingFinanceAccountTimestamp,
+    updatedAt: SyntheticStagingFinanceAccountTimestamp,
+    recordType: 'account',
+    name: 'Synthetic staging chequing',
+    accountKind: 'chequing',
+    currency: 'CAD',
+    openingBalanceCadMinor: 0,
+    active: true,
+    source: 'manual',
+  });
+  if (
+    validated.status !== 'accepted' ||
+    validated.record.recordType !== 'account' ||
+    validated.record.id !== SyntheticStagingFinanceAccountId ||
+    validated.record.spaceId !== scope.privateSpaceId ||
+    validated.record.ownerUserId !== scope.userId ||
+    validated.record.createdAt !== SyntheticStagingFinanceAccountTimestamp ||
+    validated.record.updatedAt !== SyntheticStagingFinanceAccountTimestamp ||
+    validated.record.name !== 'Synthetic staging chequing' ||
+    validated.record.accountKind !== 'chequing' ||
+    validated.record.currency !== 'CAD' ||
+    validated.record.openingBalanceCadMinor !== 0 ||
+    validated.record.active !== true ||
+    validated.record.source !== 'manual'
+  ) {
+    throw new FinanceSpecialistRecordRepositoryError(
+      'invalid-result',
+      'The fixed Finance synthetic-staging account is invalid',
+    );
+  }
+  return validated.record;
+};
+
+const syntheticStagingAccountAuditPayload = (input: {
+  readonly idempotencyKey: string;
+  readonly scope: SyntheticStagingScope;
+}) =>
+  deepFreeze({
+    schemaVersion: 1,
+    entityId: SyntheticStagingFinanceAccountId,
+    idempotencyKey: input.idempotencyKey,
+    scopeFingerprint: input.scope.collectionAuthorizationScopeFingerprint,
+    resultingRevision: 1,
+  });
 
 const receiptPayload = (input: {
   readonly operation: FinanceWriteOperation;
@@ -716,6 +801,88 @@ export class PostgresFinanceSpecialistRecordRepository {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Provisions the sole deterministic Finance account used by synthetic
+   * staging. The account payload is entirely server-derived; callers can
+   * supply only a current private scope and an idempotency key.
+   */
+  async provisionSyntheticStagingAccount(
+    input: unknown,
+  ): Promise<FinanceSpecialistRecordWriteReceipt> {
+    const parsed = parseInput(
+      ProvisionSyntheticStagingAccountInputSchema,
+      input,
+    );
+    assertNotAborted(parsed.scope);
+    const expected = syntheticStagingAccountFor(parsed.scope);
+
+    return this.withScopedTransaction(parsed.scope, async (client) => {
+      await this.lockSyntheticStagingAccount(client, parsed.scope);
+      const existing = await this.findSyntheticStagingAccountForUpdate(
+        client,
+        parsed.scope,
+      );
+      const audit = await this.findSyntheticStagingAccountAudit(
+        client,
+        parsed.scope,
+      );
+      if (existing !== undefined || audit !== undefined) {
+        return this.replaySyntheticStagingAccountIfExact({
+          scope: parsed.scope,
+          idempotencyKey: parsed.idempotencyKey,
+          expected,
+          entity: existing,
+          audit,
+        });
+      }
+
+      const inserted = await this.insertSyntheticStagingAccount(
+        client,
+        parsed.scope,
+        expected,
+      );
+      if (inserted === undefined) {
+        return this.replaySyntheticStagingAccountIfExact({
+          scope: parsed.scope,
+          idempotencyKey: parsed.idempotencyKey,
+          expected,
+          entity: await this.findSyntheticStagingAccountForUpdate(
+            client,
+            parsed.scope,
+          ),
+          audit: await this.findSyntheticStagingAccountAudit(
+            client,
+            parsed.scope,
+          ),
+        });
+      }
+
+      const stored = financeRecordFromEntity(inserted, parsed.scope);
+      if (
+        inserted.entityType !== 'finance.account' ||
+        inserted.entityId !== SyntheticStagingFinanceAccountId ||
+        inserted.revision !== 1 ||
+        stored.recordType !== 'account' ||
+        !sameRecord(stored, expected)
+      ) {
+        throw new FinanceSpecialistRecordRepositoryError(
+          'invalid-result',
+          'The stored Finance synthetic-staging account was not canonical',
+        );
+      }
+      const auditEventId = await this.appendSyntheticStagingAccountAudit({
+        client,
+        scope: parsed.scope,
+        idempotencyKey: parsed.idempotencyKey,
+      });
+      return deepFreeze({
+        status: 'applied' as const,
+        record: stored,
+        auditEventId,
+      });
+    });
   }
 
   async list(input: unknown): Promise<
@@ -1147,7 +1314,7 @@ export class PostgresFinanceSpecialistRecordRepository {
   }
 
   private async withScopedTransaction<Result>(
-    scope: FinanceScope,
+    scope: ScopedFinanceScope,
     work: (client: DatabaseClient) => Promise<Result>,
   ): Promise<Result> {
     assertNotAborted(scope);
@@ -1181,7 +1348,7 @@ export class PostgresFinanceSpecialistRecordRepository {
 
   private async assertCurrentPrivateScope(
     client: DatabaseClient,
-    scope: FinanceScope,
+    scope: ScopedFinanceScope,
   ): Promise<void> {
     const authority = singleRow(
       (
@@ -1393,6 +1560,198 @@ export class PostgresFinanceSpecialistRecordRepository {
         'A Finance account or category is unavailable in the private scope',
       );
     }
+  }
+
+  private async lockSyntheticStagingAccount(
+    client: DatabaseClient,
+    scope: SyntheticStagingScope,
+  ): Promise<void> {
+    await client.query(
+      `select pg_catalog.pg_advisory_xact_lock(
+         pg_catalog.hashtextextended($1::text, 0)
+       )`,
+      [
+        `${scope.householdId}:${scope.privateSpaceId}:${scope.userId}:finance.account:${SyntheticStagingFinanceAccountId}`,
+      ],
+    );
+  }
+
+  private async findSyntheticStagingAccountForUpdate(
+    client: DatabaseClient,
+    scope: SyntheticStagingScope,
+  ): Promise<ParsedEntityRow | undefined> {
+    const row = singleRow(
+      (
+        await client.query(
+          `select entity.entity_id as "entityId", entity.entity_type as "entityType",
+                  entity.payload as "payload", entity.revision as "revision"
+             from emdo.sync_entities as entity
+            where entity.household_id = $1::uuid
+              and entity.space_id = $2::uuid
+              and entity.original_owner_user_id = $3::uuid
+              and entity.entity_type = 'finance.account'
+              and entity.entity_id = $4::text
+              and entity.tombstoned_at is null
+            for update`,
+          [...scopeValues(scope), SyntheticStagingFinanceAccountId],
+        )
+      ).rows,
+      'synthetic-staging account',
+    );
+    return row === undefined
+      ? undefined
+      : parseResult(EntityRowSchema, row, 'synthetic-staging account');
+  }
+
+  private async findSyntheticStagingAccountAudit(
+    client: DatabaseClient,
+    scope: SyntheticStagingScope,
+  ): Promise<
+    z.output<typeof SyntheticStagingAccountAuditRowSchema> | undefined
+  > {
+    const row = singleRow(
+      (
+        await client.query(
+          `select audit.id::text as "auditEventId", audit.event_type as "eventType",
+                  audit.payload as "payload"
+             from emdo.audit_events as audit
+            where audit.household_id = $1::uuid
+              and audit.space_id = $2::uuid
+              and audit.original_owner_user_id = $3::uuid
+              and audit.event_type = $4::text
+              and audit.payload ->> 'entityId' = $5::text
+            order by audit.id asc
+            for share`,
+          [
+            ...scopeValues(scope),
+            SyntheticStagingFinanceAccountAuditEventType,
+            SyntheticStagingFinanceAccountId,
+          ],
+        )
+      ).rows,
+      'synthetic-staging account audit',
+    );
+    return row === undefined
+      ? undefined
+      : parseResult(
+          SyntheticStagingAccountAuditRowSchema,
+          row,
+          'synthetic-staging account audit',
+        );
+  }
+
+  private replaySyntheticStagingAccountIfExact(input: {
+    readonly scope: SyntheticStagingScope;
+    readonly idempotencyKey: string;
+    readonly expected: FinanceAccountRecord;
+    readonly entity: ParsedEntityRow | undefined;
+    readonly audit:
+      z.output<typeof SyntheticStagingAccountAuditRowSchema> | undefined;
+  }): FinanceSpecialistRecordWriteReceipt {
+    const { scope, idempotencyKey, expected, entity, audit } = input;
+    if (entity === undefined || audit === undefined) {
+      throw new FinanceSpecialistRecordRepositoryError(
+        'conflict',
+        'The Finance synthetic-staging account has incomplete durable state',
+      );
+    }
+    const stored = financeRecordFromEntity(entity, scope);
+    const expectedAudit = syntheticStagingAccountAuditPayload({
+      scope,
+      idempotencyKey,
+    });
+    if (
+      entity.entityType !== 'finance.account' ||
+      entity.entityId !== SyntheticStagingFinanceAccountId ||
+      entity.revision !== 1 ||
+      stored.recordType !== 'account' ||
+      !sameRecord(stored, expected) ||
+      stableJson(audit.payload) !== stableJson(expectedAudit)
+    ) {
+      throw new FinanceSpecialistRecordRepositoryError(
+        'conflict',
+        'The existing Finance synthetic-staging account differs from the fixed state',
+      );
+    }
+    return deepFreeze({
+      status: 'duplicate' as const,
+      record: stored,
+      auditEventId: audit.auditEventId,
+    });
+  }
+
+  private async insertSyntheticStagingAccount(
+    client: DatabaseClient,
+    scope: SyntheticStagingScope,
+    record: FinanceAccountRecord,
+  ): Promise<ParsedEntityRow | undefined> {
+    const row = singleRow(
+      (
+        await client.query(
+          `insert into emdo.sync_entities
+             (household_id, space_id, original_owner_user_id, entity_type,
+              entity_id, payload, actor_intent, revision, created_at, updated_at)
+           values ($1::uuid, $2::uuid, $3::uuid, 'finance.account', $4::text,
+                   $5::jsonb, $6::text, 1,
+                   pg_catalog.clock_timestamp(), pg_catalog.clock_timestamp())
+           on conflict (household_id, space_id, entity_type, entity_id)
+           do nothing
+           returning entity_id as "entityId", entity_type as "entityType",
+                     payload as "payload", revision as "revision"`,
+          [
+            ...scopeValues(scope),
+            SyntheticStagingFinanceAccountId,
+            record,
+            syntheticStagingAccountActorIntent,
+          ],
+        )
+      ).rows,
+      'inserted synthetic-staging account',
+    );
+    return row === undefined
+      ? undefined
+      : parseResult(EntityRowSchema, row, 'inserted synthetic-staging account');
+  }
+
+  private async appendSyntheticStagingAccountAudit(input: {
+    readonly client: DatabaseClient;
+    readonly scope: SyntheticStagingScope;
+    readonly idempotencyKey: string;
+  }): Promise<string> {
+    const audit = singleRow(
+      (
+        await input.client.query(
+          `insert into emdo.audit_events
+             (household_id, space_id, original_owner_user_id, actor_user_id,
+              session_id, request_id, event_type, payload,
+              occurred_at, retain_until)
+           values ($1::uuid, $2::uuid, $3::uuid, $3::uuid,
+                   $4::uuid, $5::uuid, $6::text, $7::jsonb,
+                   pg_catalog.clock_timestamp(),
+                   pg_catalog.clock_timestamp() + interval '12 months')
+           returning id::text as "auditEventId"`,
+          [
+            ...scopeValues(input.scope),
+            input.scope.sessionId,
+            input.scope.requestId,
+            SyntheticStagingFinanceAccountAuditEventType,
+            syntheticStagingAccountAuditPayload({
+              scope: input.scope,
+              idempotencyKey: input.idempotencyKey,
+            }),
+          ],
+        )
+      ).rows,
+      'synthetic-staging account audit',
+    );
+    if (audit === undefined) {
+      throw new FinanceSpecialistRecordRepositoryError(
+        'authorization-revoked',
+        'The Finance synthetic-staging account audit could not be persisted',
+      );
+    }
+    return parseResult(AuditRowSchema, audit, 'synthetic-staging account audit')
+      .auditEventId;
   }
 
   private async lockBudgetMonth(

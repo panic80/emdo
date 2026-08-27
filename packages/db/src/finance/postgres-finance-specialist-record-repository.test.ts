@@ -39,6 +39,17 @@ const scope = Object.freeze({
   abortSignal: new AbortController().signal,
 } satisfies FinanceSpecialistRecordRepositoryScope);
 
+const syntheticStagingScope = Object.freeze({
+  requestId: ids.request,
+  userId: ids.user,
+  householdId: ids.household,
+  sessionId: ids.session,
+  privateSpaceId: ids.privateSpace,
+  spaceAccessGrantId: ids.grant,
+  collectionAuthorizationScopeFingerprint: 'b'.repeat(64),
+  abortSignal: new AbortController().signal,
+});
+
 const transaction = (
   overrides: Partial<FinanceTransactionRecord> = {},
 ): FinanceTransactionRecord => {
@@ -112,6 +123,28 @@ const account = (): FinanceRecord => {
   });
   if (validated.status !== 'accepted')
     throw new Error('account fixture invalid');
+  return validated.record;
+};
+
+const syntheticStagingAccount = (): FinanceRecord => {
+  const validated = validateFinanceRecord({
+    schemaVersion: 1,
+    id: 'synthetic-finance-account-v1',
+    spaceId: ids.privateSpace,
+    ownerUserId: ids.user,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    recordType: 'account',
+    name: 'Synthetic staging chequing',
+    accountKind: 'chequing',
+    currency: 'CAD',
+    openingBalanceCadMinor: 0,
+    active: true,
+    source: 'manual',
+  });
+  if (validated.status !== 'accepted') {
+    throw new Error('synthetic staging account fixture invalid');
+  }
   return validated.record;
 };
 
@@ -317,6 +350,176 @@ describe('PostgresFinanceSpecialistRecordRepository', () => {
         reviewedCommittedEvidenceOnly: true,
       }),
     ).resolves.toEqual([owned]);
+  });
+
+  it('provisions one fixed, scope-derived synthetic Finance account and a minimal first-apply audit', async () => {
+    const record = syntheticStagingAccount();
+    const idempotencyKey = 'synthetic-finance-account-provision-v1';
+    const { pool, query } = poolFor((sql) => {
+      const scoped = scopedRows(sql);
+      if (scoped !== undefined) return scoped;
+      if (
+        sql.includes("entity.entity_type = 'finance.account'") &&
+        sql.includes('for update')
+      )
+        return [];
+      if (sql.includes('from emdo.audit_events as audit')) return [];
+      if (sql.includes('insert into emdo.sync_entities'))
+        return [entityRow(record, 1)];
+      if (sql.includes('insert into emdo.audit_events'))
+        return [{ auditEventId: ids.audit }];
+      return [];
+    });
+    const repository = new PostgresFinanceSpecialistRecordRepository(pool);
+
+    await expect(
+      repository.provisionSyntheticStagingAccount({
+        scope: syntheticStagingScope,
+        idempotencyKey,
+      }),
+    ).resolves.toEqual({
+      status: 'applied',
+      record,
+      auditEventId: ids.audit,
+    });
+
+    const targetLock = query.mock.calls.find(
+      ([sql, values]) =>
+        String(sql).includes('pg_advisory_xact_lock') &&
+        String(values?.[0]).includes(
+          'finance.account:synthetic-finance-account-v1',
+        ),
+    );
+    expect(targetLock?.[1]).toEqual([
+      `${ids.household}:${ids.privateSpace}:${ids.user}:finance.account:synthetic-finance-account-v1`,
+    ]);
+    const audit = query.mock.calls.find(([sql]) =>
+      String(sql).includes('insert into emdo.audit_events'),
+    );
+    expect(audit?.[1]).toEqual([
+      ids.household,
+      ids.privateSpace,
+      ids.user,
+      ids.session,
+      ids.request,
+      'finance.synthetic-staging-account-provisioned',
+      {
+        schemaVersion: 1,
+        entityId: 'synthetic-finance-account-v1',
+        idempotencyKey,
+        scopeFingerprint: 'b'.repeat(64),
+        resultingRevision: 1,
+      },
+    ]);
+  });
+
+  it('replays only the exact synthetic account and its matching minimal audit receipt', async () => {
+    const record = syntheticStagingAccount();
+    const idempotencyKey = 'synthetic-finance-account-provision-v1';
+    const audit = {
+      auditEventId: ids.audit,
+      eventType: 'finance.synthetic-staging-account-provisioned',
+      payload: {
+        schemaVersion: 1,
+        entityId: 'synthetic-finance-account-v1',
+        idempotencyKey,
+        scopeFingerprint: 'b'.repeat(64),
+        resultingRevision: 1,
+      },
+    };
+    const { pool, query } = poolFor((sql) => {
+      const scoped = scopedRows(sql);
+      if (scoped !== undefined) return scoped;
+      if (
+        sql.includes("entity.entity_type = 'finance.account'") &&
+        sql.includes('for update')
+      )
+        return [entityRow(record, 1)];
+      if (sql.includes('from emdo.audit_events as audit')) return [audit];
+      if (sql.includes('insert into'))
+        throw new Error('duplicate must not issue a write');
+      return [];
+    });
+    const repository = new PostgresFinanceSpecialistRecordRepository(pool);
+
+    await expect(
+      repository.provisionSyntheticStagingAccount({
+        scope: syntheticStagingScope,
+        idempotencyKey,
+      }),
+    ).resolves.toEqual({
+      status: 'duplicate',
+      record,
+      auditEventId: ids.audit,
+    });
+    await expect(
+      repository.provisionSyntheticStagingAccount({
+        scope: syntheticStagingScope,
+        idempotencyKey: 'synthetic-finance-account-different-v1',
+      }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+    expect(
+      query.mock.calls.some(([sql]) => String(sql).includes('insert into')),
+    ).toBe(false);
+  });
+
+  it('rejects model account fields and mismatched pre-existing synthetic state', async () => {
+    const canonical = syntheticStagingAccount();
+    const tampered = validateFinanceRecord({
+      ...canonical,
+      name: 'A different account',
+    });
+    if (tampered.status !== 'accepted') {
+      throw new Error('tampered synthetic account fixture invalid');
+    }
+    const idempotencyKey = 'synthetic-finance-account-provision-v1';
+    const { pool, query } = poolFor((sql) => {
+      const scoped = scopedRows(sql);
+      if (scoped !== undefined) return scoped;
+      if (
+        sql.includes("entity.entity_type = 'finance.account'") &&
+        sql.includes('for update')
+      )
+        return [entityRow(tampered.record, 1)];
+      if (sql.includes('from emdo.audit_events as audit')) {
+        return [
+          {
+            auditEventId: ids.audit,
+            eventType: 'finance.synthetic-staging-account-provisioned',
+            payload: {
+              schemaVersion: 1,
+              entityId: 'synthetic-finance-account-v1',
+              idempotencyKey,
+              scopeFingerprint: 'b'.repeat(64),
+              resultingRevision: 1,
+            },
+          },
+        ];
+      }
+      if (sql.includes('insert into'))
+        throw new Error('mismatched state must not issue a write');
+      return [];
+    });
+    const repository = new PostgresFinanceSpecialistRecordRepository(pool);
+
+    await expect(
+      repository.provisionSyntheticStagingAccount({
+        scope: syntheticStagingScope,
+        idempotencyKey,
+        account: canonical,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid-input' });
+    expect(pool.connect).not.toHaveBeenCalled();
+
+    await expect(
+      repository.provisionSyntheticStagingAccount({
+        scope: syntheticStagingScope,
+        idempotencyKey,
+      }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+    expect(
+      query.mock.calls.some(([sql]) => String(sql).includes('insert into')),
+    ).toBe(false);
   });
 
   it('creates only a validated manual transaction, then atomically writes its audit event and receipt', async () => {

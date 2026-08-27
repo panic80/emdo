@@ -265,7 +265,9 @@ describe('synthetic staging seed CLI', () => {
         expect(request.headers.get('cookie')).toContain(
           '__Secure-emdo.session_token=synthetic-session',
         );
-        expect(request.headers.get('origin')).toBe('https://staging.emdo.invalid');
+        expect(request.headers.get('origin')).toBe(
+          'https://staging.emdo.invalid',
+        );
         expect(request.headers.get('x-csrf-token')).toBe(
           'csrf-token-01234567890123456789',
         );

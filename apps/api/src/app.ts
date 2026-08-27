@@ -19,10 +19,12 @@ import { registerMetricsRoutes } from './routes/metrics.js';
 import { registerProposalRoutes } from './routes/proposals.js';
 import { registerRunRoutes } from './routes/runs.js';
 import { registerSyncRoutes } from './routes/sync.js';
+import { registerSyntheticFinanceAccountProvisionerRoute } from './routes/synthetic-finance-account-provisioner.js';
 import { registerSyntheticFinanceInvitationHandoffRoute } from './routes/synthetic-finance-invitation-handoff.js';
 import { registerTurnRoutes } from './routes/turns.js';
 import { registerVoiceRoutes } from './routes/voice.js';
 import { CanonicalAppOriginSchema } from './schemas.js';
+import type { SyntheticFinanceAccountProvisioner } from './production/synthetic-finance-account-provisioner.js';
 import type { SyntheticFinanceInvitationHandoff } from './production/synthetic-finance-invitation-handoff.js';
 import type {
   ApiServices,
@@ -44,6 +46,7 @@ export interface CreateAppOptions {
   readonly allowLoopbackApiIngress?: boolean;
   readonly enableSyntheticHttpSubsetReadiness?: boolean;
   readonly enableFinanceSyntheticStagingReadiness?: boolean;
+  readonly syntheticFinanceAccountProvisioner?: SyntheticFinanceAccountProvisioner;
   readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
 }
 
@@ -153,6 +156,13 @@ export const createApp = async (
     options.services,
     limits.maximumJsonBodyBytes,
   );
+  if (options.syntheticFinanceAccountProvisioner !== undefined) {
+    registerSyntheticFinanceAccountProvisionerRoute(
+      app,
+      options.services,
+      options.syntheticFinanceAccountProvisioner,
+    );
+  }
   if (options.syntheticFinanceInvitationHandoff !== undefined) {
     registerSyntheticFinanceInvitationHandoffRoute(
       app,

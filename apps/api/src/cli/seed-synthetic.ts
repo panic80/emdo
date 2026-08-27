@@ -373,8 +373,7 @@ const executeSyntheticSeedCommand = async (input: {
   const spaceId = await withinStage('private-space', async () => {
     const privateSpaces = token.writeScope.spaces.filter(
       (space) =>
-        space.visibility === 'private' &&
-        space.originalOwnerUserId.length > 0,
+        space.visibility === 'private' && space.originalOwnerUserId.length > 0,
     );
     if (privateSpaces.length !== 1) throw new Error('unavailable');
     return privateSpaces[0]!.id;
@@ -489,7 +488,10 @@ const executeSyntheticSeedCommand = async (input: {
       throw new Error('invalid');
     }
   });
-  return Object.freeze({ status: 'seeded' as const, operationCount: 3 as const });
+  return Object.freeze({
+    status: 'seeded' as const,
+    operationCount: 3 as const,
+  });
 };
 
 export const runSyntheticSeedCommand = async (

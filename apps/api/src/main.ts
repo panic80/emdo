@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { createApp, type ApiServices } from './app.js';
 import { createProductionApiServices } from './production/create-services.js';
+import type { SyntheticFinanceAccountProvisioner } from './production/synthetic-finance-account-provisioner.js';
 import type { SyntheticFinanceInvitationHandoff } from './production/synthetic-finance-invitation-handoff.js';
 import { CanonicalAppOriginSchema } from './schemas.js';
 import { EdgeProxySecretSchema } from './trusted-ingress.js';
@@ -229,6 +230,14 @@ const startApiServer = async (input: {
           }
         ).syntheticFinanceInvitationHandoff
       : undefined;
+  const syntheticFinanceAccountProvisioner =
+    input.services !== null && typeof input.services === 'object'
+      ? (
+          input.services as {
+            readonly syntheticFinanceAccountProvisioner?: SyntheticFinanceAccountProvisioner;
+          }
+        ).syntheticFinanceAccountProvisioner
+      : undefined;
   const app = await createApp({
     services,
     publicOrigin: config.publicOrigin,
@@ -238,6 +247,12 @@ const startApiServer = async (input: {
       config.enableSyntheticHttpSubsetReadiness,
     enableFinanceSyntheticStagingReadiness:
       config.enableFinanceSyntheticStagingReadiness,
+    ...(syntheticFinanceAccountProvisioner === undefined
+      ? {}
+      : {
+          syntheticFinanceAccountProvisioner:
+            syntheticFinanceAccountProvisioner,
+        }),
     ...(syntheticFinanceInvitationHandoff === undefined
       ? {}
       : {
