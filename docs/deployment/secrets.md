@@ -51,6 +51,11 @@ session/JWT signing keys,
 connector-vault keys, notification credentials, and application secrets.
 The provider-free staging MVP omits Google identity, Resend authentication
 delivery, onboarding, Calendar OAuth, OpenAI, push, and commerce credentials.
+An explicitly enabled Finance synthetic run keeps the onboarding DSN out of
+baseline `api.env`: it derives the dedicated `emdo_onboarding_login` URI from
+the protected `onboarding_database_password` file into root-owned, run-scoped
+`finance-secrets/finance-api.env`. Only the Finance API overlay receives that
+URI, and staging teardown purges the complete run-scoped secret directory.
 Only the API joins the staging authentication egress network; the worker
 remains on an internal egress network and enforces
 `EMDO_EXTERNAL_PROVIDERS_ENABLED=false`. The staging HTTP subset does not call

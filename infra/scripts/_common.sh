@@ -727,6 +727,27 @@ assert_finance_synthetic_staging_flag() {
   esac
 }
 
+finance_staging_onboarding_database_url() {
+  local password_file="$1"
+  local password=''
+
+  assert_root_owned_bounded_file "$password_file" 600 513
+  if LC_ALL=C grep -q '[^A-Za-z0-9_-]' "$password_file"; then
+    die 'Finance staging onboarding password file must contain one 16-512 character base64url line'
+  fi
+  LC_ALL=C awk '
+    NR != 1 || length($0) < 16 || length($0) > 512 ||
+      $0 !~ /^[A-Za-z0-9_-]+$/ { invalid=1; exit }
+    END { exit !(NR == 1 && !invalid) }
+  ' "$password_file" >/dev/null ||
+    die 'Finance staging onboarding password file must contain one 16-512 character base64url line'
+  IFS= read -r password < "$password_file" || [[ -n "$password" ]]
+  [[ ${#password} -ge 16 && ${#password} -le 512 && "$password" =~ ^[A-Za-z0-9_-]+$ ]] ||
+    die 'Finance staging onboarding password file must contain one 16-512 character base64url line'
+  printf 'postgresql://emdo_onboarding_login:%s@postgres:5432/emdo_app?sslmode=disable' "$password"
+  password=''
+}
+
 finance_staging_marker_is_valid() {
   local state_dir="$1"
   local marker="$state_dir/$FINANCE_STAGING_MARKER_FILE"
@@ -1022,8 +1043,8 @@ prepare_finance_synthetic_staging_state() {
     die 'Finance staging key has an invalid format'
   worker_executor_database_url="$(env_file_value \
     "$SECRETS_DIR/worker.env" EMDO_WORKER_EXECUTOR_DATABASE_URL)"
-  onboarding_database_url="$(env_file_value \
-    "$SECRETS_DIR/api.env" EMDO_ONBOARDING_DATABASE_URL)"
+  onboarding_database_url="$(finance_staging_onboarding_database_url \
+    "$SECRETS_DIR/onboarding_database_password")"
   document_key="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
   review_key="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
   keyring="$(printf '%s' \

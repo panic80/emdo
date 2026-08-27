@@ -341,10 +341,26 @@ describe('deployment script trust boundaries', () => {
 
     await writeFile(apiEnvironment, `${core.join('\n')}\n`);
 
+    const onboardingPasswordCanary =
+      'onboarding_password_canary_0123456789ABCDEFG';
+    await writeFile(
+      apiEnvironment,
+      `${[
+        ...core,
+        `EMDO_ONBOARDING_DATABASE_URL=postgresql://emdo_onboarding_login:${onboardingPasswordCanary}@postgres:5432/emdo_app?sslmode=disable`,
+      ].join('\n')}\n`,
+    );
+    const onboardingRejected = runCommon(
+      'assert_staging_api_environment "$2"',
+      apiEnvironment,
+    );
+    expect(onboardingRejected.status).not.toBe(0);
+    expect(onboardingRejected.stdout).not.toContain(onboardingPasswordCanary);
+    expect(onboardingRejected.stderr).not.toContain(onboardingPasswordCanary);
+
     for (const optionalLine of [
       'EMDO_GOOGLE_IDENTITY_CLIENT_ID=123456789012-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com',
       'EMDO_GOOGLE_IDENTITY_CLIENT_SECRET=staging-google-client-secret',
-      'EMDO_ONBOARDING_DATABASE_URL=postgresql://emdo_onboarding_login:fixture@postgres:5432/emdo_app?sslmode=disable',
       'EMDO_RESEND_AUTH_API_KEY=re_staging_auth_provider_key_0123456789',
       'EMDO_RESEND_FROM_EMAIL=auth@staging.emdo.invalid',
       'EMDO_TRANSACTIONAL_EMAIL_PROVIDER=resend',
@@ -669,6 +685,106 @@ describe('deployment script trust boundaries', () => {
     );
     expect(missingKey.status).not.toBe(0);
     expect(missingKey.stderr).not.toContain(financeApiKey);
+  });
+
+  it('derives the Finance-only onboarding DSN from the dedicated password file', async () => {
+    const passwordPath = join(directory, 'onboarding_database_password');
+    const password = 'finance_onboarding_password_0123456789ABCDEFG';
+    await writeFile(passwordPath, `${password}\n`, { mode: 0o600 });
+
+    const result = runCommon(
+      [
+        'fake_mode="$3"; fake_owner="$4"; fake_links="$5"; fake_size="$6"',
+        'stat() { [[ "$1" == -c && "$#" == 3 ]] || return 64; case "$2" in "%a") printf "%s\\n" "$fake_mode" ;; "%u") printf "%s\\n" "$fake_owner" ;; "%h") printf "%s\\n" "$fake_links" ;; "%s") printf "%s\\n" "$fake_size" ;; *) return 64 ;; esac; }',
+        'finance_staging_onboarding_database_url "$2"',
+      ].join('; '),
+      passwordPath,
+      '600',
+      '0',
+      '1',
+      String(Buffer.byteLength(`${password}\n`)),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toBe(
+      `postgresql://emdo_onboarding_login:${password}@postgres:5432/emdo_app?sslmode=disable`,
+    );
+  });
+
+  it('rejects malformed Finance onboarding password files without leaking values', async () => {
+    const passwordPath = join(directory, 'onboarding_database_password');
+    const canary = 'finance_onboarding_password_canary';
+    const invalidValues: readonly (string | Buffer)[] = [
+      `${canary}+invalid\n`,
+      `${canary}/invalid\n`,
+      `${canary}=invalid\n`,
+      `${canary} invalid\n`,
+      `${canary}\nsecond_line\n`,
+      '',
+      `${'a'.repeat(15)}\n`,
+      `${'a'.repeat(513)}\n`,
+      `${canary}\r\n`,
+      Buffer.concat([Buffer.from(canary), Buffer.from([0]), Buffer.from('\n')]),
+    ];
+
+    for (const invalidValue of invalidValues) {
+      await writeFile(passwordPath, invalidValue, { mode: 0o600 });
+      const result = runCommon(
+        'assert_root_owned_bounded_file() { require_regular_file "$1"; }; finance_staging_onboarding_database_url "$2"',
+        passwordPath,
+      );
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).not.toContain(canary);
+      expect(result.stderr).not.toContain(canary);
+    }
+  });
+
+  it.each([
+    ['mode', '644', '0', '1', '46'],
+    ['owner', '600', '501', '1', '46'],
+    ['hard link', '600', '0', '2', '46'],
+    ['empty size', '600', '0', '1', '0'],
+    ['oversized file', '600', '0', '1', '514'],
+  ])(
+    'rejects unsafe Finance onboarding password file %s metadata without leaking values',
+    async (_label, mode, owner, links, size) => {
+      const passwordPath = join(directory, 'onboarding_database_password');
+      const password = 'finance_onboarding_metadata_canary_0123456789';
+      await writeFile(passwordPath, `${password}\n`, { mode: 0o600 });
+
+      const result = runCommon(
+        [
+          'fake_mode="$3"; fake_owner="$4"; fake_links="$5"; fake_size="$6"',
+          'stat() { [[ "$1" == -c && "$#" == 3 ]] || return 64; case "$2" in "%a") printf "%s\\n" "$fake_mode" ;; "%u") printf "%s\\n" "$fake_owner" ;; "%h") printf "%s\\n" "$fake_links" ;; "%s") printf "%s\\n" "$fake_size" ;; *) return 64 ;; esac; }',
+          'finance_staging_onboarding_database_url "$2"',
+        ].join('; '),
+        passwordPath,
+        mode,
+        owner,
+        links,
+        size,
+      );
+
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).not.toContain(password);
+      expect(result.stderr).not.toContain(password);
+    },
+  );
+
+  it('reasserts the protected Finance onboarding password file boundary', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const helperSource = await readFile(commonPath, 'utf8');
+
+    expect(helperSource).toContain(
+      'assert_root_owned_bounded_file "$password_file" 600 513',
+    );
+    expect(helperSource).toContain(
+      '"$SECRETS_DIR/onboarding_database_password"',
+    );
+    expect(helperSource).not.toContain(
+      '"$SECRETS_DIR/api.env" EMDO_ONBOARDING_DATABASE_URL',
+    );
   });
 
   it('requires one high-entropy edge-proxy proof secret', async () => {
