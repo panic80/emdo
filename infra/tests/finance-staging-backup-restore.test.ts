@@ -243,6 +243,22 @@ ${action}`,
     const claimFinalize = acceptance.indexOf(
       'claim_consumed_finance_staging_finalize_handoff',
     );
+    const acceptanceLines = acceptance.split('\n').map((line) => line.trim());
+    const financeAcceptanceInvocations = acceptanceLines.flatMap(
+      (line, index) =>
+        line === 'staging-acceptance \\'
+          ? [acceptanceLines.slice(index, index + 9)]
+          : [],
+    );
+    const financeAcceptanceCommand = [
+      'staging-acceptance \\',
+      'node \\',
+      'dist/cli/staging-acceptance.js \\',
+      '--all-mvp-gates \\',
+      '--require-synthetic \\',
+      '--forbid-worker-provider-execution \\',
+      '--finance-synthetic-document-gates \\',
+    ];
 
     expect(common).toContain(
       'install -o 10001 -g 10001 -m 0600 /dev/null "$pending_handoff"',
@@ -268,6 +284,22 @@ ${action}`,
     expect(prepareFinalize).toBeGreaterThan(restore);
     expect(finalizeArgument).toBeGreaterThan(prepareFinalize);
     expect(claimFinalize).toBeGreaterThan(finalizeArgument);
+    expect(financeAcceptanceInvocations).toHaveLength(2);
+    expect(financeAcceptanceInvocations[0]?.slice(0, 7)).toEqual(
+      financeAcceptanceCommand,
+    );
+    expect(financeAcceptanceInvocations[0]?.[7]).toBe(
+      '> "$finance_probe_pending"',
+    );
+    expect(financeAcceptanceInvocations[1]?.slice(0, 7)).toEqual(
+      financeAcceptanceCommand,
+    );
+    expect(financeAcceptanceInvocations[1]?.[7]).toBe(
+      '--finance-synthetic-document-finalize \\',
+    );
+    expect(financeAcceptanceInvocations[1]?.[8]).toBe(
+      '> "$finance_probe_pending"',
+    );
     expect(common).toContain("'schema=emdo-finance-staging-finalize-input-v1'");
     expect(common).toContain('"backup_restore_receipt_sha256=$receipt_digest"');
     expect(acceptance).not.toMatch(/--(?:document|evidence)-(?:id|reference)/u);

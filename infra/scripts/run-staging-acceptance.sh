@@ -78,6 +78,8 @@ if [[ "$EMDO_FINANCE_SYNTHETIC_STAGING" == true ]]; then
   staging_compose --profile operations run --rm --no-deps \
     --env EMDO_FINANCE_SYNTHETIC_STAGING=true \
     staging-acceptance \
+      node \
+      dist/cli/staging-acceptance.js \
       --all-mvp-gates \
       --require-synthetic \
       --forbid-worker-provider-execution \
@@ -154,6 +156,8 @@ if [[ "$EMDO_FINANCE_SYNTHETIC_STAGING" == true ]]; then
   staging_compose --profile operations run --rm --no-deps \
     --env EMDO_FINANCE_SYNTHETIC_STAGING=true \
     staging-acceptance \
+      node \
+      dist/cli/staging-acceptance.js \
       --all-mvp-gates \
       --require-synthetic \
       --forbid-worker-provider-execution \
