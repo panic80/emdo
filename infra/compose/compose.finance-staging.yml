@@ -11,6 +11,12 @@ services:
     environment:
       EMDO_FINANCE_SYNTHETIC_STAGING: 'true'
       EMDO_FINANCE_DOCUMENT_STORE_DIR: /var/lib/emdo/finance-documents
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/finance-synthetic-staging/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
     volumes:
       - type: bind
         source: '${FINANCE_STAGING_DOCUMENT_STORE_DIR:?FINANCE_STAGING_DOCUMENT_STORE_DIR must point to a run-scoped finance document store outside the repository}'

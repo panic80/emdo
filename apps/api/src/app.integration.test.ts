@@ -15,6 +15,7 @@ import {
 import {
   API_READINESS_REQUIRED_CHECKS,
   API_READINESS_SCHEMA_VERSION,
+  ApiFinanceSyntheticStagingReadinessSuccessSchema,
   type ApiReadinessStatus,
 } from './readiness-contract.js';
 import { DEFAULT_API_LIMITS } from './config.js';
@@ -50,6 +51,22 @@ const syntheticHttpSubsetChecks = Object.freeze({
   'agents.run-events': 'ok' as const,
   experience: 'unavailable' as const,
   'experience.shopping-read': 'ok' as const,
+});
+const financeSyntheticStagingChecks = Object.freeze({
+  ...readinessChecks('unavailable'),
+  authority: 'ok' as const,
+  'authority.authentication': 'ok' as const,
+  'authority.household-administration': 'ok' as const,
+  'authority.proposal-queries': 'ok' as const,
+  'authority.visual-decisions': 'ok' as const,
+  'authority.visual-proof-issuance': 'ok' as const,
+  agents: 'ok' as const,
+  'agents.manager-turns': 'ok' as const,
+  'agents.run-events': 'ok' as const,
+  experience: 'unavailable' as const,
+  'experience.finance-read': 'ok' as const,
+  'experience.finance-imports': 'ok' as const,
+  'experience.finance-documents': 'ok' as const,
 });
 const EDGE_PROXY_SECRET =
   'edge-proxy-test-secret-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -2065,6 +2082,102 @@ describe('Fastify API boundary', () => {
     await app.close();
   });
 
+  it('isolates the Finance synthetic readiness profile from the provider-free profile', async () => {
+    const services = buildServices();
+    services.readiness.check = vi.fn(async () => ({
+      ready: false,
+      checks: financeSyntheticStagingChecks,
+    }));
+    const app = await createApp({
+      services,
+      enableFinanceSyntheticStagingReadiness: true,
+    } as Parameters<typeof createApp>[0]);
+
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/synthetic-staging/readyz',
+        })
+      ).statusCode,
+    ).toBe(404);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/finance-synthetic-staging/readyz',
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(
+      ApiFinanceSyntheticStagingReadinessSuccessSchema.parse(response.json()),
+    ).toEqual({
+      schemaVersion: 1,
+      profile: 'finance-synthetic-staging',
+      status: 'ready',
+      releaseEligible: false,
+      checks: financeSyntheticStagingChecks,
+    });
+    await app.close();
+  });
+
+  it('fails Finance synthetic readiness closed for missing Finance dependencies or enabled providers', async () => {
+    const services = buildServices();
+    services.readiness.check = vi.fn(async () => ({
+      ready: false,
+      checks: {
+        ...financeSyntheticStagingChecks,
+        'experience.finance-documents': 'unavailable' as const,
+      },
+    }));
+    const app = await createApp({
+      services,
+      enableFinanceSyntheticStagingReadiness: true,
+    } as Parameters<typeof createApp>[0]);
+    const missingFinanceResponse = await app.inject({
+      method: 'GET',
+      url: '/finance-synthetic-staging/readyz',
+    });
+    expect(missingFinanceResponse.statusCode).toBe(503);
+    expect(missingFinanceResponse.headers['cache-control']).toBe('no-store');
+    expect(missingFinanceResponse.json()).toMatchObject({
+      code: 'finance-synthetic-staging-not-ready',
+      extensions: {
+        readinessProfile: 'finance-synthetic-staging',
+        releaseEligible: false,
+        checks: expect.objectContaining({
+          'experience.finance-documents': 'unavailable',
+        }),
+      },
+    });
+
+    services.readiness.check = vi.fn(async () => ({
+      ready: false,
+      checks: {
+        ...financeSyntheticStagingChecks,
+        google: 'ok' as const,
+        'google.connector': 'ok' as const,
+      },
+    }));
+    const providerResponse = await app.inject({
+      method: 'GET',
+      url: '/finance-synthetic-staging/readyz',
+    });
+    expect(providerResponse.statusCode).toBe(503);
+    expect(providerResponse.json()).toMatchObject({
+      code: 'finance-synthetic-staging-not-ready',
+    });
+    await app.close();
+  });
+
+  it('rejects conflicting synthetic readiness profiles', async () => {
+    await expect(
+      createApp({
+        services: buildServices(),
+        enableSyntheticHttpSubsetReadiness: true,
+        enableFinanceSyntheticStagingReadiness: true,
+      }),
+    ).rejects.toThrow('synthetic-readiness-profiles-conflict');
+  });
+
   it('fails closed when an internal readiness result contradicts its components', async () => {
     const services = buildServices();
     services.readiness.check = vi.fn(async () => ({
@@ -2839,6 +2952,7 @@ describe('Fastify API boundary', () => {
       port: 3100,
       allowLoopbackApiIngress: false,
       enableSyntheticHttpSubsetReadiness: false,
+      enableFinanceSyntheticStagingReadiness: false,
       edgeProxySecret: EDGE_PROXY_SECRET,
       publicOrigin: 'https://emdo.example',
     });
@@ -2860,6 +2974,7 @@ describe('Fastify API boundary', () => {
     ).toMatchObject({
       allowLoopbackApiIngress: true,
       enableSyntheticHttpSubsetReadiness: true,
+      enableFinanceSyntheticStagingReadiness: false,
     });
     expect(
       loadApiServerConfig({
@@ -2868,7 +2983,34 @@ describe('Fastify API boundary', () => {
         EMDO_EDGE_PROXY_SECRET: EDGE_PROXY_SECRET,
         EMDO_PUBLIC_ORIGIN: 'https://staging.emdo.example',
       }),
-    ).toMatchObject({ enableSyntheticHttpSubsetReadiness: false });
+    ).toMatchObject({
+      enableSyntheticHttpSubsetReadiness: false,
+      enableFinanceSyntheticStagingReadiness: false,
+    });
+    expect(
+      loadApiServerConfig({
+        EMDO_ENVIRONMENT: 'staging',
+        EMDO_ALLOW_LOOPBACK_API_INGRESS: 'true',
+        EMDO_SYNTHETIC_DATA_ONLY: 'true',
+        EMDO_FINANCE_SYNTHETIC_STAGING: 'true',
+        EMDO_FINANCE_DOCUMENTS_ENABLED: 'true',
+        EMDO_EDGE_PROXY_SECRET: EDGE_PROXY_SECRET,
+        EMDO_PUBLIC_ORIGIN: 'https://staging.emdo.example',
+      }),
+    ).toMatchObject({
+      enableSyntheticHttpSubsetReadiness: false,
+      enableFinanceSyntheticStagingReadiness: true,
+    });
+    expect(() =>
+      loadApiServerConfig({
+        EMDO_ENVIRONMENT: 'staging',
+        EMDO_ALLOW_LOOPBACK_API_INGRESS: 'true',
+        EMDO_SYNTHETIC_DATA_ONLY: 'true',
+        EMDO_FINANCE_SYNTHETIC_STAGING: 'true',
+        EMDO_EDGE_PROXY_SECRET: EDGE_PROXY_SECRET,
+        EMDO_PUBLIC_ORIGIN: 'https://staging.emdo.example',
+      }),
+    ).toThrow('api-finance-synthetic-staging-configuration-invalid');
     expect(() =>
       loadApiServerConfig({
         EMDO_ENVIRONMENT: 'production',
@@ -2903,5 +3045,23 @@ describe('Fastify API boundary', () => {
     const productionMain = await import('./main.js');
 
     expect(productionMain).not.toHaveProperty('startApiServer');
+  });
+
+  it('validates deployment configuration before composing durable services', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const source = await readFile(
+      new URL('./main.ts', import.meta.url),
+      'utf8',
+    );
+    const starter = source.slice(
+      source.indexOf('export const startApiFromEnvironment'),
+    );
+
+    expect(starter.indexOf('loadApiServerConfig(environment)')).toBeGreaterThan(
+      -1,
+    );
+    expect(starter.indexOf('loadApiServerConfig(environment)')).toBeLessThan(
+      starter.indexOf('loadProductionApiServices(environment)'),
+    );
   });
 });

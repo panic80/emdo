@@ -43,6 +43,7 @@ export interface CreateAppOptions {
   readonly edgeProxySecret?: string;
   readonly allowLoopbackApiIngress?: boolean;
   readonly enableSyntheticHttpSubsetReadiness?: boolean;
+  readonly enableFinanceSyntheticStagingReadiness?: boolean;
   readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
 }
 
@@ -133,6 +134,7 @@ export const createApp = async (
     app,
     options.services,
     options.enableSyntheticHttpSubsetReadiness,
+    options.enableFinanceSyntheticStagingReadiness,
   );
   registerMetricsRoutes(app, options.services);
   registerTurnRoutes(app, options.services, limits);

@@ -422,7 +422,7 @@ describe('container and edge configuration', () => {
     expect(common).toContain('EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL');
     expect(common).toContain('EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL');
     expect(common).toContain('EMDO_VISUAL_DECISION_DATABASE_URL');
-    expect(common).not.toContain('EMDO_WORKFLOW_DATABASE_URL');
+    expect(common).toContain('EMDO_WORKFLOW_DATABASE_URL');
     expect(staging.match(/restart: 'no'/g)).toHaveLength(6);
     expect(staging).toMatch(/api:[\s\S]*?ports: !override \[\]/);
     expect(staging).toMatch(
@@ -486,6 +486,12 @@ describe('container and edge configuration', () => {
       'EMDO_FINANCE_DOCUMENT_STORE_DIR: /var/lib/emdo/finance-documents',
     );
     expect(apiService).toContain("EMDO_FINANCE_SYNTHETIC_STAGING: 'true'");
+    expect(apiService).toContain(
+      "fetch('http://127.0.0.1:3000/finance-synthetic-staging/readyz')",
+    );
+    expect(apiService).not.toContain(
+      "fetch('http://127.0.0.1:3000/synthetic-staging/readyz')",
+    );
     expect(apiService).toContain(`source: '${hostStore}'`);
     expect(apiService).toMatch(
       /target: \/var\/lib\/emdo\/finance-documents\n\s+read_only: false\n\s+bind:\n\s+create_host_path: false/,
@@ -545,6 +551,7 @@ describe('container and edge configuration', () => {
       expect(baseline).not.toContain('finance-extraction:');
       expect(baseline).not.toContain('EMDO_FINANCE_SYNTHETIC_STAGING');
       expect(baseline).not.toContain('FINANCE_STAGING_API_ENV_FILE');
+      expect(baseline).not.toContain('finance-synthetic-staging/readyz');
       expect(baseline).not.toContain('FINANCE_STAGING_EXTRACTION_ENV_FILE');
       expect(baseline).not.toContain('FINANCE_STAGING_DOCUMENT_STORE_DIR');
       expect(baseline).not.toContain(

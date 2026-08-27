@@ -13,6 +13,7 @@ const ApiServerConfigSchema = z
     port: z.number().int().min(1).max(65_535),
     allowLoopbackApiIngress: z.boolean(),
     enableSyntheticHttpSubsetReadiness: z.boolean(),
+    enableFinanceSyntheticStagingReadiness: z.boolean(),
     edgeProxySecret: EdgeProxySecretSchema,
     publicOrigin: CanonicalAppOriginSchema,
   })
@@ -39,6 +40,28 @@ const ApiServerConfigSchema = z
           'synthetic HTTP subset readiness requires staging loopback ingress',
       });
     }
+    if (
+      value.enableFinanceSyntheticStagingReadiness &&
+      (value.deploymentEnvironment !== 'staging' ||
+        !value.allowLoopbackApiIngress)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['enableFinanceSyntheticStagingReadiness'],
+        message:
+          'Finance synthetic staging readiness requires staging loopback ingress',
+      });
+    }
+    if (
+      value.enableSyntheticHttpSubsetReadiness &&
+      value.enableFinanceSyntheticStagingReadiness
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['enableSyntheticHttpSubsetReadiness'],
+        message: 'synthetic readiness profiles are mutually exclusive',
+      });
+    }
   });
 
 export type ApiServerConfig = z.infer<typeof ApiServerConfigSchema>;
@@ -54,8 +77,25 @@ export const loadApiServerConfig = (
     .enum(['true', 'false'])
     .default('false')
     .parse(environment.EMDO_SYNTHETIC_DATA_ONLY);
+  const financeSyntheticStagingRequested = z
+    .enum(['true', 'false'])
+    .default('false')
+    .parse(environment.EMDO_FINANCE_SYNTHETIC_STAGING);
+  const financeDocumentsEnabled = z
+    .enum(['true', 'false'])
+    .default('false')
+    .parse(environment.EMDO_FINANCE_DOCUMENTS_ENABLED);
   const deploymentEnvironment = environment.EMDO_ENVIRONMENT ?? 'production';
   const loopbackEnabled = allowLoopbackApiIngress === 'true';
+  const financeSyntheticStaging =
+    financeSyntheticStagingRequested === 'true' &&
+    deploymentEnvironment === 'staging' &&
+    loopbackEnabled &&
+    syntheticDataOnly === 'true' &&
+    financeDocumentsEnabled === 'true';
+  if (financeSyntheticStagingRequested === 'true' && !financeSyntheticStaging) {
+    throw new Error('api-finance-synthetic-staging-configuration-invalid');
+  }
   return Object.freeze(
     ApiServerConfigSchema.parse({
       deploymentEnvironment,
@@ -65,7 +105,9 @@ export const loadApiServerConfig = (
       enableSyntheticHttpSubsetReadiness:
         deploymentEnvironment === 'staging' &&
         loopbackEnabled &&
-        syntheticDataOnly === 'true',
+        syntheticDataOnly === 'true' &&
+        !financeSyntheticStaging,
+      enableFinanceSyntheticStagingReadiness: financeSyntheticStaging,
       edgeProxySecret: environment.EMDO_EDGE_PROXY_SECRET,
       publicOrigin: environment.EMDO_PUBLIC_ORIGIN,
     }),
@@ -194,6 +236,8 @@ const startApiServer = async (input: {
     allowLoopbackApiIngress: config.allowLoopbackApiIngress,
     enableSyntheticHttpSubsetReadiness:
       config.enableSyntheticHttpSubsetReadiness,
+    enableFinanceSyntheticStagingReadiness:
+      config.enableFinanceSyntheticStagingReadiness,
     ...(syntheticFinanceInvitationHandoff === undefined
       ? {}
       : {
@@ -213,6 +257,7 @@ const startApiServer = async (input: {
 export const startApiFromEnvironment = async (
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ) => {
+  const config = loadApiServerConfig(environment);
   const services = await loadProductionApiServices(environment);
-  return startApiServer({ services, environment });
+  return startApiServer({ services, config });
 };
