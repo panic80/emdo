@@ -727,25 +727,123 @@ assert_finance_synthetic_staging_flag() {
   esac
 }
 
-finance_staging_onboarding_database_url() {
+finance_staging_database_url() {
   local password_file="$1"
+  local database_login="$2"
+  local purpose="$3"
   local password=''
 
+  case "$database_login:$purpose" in
+    'emdo_onboarding_login:Finance staging onboarding' | \
+      'emdo_workflow_login:Finance staging workflow') ;;
+    *) die 'Finance staging database authority is invalid' ;;
+  esac
   assert_root_owned_bounded_file "$password_file" 600 513
   if LC_ALL=C grep -q '[^A-Za-z0-9_-]' "$password_file"; then
-    die 'Finance staging onboarding password file must contain one 16-512 character base64url line'
+    die "$purpose password file must contain one 16-512 character base64url line"
   fi
   LC_ALL=C awk '
     NR != 1 || length($0) < 16 || length($0) > 512 ||
       $0 !~ /^[A-Za-z0-9_-]+$/ { invalid=1; exit }
     END { exit !(NR == 1 && !invalid) }
   ' "$password_file" >/dev/null ||
-    die 'Finance staging onboarding password file must contain one 16-512 character base64url line'
+    die "$purpose password file must contain one 16-512 character base64url line"
   IFS= read -r password < "$password_file" || [[ -n "$password" ]]
   [[ ${#password} -ge 16 && ${#password} -le 512 && "$password" =~ ^[A-Za-z0-9_-]+$ ]] ||
-    die 'Finance staging onboarding password file must contain one 16-512 character base64url line'
-  printf 'postgresql://emdo_onboarding_login:%s@postgres:5432/emdo_app?sslmode=disable' "$password"
+    die "$purpose password file must contain one 16-512 character base64url line"
+  printf 'postgresql://%s:%s@postgres:5432/emdo_app?sslmode=disable' \
+    "$database_login" "$password"
   password=''
+}
+
+finance_staging_onboarding_database_url() {
+  finance_staging_database_url \
+    "$1" emdo_onboarding_login 'Finance staging onboarding'
+}
+
+finance_staging_workflow_database_url() {
+  finance_staging_database_url \
+    "$1" emdo_workflow_login 'Finance staging workflow'
+}
+
+finance_staging_hmac_keyring() {
+  local key_id="$1"
+  local secret='' keyring=''
+
+  [[ "$key_id" =~ ^finance-(approval-checkpoint|visual-proof|proposal-cursor)\.current-1$ ]] ||
+    die 'Finance staging HMAC key ID is invalid'
+  secret="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
+  keyring="$(printf '%s' \
+    "{\"schemaVersion\":1,\"current\":{\"keyId\":\"$key_id\",\"keyB64url\":\"$secret\"},\"previous\":[]}" |
+    openssl base64 -A | tr '+/' '-_' | tr -d '=\n')"
+  [[ ${#secret} == 43 && ${#keyring} -le 8192 ]] ||
+    die 'could not generate Finance staging HMAC keyring material'
+  printf '%s' "$keyring"
+  secret=''
+  keyring=''
+}
+
+finance_staging_base64url_padded() {
+  local value="$1"
+  local remainder=$(( ${#value} % 4 ))
+
+  printf '%s' "$value" | tr -- '-_' '+/'
+  case "$remainder" in
+    0) ;;
+    2) printf '==' ;;
+    3) printf '=' ;;
+    *) die 'Finance staging base64url value has an impossible length' ;;
+  esac
+}
+
+assert_finance_staging_hmac_keyring() {
+  local value="$1"
+  local expected_key_id="$2"
+  local decoded='' canonical=''
+
+  [[ ${#value} -ge 1 && ${#value} -le 8192 && "$value" =~ ^[A-Za-z0-9_-]+$ ]] ||
+    die 'Finance staging HMAC keyring is not canonical base64url'
+  decoded="$(finance_staging_base64url_padded "$value" | openssl base64 -d -A)" ||
+    die 'Finance staging HMAC keyring is not decodable'
+  canonical="$(printf '%s' "$decoded" | openssl base64 -A | tr '+/' '-_' | tr -d '=\n')"
+  [[ "$canonical" == "$value" ]] ||
+    die 'Finance staging HMAC keyring is not canonical base64url'
+  [[ "$decoded" =~ ^\{\"schemaVersion\":1,\"current\":\{\"keyId\":\"${expected_key_id}\",\"keyB64url\":\"[A-Za-z0-9_-]{43}\"\},\"previous\":\[\]\}$ ]] ||
+    die 'Finance staging HMAC keyring has an invalid exact shape'
+  decoded=''
+  canonical=''
+}
+
+finance_staging_invitation_delivery_public_key() {
+  local public_key=''
+
+  public_key="$(openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null |
+    openssl pkey -pubout -outform DER 2>/dev/null |
+    openssl base64 -A | tr '+/' '-_' | tr -d '=\n')"
+  [[ ${#public_key} -ge 1 && ${#public_key} -le 16384 &&
+    "$public_key" =~ ^[A-Za-z0-9_-]+$ ]] ||
+    die 'could not generate Finance staging invitation delivery public key'
+  printf '%s' "$public_key"
+  public_key=''
+}
+
+assert_finance_staging_invitation_delivery_public_key() {
+  local value="$1"
+  local canonical=''
+
+  [[ ${#value} -ge 1 && ${#value} -le 16384 && "$value" =~ ^[A-Za-z0-9_-]+$ ]] ||
+    die 'Finance staging invitation delivery public key is not canonical base64url'
+  canonical="$(finance_staging_base64url_padded "$value" |
+    openssl base64 -d -A |
+    openssl base64 -A | tr '+/' '-_' | tr -d '=\n')" ||
+    die 'Finance staging invitation delivery public key is not decodable'
+  [[ "$canonical" == "$value" ]] ||
+    die 'Finance staging invitation delivery public key is not canonical base64url'
+  finance_staging_base64url_padded "$value" |
+    openssl base64 -d -A |
+    openssl rsa -pubin -inform DER -noout >/dev/null 2>&1 ||
+    die 'Finance staging invitation delivery public key is not an RSA public key'
+  canonical=''
 }
 
 finance_staging_marker_is_valid() {
@@ -758,22 +856,44 @@ finance_staging_marker_is_valid() {
 
 assert_finance_staging_api_environment() {
   local path="$1"
-  local keyring review_key
+  local keyring review_key approval_keyring visual_proof_keyring
+  local proposal_cursor_keyring invitation_key_id invitation_public_key
   assert_env_file_allowed_keys "$path" \
     EMDO_FINANCE_DOCUMENTS_ENABLED \
     EMDO_FINANCE_DOCUMENT_KEYRING_B64URL \
     EMDO_FINANCE_DOCUMENT_REVIEW_HMAC_KEY_B64URL \
-    EMDO_ONBOARDING_DATABASE_URL
+    EMDO_ONBOARDING_DATABASE_URL EMDO_WORKFLOW_DATABASE_URL \
+    EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL \
+    EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL \
+    EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL \
+    EMDO_INVITATION_DELIVERY_KEY_ID \
+    EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL
   [[ "$(env_file_value "$path" EMDO_FINANCE_DOCUMENTS_ENABLED)" == true ]] ||
     die "$path must enable Finance documents"
   assert_internal_postgres_uri "$path" \
     EMDO_ONBOARDING_DATABASE_URL emdo_onboarding_login emdo_app
+  assert_internal_postgres_uri "$path" \
+    EMDO_WORKFLOW_DATABASE_URL emdo_workflow_login emdo_app
   keyring="$(env_file_value "$path" EMDO_FINANCE_DOCUMENT_KEYRING_B64URL)"
   review_key="$(env_file_value "$path" EMDO_FINANCE_DOCUMENT_REVIEW_HMAC_KEY_B64URL)"
+  approval_keyring="$(env_file_value "$path" EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL)"
+  visual_proof_keyring="$(env_file_value "$path" EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL)"
+  proposal_cursor_keyring="$(env_file_value "$path" EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL)"
+  invitation_key_id="$(env_file_value "$path" EMDO_INVITATION_DELIVERY_KEY_ID)"
+  invitation_public_key="$(env_file_value "$path" EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL)"
   [[ ${#keyring} -le 8192 && "$keyring" =~ ^[A-Za-z0-9_-]+$ ]] ||
     die "$path contains an invalid Finance document keyring"
   [[ ${#review_key} == 43 && "$review_key" =~ ^[A-Za-z0-9_-]+$ ]] ||
     die "$path contains an invalid Finance document review key"
+  assert_finance_staging_hmac_keyring \
+    "$approval_keyring" finance-approval-checkpoint.current-1
+  assert_finance_staging_hmac_keyring \
+    "$visual_proof_keyring" finance-visual-proof.current-1
+  assert_finance_staging_hmac_keyring \
+    "$proposal_cursor_keyring" finance-proposal-cursor.current-1
+  [[ "$invitation_key_id" =~ ^finance-staging-[0-9]{1,20}-invitation-delivery$ ]] ||
+    die "$path contains an invalid Finance staging invitation delivery key ID"
+  assert_finance_staging_invitation_delivery_public_key "$invitation_public_key"
 }
 
 assert_finance_staging_extraction_environment() {
@@ -1026,7 +1146,9 @@ prepare_finance_synthetic_staging_state() {
   local document_store="$state_dir/$FINANCE_STAGING_DOCUMENT_STORE_DIRNAME"
   local marker="$state_dir/$FINANCE_STAGING_MARKER_FILE"
   local pending_secret_dir pending_api pending_extraction pending_handoff pending_marker
-  local worker_executor_database_url onboarding_database_url document_key review_key keyring
+  local worker_executor_database_url onboarding_database_url workflow_database_url
+  local document_key review_key keyring approval_keyring visual_proof_keyring
+  local proposal_cursor_keyring invitation_delivery_public_key invitation_delivery_key_id
   local -a secret_lines=()
 
   [[ "${EMDO_FINANCE_SYNTHETIC_STAGING:-false}" == true ]] ||
@@ -1045,6 +1167,8 @@ prepare_finance_synthetic_staging_state() {
     "$SECRETS_DIR/worker.env" EMDO_WORKER_EXECUTOR_DATABASE_URL)"
   onboarding_database_url="$(finance_staging_onboarding_database_url \
     "$SECRETS_DIR/onboarding_database_password")"
+  workflow_database_url="$(finance_staging_workflow_database_url \
+    "$SECRETS_DIR/workflow_database_password")"
   document_key="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
   review_key="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
   keyring="$(printf '%s' \
@@ -1052,6 +1176,15 @@ prepare_finance_synthetic_staging_state() {
     openssl base64 -A | tr '+/' '-_' | tr -d '=\n')"
   [[ ${#document_key} == 43 && ${#review_key} == 43 && ${#keyring} -le 8192 ]] ||
     die 'could not generate Finance staging cryptographic material'
+  approval_keyring="$(finance_staging_hmac_keyring finance-approval-checkpoint.current-1)"
+  visual_proof_keyring="$(finance_staging_hmac_keyring finance-visual-proof.current-1)"
+  proposal_cursor_keyring="$(finance_staging_hmac_keyring finance-proposal-cursor.current-1)"
+  invitation_delivery_public_key="$(finance_staging_invitation_delivery_public_key)"
+  invitation_delivery_key_id="finance-staging-${STAGING_RUN_ID:?STAGING_RUN_ID is required}-invitation-delivery"
+  [[ "$approval_keyring" != "$visual_proof_keyring" &&
+    "$approval_keyring" != "$proposal_cursor_keyring" &&
+    "$visual_proof_keyring" != "$proposal_cursor_keyring" ]] ||
+    die 'Finance staging generated duplicate HMAC keyring material'
 
   pending_secret_dir="$(mktemp -d "$state_dir/.finance-secrets.XXXXXX")"
   chmod 0700 "$pending_secret_dir"
@@ -1063,7 +1196,13 @@ prepare_finance_synthetic_staging_state() {
     'EMDO_FINANCE_DOCUMENTS_ENABLED=true' \
     "EMDO_FINANCE_DOCUMENT_KEYRING_B64URL=$keyring" \
     "EMDO_FINANCE_DOCUMENT_REVIEW_HMAC_KEY_B64URL=$review_key" \
-    "EMDO_ONBOARDING_DATABASE_URL=$onboarding_database_url" > "$pending_api"
+    "EMDO_ONBOARDING_DATABASE_URL=$onboarding_database_url" \
+    "EMDO_WORKFLOW_DATABASE_URL=$workflow_database_url" \
+    "EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL=$approval_keyring" \
+    "EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL=$visual_proof_keyring" \
+    "EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL=$proposal_cursor_keyring" \
+    "EMDO_INVITATION_DELIVERY_KEY_ID=$invitation_delivery_key_id" \
+    "EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL=$invitation_delivery_public_key" > "$pending_api"
   printf '%s\n' \
     'EMDO_FINANCE_DOCUMENTS_ENABLED=true' \
     "EMDO_WORKER_EXECUTOR_DATABASE_URL=$worker_executor_database_url" \
@@ -1085,8 +1224,14 @@ prepare_finance_synthetic_staging_state() {
   document_key=''
   review_key=''
   keyring=''
+  approval_keyring=''
+  visual_proof_keyring=''
+  proposal_cursor_keyring=''
+  invitation_delivery_public_key=''
+  invitation_delivery_key_id=''
   worker_executor_database_url=''
   onboarding_database_url=''
+  workflow_database_url=''
   assert_finance_synthetic_staging_state "$state_dir"
 }
 

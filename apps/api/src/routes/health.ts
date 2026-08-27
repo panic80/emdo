@@ -3,8 +3,12 @@ import type { FastifyInstance } from 'fastify';
 import { ApiProblem } from '../problem.js';
 import {
   API_READINESS_SCHEMA_VERSION,
+  ApiFinanceSyntheticStagingReadinessSuccessSchema,
   ApiReadinessServiceResultSchema,
   ApiSyntheticHttpSubsetReadinessSuccessSchema,
+  FINANCE_SYNTHETIC_STAGING_EXCLUDED_CHECKS,
+  FINANCE_SYNTHETIC_STAGING_READINESS_SCHEMA_VERSION,
+  FINANCE_SYNTHETIC_STAGING_REQUIRED_CHECKS,
   SYNTHETIC_HTTP_SUBSET_EXCLUDED_CHECKS,
   SYNTHETIC_HTTP_SUBSET_READINESS_SCHEMA_VERSION,
   SYNTHETIC_HTTP_SUBSET_REQUIRED_CHECKS,
@@ -17,7 +21,14 @@ export const registerHealthRoutes = (
   app: FastifyInstance,
   services: ApiServices,
   enableSyntheticHttpSubsetReadiness = false,
+  enableFinanceSyntheticStagingReadiness = false,
 ): void => {
+  if (
+    enableSyntheticHttpSubsetReadiness &&
+    enableFinanceSyntheticStagingReadiness
+  ) {
+    throw new Error('synthetic-readiness-profiles-conflict');
+  }
   app.get('/healthz', async (_request, reply) =>
     reply.header('cache-control', 'no-store').send({ status: 'ok' }),
   );
@@ -80,6 +91,52 @@ export const registerHealthRoutes = (
         {
           schemaVersion: SYNTHETIC_HTTP_SUBSET_READINESS_SCHEMA_VERSION,
           profile: 'synthetic-http-subset',
+          status: 'ready',
+          releaseEligible: false,
+          checks: readiness.checks,
+        },
+      );
+      return reply
+        .status(200)
+        .header('cache-control', 'no-store')
+        .send(response);
+    });
+  }
+
+  if (enableFinanceSyntheticStagingReadiness) {
+    app.get('/finance-synthetic-staging/readyz', async (_request, reply) => {
+      const readiness = parseServiceResponse(
+        ApiReadinessServiceResultSchema,
+        await services.readiness.check(),
+      );
+      const financeReady =
+        FINANCE_SYNTHETIC_STAGING_REQUIRED_CHECKS.every(
+          (name) => readiness.checks[name] === 'ok',
+        ) &&
+        FINANCE_SYNTHETIC_STAGING_EXCLUDED_CHECKS.every(
+          (name) => readiness.checks[name] === 'unavailable',
+        );
+      if (!financeReady) {
+        throw new ApiProblem({
+          status: 503,
+          code: 'finance-synthetic-staging-not-ready',
+          title: 'Finance synthetic staging not ready',
+          detail:
+            'One or more required Finance synthetic staging dependencies are unavailable or excluded providers are enabled.',
+          extensions: {
+            readinessSchemaVersion:
+              FINANCE_SYNTHETIC_STAGING_READINESS_SCHEMA_VERSION,
+            readinessProfile: 'finance-synthetic-staging',
+            releaseEligible: false,
+            checks: readiness.checks,
+          },
+        });
+      }
+      const response = parseServiceResponse(
+        ApiFinanceSyntheticStagingReadinessSuccessSchema,
+        {
+          schemaVersion: FINANCE_SYNTHETIC_STAGING_READINESS_SCHEMA_VERSION,
+          profile: 'finance-synthetic-staging',
           status: 'ready',
           releaseEligible: false,
           checks: readiness.checks,

@@ -1,5 +1,14 @@
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { generateKeyPairSync } from 'node:crypto';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +47,34 @@ const validExperienceCursorKeyring = Buffer.from(
     previous: [],
   }),
 ).toString('base64url');
+const financeHmacKeyring = (keyId: string, fill: number): string =>
+  Buffer.from(
+    JSON.stringify({
+      schemaVersion: 1,
+      current: {
+        keyId,
+        keyB64url: Buffer.alloc(32, fill).toString('base64url'),
+      },
+      previous: [],
+    }),
+  ).toString('base64url');
+const validFinanceApprovalCheckpointKeyring = financeHmacKeyring(
+  'finance-approval-checkpoint.current-1',
+  81,
+);
+const validFinanceVisualProofKeyring = financeHmacKeyring(
+  'finance-visual-proof.current-1',
+  82,
+);
+const validFinanceProposalCursorKeyring = financeHmacKeyring(
+  'finance-proposal-cursor.current-1',
+  83,
+);
+const validFinanceInvitationDeliveryPublicKey = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+})
+  .publicKey.export({ type: 'spki', format: 'der' })
+  .toString('base64url');
 const validStagingCoreApiEnvironment = [
   'EMDO_PUBLIC_ORIGIN=https://staging.example.invalid',
   'EMDO_API_DATABASE_URL=postgresql://emdo_api_login:fixture@postgres:5432/emdo_app?sslmode=disable',
@@ -614,6 +651,12 @@ describe('deployment script trust boundaries', () => {
         `EMDO_FINANCE_DOCUMENT_KEYRING_B64URL=${documentKeyring}`,
         `EMDO_FINANCE_DOCUMENT_REVIEW_HMAC_KEY_B64URL=${'R'.repeat(43)}`,
         'EMDO_ONBOARDING_DATABASE_URL=postgresql://emdo_onboarding_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+        'EMDO_WORKFLOW_DATABASE_URL=postgresql://emdo_workflow_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+        `EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL=${validFinanceApprovalCheckpointKeyring}`,
+        `EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL=${validFinanceVisualProofKeyring}`,
+        `EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL=${validFinanceProposalCursorKeyring}`,
+        'EMDO_INVITATION_DELIVERY_KEY_ID=finance-staging-123-invitation-delivery',
+        `EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL=${validFinanceInvitationDeliveryPublicKey}`,
         '',
       ].join('\n'),
       { mode: 0o600 },
@@ -658,6 +701,12 @@ describe('deployment script trust boundaries', () => {
         `EMDO_FINANCE_DOCUMENT_REVIEW_HMAC_KEY_B64URL=${'R'.repeat(43)}`,
         `EMDO_OPENAI_FINANCE_API_KEY=${financeApiKey}`,
         'EMDO_ONBOARDING_DATABASE_URL=postgresql://emdo_onboarding_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+        'EMDO_WORKFLOW_DATABASE_URL=postgresql://emdo_workflow_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+        `EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL=${validFinanceApprovalCheckpointKeyring}`,
+        `EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL=${validFinanceVisualProofKeyring}`,
+        `EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL=${validFinanceProposalCursorKeyring}`,
+        'EMDO_INVITATION_DELIVERY_KEY_ID=finance-staging-123-invitation-delivery',
+        `EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL=${validFinanceInvitationDeliveryPublicKey}`,
         '',
       ].join('\n'),
       { mode: 0o600 },
@@ -687,6 +736,78 @@ describe('deployment script trust boundaries', () => {
     expect(missingKey.stderr).not.toContain(financeApiKey);
   });
 
+  it('requires the Finance-only manager authority envelope without admitting it to baseline api.env', async () => {
+    const financeApiEnvironment = join(directory, 'finance-api.env');
+    const baselineApiEnvironment = join(directory, 'api.env');
+    const documentKeyring = Buffer.from(
+      JSON.stringify({
+        schemaVersion: 1,
+        current: {
+          keyVersion: 'finance-documents.v1',
+          keyB64url: Buffer.alloc(32, 93).toString('base64url'),
+        },
+        previous: [],
+      }),
+    ).toString('base64url');
+    const workflowPassword = 'finance_workflow_password_canary_0123456789';
+
+    await writeFile(
+      financeApiEnvironment,
+      [
+        'EMDO_FINANCE_DOCUMENTS_ENABLED=true',
+        `EMDO_FINANCE_DOCUMENT_KEYRING_B64URL=${documentKeyring}`,
+        `EMDO_FINANCE_DOCUMENT_REVIEW_HMAC_KEY_B64URL=${'Q'.repeat(43)}`,
+        'EMDO_ONBOARDING_DATABASE_URL=postgresql://emdo_onboarding_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+        `EMDO_WORKFLOW_DATABASE_URL=postgresql://emdo_workflow_login:${workflowPassword}@postgres:5432/emdo_app?sslmode=disable`,
+        `EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL=${validFinanceApprovalCheckpointKeyring}`,
+        `EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL=${validFinanceVisualProofKeyring}`,
+        `EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL=${validFinanceProposalCursorKeyring}`,
+        'EMDO_INVITATION_DELIVERY_KEY_ID=finance-staging-123-invitation-delivery',
+        `EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL=${validFinanceInvitationDeliveryPublicKey}`,
+        '',
+      ].join('\n'),
+      { mode: 0o600 },
+    );
+    await writeFile(
+      baselineApiEnvironment,
+      `${[
+        ...validStagingCoreApiEnvironment,
+        `EMDO_WORKFLOW_DATABASE_URL=postgresql://emdo_workflow_login:${workflowPassword}@postgres:5432/emdo_app?sslmode=disable`,
+      ].join('\n')}\n`,
+      { mode: 0o600 },
+    );
+
+    expect(
+      runCommon(
+        'assert_finance_staging_api_environment "$2"',
+        financeApiEnvironment,
+      ).status,
+    ).toBe(0);
+    const baselineResult = runCommon(
+      'assert_staging_api_environment "$2"',
+      baselineApiEnvironment,
+    );
+    expect(baselineResult.status).not.toBe(0);
+    expect(baselineResult.stdout).not.toContain(workflowPassword);
+    expect(baselineResult.stderr).not.toContain(workflowPassword);
+
+    await writeFile(
+      financeApiEnvironment,
+      (await readFile(financeApiEnvironment, 'utf8')).replace(
+        'EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL=',
+        'EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL=not-a-keyring',
+      ),
+      { mode: 0o600 },
+    );
+    const invalidKeyring = runCommon(
+      'assert_finance_staging_api_environment "$2"',
+      financeApiEnvironment,
+    );
+    expect(invalidKeyring.status).not.toBe(0);
+    expect(invalidKeyring.stdout).not.toContain(workflowPassword);
+    expect(invalidKeyring.stderr).not.toContain(workflowPassword);
+  });
+
   it('derives the Finance-only onboarding DSN from the dedicated password file', async () => {
     const passwordPath = join(directory, 'onboarding_database_password');
     const password = 'finance_onboarding_password_0123456789ABCDEFG';
@@ -709,6 +830,31 @@ describe('deployment script trust boundaries', () => {
     expect(result.stderr).toBe('');
     expect(result.stdout).toBe(
       `postgresql://emdo_onboarding_login:${password}@postgres:5432/emdo_app?sslmode=disable`,
+    );
+  });
+
+  it('derives the Finance-only workflow DSN from the protected workflow password file', async () => {
+    const passwordPath = join(directory, 'workflow_database_password');
+    const password = 'finance_workflow_password_0123456789ABCDEFG';
+    await writeFile(passwordPath, `${password}\n`, { mode: 0o600 });
+
+    const result = runCommon(
+      [
+        'fake_mode="$3"; fake_owner="$4"; fake_links="$5"; fake_size="$6"',
+        'stat() { [[ "$1" == -c && "$#" == 3 ]] || return 64; case "$2" in "%a") printf "%s\\n" "$fake_mode" ;; "%u") printf "%s\\n" "$fake_owner" ;; "%h") printf "%s\\n" "$fake_links" ;; "%s") printf "%s\\n" "$fake_size" ;; *) return 64 ;; esac; }',
+        'finance_staging_workflow_database_url "$2"',
+      ].join('; '),
+      passwordPath,
+      '600',
+      '0',
+      '1',
+      String(Buffer.byteLength(`${password}\n`)),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toBe(
+      `postgresql://emdo_workflow_login:${password}@postgres:5432/emdo_app?sslmode=disable`,
     );
   });
 

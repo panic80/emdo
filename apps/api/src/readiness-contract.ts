@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const API_READINESS_SCHEMA_VERSION = 1 as const;
 export const SYNTHETIC_HTTP_SUBSET_READINESS_SCHEMA_VERSION = 1 as const;
+export const FINANCE_SYNTHETIC_STAGING_READINESS_SCHEMA_VERSION = 1 as const;
 
 export const API_READINESS_GROUPS = Object.freeze({
   authority: Object.freeze([
@@ -45,6 +46,30 @@ export const SYNTHETIC_HTTP_SUBSET_EXCLUDED_CHECKS = Object.freeze([
   'authority.proposal-queries',
   'authority.visual-decisions',
   'authority.visual-proof-issuance',
+  'google.connector',
+  'voice.provider',
+] as const satisfies readonly ApiReadinessComponentName[]);
+
+/**
+ * Finance staging executes guarded Finance turns, so its bounded profile must
+ * prove the durable Finance authority graph rather than the provider-free
+ * Shopping-only graph. It remains non-release-eligible and keeps external
+ * Google and voice providers absent.
+ */
+export const FINANCE_SYNTHETIC_STAGING_REQUIRED_CHECKS = Object.freeze([
+  'authority.authentication',
+  'authority.household-administration',
+  'authority.proposal-queries',
+  'authority.visual-decisions',
+  'authority.visual-proof-issuance',
+  'agents.manager-turns',
+  'agents.run-events',
+  'experience.finance-read',
+  'experience.finance-imports',
+  'experience.finance-documents',
+] as const satisfies readonly ApiReadinessComponentName[]);
+
+export const FINANCE_SYNTHETIC_STAGING_EXCLUDED_CHECKS = Object.freeze([
   'google.connector',
   'voice.provider',
 ] as const satisfies readonly ApiReadinessComponentName[]);
@@ -139,5 +164,30 @@ export const ApiSyntheticHttpSubsetReadinessSuccessSchema = z
     {
       message:
         'Synthetic HTTP subset readiness does not match its required profile',
+    },
+  );
+
+export const ApiFinanceSyntheticStagingReadinessSuccessSchema = z
+  .strictObject({
+    schemaVersion: z.literal(
+      FINANCE_SYNTHETIC_STAGING_READINESS_SCHEMA_VERSION,
+    ),
+    profile: z.literal('finance-synthetic-staging'),
+    status: z.literal('ready'),
+    releaseEligible: z.literal(false),
+    checks: ApiReadinessChecksSchema,
+  })
+  .refine(
+    ({ checks }) =>
+      groupsMatchComponents(checks) &&
+      FINANCE_SYNTHETIC_STAGING_REQUIRED_CHECKS.every(
+        (name) => checks[name] === 'ok',
+      ) &&
+      FINANCE_SYNTHETIC_STAGING_EXCLUDED_CHECKS.every(
+        (name) => checks[name] === 'unavailable',
+      ),
+    {
+      message:
+        'Finance synthetic staging readiness does not match its required profile',
     },
   );
