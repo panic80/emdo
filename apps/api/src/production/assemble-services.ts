@@ -166,6 +166,12 @@ export const assembleProductionApiServices = async (
       bindings,
       metricsToken,
       ...(close === undefined ? {} : { close }),
+      ...(durableComposition.syntheticFinanceAccountProvisioner === undefined
+        ? {}
+        : {
+            syntheticFinanceAccountProvisioner:
+              durableComposition.syntheticFinanceAccountProvisioner,
+          }),
       ...(durableComposition.syntheticFinanceInvitationHandoff === undefined
         ? {}
         : {

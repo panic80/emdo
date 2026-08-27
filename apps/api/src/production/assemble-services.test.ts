@@ -311,6 +311,18 @@ describe('production API service assembly', () => {
     });
   });
 
+  it('forwards the exact Finance synthetic account provisioner from durable composition', async () => {
+    const provisioner = Object.freeze({ provision: vi.fn() });
+    mocks.createDurable.mockResolvedValue({
+      bindings: {},
+      syntheticFinanceAccountProvisioner: provisioner,
+    });
+
+    const services = await assembleProductionApiServices({});
+
+    expect(services.syntheticFinanceAccountProvisioner).toBe(provisioner);
+  });
+
   it('closes auth and durable resources exactly once', async () => {
     const closeAuth = vi.fn(async () => undefined);
     const closeDurable = vi.fn(async () => undefined);

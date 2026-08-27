@@ -61,15 +61,17 @@ const CsrfResponseSchema = z.strictObject({
   token: z.string().min(24).max(512),
 });
 
-const SessionResponseSchema = z.object({
-  user: z.object({ id: z.uuid() }),
-});
-
 const SyncClientRegistrationResponseSchema = z.strictObject({
   schemaVersion: z.literal(1),
   clientId: z.uuid(),
   status: z.literal('registered'),
   replayed: z.boolean(),
+});
+
+const FinanceSyntheticAccountResponseSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  accountId: z.literal('synthetic-finance-account-v1'),
+  status: z.enum(['applied', 'duplicate']),
 });
 
 const SyncResultSchema = z.strictObject({
@@ -125,8 +127,6 @@ const SYNTHETIC_OPERATION_IDS = Object.freeze([
   '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f82',
   '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f83',
 ]);
-const SYNTHETIC_FINANCE_OPERATION_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f84';
-const SYNTHETIC_FINANCE_ACCOUNT_ID = 'synthetic-finance-account-v1';
 const SYNTHETIC_CREATED_AT = '2026-01-01T00:00:00.000Z';
 
 type SeedFetch = (request: Request) => Promise<Response>;
@@ -137,7 +137,6 @@ type SyntheticSeedStage =
   | 'owner-bootstrap'
   | 'sign-in'
   | 'session-cookie'
-  | 'owner-session'
   | 'csrf-request'
   | 'csrf-http-401'
   | 'csrf-http-503'
@@ -146,6 +145,7 @@ type SyntheticSeedStage =
   | 'sync-client'
   | 'sync-token'
   | 'private-space'
+  | 'finance-account'
   | 'sync-upload'
   | 'unexpected';
 
@@ -225,7 +225,7 @@ const executeSyntheticSeedCommand = async (input: {
   readonly environment: Readonly<Record<string, string | undefined>>;
   readonly bootstrapOwner?: BootstrapOwner;
   readonly fetch?: SeedFetch;
-}): Promise<{ readonly status: 'seeded'; readonly operationCount: 3 | 4 }> => {
+}): Promise<{ readonly status: 'seeded'; readonly operationCount: 3 }> => {
   const config = await withinStage('configuration', async () => {
     const configuration = SyntheticSeedConfigurationSchema.safeParse({
       apiOrigin: input.environment.EMDO_STAGING_API_ORIGIN,
@@ -305,21 +305,6 @@ const executeSyntheticSeedCommand = async (input: {
     }
     return values;
   });
-  const ownerUserId =
-    config.financeSyntheticStaging === 'true'
-      ? await withinStage('owner-session', async () => {
-          const session = await json(
-            await request(
-              new Request(`${config.apiOrigin}/api/auth/get-session`, {
-                headers: { cookie: cookies.join('; ') },
-              }),
-            ),
-            SessionResponseSchema,
-          );
-          return session.user.id;
-        })
-      : undefined;
-
   const csrfResponse = await withinStage('csrf-request', async () =>
     request(
       new Request(`${config.apiOrigin}/api/v1/auth/csrf`, {
@@ -388,10 +373,7 @@ const executeSyntheticSeedCommand = async (input: {
   const spaceId = await withinStage('private-space', async () => {
     const privateSpaces = token.writeScope.spaces.filter(
       (space) =>
-        space.visibility === 'private' &&
-        (ownerUserId === undefined
-          ? space.originalOwnerUserId.length > 0
-          : space.originalOwnerUserId === ownerUserId),
+        space.visibility === 'private' && space.originalOwnerUserId.length > 0,
     );
     if (privateSpaces.length !== 1) throw new Error('unavailable');
     return privateSpaces[0]!.id;
@@ -448,35 +430,30 @@ const executeSyntheticSeedCommand = async (input: {
     }),
   ];
   if (config.financeSyntheticStaging === 'true') {
-    if (ownerUserId === undefined) {
-      throw new SyntheticSeedFailure('owner-session');
-    }
-    operations.push(
-      operation({
-        clientId: config.clientId,
-        operationId: SYNTHETIC_FINANCE_OPERATION_ID,
-        entityType: 'finance.account',
-        entityId: SYNTHETIC_FINANCE_ACCOUNT_ID,
-        spaceId,
-        value: {
-          schemaVersion: 1,
-          id: SYNTHETIC_FINANCE_ACCOUNT_ID,
-          spaceId,
-          ownerUserId,
-          createdAt,
-          updatedAt: createdAt,
-          recordType: 'account',
-          name: 'Synthetic staging chequing',
-          accountKind: 'chequing',
-          currency: 'CAD',
-          openingBalanceCadMinor: 0,
-          active: true,
-          source: 'manual',
-        },
-        actorIntent: 'Create the deterministic Finance account staging fixture',
-        createdAt,
-      }),
-    );
+    await withinStage('finance-account', async () => {
+      const account = await json(
+        await request(
+          new Request(
+            `${config.apiOrigin}/api/internal/finance-synthetic/account`,
+            {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                cookie: cookies.join('; '),
+                origin: config.publicOrigin,
+                'x-csrf-token': csrf.token,
+                'idempotency-key': 'synthetic-finance-account-seed-v1',
+              },
+              body: JSON.stringify({ schemaVersion: 1 }),
+            },
+          ),
+        ),
+        FinanceSyntheticAccountResponseSchema,
+      );
+      if (account.accountId !== 'synthetic-finance-account-v1') {
+        throw new Error('invalid');
+      }
+    });
   }
   await withinStage('sync-upload', async () => {
     const upload = await json(
@@ -488,10 +465,7 @@ const executeSyntheticSeedCommand = async (input: {
             cookie: cookies.join('; '),
             origin: config.publicOrigin,
             'x-csrf-token': csrf.token,
-            'idempotency-key':
-              config.financeSyntheticStaging === 'true'
-                ? 'synthetic-finance-domain-seed-v1'
-                : 'synthetic-domain-seed-v1',
+            'idempotency-key': 'synthetic-domain-seed-v1',
           },
           body: JSON.stringify({
             schemaVersion: 1,
@@ -516,8 +490,7 @@ const executeSyntheticSeedCommand = async (input: {
   });
   return Object.freeze({
     status: 'seeded' as const,
-    operationCount:
-      config.financeSyntheticStaging === 'true' ? (4 as const) : (3 as const),
+    operationCount: 3 as const,
   });
 };
 

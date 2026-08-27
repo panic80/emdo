@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadOrderedMigrations } from '../migrations.js';
 import type { DatabasePool } from '../scoped-repository.js';
 import { PostgresFinanceDocumentRepository } from './postgres-finance-document-repository.js';
+import { PostgresFinanceSpecialistRecordRepository } from './postgres-finance-specialist-record-repository.js';
 
 const databaseUrl = process.env.TEST_FINANCE_DOCUMENT_DATABASE_URL;
 const describeDatabase = databaseUrl === undefined ? describe.skip : describe;
@@ -51,6 +52,10 @@ const ids = Object.freeze({
   ownerVectorFusionChunk: 'f2000000-0000-4000-8000-000000000032',
   ownerDualFusionDocument: 'f2000000-0000-4000-8000-000000000033',
   ownerDualFusionChunk: 'f2000000-0000-4000-8000-000000000034',
+  collaboratorSpaceAccessGrant: 'f2000000-0000-4000-8000-000000000035',
+  ownerReplaySession: 'f2000000-0000-4000-8000-000000000036',
+  ownerReplayRequest: 'f2000000-0000-4000-8000-000000000037',
+  ownerReplaySpaceAccessGrant: 'f2000000-0000-4000-8000-000000000038',
 });
 
 const sha256 = (character: string): string => character.repeat(64);
@@ -104,6 +109,12 @@ const collaboratorPrincipal = Object.freeze({
   userId: ids.collaborator,
   sessionId: ids.collaboratorSession,
   requestId: ids.collaboratorRequest,
+} satisfies Principal);
+
+const ownerReplayPrincipal = Object.freeze({
+  userId: ids.owner,
+  sessionId: ids.ownerReplaySession,
+  requestId: ids.ownerReplayRequest,
 } satisfies Principal);
 
 const loginConnectionString = (role: string, password: string): string => {
@@ -244,6 +255,36 @@ describeDatabase(
       }
     };
 
+    const seedSpaceAccessGrant = async (input: {
+      readonly grantId: string;
+      readonly principal: Principal;
+      readonly privateSpaceId: string;
+    }): Promise<void> => {
+      await admin.query(
+        `insert into emdo.space_access_grants
+           (grant_id, household_id, original_owner_user_id, session_id,
+            request_id, membership_id, role, private_space_id,
+            writable_space_ids, issued_at, expires_at, retain_until)
+         select $1::uuid, membership.household_id, membership.user_id,
+                $2::uuid, $3::uuid, membership.id, membership.role, $4::uuid,
+                array[$4::uuid],
+                pg_catalog.clock_timestamp() - interval '1 second',
+                pg_catalog.clock_timestamp() + interval '10 minutes',
+                pg_catalog.clock_timestamp() + interval '89 days'
+           from emdo.household_memberships as membership
+          where membership.household_id = $5::uuid
+            and membership.user_id = $6::uuid`,
+        [
+          input.grantId,
+          input.principal.sessionId,
+          input.principal.requestId,
+          input.privateSpaceId,
+          ids.household,
+          input.principal.userId,
+        ],
+      );
+    };
+
     beforeAll(async () => {
       const { Pool } = await import('pg');
       admin = new Pool({
@@ -339,6 +380,8 @@ describeDatabase(
            values ($1, $2, 'finance-document-owner-session',
                    pg_catalog.clock_timestamp() + interval '1 hour', $3),
                   ($4, $5, 'finance-document-collaborator-session',
+                   pg_catalog.clock_timestamp() + interval '1 hour', $3),
+                  ($6, $2, 'finance-document-owner-replay-session',
                    pg_catalog.clock_timestamp() + interval '1 hour', $3)`,
         [
           ids.ownerSession,
@@ -346,6 +389,7 @@ describeDatabase(
           ids.household,
           ids.collaboratorSession,
           ids.collaborator,
+          ids.ownerReplaySession,
         ],
       );
 
@@ -354,6 +398,22 @@ describeDatabase(
         application_name: 'emdo-finance-document-live-app',
         connectionString: loginConnectionString(loginRole, loginPassword),
         max: 1,
+      });
+
+      await seedSpaceAccessGrant({
+        grantId: ids.ownerSpaceAccessGrant,
+        principal: ownerPrincipal,
+        privateSpaceId: ids.ownerPrivateSpace,
+      });
+      await seedSpaceAccessGrant({
+        grantId: ids.collaboratorSpaceAccessGrant,
+        principal: collaboratorPrincipal,
+        privateSpaceId: ids.collaboratorPrivateSpace,
+      });
+      await seedSpaceAccessGrant({
+        grantId: ids.ownerReplaySpaceAccessGrant,
+        principal: ownerReplayPrincipal,
+        privateSpaceId: ids.ownerPrivateSpace,
       });
 
       await withPrincipal(ownerPrincipal, async (client) => {
@@ -586,6 +646,216 @@ describeDatabase(
           }),
         ),
       ).rejects.toMatchObject({ code: '42501' });
+    });
+
+    it('provisions the exact synthetic Finance account once per owner-private scope and audits only first applies', async () => {
+      const repository = new PostgresFinanceSpecialistRecordRepository(
+        databasePool(app),
+      );
+      const idempotencyKey = 'synthetic-finance-account-provision-v1';
+      const accountId = 'synthetic-finance-account-v1';
+      const auditEventType = 'finance.synthetic-staging-account-provisioned';
+      const scopeFor = (input: {
+        readonly principal: Principal;
+        readonly privateSpaceId: string;
+        readonly grantId: string;
+        readonly fingerprint: string;
+      }) =>
+        Object.freeze({
+          requestId: input.principal.requestId,
+          userId: input.principal.userId,
+          householdId: ids.household,
+          sessionId: input.principal.sessionId,
+          privateSpaceId: input.privateSpaceId,
+          spaceAccessGrantId: input.grantId,
+          collectionAuthorizationScopeFingerprint: input.fingerprint,
+          abortSignal: new AbortController().signal,
+        });
+      const expectedAccount = (input: {
+        readonly ownerUserId: string;
+        readonly spaceId: string;
+      }) => ({
+        schemaVersion: 1,
+        id: accountId,
+        spaceId: input.spaceId,
+        ownerUserId: input.ownerUserId,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        recordType: 'account',
+        name: 'Synthetic staging chequing',
+        accountKind: 'chequing',
+        currency: 'CAD',
+        openingBalanceCadMinor: 0,
+        active: true,
+        source: 'manual',
+      });
+      const ownerScope = scopeFor({
+        principal: ownerPrincipal,
+        privateSpaceId: ids.ownerPrivateSpace,
+        grantId: ids.ownerSpaceAccessGrant,
+        fingerprint: sha256('a'),
+      });
+      const collaboratorScope = scopeFor({
+        principal: collaboratorPrincipal,
+        privateSpaceId: ids.collaboratorPrivateSpace,
+        grantId: ids.collaboratorSpaceAccessGrant,
+        fingerprint: sha256('b'),
+      });
+      const ownerReplayScope = scopeFor({
+        principal: ownerReplayPrincipal,
+        privateSpaceId: ids.ownerPrivateSpace,
+        grantId: ids.ownerReplaySpaceAccessGrant,
+        fingerprint: sha256('c'),
+      });
+
+      const ownerApplied = await repository.provisionSyntheticStagingAccount({
+        scope: ownerScope,
+        idempotencyKey,
+      });
+      expect(ownerApplied).toEqual({
+        status: 'applied',
+        record: expectedAccount({
+          ownerUserId: ids.owner,
+          spaceId: ids.ownerPrivateSpace,
+        }),
+        auditEventId: expect.any(String),
+      });
+
+      const ownerDuplicate = await repository.provisionSyntheticStagingAccount({
+        scope: ownerReplayScope,
+        idempotencyKey,
+      });
+      expect(ownerDuplicate).toEqual({
+        status: 'duplicate',
+        record: expectedAccount({
+          ownerUserId: ids.owner,
+          spaceId: ids.ownerPrivateSpace,
+        }),
+        auditEventId: ownerApplied.auditEventId,
+      });
+      await expect(
+        repository.provisionSyntheticStagingAccount({
+          scope: ownerScope,
+          idempotencyKey: 'synthetic-finance-account-different-v1',
+        }),
+      ).rejects.toMatchObject({ code: 'conflict' });
+
+      const collaboratorApplied =
+        await repository.provisionSyntheticStagingAccount({
+          scope: collaboratorScope,
+          idempotencyKey,
+        });
+      expect(collaboratorApplied).toEqual({
+        status: 'applied',
+        record: expectedAccount({
+          ownerUserId: ids.collaborator,
+          spaceId: ids.collaboratorPrivateSpace,
+        }),
+        auditEventId: expect.any(String),
+      });
+
+      const canonical = await admin.query<{
+        entity_id: string;
+        entity_type: string;
+        original_owner_user_id: string;
+        payload: unknown;
+        revision: number;
+        space_id: string;
+      }>(
+        `select entity_id, entity_type, original_owner_user_id::text,
+                space_id::text, payload, revision
+           from emdo.sync_entities
+          where household_id = $1::uuid
+            and entity_type = 'finance.account'
+            and entity_id = $2::text
+          order by space_id`,
+        [ids.household, accountId],
+      );
+      expect(canonical.rows).toEqual([
+        {
+          entity_id: accountId,
+          entity_type: 'finance.account',
+          original_owner_user_id: ids.owner,
+          space_id: ids.ownerPrivateSpace,
+          payload: expectedAccount({
+            ownerUserId: ids.owner,
+            spaceId: ids.ownerPrivateSpace,
+          }),
+          revision: 1,
+        },
+        {
+          entity_id: accountId,
+          entity_type: 'finance.account',
+          original_owner_user_id: ids.collaborator,
+          space_id: ids.collaboratorPrivateSpace,
+          payload: expectedAccount({
+            ownerUserId: ids.collaborator,
+            spaceId: ids.collaboratorPrivateSpace,
+          }),
+          revision: 1,
+        },
+      ]);
+
+      const ownerVisible = await withPrincipal(ownerPrincipal, (client) =>
+        client.query<{ space_id: string }>(
+          `select space_id::text
+             from emdo.sync_entities
+            where entity_type = 'finance.account' and entity_id = $1::text`,
+          [accountId],
+        ),
+      );
+      const collaboratorVisible = await withPrincipal(
+        collaboratorPrincipal,
+        (client) =>
+          client.query<{ space_id: string }>(
+            `select space_id::text
+               from emdo.sync_entities
+              where entity_type = 'finance.account' and entity_id = $1::text`,
+            [accountId],
+          ),
+      );
+      expect(ownerVisible.rows).toEqual([{ space_id: ids.ownerPrivateSpace }]);
+      expect(collaboratorVisible.rows).toEqual([
+        { space_id: ids.collaboratorPrivateSpace },
+      ]);
+
+      const audit = await admin.query<{
+        event_type: string;
+        payload: unknown;
+        space_id: string;
+      }>(
+        `select event_type, payload, space_id::text
+           from emdo.audit_events
+          where household_id = $1::uuid
+            and event_type = $2::text
+            and payload ->> 'entityId' = $3::text
+          order by space_id`,
+        [ids.household, auditEventType, accountId],
+      );
+      expect(audit.rows).toEqual([
+        {
+          event_type: auditEventType,
+          space_id: ids.ownerPrivateSpace,
+          payload: {
+            schemaVersion: 1,
+            entityId: accountId,
+            idempotencyKey,
+            scopeFingerprint: sha256('a'),
+            resultingRevision: 1,
+          },
+        },
+        {
+          event_type: auditEventType,
+          space_id: ids.collaboratorPrivateSpace,
+          payload: {
+            schemaVersion: 1,
+            entityId: accountId,
+            idempotencyKey,
+            scopeFingerprint: sha256('b'),
+            resultingRevision: 1,
+          },
+        },
+      ]);
     });
 
     it('denies same-household private search, evidence, match, extraction, and review reads', async () => {

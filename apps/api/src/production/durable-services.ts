@@ -3,6 +3,7 @@ import { webcrypto } from 'node:crypto';
 import {
   ExperienceQueryCursorCodec,
   PostgresFinanceImportRepository,
+  PostgresFinanceSpecialistRecordRepository,
   PostgresAudioRequestCoordinator,
   PostgresHouseholdAdministrationService,
   PostgresProviderFreeShoppingService,
@@ -58,6 +59,10 @@ import {
   createSyntheticFinanceInvitationHandoff,
   type SyntheticFinanceInvitationHandoff,
 } from './synthetic-finance-invitation-handoff.js';
+import {
+  createSyntheticFinanceAccountProvisioner,
+  type SyntheticFinanceAccountProvisioner,
+} from './synthetic-finance-account-provisioner.js';
 import { createFinanceSyntheticStagingAgentServiceBundle } from './finance-synthetic-staging-agent.js';
 import type { ProductionApiServiceBindings } from './unavailable-services.js';
 import { PostgresVisualProposalDecisionGateway } from './visual-approval-services.js';
@@ -368,6 +373,7 @@ const createDatabaseClose = (
 export interface ProductionDurableEnvironmentComposition {
   readonly bindings: ProductionApiServiceBindings;
   readonly close?: () => Promise<void>;
+  readonly syntheticFinanceAccountProvisioner?: SyntheticFinanceAccountProvisioner;
   readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
 }
 
@@ -1030,6 +1036,23 @@ export const createProductionDurableServiceBindings = async (
     agentResourceCloses.push(google.close);
   }
 
+  let syntheticFinanceAccountProvisioner:
+    SyntheticFinanceAccountProvisioner | undefined;
+  try {
+    if (financeSyntheticStaging) {
+      syntheticFinanceAccountProvisioner =
+        createSyntheticFinanceAccountProvisioner({
+          environment,
+          repository: new PostgresFinanceSpecialistRecordRepository(
+            database.scopedPool,
+          ),
+        });
+    }
+  } catch {
+    syntheticFinanceAccountProvisioner = undefined;
+    // The synthetic account seam remains absent outside its exact staging graph.
+  }
+
   let syntheticFinanceInvitationHandoff:
     SyntheticFinanceInvitationHandoff | undefined;
   try {
@@ -1102,6 +1125,9 @@ export const createProductionDurableServiceBindings = async (
   return Object.freeze({
     bindings: Object.freeze(bindings),
     close,
+    ...(syntheticFinanceAccountProvisioner === undefined
+      ? {}
+      : { syntheticFinanceAccountProvisioner }),
     ...(syntheticFinanceInvitationHandoff === undefined
       ? {}
       : { syntheticFinanceInvitationHandoff }),

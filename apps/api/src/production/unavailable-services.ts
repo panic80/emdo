@@ -10,6 +10,7 @@ import type {
   AuthenticationBoundary,
   ReadinessGateway,
 } from '../services/contracts.js';
+import type { SyntheticFinanceAccountProvisioner } from './synthetic-finance-account-provisioner.js';
 import type { SyntheticFinanceInvitationHandoff } from './synthetic-finance-invitation-handoff.js';
 
 type ConfigurableApiServiceName = Exclude<
@@ -174,9 +175,11 @@ export const createFailClosedApiServices = (input: {
   readonly bindings?: ProductionApiServiceBindings;
   readonly metricsToken?: string;
   readonly close?: () => Promise<void>;
+  readonly syntheticFinanceAccountProvisioner?: SyntheticFinanceAccountProvisioner;
   readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
 }): ApiServices & {
   readonly close?: () => Promise<void>;
+  readonly syntheticFinanceAccountProvisioner?: SyntheticFinanceAccountProvisioner;
   readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
 } => {
   if (input.auth === undefined) {
@@ -562,6 +565,7 @@ export const createFailClosedApiServices = (input: {
 
   const services: ApiServices & {
     readonly close?: () => Promise<void>;
+    readonly syntheticFinanceAccountProvisioner?: SyntheticFinanceAccountProvisioner;
     readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
   } = {
     auth: selectedService('auth', input.auth),
@@ -632,6 +636,12 @@ export const createFailClosedApiServices = (input: {
       },
     },
     ...(input.close === undefined ? {} : { close: input.close }),
+    ...(input.syntheticFinanceAccountProvisioner === undefined
+      ? {}
+      : {
+          syntheticFinanceAccountProvisioner:
+            input.syntheticFinanceAccountProvisioner,
+        }),
     ...(input.syntheticFinanceInvitationHandoff === undefined
       ? {}
       : {

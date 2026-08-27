@@ -355,6 +355,7 @@ describe('production durable API service composition', () => {
     });
     expect(result.bindings.proposals).toBeUndefined();
     expect(result.bindings.proposalQueries).toBeUndefined();
+    expect(result.syntheticFinanceAccountProvisioner).toBeUndefined();
     expect(coreAgentMocks.createProviderFreePersistence).toHaveBeenCalledOnce();
     expect(coreAgentMocks.createAgentPersistence).not.toHaveBeenCalled();
     expect(coreAgentMocks.createOpenAi).not.toHaveBeenCalled();
@@ -407,6 +408,9 @@ describe('production durable API service composition', () => {
       runEvents: { service: { open: expect.any(Function) } },
       visualProofs: { service: { issue: expect.any(Function) } },
     });
+    expect(result.syntheticFinanceAccountProvisioner).toEqual(
+      expect.objectContaining({ provision: expect.any(Function) }),
+    );
     expect(coreAgentMocks.createOpenAi).not.toHaveBeenCalled();
     expect(coreAgentMocks.createProviderFreePersistence).not.toHaveBeenCalled();
     expect(adapters.createGoogleConnectorBinding).not.toHaveBeenCalled();
