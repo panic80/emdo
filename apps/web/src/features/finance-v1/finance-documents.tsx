@@ -336,13 +336,15 @@ function ReviewEditor({
   onSave,
   onReviewEdited,
   onReviewReset,
+  generation,
 }: {
   readonly draft: FinanceDocumentReviewDraft;
   readonly locale: FinanceLocale;
   readonly disabled: boolean;
   readonly onSave: (envelope: FinanceDocumentEnvelopeV1) => void;
   readonly onReviewEdited: () => void;
-  readonly onReviewReset: () => void;
+  readonly onReviewReset: (generation: number) => void;
+  readonly generation: number;
 }) {
   const copy = financeCopy[locale];
   const [envelope, setEnvelope] = useState<EditableEnvelope>(() => ({
@@ -360,8 +362,8 @@ function ReviewEditor({
     setCollectionPages({});
     setInvalidJsonEditors(new Set());
     setEditorRevision((current) => current + 1);
-    onReviewReset();
-  }, [draft, onReviewReset]);
+    onReviewReset(generation);
+  }, [draft, generation, onReviewReset]);
   const setField = (field: string, value: unknown) => {
     onReviewEdited();
     setEnvelope((current) => ({ ...current, [field]: value }));
@@ -659,19 +661,34 @@ export function FinanceDocuments({
   );
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string>();
-  const [review, setReview] = useState<FinanceDocumentReviewDraft>();
+  const [review, setReview] = useState<
+    | Readonly<{
+        draft: FinanceDocumentReviewDraft;
+        generation: number;
+      }>
+    | undefined
+  >();
   const [matches, setMatches] = useState<FinanceDocumentMatchList>();
   const [actionError, setActionError] = useState<string>();
   const [reviewSaving, setReviewSaving] = useState(false);
+  const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewIsSaved, setReviewIsSaved] = useState(false);
   const [requestState, setRequestState] = useState<RequestState>('idle');
+  const reviewGenerationRef = useRef(0);
   const canMutate = online && Boolean(csrfToken);
   const authority = (operation: string) => ({
     csrfToken: csrfToken ?? '',
     idempotencyKey: mutationKey(operation),
   });
-  const markReviewUnsaved = useCallback(() => setReviewIsSaved(false), []);
-  const markReviewSaved = useCallback(() => setReviewIsSaved(true), []);
+  const markReviewUnsaved = useCallback(() => {
+    reviewGenerationRef.current += 1;
+    setReviewIsSaved(false);
+    setReviewLoading(false);
+    return reviewGenerationRef.current;
+  }, []);
+  const markReviewSaved = useCallback((generation: number) => {
+    if (reviewGenerationRef.current === generation) setReviewIsSaved(true);
+  }, []);
   const refresh = () => {
     controllerRef.current?.abort();
     const controller = new AbortController();
@@ -769,34 +786,43 @@ export function FinanceDocuments({
     setUploading(false);
   };
   const openReview = async (document: FinanceDocumentSummary) => {
+    if (reviewSaving) return;
     setActionError(undefined);
     setMatches(undefined);
     setRequestState('idle');
-    markReviewUnsaved();
+    const generation = markReviewUnsaved();
+    setReviewLoading(true);
     try {
-      setReview(await api.readReview(document.id));
+      const draft = await api.readReview(document.id);
+      if (reviewGenerationRef.current !== generation) return;
+      setReview({ draft, generation });
     } catch {
-      setActionError(copy.reviewError);
+      if (reviewGenerationRef.current === generation)
+        setActionError(copy.reviewError);
+    } finally {
+      if (reviewGenerationRef.current === generation) setReviewLoading(false);
     }
   };
   const saveReview = async (envelope: FinanceDocumentEnvelopeV1) => {
     if (!review || !canMutate) return;
-    markReviewUnsaved();
+    const currentReview = review;
+    const generation = markReviewUnsaved();
     setReviewSaving(true);
     setActionError(undefined);
     try {
-      setReview(
-        await api.updateReview({
-          id: review.documentId,
-          expectedExtractionRevision: review.extractionRevision,
-          envelope,
-          ...authority('review'),
-        }),
-      );
+      const draft = await api.updateReview({
+        id: currentReview.draft.documentId,
+        expectedExtractionRevision: currentReview.draft.extractionRevision,
+        envelope,
+        ...authority('review'),
+      });
+      if (reviewGenerationRef.current === generation)
+        setReview({ draft, generation });
     } catch {
-      setActionError(copy.reviewError);
+      if (reviewGenerationRef.current === generation)
+        setActionError(copy.reviewError);
     } finally {
-      setReviewSaving(false);
+      if (reviewGenerationRef.current === generation) setReviewSaving(false);
     }
   };
   const retry = async (document: FinanceDocumentSummary) => {
@@ -905,6 +931,7 @@ export function FinanceDocuments({
                 {document.state === 'awaiting-review' ? (
                   <Button
                     variant="quiet"
+                    disabled={reviewSaving}
                     onClick={() => void openReview(document)}
                   >
                     {copy.review}
@@ -948,7 +975,8 @@ export function FinanceDocuments({
       {review ? (
         <>
           <ReviewEditor
-            draft={review}
+            draft={review.draft}
+            generation={review.generation}
             locale={locale}
             disabled={!canMutate || reviewSaving}
             onSave={(envelope) => void saveReview(envelope)}
@@ -959,12 +987,13 @@ export function FinanceDocuments({
             disabled={
               !canMutate ||
               reviewSaving ||
+              reviewLoading ||
               !reviewIsSaved ||
               requestState === 'requesting'
             }
             onClick={() => {
-              if (!reviewIsSaved) return;
-              void request(() => onRequestCommit(review));
+              if (!reviewIsSaved || reviewLoading) return;
+              void request(() => onRequestCommit(review.draft));
             }}
           >
             {copy.commitReview}
