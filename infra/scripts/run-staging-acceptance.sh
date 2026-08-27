@@ -45,6 +45,7 @@ if [[ "$EMDO_FINANCE_SYNTHETIC_STAGING" == true ]]; then
   finance_document_id=''
   finance_evidence_id=''
 
+  # shellcheck disable=SC2317 # Invoked by the EXIT trap immediately below.
   cleanup_finance_acceptance_failure() {
     local exit_code=$?
     trap - EXIT

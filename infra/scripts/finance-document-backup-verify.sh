@@ -62,9 +62,10 @@ validate_manifest() {
       die 'finance document manifest entry is malformed'
     [[ "$object_name" =~ $FINANCE_OBJECT_NAME_PATTERN ]] ||
       die 'finance document manifest contains a non-opaque object name'
-    [[ "$object_bytes" =~ ^[1-9][0-9]*$ ]] &&
-      (( 10#$object_bytes <= FINANCE_MAX_CIPHERTEXT_BYTES )) ||
+    if ! [[ "$object_bytes" =~ ^[1-9][0-9]*$ ]] ||
+      ((10#$object_bytes > FINANCE_MAX_CIPHERTEXT_BYTES)); then
       die 'finance document manifest ciphertext size is invalid'
+    fi
     [[ "$object_digest" =~ ^[0-9a-f]{64}$ ]] ||
       die 'finance document manifest ciphertext digest is invalid'
     [[ -z "$previous_name" || "$previous_name" < "$object_name" ]] ||
@@ -221,9 +222,10 @@ verify_readback() {
     die 'expected finance document readback digest is invalid'
   require_regular_file "$readback_file"
   readback_bytes="$(file_size_bytes "$readback_file")"
-  [[ "$readback_bytes" =~ ^[1-9][0-9]*$ ]] &&
-    (( readback_bytes <= FINANCE_MAX_CIPHERTEXT_BYTES )) ||
+  if ! [[ "$readback_bytes" =~ ^[1-9][0-9]*$ ]] ||
+    ((readback_bytes > FINANCE_MAX_CIPHERTEXT_BYTES)); then
     die 'caller-supplied finance document readback exceeds the byte limit'
+  fi
   actual_digest="$(calculate_sha256 "$readback_file")"
   [[ "$actual_digest" == "$expected_digest" ]] ||
     die 'caller-supplied finance document readback hash does not match'

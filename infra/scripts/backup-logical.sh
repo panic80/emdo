@@ -37,8 +37,9 @@ assert_finance_document_object_file() {
     die 'finance document object must have mode 0600'
   [[ "$links" == 1 ]] ||
     die 'finance document object must have exactly one hard link'
-  [[ "$size" =~ ^[1-9][0-9]*$ ]] && (( size <= maximum_size )) ||
+  if ! [[ "$size" =~ ^[1-9][0-9]*$ ]] || ((size > maximum_size)); then
     die 'finance document object has an invalid ciphertext size'
+  fi
 }
 
 backup_capacity_lock_fd=''

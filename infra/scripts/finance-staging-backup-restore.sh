@@ -59,6 +59,9 @@ configure_staging_run() {
   export EMDO_STAGING_SOURCE_SHA="$IMAGE_LOCK_SOURCE_SHA"
   export EMDO_STAGING_WORKFLOW_RUN_ID="$run_id"
   load_deployment_config "$STAGING_CONFIG_FILE"
+  # The retry health check invokes its read-only assertion in a subshell; this
+  # staging configuration itself runs in the parent shell and must persist.
+  # shellcheck disable=SC2031
   export COMPOSE_PROJECT_NAME="emdo-staging-$run_id" \
     DEPLOYMENT_NAMESPACE="staging-$run_id" \
     EMDO_ENVIRONMENT=staging \
@@ -116,9 +119,10 @@ assert_document_object() {
   [[ "$owner_uid" == 10001 && "$owner_gid" == 10001 && "$mode" == 600 ]] ||
     die 'Finance document object must be owned by 10001:10001 with mode 0600'
   [[ "$links" == 1 ]] || die 'Finance document object must have exactly one hard link'
-  [[ "$bytes" =~ ^[1-9][0-9]*$ ]] &&
-    ((10#$bytes <= FINANCE_STAGING_MAX_DOCUMENT_CIPHERTEXT_BYTES)) ||
+  if ! [[ "$bytes" =~ ^[1-9][0-9]*$ ]] ||
+    ((10#$bytes > FINANCE_STAGING_MAX_DOCUMENT_CIPHERTEXT_BYTES)); then
     die 'Finance document object ciphertext size is invalid'
+  fi
 }
 
 create_document_archive() {

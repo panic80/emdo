@@ -797,8 +797,9 @@ assert_finance_restore_verifier_handoff_path() {
     10001:10001 | 0:0) ;;
     *) die 'Finance restore verifier handoff owner is unsafe' ;;
   esac
-  [[ "$bytes" =~ ^[0-9]+$ ]] && ((10#$bytes <= 16384)) ||
+  if ! [[ "$bytes" =~ ^[0-9]+$ ]] || ((10#$bytes > 16384)); then
     die 'Finance restore verifier handoff size is unsafe'
+  fi
 }
 
 assert_finance_restore_verifier_handoff_empty() {

@@ -39,6 +39,13 @@ const ids = Object.freeze({
 
 const sha256 = (character: string): string => character.repeat(64);
 
+const guardedDeletionReceipt = Object.freeze({
+  proposalId: 'f2000000-0000-4000-8000-000000000019',
+  decisionId: 'f2000000-0000-4000-8000-000000000020',
+  targetBindingHash: sha256('7'),
+  executionBindingHash: sha256('8'),
+});
+
 interface Principal {
   readonly userId: string;
   readonly sessionId: string;
@@ -670,10 +677,20 @@ describeDatabase(
                   wrapped_data_key = null, key_version = null,
                   document_type = null, source_locale = null,
                   currency = null, extraction_revision = null,
+                  deletion_proposal_id = $2::uuid,
+                  deletion_decision_id = $3::uuid,
+                  deletion_target_binding_hash = $4,
+                  deletion_execution_binding_hash = $5,
                   updated_at = pg_catalog.clock_timestamp()
             where id = $1
           returning state`,
-          [ids.collaboratorDocument],
+          [
+            ids.collaboratorDocument,
+            guardedDeletionReceipt.proposalId,
+            guardedDeletionReceipt.decisionId,
+            guardedDeletionReceipt.targetBindingHash,
+            guardedDeletionReceipt.executionBindingHash,
+          ],
         ),
       );
       expect(tombstone.rows).toEqual([{ state: 'deleted' }]);
