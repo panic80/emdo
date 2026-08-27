@@ -422,6 +422,13 @@ describe('PostgresFinanceSpecialistRecordRepository', () => {
   it('replays only the exact synthetic account and its matching minimal audit receipt', async () => {
     const record = syntheticStagingAccount();
     const idempotencyKey = 'synthetic-finance-account-provision-v1';
+    const replayScope = Object.freeze({
+      ...syntheticStagingScope,
+      sessionId: 'a1000000-0000-4000-8000-000000000011',
+      requestId: 'a1000000-0000-4000-8000-000000000012',
+      spaceAccessGrantId: 'a1000000-0000-4000-8000-000000000013',
+      collectionAuthorizationScopeFingerprint: 'c'.repeat(64),
+    });
     const audit = {
       auditEventId: ids.audit,
       eventType: 'finance.synthetic-staging-account-provisioned',
@@ -433,8 +440,20 @@ describe('PostgresFinanceSpecialistRecordRepository', () => {
         resultingRevision: 1,
       },
     };
-    const { pool, query } = poolFor((sql) => {
-      const scoped = scopedRows(sql);
+    const { pool, query } = poolFor((sql, values) => {
+      const scoped = sql.includes('resolve_space_access_grant')
+        ? [
+            {
+              ...authorityRow,
+              grantId: values[0],
+              householdId: values[1],
+              userId: values[2],
+              sessionId: values[3],
+              requestId: values[4],
+              privateSpaceId: values[5],
+            },
+          ]
+        : scopedRows(sql);
       if (scoped !== undefined) return scoped;
       if (
         sql.includes("entity.entity_type = 'finance.account'") &&
@@ -460,10 +479,24 @@ describe('PostgresFinanceSpecialistRecordRepository', () => {
     });
     await expect(
       repository.provisionSyntheticStagingAccount({
-        scope: syntheticStagingScope,
+        scope: replayScope,
+        idempotencyKey,
+      }),
+    ).resolves.toEqual({
+      status: 'duplicate',
+      record,
+      auditEventId: ids.audit,
+    });
+    await expect(
+      repository.provisionSyntheticStagingAccount({
+        scope: replayScope,
         idempotencyKey: 'synthetic-finance-account-different-v1',
       }),
     ).rejects.toMatchObject({ code: 'conflict' });
+    const auditRead = query.mock.calls.find(([sql]) =>
+      String(sql).includes('from emdo.audit_events as audit'),
+    );
+    expect(String(auditRead?.[0])).not.toContain('for share');
     expect(
       query.mock.calls.some(([sql]) => String(sql).includes('insert into')),
     ).toBe(false);

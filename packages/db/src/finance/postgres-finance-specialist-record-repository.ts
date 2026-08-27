@@ -719,16 +719,28 @@ const syntheticStagingAccountFor = (
   return validated.record;
 };
 
+// Replay identity is session-independent. The audit row itself preserves the
+// original session and request, while every replay revalidates current scope.
 const syntheticStagingAccountAuditPayload = (input: {
   readonly idempotencyKey: string;
   readonly scope: SyntheticStagingScope;
-}) =>
+}): z.output<typeof SyntheticStagingAccountAuditPayloadSchema> =>
   deepFreeze({
     schemaVersion: 1,
     entityId: SyntheticStagingFinanceAccountId,
     idempotencyKey: input.idempotencyKey,
     scopeFingerprint: input.scope.collectionAuthorizationScopeFingerprint,
     resultingRevision: 1,
+  });
+
+const syntheticStagingAccountReplayBinding = (
+  payload: z.output<typeof SyntheticStagingAccountAuditPayloadSchema>,
+) =>
+  deepFreeze({
+    schemaVersion: payload.schemaVersion,
+    entityId: payload.entityId,
+    idempotencyKey: payload.idempotencyKey,
+    resultingRevision: payload.resultingRevision,
   });
 
 const receiptPayload = (input: {
@@ -1620,8 +1632,7 @@ export class PostgresFinanceSpecialistRecordRepository {
               and audit.original_owner_user_id = $3::uuid
               and audit.event_type = $4::text
               and audit.payload ->> 'entityId' = $5::text
-            order by audit.id asc
-            for share`,
+            order by audit.id asc`,
           [
             ...scopeValues(scope),
             SyntheticStagingFinanceAccountAuditEventType,
@@ -1666,7 +1677,8 @@ export class PostgresFinanceSpecialistRecordRepository {
       entity.revision !== 1 ||
       stored.recordType !== 'account' ||
       !sameRecord(stored, expected) ||
-      stableJson(audit.payload) !== stableJson(expectedAudit)
+      stableJson(syntheticStagingAccountReplayBinding(audit.payload)) !==
+        stableJson(syntheticStagingAccountReplayBinding(expectedAudit))
     ) {
       throw new FinanceSpecialistRecordRepositoryError(
         'conflict',

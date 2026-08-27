@@ -53,6 +53,9 @@ const ids = Object.freeze({
   ownerDualFusionDocument: 'f2000000-0000-4000-8000-000000000033',
   ownerDualFusionChunk: 'f2000000-0000-4000-8000-000000000034',
   collaboratorSpaceAccessGrant: 'f2000000-0000-4000-8000-000000000035',
+  ownerReplaySession: 'f2000000-0000-4000-8000-000000000036',
+  ownerReplayRequest: 'f2000000-0000-4000-8000-000000000037',
+  ownerReplaySpaceAccessGrant: 'f2000000-0000-4000-8000-000000000038',
 });
 
 const sha256 = (character: string): string => character.repeat(64);
@@ -106,6 +109,12 @@ const collaboratorPrincipal = Object.freeze({
   userId: ids.collaborator,
   sessionId: ids.collaboratorSession,
   requestId: ids.collaboratorRequest,
+} satisfies Principal);
+
+const ownerReplayPrincipal = Object.freeze({
+  userId: ids.owner,
+  sessionId: ids.ownerReplaySession,
+  requestId: ids.ownerReplayRequest,
 } satisfies Principal);
 
 const loginConnectionString = (role: string, password: string): string => {
@@ -371,6 +380,8 @@ describeDatabase(
            values ($1, $2, 'finance-document-owner-session',
                    pg_catalog.clock_timestamp() + interval '1 hour', $3),
                   ($4, $5, 'finance-document-collaborator-session',
+                   pg_catalog.clock_timestamp() + interval '1 hour', $3),
+                  ($6, $2, 'finance-document-owner-replay-session',
                    pg_catalog.clock_timestamp() + interval '1 hour', $3)`,
         [
           ids.ownerSession,
@@ -378,6 +389,7 @@ describeDatabase(
           ids.household,
           ids.collaboratorSession,
           ids.collaborator,
+          ids.ownerReplaySession,
         ],
       );
 
@@ -397,6 +409,11 @@ describeDatabase(
         grantId: ids.collaboratorSpaceAccessGrant,
         principal: collaboratorPrincipal,
         privateSpaceId: ids.collaboratorPrivateSpace,
+      });
+      await seedSpaceAccessGrant({
+        grantId: ids.ownerReplaySpaceAccessGrant,
+        principal: ownerReplayPrincipal,
+        privateSpaceId: ids.ownerPrivateSpace,
       });
 
       await withPrincipal(ownerPrincipal, async (client) => {
@@ -684,6 +701,12 @@ describeDatabase(
         grantId: ids.collaboratorSpaceAccessGrant,
         fingerprint: sha256('b'),
       });
+      const ownerReplayScope = scopeFor({
+        principal: ownerReplayPrincipal,
+        privateSpaceId: ids.ownerPrivateSpace,
+        grantId: ids.ownerReplaySpaceAccessGrant,
+        fingerprint: sha256('c'),
+      });
 
       const ownerApplied = await repository.provisionSyntheticStagingAccount({
         scope: ownerScope,
@@ -699,7 +722,7 @@ describeDatabase(
       });
 
       const ownerDuplicate = await repository.provisionSyntheticStagingAccount({
-        scope: ownerScope,
+        scope: ownerReplayScope,
         idempotencyKey,
       });
       expect(ownerDuplicate).toEqual({
