@@ -2,7 +2,16 @@ import { createHash } from 'node:crypto';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { runStagingAcceptanceCommand } from './staging-acceptance.js';
+import {
+  formatStagingAcceptanceFailure,
+  runStagingAcceptanceCommand,
+} from './staging-acceptance.js';
+
+type FinanceAcceptanceStage = Parameters<
+  NonNullable<
+    Parameters<typeof runStagingAcceptanceCommand>[0]['financeStageReporter']
+  >
+>[0];
 
 const USER_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f92';
 const RUN_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f93';
@@ -1342,6 +1351,7 @@ describe('staging acceptance CLI', () => {
 
   it('fails closed before HTTP when the phase-2 handoff lacks a receipt digest', async () => {
     const fetch = vi.fn();
+    let reportedStage: FinanceAcceptanceStage | null = null;
     await expect(
       runStagingAcceptanceCommand({
         argv: [
@@ -1353,6 +1363,9 @@ describe('staging acceptance CLI', () => {
         ],
         environment: financeEnvironment,
         fetch,
+        financeStageReporter: (stage) => {
+          reportedStage = stage;
+        },
         financePhase2RootAttestationReader: async () => ({
           sourceSha: SOURCE_SHA,
           workflowRunId: WORKFLOW_RUN_ID,
@@ -1363,10 +1376,48 @@ describe('staging acceptance CLI', () => {
       }),
     ).rejects.toThrow('Finance staging finalization handoff is invalid');
     expect(fetch).not.toHaveBeenCalled();
+    expect(formatStagingAcceptanceFailure(reportedStage ?? undefined)).toBe(
+      'Staging acceptance failed at stage=finalize-attestation.\n',
+    );
+  });
+
+  it('reports only a fixed Finance stage when an underlying failure contains sensitive text', async () => {
+    const sensitiveFailure =
+      'cookie=owner-secret token=provider-secret document=private-content';
+    let reportedStage: FinanceAcceptanceStage | null = null;
+    await expect(
+      runStagingAcceptanceCommand({
+        argv: [
+          '--all-mvp-gates',
+          '--require-synthetic',
+          '--forbid-worker-provider-execution',
+          '--finance-synthetic-document-gates',
+        ],
+        environment: financeEnvironment,
+        fetch: async () => {
+          throw new Error(sensitiveFailure);
+        },
+        financeStageReporter: (stage) => {
+          reportedStage = stage;
+        },
+      }),
+    ).rejects.toThrow(sensitiveFailure);
+
+    const message = formatStagingAcceptanceFailure(reportedStage ?? undefined);
+    expect(message).toBe(
+      'Staging acceptance failed at stage=health-and-contract.\n',
+    );
+    expect(message).not.toContain('owner-secret');
+    expect(message).not.toContain('provider-secret');
+    expect(message).not.toContain('private-content');
+    expect(formatStagingAcceptanceFailure(undefined)).toBe(
+      'Staging acceptance failed.\n',
+    );
   });
 
   it('fails closed before HTTP when the Finance overlay was not explicitly enabled', async () => {
     const fetch = vi.fn();
+    let reportedStage: FinanceAcceptanceStage | null = null;
     await expect(
       runStagingAcceptanceCommand({
         argv: [
@@ -1377,8 +1428,14 @@ describe('staging acceptance CLI', () => {
         ],
         environment,
         fetch,
+        financeStageReporter: (stage) => {
+          reportedStage = stage;
+        },
       }),
     ).rejects.toThrow('Finance staging acceptance configuration is invalid');
     expect(fetch).not.toHaveBeenCalled();
+    expect(formatStagingAcceptanceFailure(reportedStage ?? undefined)).toBe(
+      'Staging acceptance failed at stage=configuration.\n',
+    );
   });
 });
