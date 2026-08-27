@@ -120,6 +120,18 @@ const canonicalOpenApiSurface = Object.freeze({
   '/api/v1/connectors/google/authorize': { post: {} },
 });
 
+const financeMemberOpenApiSurface = Object.freeze({
+  ...canonicalOpenApiSurface,
+  '/api/v1/auth/invitations/csrf': { get: {} },
+  '/api/v1/finance/documents': { get: {}, post: {} },
+  '/api/v1/finance/documents/{id}': { get: {}, delete: {} },
+  '/api/v1/finance/documents/{id}/original': { get: {} },
+  '/api/v1/finance/documents/{id}/review': { get: {}, patch: {} },
+  '/api/v1/finance/documents/{id}/review/commit': { post: {} },
+  '/api/v1/finance/documents/{id}/matches': { get: {} },
+  '/api/v1/finance/evidence/{id}': { get: {} },
+});
+
 const jsonWithRequestId = (
   body: unknown,
   init: ResponseInit = {},
@@ -1442,6 +1454,158 @@ describe('staging acceptance CLI', () => {
       'Staging acceptance failed.\n',
     );
   });
+
+  it.each([
+    {
+      failurePath: '/api/v1/household/invitations',
+      expectedStage: 'member-invitation',
+    },
+    {
+      failurePath: '/api/internal/finance-synthetic/invitation-token',
+      expectedStage: 'member-token-handoff',
+    },
+    {
+      failurePath: '/api/v1/auth/invitations/csrf',
+      expectedStage: 'member-redemption',
+    },
+    {
+      failurePath: '/api/v1/household/memberships',
+      expectedStage: 'member-membership-readback',
+    },
+  ] as const)(
+    'reports only the fixed $expectedStage checkpoint for a member provisioning failure',
+    async ({ failurePath, expectedStage }) => {
+      const sensitiveFailure =
+        'cookie=owner-secret token=invitation-secret member=private-id';
+      let reportedStage: FinanceAcceptanceStage | null = null;
+      const fetch = vi.fn(async (request: Request) => {
+        const path = new URL(request.url).pathname;
+        if (path === failurePath) throw new Error(sensitiveFailure);
+        if (path === '/healthz') return jsonWithRequestId({ status: 'ok' });
+        if (path === '/openapi.json')
+          return Response.json({
+            openapi: '3.1.0',
+            paths: financeMemberOpenApiSurface,
+          });
+        if (path === '/api/auth/sign-in/email')
+          return new Response('{"ok":true}', {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              'set-cookie':
+                '__Secure-emdo.session_token=finance-owner-session; Path=/; Secure; HttpOnly',
+            },
+          });
+        if (path === '/api/auth/get-session')
+          return Response.json({ user: { id: USER_ID } });
+        if (path === '/api/v1/auth/csrf')
+          return new Response(
+            JSON.stringify({
+              schemaVersion: 1,
+              token: 'finance-owner-csrf-token-01234567890123456789',
+            }),
+            {
+              headers: {
+                'content-type': 'application/json',
+                'set-cookie':
+                  'emdo.csrf_token=finance-owner-csrf-token-01234567890123456789; Path=/api/; Secure; HttpOnly',
+              },
+            },
+          );
+        if (path === '/api/v1/household/invitations')
+          return jsonWithRequestId(
+            {
+              schemaVersion: 1,
+              invitation: {
+                id: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f96',
+                email: FINANCE_MEMBER_EMAIL,
+                role: 'member',
+                status: 'pending',
+                deliveryStatus: 'queued',
+                version: 1,
+                createdAt: '2026-08-12T15:00:00.000Z',
+                expiresAt: '2026-08-12T15:15:00.000Z',
+              },
+              replayed: false,
+            },
+            { status: 201 },
+          );
+        if (path === '/api/internal/finance-synthetic/invitation-token')
+          return jsonWithRequestId({
+            schemaVersion: 1,
+            invitationToken: 'd'.repeat(43),
+          });
+        if (path === '/api/v1/auth/invitations/csrf')
+          return new Response(
+            JSON.stringify({
+              schemaVersion: 1,
+              token: 'finance-invitation-csrf-token-0123456789',
+            }),
+            {
+              headers: {
+                'content-type': 'application/json',
+                'set-cookie':
+                  'emdo.invitation_csrf=finance-invitation-csrf-token-0123456789; Path=/api/; Secure; HttpOnly',
+                'x-request-id': REQUEST_ID,
+              },
+            },
+          );
+        if (path === '/api/v1/auth/invitations/redeem')
+          return jsonWithRequestId(
+            {
+              schemaVersion: 1,
+              userId: FINANCE_MEMBER_USER_ID,
+              householdId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f97',
+              role: 'member',
+              emailVerified: true,
+            },
+            { status: 201 },
+          );
+        if (path === '/api/v1/household/memberships')
+          return jsonWithRequestId({
+            schemaVersion: 1,
+            memberships: [
+              {
+                id: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f98',
+                userId: FINANCE_MEMBER_USER_ID,
+                email: FINANCE_MEMBER_EMAIL,
+                role: 'member',
+                status: 'active',
+                version: 1,
+                joinedAt: '2026-08-12T15:01:00.000Z',
+              },
+            ],
+          });
+        throw new Error(`Unexpected acceptance request: ${path}`);
+      });
+
+      await expect(
+        runStagingAcceptanceCommand({
+          argv: [
+            '--all-mvp-gates',
+            '--require-synthetic',
+            '--forbid-worker-provider-execution',
+            '--finance-synthetic-document-gates',
+          ],
+          environment: financeEnvironment,
+          fetch,
+          financeStageReporter: (stage) => {
+            reportedStage = stage;
+          },
+        }),
+      ).rejects.toThrow(sensitiveFailure);
+
+      const message = formatStagingAcceptanceFailure(
+        reportedStage ?? undefined,
+      );
+      expect(message).toBe(
+        `Staging acceptance failed at stage=${expectedStage}.\n`,
+      );
+      expect(message).not.toContain('owner-secret');
+      expect(message).not.toContain('invitation-secret');
+      expect(message).not.toContain('private-id');
+    },
+  );
 
   it('fails closed before HTTP when the Finance overlay was not explicitly enabled', async () => {
     const fetch = vi.fn();
