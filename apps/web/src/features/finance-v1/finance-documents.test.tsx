@@ -390,6 +390,7 @@ describe('FinanceDocuments', () => {
     const updateReview = vi.fn<FinanceDocumentApi['updateReview']>(
       async (input) => ({ ...draft, envelope: input.envelope }),
     );
+    const onRequestCommit = vi.fn(() => true);
     const api = createApi({
       list: vi.fn(async () => ({
         schemaVersion: 1 as const,
@@ -406,7 +407,7 @@ describe('FinanceDocuments', () => {
         online
         csrfToken="csrf-current"
         onRequestDeletion={vi.fn(() => true)}
-        onRequestCommit={vi.fn(() => true)}
+        onRequestCommit={onRequestCommit}
         onRequestMatchDecision={vi.fn(() => true)}
       />,
     );
@@ -419,17 +420,28 @@ describe('FinanceDocuments', () => {
     });
     fireEvent.change(proposedRecord, { target: { value: '{not valid JSON' } });
 
-    expect(proposedRecord).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() =>
+      expect(
+        screen.getByRole('textbox', { name: 'Proposed record' }),
+      ).toHaveAttribute('aria-invalid', 'true'),
+    );
     expect(
       screen.getByText('Enter valid JSON before saving this review.'),
     ).toBeVisible();
     expect(
       screen.getByRole('button', { name: 'Save reviewed changes' }),
     ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    ).toBeDisabled();
     await user.click(
       screen.getByRole('button', { name: 'Save reviewed changes' }),
     );
     expect(updateReview).not.toHaveBeenCalled();
+    await user.click(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    );
+    expect(onRequestCommit).not.toHaveBeenCalled();
 
     fireEvent.change(proposedRecord, {
       target: {
@@ -443,6 +455,9 @@ describe('FinanceDocuments', () => {
     expect(
       screen.getByRole('button', { name: 'Save reviewed changes' }),
     ).not.toHaveAttribute('disabled');
+    expect(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    ).toBeDisabled();
     await user.click(
       screen.getByRole('button', { name: 'Save reviewed changes' }),
     );
@@ -451,6 +466,21 @@ describe('FinanceDocuments', () => {
       kind: 'expense',
       description: 'Fixed',
     });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Commit reviewed document' }),
+      ).not.toBeDisabled(),
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    );
+    expect(onRequestCommit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        envelope: expect.objectContaining({
+          proposedRecord: { kind: 'expense', description: 'Fixed' },
+        }),
+      }),
+    );
   });
 
   it('blocks saving an invalid collection item without discarding other items', async () => {
@@ -463,6 +493,7 @@ describe('FinanceDocuments', () => {
     const updateReview = vi.fn<FinanceDocumentApi['updateReview']>(
       async (input) => ({ ...draft, envelope: input.envelope }),
     );
+    const onRequestCommit = vi.fn(() => true);
     const api = createApi({
       list: vi.fn(async () => ({
         schemaVersion: 1 as const,
@@ -479,7 +510,7 @@ describe('FinanceDocuments', () => {
         online
         csrfToken="csrf-current"
         onRequestDeletion={vi.fn(() => true)}
-        onRequestCommit={vi.fn(() => true)}
+        onRequestCommit={onRequestCommit}
         onRequestMatchDecision={vi.fn(() => true)}
       />,
     );
@@ -506,10 +537,17 @@ describe('FinanceDocuments', () => {
     expect(
       screen.getByRole('button', { name: 'Save reviewed changes' }),
     ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    ).toBeDisabled();
     await user.click(
       screen.getByRole('button', { name: 'Save reviewed changes' }),
     );
     expect(updateReview).not.toHaveBeenCalled();
+    await user.click(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    );
+    expect(onRequestCommit).not.toHaveBeenCalled();
   });
 
   it('resets invalid JSON editor state and draft text when the review draft is reopened', async () => {
@@ -526,6 +564,7 @@ describe('FinanceDocuments', () => {
         envelope: { ...draft.envelope },
       })),
     });
+    const onRequestCommit = vi.fn(() => true);
     const user = userEvent.setup();
     render(
       <FinanceDocuments
@@ -534,7 +573,7 @@ describe('FinanceDocuments', () => {
         online
         csrfToken="csrf-current"
         onRequestDeletion={vi.fn(() => true)}
-        onRequestCommit={vi.fn(() => true)}
+        onRequestCommit={onRequestCommit}
         onRequestMatchDecision={vi.fn(() => true)}
       />,
     );
@@ -550,6 +589,9 @@ describe('FinanceDocuments', () => {
     expect(
       screen.getByText('Enter valid JSON before saving this review.'),
     ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    ).toBeDisabled();
 
     await user.click(reviewButton);
     await waitFor(() =>
@@ -567,6 +609,9 @@ describe('FinanceDocuments', () => {
     expect(
       screen.getByRole('button', { name: 'Save reviewed changes' }),
     ).not.toHaveAttribute('disabled');
+    expect(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    ).not.toBeDisabled();
   });
 
   it('shows, edits, and preserves an invoice payment status in the review update', async () => {

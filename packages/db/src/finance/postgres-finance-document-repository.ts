@@ -22,6 +22,11 @@ import {
 } from '../durable/scoped-transaction.js';
 import type { DatabaseClient, DatabasePool } from '../scoped-repository.js';
 
+const MAXIMUM_SEARCH_RESULTS = 25;
+const RANK_FUSION_OFFSET = 60;
+const FULL_TEXT_RANK_WEIGHT_MILLIONTHS = 3_000_000;
+const VECTOR_RANK_WEIGHT_MILLIONTHS = 2_000_000;
+
 /**
  * This repository deliberately receives the scope resolved by the server's
  * authentication boundary.  It never accepts a caller-selected owner or
@@ -594,7 +599,12 @@ const SearchInputSchema = ScopedInputSchema.extend({
     .length(1_536)
     .nullable()
     .default(null),
-  limit: z.number().int().min(1).max(25).default(25),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAXIMUM_SEARCH_RESULTS)
+    .default(MAXIMUM_SEARCH_RESULTS),
 });
 const EvidenceListInputSchema = DocumentInputSchema.extend({
   limit: z.number().int().min(1).max(100).default(50),
@@ -2920,7 +2930,7 @@ export class PostgresFinanceDocumentRepository {
                 eligible.search_vector,
                 pg_catalog.websearch_to_tsquery('simple', $4)
               ) desc, eligible."id"
-              limit $8
+              limit ${MAXIMUM_SEARCH_RESULTS}
            ),
            vector_candidates as (
              select eligible.*,
@@ -2931,7 +2941,7 @@ export class PostgresFinanceDocumentRepository {
               where $5::text is not null
                 and eligible.embedding is not null
               order by eligible.embedding <=> $5::vector, eligible."id"
-              limit $8
+              limit ${MAXIMUM_SEARCH_RESULTS}
            ),
            candidates as (
              select coalesce(full_text."id", vector."id") as "id",
@@ -2947,12 +2957,29 @@ export class PostgresFinanceDocumentRepository {
                from full_text_candidates as full_text
                full outer join vector_candidates as vector
                  on vector."id" = full_text."id"
+           ),
+           ranked_candidates as (
+             select candidates.*,
+                    (
+                      case when candidates."fullTextRank" is null then 0
+                           else pg_catalog.round(
+                             ${FULL_TEXT_RANK_WEIGHT_MILLIONTHS}::numeric /
+                             (${RANK_FUSION_OFFSET} + candidates."fullTextRank")
+                           )::integer
+                       end +
+                      case when candidates."vectorRank" is null then 0
+                           else pg_catalog.round(
+                             ${VECTOR_RANK_WEIGHT_MILLIONTHS}::numeric /
+                             (${RANK_FUSION_OFFSET} + candidates."vectorRank")
+                           )::integer
+                       end
+                    ) as "rankScoreMillionths"
+               from candidates
            )
-           select * from candidates
-            order by least(
-                       coalesce("fullTextRank", 2147483647),
-                       coalesce("vectorRank", 2147483647)
-                     ),
+           select "id", "documentId", "extractionRevision", "documentType", "currency",
+                  "content", "pageStart", "pageEnd", "fullTextRank", "vectorRank"
+             from ranked_candidates
+            order by "rankScoreMillionths" desc,
                      coalesce("fullTextRank", 2147483647),
                      coalesce("vectorRank", 2147483647),
                      "id"

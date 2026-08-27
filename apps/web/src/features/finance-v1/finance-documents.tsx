@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '../../components/button.js';
 import {
@@ -334,11 +334,15 @@ function ReviewEditor({
   locale,
   disabled,
   onSave,
+  onReviewEdited,
+  onReviewReset,
 }: {
   readonly draft: FinanceDocumentReviewDraft;
   readonly locale: FinanceLocale;
   readonly disabled: boolean;
   readonly onSave: (envelope: FinanceDocumentEnvelopeV1) => void;
+  readonly onReviewEdited: () => void;
+  readonly onReviewReset: () => void;
 }) {
   const copy = financeCopy[locale];
   const [envelope, setEnvelope] = useState<EditableEnvelope>(() => ({
@@ -356,9 +360,12 @@ function ReviewEditor({
     setCollectionPages({});
     setInvalidJsonEditors(new Set());
     setEditorRevision((current) => current + 1);
-  }, [draft]);
-  const setField = (field: string, value: unknown) =>
+    onReviewReset();
+  }, [draft, onReviewReset]);
+  const setField = (field: string, value: unknown) => {
+    onReviewEdited();
     setEnvelope((current) => ({ ...current, [field]: value }));
+  };
   const setMoney = (
     field: string,
     patch: { readonly currency?: string; readonly minorUnits?: string },
@@ -384,6 +391,7 @@ function ReviewEditor({
     rawValue: string,
   ) => {
     const editorKey = reviewJsonEditorKey(collection, index);
+    onReviewEdited();
     try {
       const item = JSON.parse(rawValue) as unknown;
       setInvalidJsonEditors((current) => {
@@ -411,6 +419,7 @@ function ReviewEditor({
     }
   };
   const changeProposedRecord = (rawValue: string) => {
+    onReviewEdited();
     try {
       const proposedRecord = JSON.parse(rawValue) as unknown;
       setInvalidJsonEditors((current) => {
@@ -654,12 +663,15 @@ export function FinanceDocuments({
   const [matches, setMatches] = useState<FinanceDocumentMatchList>();
   const [actionError, setActionError] = useState<string>();
   const [reviewSaving, setReviewSaving] = useState(false);
+  const [reviewIsSaved, setReviewIsSaved] = useState(false);
   const [requestState, setRequestState] = useState<RequestState>('idle');
   const canMutate = online && Boolean(csrfToken);
   const authority = (operation: string) => ({
     csrfToken: csrfToken ?? '',
     idempotencyKey: mutationKey(operation),
   });
+  const markReviewUnsaved = useCallback(() => setReviewIsSaved(false), []);
+  const markReviewSaved = useCallback(() => setReviewIsSaved(true), []);
   const refresh = () => {
     controllerRef.current?.abort();
     const controller = new AbortController();
@@ -760,6 +772,7 @@ export function FinanceDocuments({
     setActionError(undefined);
     setMatches(undefined);
     setRequestState('idle');
+    markReviewUnsaved();
     try {
       setReview(await api.readReview(document.id));
     } catch {
@@ -768,6 +781,7 @@ export function FinanceDocuments({
   };
   const saveReview = async (envelope: FinanceDocumentEnvelopeV1) => {
     if (!review || !canMutate) return;
+    markReviewUnsaved();
     setReviewSaving(true);
     setActionError(undefined);
     try {
@@ -938,12 +952,20 @@ export function FinanceDocuments({
             locale={locale}
             disabled={!canMutate || reviewSaving}
             onSave={(envelope) => void saveReview(envelope)}
+            onReviewEdited={markReviewUnsaved}
+            onReviewReset={markReviewSaved}
           />
           <Button
             disabled={
-              !canMutate || reviewSaving || requestState === 'requesting'
+              !canMutate ||
+              reviewSaving ||
+              !reviewIsSaved ||
+              requestState === 'requesting'
             }
-            onClick={() => void request(() => onRequestCommit(review))}
+            onClick={() => {
+              if (!reviewIsSaved) return;
+              void request(() => onRequestCommit(review));
+            }}
           >
             {copy.commitReview}
           </Button>

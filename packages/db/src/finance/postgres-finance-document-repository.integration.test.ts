@@ -45,6 +45,12 @@ const ids = Object.freeze({
   ownerStaleChunk: 'f2000000-0000-4000-8000-000000000026',
   collaboratorSemanticDocument: 'f2000000-0000-4000-8000-000000000027',
   collaboratorSemanticChunk: 'f2000000-0000-4000-8000-000000000028',
+  ownerLexicalFusionDocument: 'f2000000-0000-4000-8000-000000000029',
+  ownerLexicalFusionChunk: 'f2000000-0000-4000-8000-000000000030',
+  ownerVectorFusionDocument: 'f2000000-0000-4000-8000-000000000031',
+  ownerVectorFusionChunk: 'f2000000-0000-4000-8000-000000000032',
+  ownerDualFusionDocument: 'f2000000-0000-4000-8000-000000000033',
+  ownerDualFusionChunk: 'f2000000-0000-4000-8000-000000000034',
 });
 
 const sha256 = (character: string): string => character.repeat(64);
@@ -81,7 +87,7 @@ interface CommittedDocumentInput extends DocumentInput {
 interface ChunkInput {
   readonly content: string;
   readonly documentId: string;
-  readonly embedding: string;
+  readonly embedding: string | null;
   readonly extractionRevision: number;
   readonly id: string;
   readonly ownerUserId: string;
@@ -112,6 +118,11 @@ const databasePool = (pool: import('pg').Pool): DatabasePool =>
 
 const embeddingLiteral = (value: number): string =>
   `[${Array.from({ length: 1_536 }, () => value).join(',')}]`;
+
+const alternatingEmbeddingLiteral = (): string =>
+  `[${Array.from({ length: 1_536 }, (_, index) =>
+    index % 2 === 0 ? 1 : 0,
+  ).join(',')}]`;
 
 const insertDocument = async (
   client: import('pg').PoolClient,
@@ -152,7 +163,8 @@ const insertCommittedDocument = async (
        source_locale, currency, extraction_revision
      ) values (
        $1, $2, $3, $4, $5, $6, 'application/pdf', 1024, 1, $7, $8,
-       '{"algorithm":"test"}'::jsonb, 'finance-document-test-key-v1',
+       '{"algorithm":"aes-256-gcm","wrappedKey":"dGVzdA","nonce":"dGVzdA","authenticationTag":"dGVzdA","aadVersion":1}'::jsonb,
+       'finance-document-test-key-v1',
        'committed', $9, 'en-CA', $10, $11
      )`,
     [
@@ -769,6 +781,117 @@ describeDatabase(
           fullTextRank: null,
           vectorRank: 1,
         }),
+      ]);
+    });
+
+    it('fuses lexical and vector ranks before the requested result limit', async () => {
+      const queryEmbedding = embeddingLiteral(1);
+      await Promise.all([
+        insertCommittedDocument(admin, {
+          id: ids.ownerLexicalFusionDocument,
+          ownerUserId: ids.owner,
+          spaceId: ids.ownerPrivateSpace,
+          storageObjectId: 'finance-document-owner-fusion-lexical-0001',
+          displayName: 'Owner lexical fusion invoice.pdf',
+          plaintextHash: sha256('e'),
+          ciphertextHash: sha256('f'),
+          documentType: 'invoice',
+          currency: 'CAD',
+          extractionRevision: 1,
+        }),
+        insertCommittedDocument(admin, {
+          id: ids.ownerVectorFusionDocument,
+          ownerUserId: ids.owner,
+          spaceId: ids.ownerPrivateSpace,
+          storageObjectId: 'finance-document-owner-fusion-vector-0001',
+          displayName: 'Owner vector fusion invoice.pdf',
+          plaintextHash: sha256('1'),
+          ciphertextHash: sha256('2'),
+          documentType: 'invoice',
+          currency: 'CAD',
+          extractionRevision: 1,
+        }),
+        insertCommittedDocument(admin, {
+          id: ids.ownerDualFusionDocument,
+          ownerUserId: ids.owner,
+          spaceId: ids.ownerPrivateSpace,
+          storageObjectId: 'finance-document-owner-fusion-dual-0001',
+          displayName: 'Owner dual fusion invoice.pdf',
+          plaintextHash: sha256('3'),
+          ciphertextHash: sha256('4'),
+          documentType: 'invoice',
+          currency: 'CAD',
+          extractionRevision: 1,
+        }),
+      ]);
+      await Promise.all([
+        insertCommittedChunk(admin, {
+          id: ids.ownerLexicalFusionChunk,
+          documentId: ids.ownerLexicalFusionDocument,
+          extractionRevision: 1,
+          ownerUserId: ids.owner,
+          spaceId: ids.ownerPrivateSpace,
+          content: 'rankfusion',
+          embedding: null,
+        }),
+        insertCommittedChunk(admin, {
+          id: ids.ownerVectorFusionChunk,
+          documentId: ids.ownerVectorFusionDocument,
+          extractionRevision: 1,
+          ownerUserId: ids.owner,
+          spaceId: ids.ownerPrivateSpace,
+          content: 'semantic retrieval companion',
+          embedding: queryEmbedding,
+        }),
+        insertCommittedChunk(admin, {
+          id: ids.ownerDualFusionChunk,
+          documentId: ids.ownerDualFusionDocument,
+          extractionRevision: 1,
+          ownerUserId: ids.owner,
+          spaceId: ids.ownerPrivateSpace,
+          content: 'rankfusion',
+          embedding: alternatingEmbeddingLiteral(),
+        }),
+      ]);
+
+      const repository = new PostgresFinanceDocumentRepository(
+        databasePool(app),
+      );
+      const result = await repository.search({
+        principal: {
+          userId: ids.owner,
+          sessionId: ids.ownerSession,
+          householdId: ids.household,
+          privateSpaceId: ids.ownerPrivateSpace,
+          emailVerified: true,
+          spaceAccessGrantId: ids.ownerSpaceAccessGrant,
+          scopeFingerprint: sha256('f'),
+        },
+        requestId: ids.ownerRequest,
+        query: 'rankfusion',
+        documentTypes: ['invoice'],
+        currency: 'CAD',
+        vectorQuery: Array.from({ length: 1_536 }, () => 1),
+        limit: 2,
+      });
+
+      expect(
+        result.fullText.map(({ id, fullTextRank, vectorRank }) => ({
+          id,
+          fullTextRank,
+          vectorRank,
+        })),
+      ).toEqual([
+        {
+          id: ids.ownerDualFusionChunk,
+          fullTextRank: 2,
+          vectorRank: 2,
+        },
+        {
+          id: ids.ownerLexicalFusionChunk,
+          fullTextRank: 1,
+          vectorRank: null,
+        },
       ]);
     });
 

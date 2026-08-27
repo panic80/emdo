@@ -987,7 +987,71 @@ describe('PostgresFinanceDocumentRepository', () => {
       "($6::text[] = '{}'::text[] or document.document_type = any($6::text[]))",
     );
     expect(sql).toContain('($7::text is null or document.currency = $7)');
-    expect(sql.match(/limit \$8/g)?.length).toBe(3);
+    expect(sql.match(/limit 25/g)?.length).toBe(2);
+    expect(sql.match(/limit \$8/g)?.length).toBe(1);
+  });
+
+  it('ranks a dual lexical and vector candidate before truncating the bounded result set', async () => {
+    const lexicalOnly = {
+      id: 'c3000000-0000-4000-8000-000000000021',
+      documentId: ids.document,
+      extractionRevision: 1,
+      documentType: 'receipt',
+      currency: 'CAD',
+      content: 'Rank fusion lexical candidate',
+      pageStart: 1,
+      pageEnd: 1,
+      fullTextRank: 1,
+      vectorRank: null,
+    };
+    const dualRanked = {
+      id: 'c3000000-0000-4000-8000-000000000023',
+      documentId: ids.nextDocument,
+      extractionRevision: 1,
+      documentType: 'receipt',
+      currency: 'CAD',
+      content: 'Rank fusion dual candidate',
+      pageStart: 1,
+      pageEnd: 1,
+      fullTextRank: 2,
+      vectorRank: 2,
+    };
+    const { pool, query } = poolFor((sql) => {
+      const lock = lockRows(sql);
+      if (lock !== undefined) return lock;
+      if (sql.includes('ranked_candidates')) return [dualRanked, lexicalOnly];
+      return [];
+    });
+    const repository = new PostgresFinanceDocumentRepository(pool);
+
+    await expect(
+      repository.search({
+        principal,
+        requestId: ids.request,
+        query: 'rankfusion',
+        vectorQuery: vector(0),
+        limit: 2,
+      }),
+    ).resolves.toMatchObject({
+      fullText: [
+        { id: dualRanked.id, fullTextRank: 2, vectorRank: 2 },
+        { id: lexicalOnly.id, fullTextRank: 1, vectorRank: null },
+      ],
+    });
+
+    const search = query.mock.calls.find(([sql]) =>
+      String(sql).includes('ranked_candidates'),
+    );
+    const sql = String(search?.[0]);
+    expect(sql.match(/limit 25/g)?.length).toBe(2);
+    expect(sql.match(/limit \$8/g)?.length).toBe(1);
+    expect(sql).toContain('order by "rankScoreMillionths" desc');
+    expect(sql).toMatch(
+      /3000000::numeric\s*\/\s*\(60 \+ candidates\."fullTextRank"\)/u,
+    );
+    expect(sql).toMatch(
+      /2000000::numeric\s*\/\s*\(60 \+ candidates\."vectorRank"\)/u,
+    );
   });
 
   it('keeps search lexical-only when no vector query is supplied', async () => {
