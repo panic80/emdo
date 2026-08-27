@@ -10,6 +10,7 @@ import {
   type ShoppingPage,
   type TodayView,
 } from '@emdo/contracts';
+import type { FinanceExperienceSnapshot } from '@emdo/domains/finance';
 
 import * as databaseApi from '../api.js';
 import type { DatabaseClient, DatabasePool } from '../scoped-repository.js';
@@ -24,6 +25,10 @@ const principal = {
   spaceAccessGrantId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f63',
   collectionAuthorizationScopeFingerprint:
     EffectiveAuthorizationScopeFingerprintSchema.parse('a'.repeat(64)),
+};
+const privateFinancePrincipal = {
+  ...principal,
+  privateSpaceId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f68',
 };
 
 interface ExperienceGateways {
@@ -65,6 +70,10 @@ interface ExperienceGateways {
       readonly principal: typeof principal;
       readonly requestId: string;
     }): Promise<FinancePage>;
+    readSnapshot(input: {
+      readonly principal: typeof privateFinancePrincipal;
+      readonly requestId: string;
+    }): Promise<FinanceExperienceSnapshot>;
   };
   readonly shoppingRead: {
     list(input: {
@@ -542,6 +551,421 @@ describe('PostgreSQL experience read gateways', () => {
         lastSyncedAt: '2026-08-10T11:59:00.000Z',
       },
     });
+  });
+
+  it('returns one owner-private Finance snapshot with exact over-page totals and all legacy and modern CAD budget allocations', async () => {
+    const activeTransactions = Array.from({ length: 55 }, (_value, index) => ({
+      entity_id: `transaction-${String(index).padStart(3, '0')}`,
+      revision: 0,
+      payload: {
+        schemaVersion: 1,
+        id: `transaction-${String(index).padStart(3, '0')}`,
+        spaceId: privateFinancePrincipal.privateSpaceId,
+        ownerUserId: privateFinancePrincipal.userId,
+        createdAt: '2026-08-01T12:00:00.000Z',
+        updatedAt: '2026-08-01T12:00:00.000Z',
+        recordType: 'transaction',
+        accountId: 'account-1',
+        categoryId: `category-${String(index % 25).padStart(2, '0')}`,
+        postedOn: '2026-08-01',
+        description: `Reviewed transaction ${index}`,
+        annotation: null,
+        currency: 'CAD',
+        originalAmountCadMinor: index + 1,
+        effectiveAmountCadMinor: index + 1,
+        adjustments: [],
+        reversal: null,
+        appliedOperationIds: [],
+        source: { kind: 'manual' },
+      },
+    }));
+    const excludedTransactions = [
+      {
+        entity_id: 'transaction-reversed',
+        revision: 0,
+        payload: {
+          schemaVersion: 1,
+          id: 'transaction-reversed',
+          spaceId: privateFinancePrincipal.privateSpaceId,
+          ownerUserId: privateFinancePrincipal.userId,
+          createdAt: '2026-08-01T12:00:00.000Z',
+          updatedAt: '2026-08-01T12:00:00.000Z',
+          recordType: 'transaction',
+          accountId: 'account-1',
+          categoryId: 'category-reversed',
+          postedOn: '2026-08-01',
+          description: 'Reversed transaction',
+          annotation: null,
+          currency: 'CAD',
+          originalAmountCadMinor: 2_000,
+          effectiveAmountCadMinor: 0,
+          adjustments: [],
+          reversal: {
+            operationId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f81',
+            reason: 'Cancelled merchant charge',
+          },
+          appliedOperationIds: ['018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f81'],
+          source: { kind: 'manual' },
+        },
+      },
+      {
+        entity_id: 'legacy-needs-review',
+        revision: 0,
+        payload: {
+          recordType: 'transaction',
+          id: 'legacy-needs-review',
+          description: 'Needs review',
+          category: 'category-needs-review',
+          postedOn: '2026-08-01',
+          source: 'manual',
+          currency: 'CAD',
+          originalAmountCadMinor: 3_000,
+          effectiveAmountCadMinor: 3_000,
+          amountConflict: true,
+          adjustments: [],
+          reversal: null,
+          appliedOperationIds: [],
+        },
+      },
+      {
+        entity_id: 'non-cad-excluded',
+        revision: 0,
+        payload: {
+          recordType: 'transaction',
+          id: 'non-cad-excluded',
+          description: 'USD source record',
+          category: 'category-usd',
+          postedOn: '2026-08-01',
+          source: 'manual',
+          currency: 'USD',
+          originalAmountCadMinor: 4_000,
+          effectiveAmountCadMinor: 4_000,
+          amountConflict: false,
+          adjustments: [],
+          reversal: null,
+          appliedOperationIds: [],
+        },
+      },
+    ];
+    const currentBudget = {
+      entity_id: 'budget-2026-08',
+      revision: 0,
+      payload: {
+        schemaVersion: 1,
+        id: 'budget-2026-08',
+        spaceId: privateFinancePrincipal.privateSpaceId,
+        ownerUserId: privateFinancePrincipal.userId,
+        createdAt: '2026-08-01T12:00:00.000Z',
+        updatedAt: '2026-08-01T12:00:00.000Z',
+        recordType: 'budget',
+        month: '2026-08',
+        currency: 'CAD',
+        allocations: Array.from({ length: 101 }, (_value, index) => ({
+          categoryId: `budget-category-${String(index).padStart(3, '0')}`,
+          amountCadMinor: index,
+        })),
+        revision: 0,
+      },
+    };
+    const legacyBudget = {
+      entity_id: 'legacy-budget-2024-01',
+      revision: 0,
+      payload: {
+        id: 'legacy-budget-2024-01',
+        currency: 'CAD',
+        allocationsCadMinor: {
+          'legacy-groceries': 5_000,
+          'legacy-transit': 2_500,
+        },
+      },
+    };
+    const pastModernBudget = {
+      entity_id: 'budget-2024-12',
+      revision: 0,
+      payload: {
+        schemaVersion: 1,
+        id: 'budget-2024-12',
+        spaceId: privateFinancePrincipal.privateSpaceId,
+        ownerUserId: privateFinancePrincipal.userId,
+        createdAt: '2026-08-01T12:00:00.000Z',
+        updatedAt: '2026-08-01T12:00:00.000Z',
+        recordType: 'budget',
+        month: '2024-12',
+        currency: 'CAD',
+        allocations: [{ categoryId: 'category-00', amountCadMinor: 200 }],
+        revision: 0,
+      },
+    };
+    const category = (id: string, name: string) => ({
+      entity_id: id,
+      revision: 0,
+      payload: {
+        schemaVersion: 1,
+        id,
+        spaceId: privateFinancePrincipal.privateSpaceId,
+        ownerUserId: privateFinancePrincipal.userId,
+        createdAt: '2026-08-01T12:00:00.000Z',
+        updatedAt: '2026-08-01T12:00:00.000Z',
+        recordType: 'category',
+        name,
+        categoryKind: 'expense',
+        parentCategoryId: null,
+        active: true,
+      },
+    });
+    const categories = [
+      ...Array.from({ length: 25 }, (_value, index) =>
+        category(
+          `category-${String(index).padStart(2, '0')}`,
+          index < 2
+            ? 'Shared display name'
+            : `Category ${String(index).padStart(2, '0')}`,
+        ),
+      ),
+      ...Array.from({ length: 101 }, (_value, index) =>
+        category(
+          `budget-category-${String(index).padStart(3, '0')}`,
+          `Budget Category ${String(index).padStart(3, '0')}`,
+        ),
+      ),
+      category('category-reversed', 'Reversed category'),
+    ];
+    const { pool, query } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope')) {
+        return [{ authorized: true }];
+      }
+      if (sql.includes('experience_finance_snapshot')) {
+        return [
+          {
+            transactions: [...activeTransactions, ...excludedTransactions],
+            budgets: [legacyBudget, pastModernBudget, currentBudget],
+            categories,
+          },
+        ];
+      }
+      return [];
+    });
+
+    const result = await gatewaysFor(pool).financeRead.readSnapshot({
+      principal: privateFinancePrincipal,
+      requestId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f64',
+    });
+
+    expect(result.reviewedCadTotals).toHaveLength(25);
+    expect(
+      result.reviewedCadTotals.reduce(
+        (total, entry) => total + entry.amountCadMinor,
+        0,
+      ),
+    ).toBe(1_540);
+    expect(
+      result.reviewedCadTotals.filter(
+        (entry) => entry.label === 'Shared display name',
+      ),
+    ).toHaveLength(2);
+    expect(result.reviewedCadTotals.map((entry) => entry.label)).not.toContain(
+      'Reversed category',
+    );
+    expect(result.reviewedCadTotals.map((entry) => entry.label)).not.toContain(
+      'category-needs-review',
+    );
+    expect(result.reviewedCadTotals.map((entry) => entry.label)).not.toContain(
+      'category-usd',
+    );
+    expect(result.recentActivity).toHaveLength(50);
+    expect(result.recentActivity).toContainEqual({
+      id: 'transaction-054',
+      label: 'Category 04: Reviewed transaction 54',
+      occurredAt: '2026-08-01T12:00:00.000Z',
+    });
+    expect(result.recentActivity?.map((entry) => entry.id)).not.toContain(
+      'non-cad-excluded',
+    );
+    expect(result.budgets).toHaveLength(104);
+    expect(result.budgets).toContainEqual({
+      id: 'budget-2026-08:budget-category-100',
+      label: 'Budget Category 100',
+      allocatedCadMinor: 100,
+    });
+    expect(result.budgets).toContainEqual({
+      id: 'budget-2024-12:category-00',
+      label: 'Shared display name',
+      allocatedCadMinor: 200,
+    });
+    expect(result.budgets).toContainEqual({
+      id: 'legacy-budget-2024-01:legacy-groceries',
+      label: 'legacy-groceries',
+      allocatedCadMinor: 5_000,
+    });
+
+    const snapshotCalls = query.mock.calls.filter(([sql]) =>
+      sql.includes('experience_finance_snapshot'),
+    );
+    expect(snapshotCalls).toHaveLength(1);
+    const [snapshotSql, snapshotValues] = snapshotCalls[0]!;
+    expect(snapshotValues).toEqual([
+      privateFinancePrincipal.householdId,
+      privateFinancePrincipal.privateSpaceId,
+      privateFinancePrincipal.userId,
+    ]);
+    expect(snapshotSql).toContain('entity.space_id = $2::uuid');
+    expect(snapshotSql).toContain('entity.original_owner_user_id = $3::uuid');
+    expect(snapshotSql).toContain("entity.entity_type = 'finance.category'");
+    expect(snapshotSql).not.toContain("entity.payload ->> 'currency'");
+    expect(snapshotSql).not.toContain("entity.payload ->> 'month'");
+    expect(snapshotSql).not.toContain('America/Toronto');
+    expect(snapshotSql).toContain('limit 100001');
+    expect(snapshotSql.match(/limit 1001/g)).toHaveLength(2);
+    expect(snapshotSql).not.toContain('offset');
+    expect(
+      query.mock.calls.find(([sql]) =>
+        sql.includes('lock_active_request_scope'),
+      )?.[1],
+    ).toEqual([
+      privateFinancePrincipal.householdId,
+      privateFinancePrincipal.privateSpaceId,
+      null,
+    ]);
+  });
+
+  it('fails closed when a selected Finance row has a missing or malformed currency', async () => {
+    for (const payload of [{}, { currency: 'cad' }]) {
+      const { pool } = poolFor((sql) => {
+        if (sql.includes('lock_active_request_scope')) {
+          return [{ authorized: true }];
+        }
+        if (sql.includes('experience_finance_snapshot')) {
+          return [
+            {
+              transactions: [
+                {
+                  entity_id: 'malformed-currency-transaction',
+                  revision: 0,
+                  payload,
+                },
+              ],
+              budgets: [],
+              categories: [],
+            },
+          ];
+        }
+        return [];
+      });
+      await expect(
+        gatewaysFor(pool).financeRead.readSnapshot({
+          principal: privateFinancePrincipal,
+          requestId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f64',
+        }),
+      ).rejects.toMatchObject({ code: 'invalid-result' });
+    }
+  });
+
+  it('fails closed when a modern Finance transaction or budget references an unavailable category', async () => {
+    const transaction = {
+      entity_id: 'transaction-missing-category',
+      revision: 1,
+      payload: {
+        schemaVersion: 1,
+        id: 'transaction-missing-category',
+        spaceId: privateFinancePrincipal.privateSpaceId,
+        ownerUserId: privateFinancePrincipal.userId,
+        createdAt: '2026-08-01T12:00:00.000Z',
+        updatedAt: '2026-08-01T12:00:00.000Z',
+        recordType: 'transaction',
+        accountId: 'account-1',
+        categoryId: 'missing-category',
+        postedOn: '2026-08-01',
+        description: 'Missing category reference',
+        annotation: null,
+        currency: 'CAD',
+        originalAmountCadMinor: 1,
+        effectiveAmountCadMinor: 1,
+        adjustments: [],
+        reversal: null,
+        appliedOperationIds: [],
+        source: { kind: 'manual' },
+      },
+    };
+    const budget = {
+      entity_id: 'budget-missing-category',
+      revision: 1,
+      payload: {
+        schemaVersion: 1,
+        id: 'budget-missing-category',
+        spaceId: privateFinancePrincipal.privateSpaceId,
+        ownerUserId: privateFinancePrincipal.userId,
+        createdAt: '2026-08-01T12:00:00.000Z',
+        updatedAt: '2026-08-01T12:00:00.000Z',
+        recordType: 'budget',
+        month: '2026-08',
+        currency: 'CAD',
+        allocations: [{ categoryId: 'missing-category', amountCadMinor: 1 }],
+        revision: 1,
+      },
+    };
+    for (const snapshot of [
+      { transactions: [transaction], budgets: [], categories: [] },
+      { transactions: [], budgets: [budget], categories: [] },
+    ]) {
+      const { pool } = poolFor((sql) => {
+        if (sql.includes('lock_active_request_scope')) {
+          return [{ authorized: true }];
+        }
+        return sql.includes('experience_finance_snapshot') ? [snapshot] : [];
+      });
+      await expect(
+        gatewaysFor(pool).financeRead.readSnapshot({
+          principal: privateFinancePrincipal,
+          requestId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f64',
+        }),
+      ).rejects.toMatchObject({ code: 'invalid-result' });
+    }
+  });
+
+  it('fails rather than clipping owner-private Finance snapshot bounds', async () => {
+    const oversizedTransactions = Array<Record<string, unknown>>(100_001).fill({
+      entity_id: 'transaction-over-limit',
+      revision: 0,
+      payload: { currency: 'USD' },
+    });
+    const oversizedCategories = Array<Record<string, unknown>>(1_001).fill({
+      entity_id: 'category-over-limit',
+      revision: 0,
+      payload: {},
+    });
+    const allocations = Object.fromEntries(
+      Array.from({ length: 501 }, (_value, index) => [
+        `legacy-allocation-${String(index).padStart(3, '0')}`,
+        index,
+      ]),
+    );
+    const budgetRows = ['legacy-budget-a', 'legacy-budget-b'].map((id) => ({
+      entity_id: id,
+      revision: 0,
+      payload: {
+        id,
+        currency: 'CAD',
+        allocationsCadMinor: allocations,
+      },
+    }));
+    for (const snapshot of [
+      { transactions: oversizedTransactions, budgets: [], categories: [] },
+      { transactions: [], budgets: [], categories: oversizedCategories },
+      { transactions: [], budgets: budgetRows, categories: [] },
+    ]) {
+      const { pool } = poolFor((sql) => {
+        if (sql.includes('lock_active_request_scope')) {
+          return [{ authorized: true }];
+        }
+        return sql.includes('experience_finance_snapshot') ? [snapshot] : [];
+      });
+      await expect(
+        gatewaysFor(pool).financeRead.readSnapshot({
+          principal: privateFinancePrincipal,
+          requestId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f64',
+        }),
+      ).rejects.toMatchObject({ code: 'invalid-result' });
+    }
   });
 
   it('projects strict canonical finance and shopping entities without ledger internals', async () => {

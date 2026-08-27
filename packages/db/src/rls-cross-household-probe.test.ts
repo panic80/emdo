@@ -16,8 +16,8 @@ const context = Object.freeze({
 const input = () => ({
   context,
   database: {
-    postgresqlMajor: 17 as const,
-    serverVersionNum: 170_010,
+    postgresqlMajor: 18 as const,
+    serverVersionNum: 180_010,
     pgvectorExtensionVersion: '0.8.6',
   },
   observedAt: '2026-08-10T14:00:00.000Z',
@@ -66,6 +66,26 @@ describe('RLS cross-household live probe envelope', () => {
     [
       'an incomplete attack set',
       { proof: { ...input().proof, attackCaseCount: 14 } },
+    ],
+    [
+      'a PostgreSQL 17 database',
+      {
+        database: {
+          ...input().database,
+          postgresqlMajor: 17,
+          serverVersionNum: 170_010,
+        },
+      },
+    ],
+    [
+      'a PostgreSQL 19 database',
+      {
+        database: {
+          ...input().database,
+          postgresqlMajor: 19,
+          serverVersionNum: 190_000,
+        },
+      },
     ],
     ['an extra field', { synthesized: true }],
   ])('rejects %s', (_name, patch) => {

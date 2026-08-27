@@ -35,6 +35,10 @@ const vector1536 = customType<{
   toDriver: (value) => `[${value.join(',')}]`,
 });
 
+const searchVector = customType<{ data: string; driverData: string }>({
+  dataType: () => 'tsvector',
+});
+
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
@@ -2919,6 +2923,690 @@ export const financeImportReceipts = emdoSchema.table(
   ],
 );
 
+/**
+ * Immutable acknowledgement for one owner-scoped Finance specialist record
+ * command. The canonical entity revision retains the exact result payload;
+ * this row binds that result to its idempotency and authorization material.
+ */
+export const financeSpecialistRecordReceipts = emdoSchema.table(
+  'finance_specialist_record_receipts',
+  {
+    receiptId: uuid('receipt_id').defaultRandom().primaryKey(),
+    schemaVersion: smallint('schema_version').default(1).notNull(),
+    householdId: uuid('household_id').notNull(),
+    spaceId: uuid('space_id').notNull(),
+    originalOwnerUserId: uuid('original_owner_user_id').notNull(),
+    operation: text('operation').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    canonicalHash: text('canonical_hash').notNull(),
+    scopeFingerprint: text('scope_fingerprint').notNull(),
+    originSessionId: uuid('origin_session_id').notNull(),
+    originRequestId: uuid('origin_request_id').notNull(),
+    originRunId: uuid('origin_run_id').notNull(),
+    originSpaceAccessGrantId: uuid('origin_space_access_grant_id').notNull(),
+    entityType: text('entity_type').notNull(),
+    entityId: text('entity_id').notNull(),
+    resultingRevision: integer('resulting_revision').notNull(),
+    auditEventId: uuid('audit_event_id').notNull(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    retainUntil: timestamp('retain_until', { withTimezone: true })
+      .default(sql`now() + interval '90 days'`)
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'finance_specialist_record_receipts_household_space_fk',
+      columns: [table.householdId, table.spaceId],
+      foreignColumns: [spaces.householdId, spaces.id],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    foreignKey({
+      name: 'finance_specialist_record_receipts_owner_membership_fk',
+      columns: [table.householdId, table.originalOwnerUserId],
+      foreignColumns: [
+        householdMemberships.householdId,
+        householdMemberships.userId,
+      ],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    foreignKey({
+      name: 'finance_specialist_record_receipts_audit_event_fk',
+      columns: [table.auditEventId],
+      foreignColumns: [auditEvents.id],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    unique('finance_specialist_record_receipts_scope_idempotency_unique').on(
+      table.householdId,
+      table.spaceId,
+      table.originalOwnerUserId,
+      table.idempotencyKey,
+    ),
+    unique('finance_specialist_record_receipts_audit_event_unique').on(
+      table.auditEventId,
+    ),
+    index('finance_specialist_record_receipts_scope_recorded_idx').on(
+      table.householdId,
+      table.spaceId,
+      table.originalOwnerUserId,
+      table.recordedAt,
+    ),
+    check(
+      'finance_specialist_record_receipts_schema_check',
+      sql`${table.schemaVersion} = 1`,
+    ),
+    check(
+      'finance_specialist_record_receipts_operation_check',
+      sql`${table.operation} in ('manual-transaction-create', 'transaction-nondestructive-patch', 'monthly-category-budget-create', 'monthly-category-budget-update', 'finance-transaction-adjustment', 'finance-transaction-reversal')`,
+    ),
+    check(
+      'finance_specialist_record_receipts_hash_check',
+      sql`${table.canonicalHash} ~ '^[a-f0-9]{64}$' and ${table.scopeFingerprint} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'finance_specialist_record_receipts_key_check',
+      sql`length(${table.idempotencyKey}) between 16 and 200 and ${table.idempotencyKey} ~ '^[A-Za-z0-9:._-]+$'`,
+    ),
+    check(
+      'finance_specialist_record_receipts_entity_check',
+      sql`${table.entityType} in ('finance.transaction', 'finance.budget') and length(${table.entityId}) between 1 and 512 and ${table.entityId} !~ '[[:cntrl:]]' and ${table.resultingRevision} > 0`,
+    ),
+    check(
+      'finance_specialist_record_receipts_retention_check',
+      sql`${table.retainUntil} > ${table.recordedAt} and ${table.retainUntil} <= ${table.recordedAt} + interval '90 days'`,
+    ),
+  ],
+);
+
+/** Uploader-private metadata for an immutable encrypted finance original. */
+export const financeDocuments = emdoSchema.table(
+  'finance_documents',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    householdId: uuid('household_id').notNull(),
+    spaceId: uuid('space_id').notNull(),
+    originalOwnerUserId: uuid('original_owner_user_id').notNull(),
+    storageObjectId: text('storage_object_id'),
+    displayName: text('display_name'),
+    mimeType: text('mime_type'),
+    byteSize: bigint('byte_size', { mode: 'number' }),
+    pageCount: integer('page_count'),
+    imageWidth: integer('image_width'),
+    imageHeight: integer('image_height'),
+    plaintextSha256: text('plaintext_sha256'),
+    ciphertextSha256: text('ciphertext_sha256'),
+    wrappedDataKey: jsonb('wrapped_data_key').$type<JsonValue>(),
+    keyVersion: text('key_version'),
+    state: text('state').default('uploaded').notNull(),
+    documentType: text('document_type'),
+    sourceLocale: text('source_locale'),
+    currency: text('currency'),
+    extractionRevision: integer('extraction_revision'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    /** Content-free receipt retained only to authorize a purge retry. */
+    deletionProposalId: uuid('deletion_proposal_id'),
+    deletionDecisionId: uuid('deletion_decision_id'),
+    deletionTargetBindingHash: text('deletion_target_binding_hash'),
+    deletionExecutionBindingHash: text('deletion_execution_binding_hash'),
+  },
+  (table) => [
+    foreignKey({
+      name: 'finance_documents_household_space_fk',
+      columns: [table.householdId, table.spaceId],
+      foreignColumns: [spaces.householdId, spaces.id],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    foreignKey({
+      name: 'finance_documents_owner_membership_fk',
+      columns: [table.householdId, table.originalOwnerUserId],
+      foreignColumns: [
+        householdMemberships.householdId,
+        householdMemberships.userId,
+      ],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    unique('finance_documents_scope_id_unique').on(
+      table.householdId,
+      table.spaceId,
+      table.originalOwnerUserId,
+      table.id,
+    ),
+    unique('finance_documents_storage_object_unique').on(table.storageObjectId),
+    unique('finance_documents_owner_plaintext_hash_unique').on(
+      table.householdId,
+      table.originalOwnerUserId,
+      table.plaintextSha256,
+    ),
+    index('finance_documents_owner_state_updated_idx').on(
+      table.householdId,
+      table.originalOwnerUserId,
+      table.state,
+      table.updatedAt,
+    ),
+    check(
+      'finance_documents_storage_object_check',
+      sql`${table.storageObjectId} is null or (length(${table.storageObjectId}) between 16 and 200 and ${table.storageObjectId} ~ '^[A-Za-z0-9._-]+$')`,
+    ),
+    check(
+      'finance_documents_display_name_check',
+      sql`${table.displayName} is null or (length(${table.displayName}) between 1 and 255 and ${table.displayName} !~ '[[:cntrl:]]')`,
+    ),
+    check(
+      'finance_documents_mime_type_check',
+      sql`${table.mimeType} is null or ${table.mimeType} in ('application/pdf', 'image/jpeg', 'image/png')`,
+    ),
+    check(
+      'finance_documents_byte_size_check',
+      sql`${table.byteSize} is null or ${table.byteSize} between 1 and 26214400`,
+    ),
+    check(
+      'finance_documents_dimension_check',
+      sql`${table.mimeType} is null or (${table.mimeType} = 'application/pdf' and ${table.pageCount} between 1 and 250 and ${table.imageWidth} is null and ${table.imageHeight} is null) or (${table.mimeType} in ('image/jpeg', 'image/png') and ${table.pageCount} is null and ${table.imageWidth} > 0 and ${table.imageHeight} > 0 and ${table.imageWidth}::bigint * ${table.imageHeight}::bigint <= 40000000)`,
+    ),
+    check(
+      'finance_documents_hash_check',
+      sql`(${table.plaintextSha256} is null and ${table.ciphertextSha256} is null) or (${table.plaintextSha256} ~ '^[a-f0-9]{64}$' and ${table.ciphertextSha256} ~ '^[a-f0-9]{64}$')`,
+    ),
+    check(
+      'finance_documents_wrapped_key_check',
+      sql`(${table.wrappedDataKey} is null and ${table.keyVersion} is null) or (jsonb_typeof(${table.wrappedDataKey}) = 'object' and octet_length(${table.wrappedDataKey}::text) between 2 and 16384 and length(${table.keyVersion}) between 1 and 100)`,
+    ),
+    check(
+      'finance_documents_state_check',
+      sql`${table.state} in ('uploaded', 'extracting', 'awaiting-review', 'committed', 'failed', 'deleting', 'deleted')`,
+    ),
+    check(
+      'finance_documents_type_check',
+      sql`${table.documentType} is null or ${table.documentType} in ('receipt', 'invoice', 'bank-statement', 'credit-statement', 'pay-stub', 'tax-slip', 'insurance', 'loan', 'investment-statement', 'other')`,
+    ),
+    check(
+      'finance_documents_locale_check',
+      sql`${table.sourceLocale} is null or ${table.sourceLocale} in ('en-CA', 'fr-CA', 'ja-JP', 'ko-KR')`,
+    ),
+    check(
+      'finance_documents_currency_check',
+      sql`${table.currency} is null or ${table.currency} ~ '^[A-Z]{3}$'`,
+    ),
+    check(
+      'finance_documents_revision_check',
+      sql`${table.extractionRevision} is null or ${table.extractionRevision} > 0`,
+    ),
+    check(
+      'finance_documents_deletion_check',
+      sql`(${table.state} = 'deleted' and ${table.deletedAt} is not null and ${table.storageObjectId} is null and ${table.displayName} is null and ${table.mimeType} is null and ${table.byteSize} is null and ${table.pageCount} is null and ${table.imageWidth} is null and ${table.imageHeight} is null and ${table.plaintextSha256} is null and ${table.ciphertextSha256} is null and ${table.wrappedDataKey} is null and ${table.keyVersion} is null and ${table.documentType} is null and ${table.sourceLocale} is null and ${table.currency} is null and ${table.extractionRevision} is null) or (${table.state} <> 'deleted' and ${table.deletedAt} is null and ${table.storageObjectId} is not null and ${table.displayName} is not null and ${table.mimeType} is not null and ${table.byteSize} is not null and ${table.plaintextSha256} is not null and ${table.ciphertextSha256} is not null and ${table.wrappedDataKey} is not null and ${table.keyVersion} is not null)`,
+    ),
+    check(
+      'finance_documents_guarded_deletion_receipt_check',
+      sql`((${table.state} in ('deleting', 'deleted')) and ${table.deletionProposalId} is not null and ${table.deletionDecisionId} is not null and ${table.deletionTargetBindingHash} ~ '^[a-f0-9]{64}$' and ${table.deletionExecutionBindingHash} ~ '^[a-f0-9]{64}$') or ((${table.state} not in ('deleting', 'deleted')) and ${table.deletionProposalId} is null and ${table.deletionDecisionId} is null and ${table.deletionTargetBindingHash} is null and ${table.deletionExecutionBindingHash} is null)`,
+    ),
+    check(
+      'finance_documents_timestamps_check',
+      sql`${table.updatedAt} >= ${table.createdAt} and (${table.deletedAt} is null or ${table.deletedAt} >= ${table.createdAt})`,
+    ),
+  ],
+);
+
+/** Private versioned provider output; never synchronized or disclosed pre-review. */
+export const financeDocumentExtractions = emdoSchema.table(
+  'finance_document_extractions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    documentId: uuid('document_id').notNull(),
+    householdId: uuid('household_id').notNull(),
+    spaceId: uuid('space_id').notNull(),
+    originalOwnerUserId: uuid('original_owner_user_id').notNull(),
+    revision: integer('revision').notNull(),
+    attempt: smallint('attempt').notNull(),
+    state: text('state').notNull(),
+    model: text('model'),
+    schemaVersion: smallint('schema_version').default(1).notNull(),
+    encryptedPayload: jsonb('encrypted_payload').$type<JsonValue>(),
+    redactedSummary: jsonb('redacted_summary').$type<JsonValue>(),
+    responseHash: text('response_hash'),
+    safeErrorCode: text('safe_error_code'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => [
+    foreignKey({
+      name: 'finance_document_extractions_document_fk',
+      columns: [
+        table.householdId,
+        table.spaceId,
+        table.originalOwnerUserId,
+        table.documentId,
+      ],
+      foreignColumns: [
+        financeDocuments.householdId,
+        financeDocuments.spaceId,
+        financeDocuments.originalOwnerUserId,
+        financeDocuments.id,
+      ],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    unique('finance_document_extractions_document_revision_unique').on(
+      table.documentId,
+      table.revision,
+    ),
+    unique('finance_document_extractions_scope_id_unique').on(
+      table.householdId,
+      table.spaceId,
+      table.originalOwnerUserId,
+      table.id,
+    ),
+    index('finance_document_extractions_owner_state_idx').on(
+      table.householdId,
+      table.originalOwnerUserId,
+      table.state,
+      table.createdAt,
+    ),
+    check(
+      'finance_document_extractions_revision_check',
+      sql`${table.revision} > 0`,
+    ),
+    check(
+      'finance_document_extractions_attempt_check',
+      sql`${table.attempt} between 1 and 2`,
+    ),
+    check(
+      'finance_document_extractions_state_check',
+      sql`${table.state} in ('queued', 'extracting', 'awaiting-review', 'committed', 'failed', 'superseded')`,
+    ),
+    check(
+      'finance_document_extractions_schema_check',
+      sql`${table.schemaVersion} = 1`,
+    ),
+    check(
+      'finance_document_extractions_model_check',
+      sql`${table.model} is null or ${table.model} = 'gpt-5.6-terra'`,
+    ),
+    check(
+      'finance_document_extractions_payload_check',
+      sql`${table.encryptedPayload} is null or (jsonb_typeof(${table.encryptedPayload}) = 'object' and octet_length(${table.encryptedPayload}::text) between 2 and 16777216)`,
+    ),
+    check(
+      'finance_document_extractions_summary_check',
+      sql`${table.redactedSummary} is null or (jsonb_typeof(${table.redactedSummary}) = 'object' and octet_length(${table.redactedSummary}::text) between 2 and 1048576)`,
+    ),
+    check(
+      'finance_document_extractions_hash_check',
+      sql`${table.responseHash} is null or ${table.responseHash} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'finance_document_extractions_usage_check',
+      sql`(${table.inputTokens} is null or ${table.inputTokens} >= 0) and (${table.outputTokens} is null or ${table.outputTokens} >= 0)`,
+    ),
+    check(
+      'finance_document_extractions_completion_check',
+      sql`(${table.state} in ('queued', 'extracting') and ${table.completedAt} is null) or (${table.state} in ('awaiting-review', 'committed', 'failed', 'superseded') and ${table.completedAt} is not null)`,
+    ),
+  ],
+);
+
+/** Reviewed, masked chunks only; this is intentionally separate from memory_chunks. */
+export const financeDocumentChunks = emdoSchema.table(
+  'finance_document_chunks',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    documentId: uuid('document_id').notNull(),
+    extractionRevision: integer('extraction_revision').notNull(),
+    householdId: uuid('household_id').notNull(),
+    spaceId: uuid('space_id').notNull(),
+    originalOwnerUserId: uuid('original_owner_user_id').notNull(),
+    ordinal: integer('ordinal').notNull(),
+    pageStart: integer('page_start').notNull(),
+    pageEnd: integer('page_end').notNull(),
+    content: text('content').notNull(),
+    contentHash: text('content_hash').notNull(),
+    searchVector: searchVector('search_vector').notNull(),
+    embedding: vector1536('embedding'),
+    committedAt: timestamp('committed_at', { withTimezone: true }).notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    foreignKey({
+      name: 'finance_document_chunks_document_fk',
+      columns: [
+        table.householdId,
+        table.spaceId,
+        table.originalOwnerUserId,
+        table.documentId,
+      ],
+      foreignColumns: [
+        financeDocuments.householdId,
+        financeDocuments.spaceId,
+        financeDocuments.originalOwnerUserId,
+        financeDocuments.id,
+      ],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    unique('finance_document_chunks_document_ordinal_unique').on(
+      table.documentId,
+      table.extractionRevision,
+      table.ordinal,
+    ),
+    index('finance_document_chunks_scope_document_idx').on(
+      table.householdId,
+      table.originalOwnerUserId,
+      table.documentId,
+      table.extractionRevision,
+    ),
+    index('finance_document_chunks_search_gin_idx').using(
+      'gin',
+      table.searchVector,
+    ),
+    index('finance_document_chunks_embedding_hnsw_idx')
+      .using('hnsw', sql`${table.embedding} vector_cosine_ops`)
+      .where(
+        sql`${table.embedding} is not null and ${table.deletedAt} is null`,
+      ),
+    check(
+      'finance_document_chunks_revision_check',
+      sql`${table.extractionRevision} > 0`,
+    ),
+    check('finance_document_chunks_ordinal_check', sql`${table.ordinal} >= 0`),
+    check(
+      'finance_document_chunks_page_check',
+      sql`${table.pageStart} between 1 and 250 and ${table.pageEnd} between ${table.pageStart} and 250`,
+    ),
+    check(
+      'finance_document_chunks_content_check',
+      sql`octet_length(${table.content}) between 1 and 16384 and ${table.contentHash} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'finance_document_chunks_deletion_check',
+      sql`${table.deletedAt} is null or ${table.deletedAt} >= ${table.committedAt}`,
+    ),
+  ],
+);
+
+/** Single-use, revision-bound visual review authorization. */
+export const financeDocumentReviewBatches = emdoSchema.table(
+  'finance_document_review_batches',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    documentId: uuid('document_id').notNull(),
+    extractionRevision: integer('extraction_revision').notNull(),
+    householdId: uuid('household_id').notNull(),
+    spaceId: uuid('space_id').notNull(),
+    originalOwnerUserId: uuid('original_owner_user_id').notNull(),
+    authenticatedSessionId: uuid('authenticated_session_id').notNull(),
+    spaceAccessGrantId: uuid('space_access_grant_id').notNull(),
+    scopeFingerprint: text('scope_fingerprint').notNull(),
+    payloadHash: text('payload_hash').notNull(),
+    reviewTokenHash: text('review_token_hash').notNull(),
+    selectedFacts: jsonb('selected_facts').$type<JsonValue>().notNull(),
+    state: text('state').default('pending').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+  },
+  (table) => [
+    foreignKey({
+      name: 'finance_document_review_batches_document_fk',
+      columns: [
+        table.householdId,
+        table.spaceId,
+        table.originalOwnerUserId,
+        table.documentId,
+      ],
+      foreignColumns: [
+        financeDocuments.householdId,
+        financeDocuments.spaceId,
+        financeDocuments.originalOwnerUserId,
+        financeDocuments.id,
+      ],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    unique('finance_document_review_batches_token_unique').on(
+      table.reviewTokenHash,
+    ),
+    unique('finance_document_review_batches_owner_idempotency_unique').on(
+      table.householdId,
+      table.originalOwnerUserId,
+      table.idempotencyKey,
+    ),
+    unique('finance_document_review_batches_match_binding_unique').on(
+      table.householdId,
+      table.spaceId,
+      table.originalOwnerUserId,
+      table.documentId,
+      table.extractionRevision,
+      table.id,
+    ),
+    index('finance_document_review_batches_document_state_idx').on(
+      table.documentId,
+      table.extractionRevision,
+      table.state,
+    ),
+    check(
+      'finance_document_review_batches_revision_check',
+      sql`${table.extractionRevision} > 0`,
+    ),
+    check(
+      'finance_document_review_batches_hash_check',
+      sql`${table.scopeFingerprint} ~ '^[a-f0-9]{64}$' and ${table.payloadHash} ~ '^[a-f0-9]{64}$' and ${table.reviewTokenHash} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'finance_document_review_batches_payload_check',
+      sql`jsonb_typeof(${table.selectedFacts}) = 'object' and octet_length(${table.selectedFacts}::text) between 2 and 4194304`,
+    ),
+    check(
+      'finance_document_review_batches_state_check',
+      sql`${table.state} in ('pending', 'committed', 'rejected', 'expired', 'invalidated')`,
+    ),
+    check(
+      'finance_document_review_batches_key_check',
+      sql`length(${table.idempotencyKey}) between 16 and 200 and ${table.idempotencyKey} ~ '^[A-Za-z0-9:._-]+$'`,
+    ),
+    check(
+      'finance_document_review_batches_lifetime_check',
+      sql`${table.expiresAt} > ${table.createdAt} and ${table.expiresAt} <= ${table.createdAt} + interval '30 minutes' and ((${table.state} = 'pending' and ${table.decidedAt} is null) or (${table.state} <> 'pending' and ${table.decidedAt} is not null))`,
+    ),
+  ],
+);
+
+/** Revision-bound suggestions; acceptance never occurs automatically. */
+export const financeDocumentMatches = emdoSchema.table(
+  'finance_document_matches',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    documentId: uuid('document_id').notNull(),
+    extractionRevision: integer('extraction_revision').notNull(),
+    householdId: uuid('household_id').notNull(),
+    spaceId: uuid('space_id').notNull(),
+    originalOwnerUserId: uuid('original_owner_user_id').notNull(),
+    recordType: text('record_type').notNull(),
+    recordId: text('record_id').notNull(),
+    scoreBasisPoints: integer('score_basis_points').notNull(),
+    reasons: jsonb('reasons').$type<JsonValue>().notNull(),
+    state: text('state').default('suggested').notNull(),
+    decisionReviewBatchId: uuid('decision_review_batch_id'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+  },
+  (table) => [
+    foreignKey({
+      name: 'finance_document_matches_document_fk',
+      columns: [
+        table.householdId,
+        table.spaceId,
+        table.originalOwnerUserId,
+        table.documentId,
+      ],
+      foreignColumns: [
+        financeDocuments.householdId,
+        financeDocuments.spaceId,
+        financeDocuments.originalOwnerUserId,
+        financeDocuments.id,
+      ],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    foreignKey({
+      name: 'finance_document_matches_review_batch_fk',
+      columns: [
+        table.householdId,
+        table.spaceId,
+        table.originalOwnerUserId,
+        table.documentId,
+        table.extractionRevision,
+        table.decisionReviewBatchId,
+      ],
+      foreignColumns: [
+        financeDocumentReviewBatches.householdId,
+        financeDocumentReviewBatches.spaceId,
+        financeDocumentReviewBatches.originalOwnerUserId,
+        financeDocumentReviewBatches.documentId,
+        financeDocumentReviewBatches.extractionRevision,
+        financeDocumentReviewBatches.id,
+      ],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    unique('finance_document_matches_record_unique').on(
+      table.documentId,
+      table.extractionRevision,
+      table.recordType,
+      table.recordId,
+    ),
+    index('finance_document_matches_owner_state_idx').on(
+      table.householdId,
+      table.originalOwnerUserId,
+      table.state,
+      table.createdAt,
+    ),
+    check(
+      'finance_document_matches_revision_check',
+      sql`${table.extractionRevision} > 0`,
+    ),
+    check(
+      'finance_document_matches_record_check',
+      sql`${table.recordType} in ('account', 'transaction', 'category', 'budget', 'bill', 'subscription', 'goal') and length(${table.recordId}) between 1 and 512 and ${table.recordId} !~ '[[:cntrl:]]'`,
+    ),
+    check(
+      'finance_document_matches_score_check',
+      sql`${table.scoreBasisPoints} between 0 and 10000`,
+    ),
+    check(
+      'finance_document_matches_reasons_check',
+      sql`jsonb_typeof(${table.reasons}) = 'array' and jsonb_array_length(${table.reasons}) between 1 and 8 and octet_length(${table.reasons}::text) <= 4096`,
+    ),
+    check(
+      'finance_document_matches_state_check',
+      sql`${table.state} in ('suggested', 'accepted', 'rejected') and ((${table.state} = 'suggested' and ${table.decidedAt} is null and ${table.decisionReviewBatchId} is null) or (${table.state} <> 'suggested' and ${table.decidedAt} is not null and ${table.decisionReviewBatchId} is not null))`,
+    ),
+  ],
+);
+
+/** Stable, bounded evidence exposed only after review and owner authorization. */
+export const financeDocumentEvidence = emdoSchema.table(
+  'finance_document_evidence',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    documentId: uuid('document_id').notNull(),
+    extractionRevision: integer('extraction_revision').notNull(),
+    chunkId: uuid('chunk_id'),
+    householdId: uuid('household_id').notNull(),
+    spaceId: uuid('space_id').notNull(),
+    originalOwnerUserId: uuid('original_owner_user_id').notNull(),
+    page: integer('page').notNull(),
+    excerpt: text('excerpt').notNull(),
+    excerptHash: text('excerpt_hash').notNull(),
+    locator: jsonb('locator').$type<JsonValue>().notNull(),
+    sourceLocale: text('source_locale').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    foreignKey({
+      name: 'finance_document_evidence_document_fk',
+      columns: [
+        table.householdId,
+        table.spaceId,
+        table.originalOwnerUserId,
+        table.documentId,
+      ],
+      foreignColumns: [
+        financeDocuments.householdId,
+        financeDocuments.spaceId,
+        financeDocuments.originalOwnerUserId,
+        financeDocuments.id,
+      ],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    foreignKey({
+      name: 'finance_document_evidence_chunk_fk',
+      columns: [table.chunkId],
+      foreignColumns: [financeDocumentChunks.id],
+    })
+      .onDelete('restrict')
+      .onUpdate('restrict'),
+    unique('finance_document_evidence_source_unique').on(
+      table.documentId,
+      table.extractionRevision,
+      table.page,
+      table.excerptHash,
+    ),
+    index('finance_document_evidence_owner_document_idx').on(
+      table.householdId,
+      table.originalOwnerUserId,
+      table.documentId,
+    ),
+    check(
+      'finance_document_evidence_revision_check',
+      sql`${table.extractionRevision} > 0`,
+    ),
+    check(
+      'finance_document_evidence_page_check',
+      sql`${table.page} between 1 and 250`,
+    ),
+    check(
+      'finance_document_evidence_excerpt_check',
+      sql`octet_length(${table.excerpt}) between 1 and 8192 and ${table.excerptHash} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'finance_document_evidence_locator_check',
+      sql`jsonb_typeof(${table.locator}) = 'object' and octet_length(${table.locator}::text) between 2 and 4096`,
+    ),
+    check(
+      'finance_document_evidence_locale_check',
+      sql`${table.sourceLocale} in ('en-CA', 'fr-CA', 'ja-JP', 'ko-KR')`,
+    ),
+    check(
+      'finance_document_evidence_deletion_check',
+      sql`${table.deletedAt} is null or ${table.deletedAt} >= ${table.createdAt}`,
+    ),
+  ],
+);
+
 /** Append-only, exact canonical snapshots captured from sync entity writes. */
 export const syncEntityRevisions = emdoSchema.table(
   'sync_entity_revisions',
@@ -4370,6 +5058,13 @@ export const foundationTables = Object.freeze({
   finance_import_fingerprints: financeImportFingerprints,
   finance_import_plans: financeImportPlans,
   finance_import_receipts: financeImportReceipts,
+  finance_specialist_record_receipts: financeSpecialistRecordReceipts,
+  finance_document_chunks: financeDocumentChunks,
+  finance_document_evidence: financeDocumentEvidence,
+  finance_document_extractions: financeDocumentExtractions,
+  finance_document_matches: financeDocumentMatches,
+  finance_document_review_batches: financeDocumentReviewBatches,
+  finance_documents: financeDocuments,
   deployment_bootstraps: deploymentBootstraps,
   household_memberships: householdMemberships,
   households,

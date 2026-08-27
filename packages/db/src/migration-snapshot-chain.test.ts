@@ -8,6 +8,7 @@ import {
   financeImportFingerprints,
   financeImportPlans,
   financeImportReceipts,
+  financeSpecialistRecordReceipts,
   googleOAuthAuthorizationStarts,
   googleOAuthDisconnectOperations,
 } from './schema.js';
@@ -60,7 +61,7 @@ describe('ordered migration snapshot chain', () => {
       readdir(metadataUrl),
     ]);
     expect(journal.entries.map(({ idx }) => idx)).toEqual([
-      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
     ]);
     expect(journal.entries.map(({ tag }) => tag)).toEqual([
       '0000_household_foundation',
@@ -79,18 +80,19 @@ describe('ordered migration snapshot chain', () => {
       '0013_google_oauth_disconnect_retention_runner',
       '0014_audio_spend_readiness',
       '0015_single_household_session_activation',
+      '0016_finance_document_knowledge',
     ]);
     expect(
       files.filter((file) => /^\d{4}_snapshot\.json$/u.test(file)).sort(),
     ).toEqual(
       Array.from(
-        { length: 16 },
+        { length: 17 },
         (_, index) => `${index.toString().padStart(4, '0')}_snapshot.json`,
       ),
     );
 
     const snapshots = await Promise.all(
-      Array.from({ length: 16 }, (_, index) => readSnapshot(index)),
+      Array.from({ length: 17 }, (_, index) => readSnapshot(index)),
     );
     expect(snapshots[0]?.prevId).toBe('00000000-0000-0000-0000-000000000000');
     for (let index = 1; index < snapshots.length; index += 1) {
@@ -198,6 +200,20 @@ describe('ordered migration snapshot chain', () => {
       changed: [],
       removed: [],
     });
+    const snapshot16 = await readSnapshot(16);
+    expect(tableDelta(snapshot15, snapshot16)).toEqual({
+      added: [
+        'emdo.finance_document_chunks',
+        'emdo.finance_document_evidence',
+        'emdo.finance_document_extractions',
+        'emdo.finance_document_matches',
+        'emdo.finance_document_review_batches',
+        'emdo.finance_documents',
+        'emdo.finance_specialist_record_receipts',
+      ],
+      changed: [],
+      removed: [],
+    });
   });
 
   it('keeps 0008 finance foreign keys and checks fully represented before the additive OAuth snapshot', async () => {
@@ -296,6 +312,32 @@ describe('ordered migration snapshot chain', () => {
       readonly checkConstraints: Readonly<Record<string, unknown>>;
     };
     const config = getTableConfig(googleOAuthDisconnectOperations);
+
+    expect(Object.keys(stored.indexes).sort()).toEqual(
+      config.indexes.map((index) => index.config.name).sort(),
+    );
+    expect(Object.keys(stored.foreignKeys).sort()).toEqual(
+      config.foreignKeys.map((key) => key.reference().name).sort(),
+    );
+    expect(Object.keys(stored.uniqueConstraints).sort()).toEqual(
+      config.uniqueConstraints.map((constraint) => constraint.name).sort(),
+    );
+    expect(Object.keys(stored.checkConstraints).sort()).toEqual(
+      config.checks.map((check) => check.name).sort(),
+    );
+  });
+
+  it('keeps the 0016 Finance specialist receipt snapshot aligned with its narrow durable schema', async () => {
+    const snapshot16 = await readSnapshot(16);
+    const stored = snapshot16.tables[
+      'emdo.finance_specialist_record_receipts'
+    ] as {
+      readonly indexes: Readonly<Record<string, unknown>>;
+      readonly foreignKeys: Readonly<Record<string, unknown>>;
+      readonly uniqueConstraints: Readonly<Record<string, unknown>>;
+      readonly checkConstraints: Readonly<Record<string, unknown>>;
+    };
+    const config = getTableConfig(financeSpecialistRecordReceipts);
 
     expect(Object.keys(stored.indexes).sort()).toEqual(
       config.indexes.map((index) => index.config.name).sort(),

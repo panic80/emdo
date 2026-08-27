@@ -9,6 +9,7 @@ const coreAgentMocks = vi.hoisted(() => ({
   createCheckpointCipher: vi.fn(),
   createOpenAi: vi.fn(),
   createCoreRuntimeFactory: vi.fn(),
+  createManagerRuntimeFactory: vi.fn(),
   createAgentPersistence: vi.fn(),
   createProviderFreePersistence: vi.fn(),
   runtimeFactories: [] as unknown[],
@@ -36,6 +37,8 @@ vi.mock('./core-openai-services.js', async (importOriginal) => {
 vi.mock('./core-agent-services.js', () => ({
   createRequestScopedCoreAgentRuntimeFactory:
     coreAgentMocks.createCoreRuntimeFactory,
+  createRequestScopedManagerFinanceAgentRuntimeFactory:
+    coreAgentMocks.createManagerRuntimeFactory,
 }));
 vi.mock('../agents/production-persistence.js', () => ({
   createProductionAgentPersistence: coreAgentMocks.createAgentPersistence,
@@ -149,6 +152,37 @@ const financeImportService = () => ({
   checkReady: vi.fn(async () => true),
 });
 
+const financeSpecialistServices = () =>
+  Object.freeze({
+    readFinanceRecords: vi.fn(),
+    writeFinanceRecord: vi.fn(),
+    loadFinanceBudgetInputs: vi.fn(),
+    searchFinanceDocuments: vi.fn(),
+    readFinanceDocument: vi.fn(),
+    readFinanceMatches: vi.fn(),
+    executeStatementImport: vi.fn(),
+  });
+
+const attachReadyFinance = (adapters: ProductionDurableServiceDependencies) => {
+  const services = financeSpecialistServices();
+  const checkReady = vi.fn(async () => true);
+  const createForPrincipal = vi.fn(() => services);
+  Object.assign(adapters, {
+    createFinanceDocumentComposition: vi.fn(async () => ({
+      gateway: {
+        checkReady: vi.fn(async () => true),
+        dispose: vi.fn(),
+      },
+      close: vi.fn(async () => undefined),
+    })),
+    createFinanceSpecialistComposition: vi.fn(() => ({
+      checkReady,
+      createForPrincipal,
+    })),
+  });
+  return { services, checkReady, createForPrincipal };
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   coreAgentMocks.runtimeFactories.length = 0;
@@ -170,6 +204,15 @@ beforeEach(() => {
     close: vi.fn(async () => undefined),
   });
   coreAgentMocks.createCoreRuntimeFactory.mockReturnValue({
+    runtime: {
+      orchestrator: {
+        runTurn: vi.fn(),
+        resumeTurn: vi.fn(),
+      },
+    },
+    check: vi.fn(async () => true),
+  });
+  coreAgentMocks.createManagerRuntimeFactory.mockReturnValue({
     runtime: {
       orchestrator: {
         runTurn: vi.fn(),
@@ -335,6 +378,79 @@ describe('production durable API service composition', () => {
     expect(coreAgentMocks.createProviderFreePersistence).not.toHaveBeenCalled();
   });
 
+  it('composes exact synthetic Finance staging through local EMDO without any provider bundle', async () => {
+    const adapters = dependencies();
+    const finance = attachReadyFinance(adapters);
+    const result = await createProductionDurableServiceBindings(
+      {
+        EMDO_API_DATABASE_URL: databaseUrl,
+        EMDO_WORKFLOW_DATABASE_URL: workflowDatabaseUrl,
+        EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL: approvalCheckpointKeyring,
+        EMDO_VISUAL_DECISION_DATABASE_URL: visualDecisionDatabaseUrl,
+        EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL: visualProofKeyring,
+        EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL: experienceCursorKeyring,
+        EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL: proposalCursorKeyring,
+        EMDO_ENVIRONMENT: 'staging',
+        EMDO_ALLOW_LOOPBACK_API_INGRESS: 'true',
+        EMDO_SYNTHETIC_DATA_ONLY: 'true',
+        EMDO_FINANCE_SYNTHETIC_STAGING: 'true',
+        EMDO_FINANCE_DOCUMENTS_ENABLED: 'true',
+      },
+      adapters,
+    );
+
+    expect(result.bindings).toMatchObject({
+      financeDocuments: { service: { checkReady: expect.any(Function) } },
+      managerTurns: { service: { start: expect.any(Function) } },
+      proposalQueries: { service: { getDetail: expect.any(Function) } },
+      proposals: { service: { decideWithVisualProof: expect.any(Function) } },
+      runEvents: { service: { open: expect.any(Function) } },
+      visualProofs: { service: { issue: expect.any(Function) } },
+    });
+    expect(coreAgentMocks.createOpenAi).not.toHaveBeenCalled();
+    expect(coreAgentMocks.createProviderFreePersistence).not.toHaveBeenCalled();
+    expect(adapters.createGoogleConnectorBinding).not.toHaveBeenCalled();
+    expect(adapters.createVoiceProviderBinding).not.toHaveBeenCalled();
+    expect(coreAgentMocks.createCoreRuntimeFactory).not.toHaveBeenCalled();
+
+    const runtimeFactory = coreAgentMocks.runtimeFactories[0] as {
+      check(): Promise<boolean>;
+      create(input: unknown): Promise<unknown>;
+    };
+    await expect(runtimeFactory.check()).resolves.toBe(true);
+    const principal = {
+      userId: '61300000-0000-4000-8000-000000000001',
+      sessionId: '61300000-0000-4000-8000-000000000002',
+      householdId: '61300000-0000-4000-8000-000000000003',
+      privateSpaceId: '61300000-0000-4000-8000-000000000004',
+      role: 'owner',
+      emailVerified: true,
+      spaceAccessGrantId: '61300000-0000-4000-8000-000000000005',
+      collectionAuthorizationScopeFingerprint: 'd'.repeat(64),
+    } as const;
+    await runtimeFactory.create({
+      principal,
+      requestId: '61300000-0000-4000-8000-000000000006',
+      runId: '61300000-0000-4000-8000-000000000007',
+      conversationId: '61300000-0000-4000-8000-000000000008',
+    });
+    expect(finance.createForPrincipal).toHaveBeenCalledWith(principal);
+    expect(coreAgentMocks.createManagerRuntimeFactory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        finance: finance.services,
+        openAi: expect.objectContaining({
+          runner: { run: expect.any(Function) },
+        }),
+        workflowPool: expect.any(Object),
+      }),
+    );
+    const syntheticBundle = coreAgentMocks.createManagerRuntimeFactory.mock
+      .calls[0]?.[0].openAi as {
+      costCalculator: { calculateCadMinor(input: unknown): number };
+    };
+    expect(syntheticBundle.costCalculator.calculateCadMinor({})).toBe(1);
+  });
+
   it('composes the authenticated core agent graph only with its complete workflow, approval, Google, and OpenAI boundaries', async () => {
     const adapters = dependencies();
     const googleCheck = vi.fn(async () => true);
@@ -418,7 +534,7 @@ describe('production durable API service composition', () => {
     expect(googleCheck).not.toHaveBeenCalled();
   });
 
-  it('reports the core manager unavailable when workflow, Google, or either model is unavailable', async () => {
+  it('requires workflow, Google, and Terra, while Luna may be unavailable', async () => {
     const adapters = dependencies();
     const googleCheck = vi.fn(async () => true);
     vi.mocked(adapters.createGoogleConnectorBinding).mockReturnValue({
@@ -437,7 +553,9 @@ describe('production durable API service composition', () => {
         createConditionalGateway: vi.fn(),
       },
     });
-    const modelAvailability = { isAvailable: vi.fn(async () => true) };
+    const modelAvailability = {
+      isAvailable: vi.fn(async (model: string) => model === 'gpt-5.6-terra'),
+    };
     coreAgentMocks.createOpenAi.mockReturnValue({
       modelAvailability,
       costCalculator: { calculateCadMinor: vi.fn(() => 1) },
@@ -456,8 +574,10 @@ describe('production durable API service composition', () => {
     await expect(first).resolves.toBe(true);
     expect(coreAgentMocks.checkWorkflow).toHaveBeenCalledOnce();
     expect(googleCheck).toHaveBeenCalledOnce();
-    expect(modelAvailability.isAvailable).toHaveBeenCalledWith('gpt-5.6-luna');
     expect(modelAvailability.isAvailable).toHaveBeenCalledWith('gpt-5.6-terra');
+    expect(modelAvailability.isAvailable).not.toHaveBeenCalledWith(
+      'gpt-5.6-luna',
+    );
 
     coreAgentMocks.checkWorkflow.mockResolvedValueOnce(false);
     await expect(check()).resolves.toBe(false);
@@ -490,6 +610,154 @@ describe('production durable API service composition', () => {
     expect(coreAgentMocks.createCheckpointCipher).not.toHaveBeenCalled();
     expect(coreAgentMocks.createOpenAi).not.toHaveBeenCalled();
     expect(coreAgentMocks.createAgentPersistence).not.toHaveBeenCalled();
+  });
+
+  it('keeps EMDO available when Scheduler workflow and Google are absent', async () => {
+    const adapters = dependencies();
+    const managerEnvironment = {
+      ...coreAgentEnvironment(),
+      EMDO_WORKFLOW_DATABASE_URL: undefined,
+    };
+
+    const result = await createProductionDurableServiceBindings(
+      managerEnvironment,
+      adapters,
+    );
+
+    expect(result.bindings.managerTurns).toMatchObject({
+      service: { start: expect.any(Function) },
+      check: expect.any(Function),
+    });
+    expect(coreAgentMocks.createCoreRuntimeFactory).not.toHaveBeenCalled();
+    expect(coreAgentMocks.createAgentPersistence).toHaveBeenCalledOnce();
+    const runtimeFactory = coreAgentMocks.runtimeFactories[0] as {
+      create(input: unknown): Promise<unknown>;
+    };
+    await runtimeFactory.create({
+      principal: {
+        userId: '61000000-0000-4000-8000-000000000001',
+        sessionId: '61000000-0000-4000-8000-000000000002',
+        householdId: '61000000-0000-4000-8000-000000000003',
+        privateSpaceId: '61000000-0000-4000-8000-000000000004',
+        role: 'member',
+        emailVerified: true,
+        spaceAccessGrantId: '61000000-0000-4000-8000-000000000005',
+        collectionAuthorizationScopeFingerprint: 'a'.repeat(64),
+      },
+      requestId: '61000000-0000-4000-8000-000000000006',
+      runId: '61000000-0000-4000-8000-000000000007',
+      conversationId: '61000000-0000-4000-8000-000000000008',
+    });
+    expect(coreAgentMocks.createManagerRuntimeFactory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        readPool: vi.mocked(adapters.createDatabaseClient).mock.results[0]!
+          .value.scopedPool,
+      }),
+    );
+    expect(
+      coreAgentMocks.createManagerRuntimeFactory.mock.calls[0]?.[0],
+    ).not.toHaveProperty('finance');
+    await expect(result.bindings.managerTurns!.check()).resolves.toBe(true);
+  });
+
+  it('composes the guarded Manager+Finance graph without Scheduler or Google when workflow and visual decisions are ready', async () => {
+    const adapters = dependencies();
+    const finance = attachReadyFinance(adapters);
+    const result = await createProductionDurableServiceBindings(
+      {
+        ...coreAgentEnvironment(),
+        EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL: experienceCursorKeyring,
+        EMDO_FINANCE_DOCUMENTS_ENABLED: 'true',
+      },
+      adapters,
+    );
+    const runtimeFactory = coreAgentMocks.runtimeFactories[0] as {
+      create(input: unknown): Promise<unknown>;
+    };
+    const principal = {
+      userId: '61100000-0000-4000-8000-000000000001',
+      sessionId: '61100000-0000-4000-8000-000000000002',
+      householdId: '61100000-0000-4000-8000-000000000003',
+      privateSpaceId: '61100000-0000-4000-8000-000000000004',
+      role: 'member',
+      emailVerified: true,
+      spaceAccessGrantId: '61100000-0000-4000-8000-000000000005',
+      collectionAuthorizationScopeFingerprint: 'b'.repeat(64),
+    } as const;
+    await runtimeFactory.create({
+      principal,
+      requestId: '61100000-0000-4000-8000-000000000006',
+      runId: '61100000-0000-4000-8000-000000000007',
+      conversationId: '61100000-0000-4000-8000-000000000008',
+    });
+
+    expect(finance.checkReady).toHaveBeenCalledOnce();
+    expect(finance.createForPrincipal).toHaveBeenCalledWith(principal);
+    expect(coreAgentMocks.createManagerRuntimeFactory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        finance: finance.services,
+        workflowPool: expect.any(Object),
+      }),
+    );
+    expect(
+      coreAgentMocks.createManagerRuntimeFactory.mock.calls[0]?.[0],
+    ).not.toHaveProperty('google');
+    expect(coreAgentMocks.createCoreRuntimeFactory).not.toHaveBeenCalled();
+    expect(result.bindings.financeDocuments).toBeDefined();
+  });
+
+  it('composes Scheduler and Finance independently in the same EMDO runtime', async () => {
+    const adapters = dependencies();
+    const finance = attachReadyFinance(adapters);
+    vi.mocked(adapters.createGoogleConnectorBinding).mockReturnValue({
+      binding: {
+        service: {
+          beginAuthorization: vi.fn(),
+          completeAuthorization: vi.fn(),
+          disconnect: vi.fn(),
+        } as never,
+        check: vi.fn(async () => true),
+      },
+      calendarProposalTargetReaders: {
+        createProposalTargetReader: vi.fn(),
+      },
+      calendarConditionalGateways: {
+        createConditionalGateway: vi.fn(),
+      },
+    });
+    const result = await createProductionDurableServiceBindings(
+      {
+        ...coreAgentEnvironment(),
+        EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL: experienceCursorKeyring,
+        EMDO_FINANCE_DOCUMENTS_ENABLED: 'true',
+      },
+      adapters,
+    );
+    const runtimeFactory = coreAgentMocks.runtimeFactories[0] as {
+      create(input: unknown): Promise<unknown>;
+    };
+    await runtimeFactory.create({
+      principal: {
+        userId: '61200000-0000-4000-8000-000000000001',
+        sessionId: '61200000-0000-4000-8000-000000000002',
+        householdId: '61200000-0000-4000-8000-000000000003',
+        privateSpaceId: '61200000-0000-4000-8000-000000000004',
+        role: 'owner',
+        emailVerified: true,
+        spaceAccessGrantId: '61200000-0000-4000-8000-000000000005',
+        collectionAuthorizationScopeFingerprint: 'c'.repeat(64),
+      },
+      requestId: '61200000-0000-4000-8000-000000000006',
+      runId: '61200000-0000-4000-8000-000000000007',
+      conversationId: '61200000-0000-4000-8000-000000000008',
+    });
+
+    expect(finance.checkReady).toHaveBeenCalledOnce();
+    expect(coreAgentMocks.createCoreRuntimeFactory).toHaveBeenCalledWith(
+      expect.objectContaining({ finance: finance.services }),
+    );
+    expect(coreAgentMocks.createManagerRuntimeFactory).not.toHaveBeenCalled();
+    expect(result.bindings.financeDocuments).toBeDefined();
   });
 
   it('closes OpenAI, Google, and the checkpoint cipher before workflow and API databases', async () => {
@@ -669,6 +937,59 @@ describe('production durable API service composition', () => {
     await result.close?.();
     await result.close?.();
     expect(database.close).toHaveBeenCalledOnce();
+  });
+
+  it('binds encrypted Finance documents independently of Scheduler providers', async () => {
+    const adapters = dependencies();
+    const checkReady = vi.fn(async () => true);
+    const closeFinanceDocuments = vi.fn(async () => undefined);
+    const gateway = {
+      list: vi.fn(),
+      get: vi.fn(),
+      upload: vi.fn(),
+      downloadOriginal: vi.fn(),
+      retry: vi.fn(),
+      getReview: vi.fn(),
+      updateReview: vi.fn(),
+      commitReview: vi.fn(),
+      listMatches: vi.fn(),
+      decideMatch: vi.fn(),
+      getEvidence: vi.fn(),
+      delete: vi.fn(),
+      readExperience: vi.fn(),
+      checkReady,
+      dispose: vi.fn(),
+    };
+    const createFinanceDocumentComposition = vi.fn(async () => ({
+      gateway,
+      close: closeFinanceDocuments,
+    }));
+    Object.assign(adapters, { createFinanceDocumentComposition });
+
+    const result = await createProductionDurableServiceBindings(
+      {
+        EMDO_API_DATABASE_URL: databaseUrl,
+        EMDO_EXPERIENCE_CURSOR_HMAC_KEYRING_B64URL: experienceCursorKeyring,
+      },
+      adapters,
+    );
+
+    const database = vi.mocked(adapters.createDatabaseClient).mock.results[0]!
+      .value;
+    expect(createFinanceDocumentComposition).toHaveBeenCalledOnce();
+    expect(createFinanceDocumentComposition).toHaveBeenCalledWith({
+      environment: expect.any(Object),
+      pool: database.scopedPool,
+      financeRead: result.bindings.financeRead!.service,
+      webRoot: process.cwd(),
+    });
+    expect(result.bindings.financeDocuments?.service).toBe(gateway);
+    await expect(result.bindings.financeDocuments!.check()).resolves.toBe(true);
+    expect(checkReady).toHaveBeenCalledOnce();
+    expect(adapters.createGoogleConnectorBinding).toHaveBeenCalledOnce();
+
+    await result.close?.();
+    expect(closeFinanceDocuments).toHaveBeenCalledOnce();
   });
 
   it('binds authenticated run-event replay to the existing API scoped pool', async () => {

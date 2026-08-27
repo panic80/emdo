@@ -30,7 +30,7 @@ const connectionStringFor = (username: string, password: string) => {
 };
 
 describeDatabase(
-  'initial owner bootstrap on a disposable PostgreSQL 17 database (requires TEST_BOOTSTRAP_DATABASE_URL)',
+  'initial owner bootstrap on a disposable PostgreSQL 18 database (requires TEST_BOOTSTRAP_DATABASE_URL)',
   () => {
     let adminDatabase: EmdoDatabaseClient;
     let admin: EmdoDatabaseClient['pool'];
@@ -63,8 +63,9 @@ describeDatabase(
         emdo_schema_exists: false,
       });
       expect(preflight.rows[0]?.server_version_num).toBeGreaterThanOrEqual(
-        170_000,
+        180_000,
       );
+      expect(preflight.rows[0]?.server_version_num).toBeLessThan(190_000);
 
       const migrations = await loadOrderedMigrations();
       expect(migrations[2]?.id).toBe('0002_owner_bootstrap');

@@ -101,7 +101,7 @@ const sourceHash = createHash('sha256')
   .digest('hex');
 
 describeDatabase(
-  'PostgreSQL 17 finance import receipts (requires isolated empty TEST_FINANCE_IMPORT_DATABASE_URL)',
+  'PostgreSQL 18 finance import receipts (requires isolated empty TEST_FINANCE_IMPORT_DATABASE_URL)',
   () => {
     let admin: import('pg').Pool;
     let runtime: EmdoDatabaseClient;
@@ -247,10 +247,10 @@ describeDatabase(
                 version() as server_version`,
       );
       expect(Number(server.rows[0]?.server_version_num)).toBeGreaterThanOrEqual(
-        170_000,
+        180_000,
       );
-      expect(Number(server.rows[0]?.server_version_num)).toBeLessThan(180_000);
-      expect(server.rows[0]?.server_version).toMatch(/PostgreSQL 17\./u);
+      expect(Number(server.rows[0]?.server_version_num)).toBeLessThan(190_000);
+      expect(server.rows[0]?.server_version).toMatch(/PostgreSQL 18\./u);
       const existing = await admin.query<{ emdo: string | null }>(
         "select to_regnamespace('emdo')::text as emdo",
       );

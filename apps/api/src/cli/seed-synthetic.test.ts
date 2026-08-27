@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { SyncOperationSchema } from '@emdo/contracts';
 import { resolveDeterministicSyncOperation } from '@emdo/domains/conflicts';
+import { FinanceRecordSchema } from '@emdo/domains/finance';
 
 import {
   formatSyntheticSeedFailure,
@@ -197,6 +198,10 @@ describe('synthetic staging seed CLI', () => {
     const uploadedOperations = SyncOperationSchema.array().parse(
       (uploadedBody as { operations: unknown }).operations,
     );
+    expect(uploadedOperations).toHaveLength(3);
+    expect(upload.headers.get('idempotency-key')).toBe(
+      'synthetic-domain-seed-v1',
+    );
     expect(
       uploadedOperations.map(
         (seedOperation) =>
@@ -206,6 +211,129 @@ describe('synthetic staging seed CLI', () => {
     ).toEqual(['applied', 'applied', 'applied']);
   });
 
+  it('adds only the canonical owner-bound Finance account in explicit Finance mode', async () => {
+    const bootstrapOwner = vi.fn(async () => 0);
+    let uploadedBody: { operations: unknown[] } | undefined;
+    let uploadRequest: Request | undefined;
+    const fetch = vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === '/api/auth/sign-in/email') {
+        return new Response('{}', {
+          status: 200,
+          headers: {
+            'set-cookie':
+              '__Secure-emdo.session_token=synthetic-session; Path=/; Secure; HttpOnly',
+          },
+        });
+      }
+      if (path === '/api/auth/get-session') {
+        return Response.json({ user: { id: USER_ID } });
+      }
+      if (path === '/api/v1/auth/csrf') {
+        return Response.json({
+          schemaVersion: 1,
+          token: 'csrf-token-01234567890123456789',
+        });
+      }
+      if (path === '/api/v1/sync/clients') {
+        return Response.json({
+          schemaVersion: 1,
+          clientId: CLIENT_ID,
+          status: 'registered',
+          replayed: false,
+        });
+      }
+      if (path === '/api/v1/sync/token') {
+        return Response.json({
+          schemaVersion: 1,
+          endpoint: 'https://staging.emdo.invalid/powersync',
+          token: jwt(),
+          expiresAt: '2026-08-09T12:05:00.000Z',
+          writeScope: {
+            clientId: CLIENT_ID,
+            spaces: [
+              {
+                id: SPACE_ID,
+                visibility: 'private',
+                originalOwnerUserId: USER_ID,
+              },
+            ],
+          },
+        });
+      }
+      if (path === '/api/v1/sync/ops') {
+        uploadRequest = request;
+        uploadedBody = (await request.json()) as { operations: unknown[] };
+        return Response.json({
+          schemaVersion: 1,
+          clientId: CLIENT_ID,
+          results: uploadedBody.operations.map((entry) => ({
+            operationId: (entry as { operationId: string }).operationId,
+            status: 'applied',
+            revision: 1,
+            resolution: 'created',
+            conflicts: [],
+            replayed: false,
+          })),
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    await expect(
+      runSyntheticSeedCommand({
+        argv: ['--fail-if-nonempty', '--staging-only'],
+        environment: {
+          ...environment(),
+          EMDO_FINANCE_SYNTHETIC_STAGING: 'true',
+        },
+        bootstrapOwner,
+        fetch,
+      }),
+    ).resolves.toEqual({ status: 'seeded', operationCount: 4 });
+
+    expect(uploadRequest?.headers.get('idempotency-key')).toBe(
+      'synthetic-finance-domain-seed-v1',
+    );
+    const uploadedOperations = SyncOperationSchema.array().parse(
+      uploadedBody?.operations,
+    );
+    expect(uploadedOperations).toHaveLength(4);
+    const account = uploadedOperations.find(
+      (seedOperation) => seedOperation.entity.type === 'finance.account',
+    );
+    expect(account).toMatchObject({
+      operationId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f84',
+      entity: { id: 'synthetic-finance-account-v1' },
+      mutation: { payload: { spaceId: SPACE_ID } },
+    });
+    const payload = account?.mutation.payload;
+    if (
+      payload === null ||
+      payload === undefined ||
+      typeof payload !== 'object' ||
+      !('value' in payload)
+    ) {
+      throw new Error('expected Finance account payload');
+    }
+    const record = FinanceRecordSchema.parse(payload.value);
+    expect(record).toEqual({
+      schemaVersion: 1,
+      id: 'synthetic-finance-account-v1',
+      spaceId: SPACE_ID,
+      ownerUserId: USER_ID,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      recordType: 'account',
+      name: 'Synthetic staging chequing',
+      accountKind: 'chequing',
+      currency: 'CAD',
+      openingBalanceCadMinor: 0,
+      active: true,
+      source: 'manual',
+    });
+  });
+
   it('fails closed outside an isolated provider-disabled staging environment', async () => {
     const bootstrapOwner = vi.fn(async () => 0);
     const fetch = vi.fn();
@@ -213,6 +341,7 @@ describe('synthetic staging seed CLI', () => {
       { ...environment(), EMDO_ENVIRONMENT: 'production' },
       { ...environment(), EMDO_EXTERNAL_PROVIDERS_ENABLED: 'true' },
       { ...environment(), EMDO_SYNTHETIC_DATA_ONLY: 'false' },
+      { ...environment(), EMDO_FINANCE_SYNTHETIC_STAGING: 'enabled' },
     ]) {
       await expect(
         runSyntheticSeedCommand({
@@ -290,6 +419,9 @@ describe('synthetic staging seed CLI', () => {
             },
           });
         }
+        if (new URL(request.url).pathname === '/api/auth/get-session') {
+          return Response.json({ user: { id: USER_ID } });
+        }
         return new Response(responseBody, { status });
       });
       let caught: unknown;
@@ -321,6 +453,9 @@ describe('synthetic staging seed CLI', () => {
               '__Secure-emdo.session_token=private-session; Path=/; Secure; HttpOnly',
           },
         });
+      }
+      if (new URL(request.url).pathname === '/api/auth/get-session') {
+        return Response.json({ user: { id: USER_ID } });
       }
       return new Response(responseBody, { status: 200 });
     });

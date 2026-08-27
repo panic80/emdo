@@ -1,5 +1,6 @@
 import type { LocalTraceEvent } from '../../packages/agent-core/src/trace.js';
 import type { EffectiveAuthorizationScopeFingerprint } from '../../packages/contracts/src/capability.js';
+import type { SupportedLocale } from '../../packages/contracts/src/locale.js';
 
 import { normalizeLocalTraceEvents } from './local-trace-adapter.js';
 import type {
@@ -21,6 +22,7 @@ export interface AgentOrchestratorEvalTurnInput {
   readonly spaceAccessGrantId: string;
   readonly authorizationScopeFingerprint: EvalAuthorizationScopeFingerprint;
   readonly disclosureGrantId: string;
+  readonly locale: SupportedLocale;
   readonly message: string;
   readonly escalationTriggers: readonly (
     | 'dependent-cross-domain'
@@ -43,6 +45,7 @@ export interface AgentOrchestratorEvalResumeInput {
   readonly authorizationScopeFingerprint: EvalAuthorizationScopeFingerprint;
   readonly disclosureGrantId: string;
   readonly disclosureGrantVersion: string;
+  readonly locale: SupportedLocale;
   readonly checkpointId: string;
   readonly interruptionId: string;
   readonly proposalId: string;
@@ -359,6 +362,7 @@ export const createAgentOrchestratorEvalDriver = (options: {
             evalCase.turn.authorizationScopeFingerprint,
           disclosureGrantId: evalCase.turn.disclosureGrantId,
           disclosureGrantVersion: '1.0.0',
+          locale: evalCase.turn.locale,
           checkpointId: checkpoint.checkpointId,
           interruptionId: interrupted.interruptionId,
           proposalId: interrupted.proposalId,
@@ -404,6 +408,7 @@ export const createAgentOrchestratorEvalDriver = (options: {
             evalCase.turn.authorizationScopeFingerprint,
           disclosureGrantId: evalCase.turn.disclosureGrantId,
           disclosureGrantVersion: '1.0.0',
+          locale: evalCase.turn.locale,
           checkpointId: checkpoint.checkpointId,
           interruptionId: interrupted.interruptionId,
           proposalId: interrupted.proposalId,

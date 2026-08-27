@@ -7,10 +7,19 @@ import {
   type PropsWithChildren,
 } from 'react';
 
+import type { SupportedLocale } from '@emdo/contracts/browser';
+
+import { Button } from '../../components/button.js';
 import { Icon } from '../../components/icon.js';
 import { VoicePanel } from '../voice/voice-panel.js';
 import { SpokenReplyControls } from '../voice/spoken-reply-controls.js';
 import { speakSummary } from '../voice/voice-api.js';
+import {
+  createFinanceDocumentApi,
+  type FinanceDocumentApi,
+  type FinanceDocumentEvidenceList,
+} from '../finance-v1/finance-document-api.js';
+import { financeCopy } from '../finance-v1/finance-locales.js';
 import {
   createTurn,
   PersistedRunEventBuffer,
@@ -20,12 +29,14 @@ import {
 } from './sse-client.js';
 import { AskComposer } from './ask-composer.js';
 import { useAuth } from '../auth/auth-context.js';
+import { useActiveLocale } from '../locale/locale-preference.js';
 
 export interface ConversationMessage {
   readonly id: string;
   readonly role: 'user' | 'assistant';
   readonly text: string;
   readonly pending?: boolean;
+  readonly evidenceReferences?: readonly string[];
 }
 
 interface ConversationState {
@@ -35,12 +46,17 @@ interface ConversationState {
   readonly submit: (
     message: string,
     specialist?: AssistantSpecialist,
+    locale?: SupportedLocale,
   ) => Promise<{ readonly turnId: string; readonly text: string } | undefined>;
 }
 
 const ConversationContext = createContext<ConversationState | undefined>(
   undefined,
 );
+
+const MAXIMUM_EVIDENCE_REFERENCES = 128;
+const MAXIMUM_VISIBLE_EVIDENCE_ITEMS = 5;
+const MAXIMUM_VISIBLE_EVIDENCE_EXCERPT_CHARACTERS = 500;
 
 function eventEnvelope(event: PersistedRunEvent): {
   readonly type: string;
@@ -69,8 +85,123 @@ function textFromPayload(payload: unknown): string | undefined {
   return undefined;
 }
 
+function recordFrom(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function financeEvidenceReferencesFromCompletedPayload(
+  payload: unknown,
+): readonly string[] {
+  const completed = recordFrom(payload);
+  const output = recordFrom(completed?.output);
+  const references = output?.evidenceReferences;
+  const specialistOutcomes = completed?.specialistOutcomes;
+  if (!Array.isArray(references) || !Array.isArray(specialistOutcomes))
+    return [];
+  const financeReferences = new Set<string>();
+  for (const rawOutcome of specialistOutcomes) {
+    const outcome = recordFrom(rawOutcome);
+    if (outcome?.specialistId !== 'finance' || outcome.status !== 'completed')
+      continue;
+    const specialistOutput = recordFrom(outcome.output);
+    const specialistReferences = specialistOutput?.evidenceReferences;
+    if (!Array.isArray(specialistReferences)) continue;
+    for (const reference of specialistReferences) {
+      if (typeof reference !== 'string') continue;
+      const id = reference.trim();
+      if (id && id.length <= 512) financeReferences.add(id);
+    }
+  }
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const reference of references) {
+    if (typeof reference !== 'string') continue;
+    const id = reference.trim();
+    if (!id || id.length > 512 || seen.has(id) || !financeReferences.has(id))
+      continue;
+    seen.add(id);
+    result.push(id);
+    if (result.length === MAXIMUM_EVIDENCE_REFERENCES) break;
+  }
+  return result;
+}
+
+function boundedEvidenceExcerpt(excerpt: string): string {
+  const characters = Array.from(excerpt);
+  return characters.length > MAXIMUM_VISIBLE_EVIDENCE_EXCERPT_CHARACTERS
+    ? `${characters.slice(0, MAXIMUM_VISIBLE_EVIDENCE_EXCERPT_CHARACTERS).join('')}…`
+    : excerpt;
+}
+
+function FinanceEvidenceReferences({
+  evidenceReferences,
+  locale,
+  api,
+}: {
+  readonly evidenceReferences: readonly string[];
+  readonly locale: SupportedLocale;
+  readonly api: FinanceDocumentApi;
+}) {
+  const copy = financeCopy[locale];
+  const [evidence, setEvidence] = useState<FinanceDocumentEvidenceList>();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const openEvidence = async (id: string) => {
+    setLoading(true);
+    setError(false);
+    try {
+      setEvidence(await api.readEvidence(id));
+    } catch {
+      setEvidence(undefined);
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+  const items = evidence?.items.slice(0, MAXIMUM_VISIBLE_EVIDENCE_ITEMS) ?? [];
+  return (
+    <section aria-label={copy.evidenceReferences}>
+      <div>
+        {evidenceReferences.map((reference, index) => (
+          <Button
+            aria-label={`${copy.evidenceReferences} ${index + 1}`}
+            key={reference}
+            type="button"
+            variant="quiet"
+            onClick={() => void openEvidence(reference)}
+          >
+            {copy.evidenceReferences} {index + 1}
+          </Button>
+        ))}
+      </div>
+      {loading ? <p role="status">{copy.evidence}</p> : null}
+      {error ? (
+        <p className="inline-error" role="alert">
+          {copy.evidenceError}
+        </p>
+      ) : null}
+      {items.length > 0 ? (
+        <ul>
+          {items.map((item) => (
+            <li key={item.id}>
+              <p>
+                {copy.evidencePage} {item.page} · {copy.sourceLocale}:{' '}
+                {item.sourceLocale}
+              </p>
+              <p>{boundedEvidenceExcerpt(item.excerpt)}</p>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
 export function ConversationProvider({ children }: PropsWithChildren) {
   const auth = useAuth();
+  const activeLocale = useActiveLocale();
   const [messages, setMessages] = useState<readonly ConversationMessage[]>([
     {
       id: 'welcome',
@@ -85,6 +216,7 @@ export function ConversationProvider({ children }: PropsWithChildren) {
   const submit = async (
     rawMessage: string,
     specialist: AssistantSpecialist = 'manager',
+    locale: SupportedLocale = activeLocale,
   ) => {
     const message = rawMessage.trim();
     if (!message) return;
@@ -114,6 +246,7 @@ export function ConversationProvider({ children }: PropsWithChildren) {
           message,
           specialist,
           csrfToken,
+          locale,
           idempotencyKey: `turn-${crypto.randomUUID()}`,
         },
         { signal: controller.signal },
@@ -142,15 +275,31 @@ export function ConversationProvider({ children }: PropsWithChildren) {
             ),
           );
         }
-        if (
-          (type === 'assistant.message' || type === 'run.completed') &&
-          text
-        ) {
+        if (type === 'assistant.message' && text) {
           assistantText = text;
           setMessages((current) =>
             current.map((item) =>
               item.id === assistantId
                 ? { ...item, text, pending: false }
+                : item,
+            ),
+          );
+        }
+        if (type === 'run.completed') {
+          const evidenceReferences =
+            financeEvidenceReferencesFromCompletedPayload(payload);
+          if (text) assistantText = text;
+          setMessages((current) =>
+            current.map((item) =>
+              item.id === assistantId
+                ? {
+                    ...item,
+                    ...(text ? { text } : {}),
+                    pending: false,
+                    ...(evidenceReferences.length > 0
+                      ? { evidenceReferences }
+                      : {}),
+                  }
                 : item,
             ),
           );
@@ -183,7 +332,7 @@ export function ConversationProvider({ children }: PropsWithChildren) {
 
   const value = useMemo(
     () => ({ messages, status, error, submit }),
-    [auth.csrfToken, messages, status, error],
+    [activeLocale, auth.csrfToken, messages, status, error],
   );
   return (
     <ConversationContext.Provider value={value}>
@@ -201,11 +350,18 @@ export function useConversation(): ConversationState {
 
 export function ConversationPanel({
   specialist = 'manager',
+  financeDocumentApi: suppliedFinanceDocumentApi,
 }: {
   readonly specialist?: AssistantSpecialist;
+  readonly financeDocumentApi?: FinanceDocumentApi;
 }) {
   const auth = useAuth();
   const conversation = useConversation();
+  const locale = useActiveLocale();
+  const financeDocumentApi = useMemo(
+    () => suppliedFinanceDocumentApi ?? createFinanceDocumentApi(),
+    [suppliedFinanceDocumentApi],
+  );
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [spokenReply, setSpokenReply] = useState<{
     readonly response: Response;
@@ -226,6 +382,13 @@ export function ConversationPanel({
               {message.role === 'assistant' ? 'EMDO' : 'You'}
             </span>
             <p>{message.text || (message.pending ? 'Thinking…' : '')}</p>
+            {message.evidenceReferences?.length ? (
+              <FinanceEvidenceReferences
+                api={financeDocumentApi}
+                evidenceReferences={message.evidenceReferences}
+                locale={locale}
+              />
+            ) : null}
           </article>
         ))}
       </div>

@@ -198,6 +198,7 @@ describe('API production package', () => {
       '@better-auth/passkey',
       '@better-auth/utils',
       '@better-fetch/fetch',
+      '@fastify/multipart',
       '@openai/agents',
       'better-auth',
       'better-call',
@@ -208,6 +209,7 @@ describe('API production package', () => {
       'kysely',
       'music-metadata',
       'nanostores',
+      'pdf-parse',
       'pg',
       'zod',
     ]);

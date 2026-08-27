@@ -15,6 +15,7 @@ import {
 } from '@emdo/domains/server/provider-proposals';
 import {
   hashCanonicalJson,
+  hashCapabilityDescriptorBinding,
   hashProviderWriteApprovalBinding,
   type ProviderWriteApprovalStore,
 } from '@emdo/toolbox';
@@ -254,6 +255,7 @@ const context: AgentExecutionContext = Object.freeze({
   authenticatedSessionId: ids.session,
   spaceAccessGrantId: ids.spaceAccessGrant,
   authorizationScopeFingerprint,
+  locale: 'en-CA',
   disclosureGrantId: ids.grant,
   disclosureGrantVersion: '1.0.0',
   agentId: 'scheduler',
@@ -332,6 +334,53 @@ const setup = (authenticatedSessionId: string = ids.session) => {
 };
 
 describe('production provider proposal gateway', () => {
+  it('returns a fail-closed gateway for a registered graph without Scheduler', async () => {
+    const configured = setup();
+    const noProviderRuntime = {
+      materializeProviderWriteProposal: vi.fn(async () => {
+        throw new Error('test-no-provider-materializer-must-not-run');
+      }),
+      registry: {
+        resolveForAgent: vi.fn(() => [
+          {
+            descriptor: {
+              id: 'finance.records.read',
+              capabilityKind: 'read',
+            },
+          },
+        ]),
+      },
+      manifests: {
+        manager: { id: 'manager', capabilityAllowlist: [] },
+        finance: {
+          id: 'finance',
+          capabilityAllowlist: ['finance.records.read'],
+        },
+      },
+    } as unknown as ProductionCapabilityRuntime;
+    const gateway = configured.composition.createGateway(noProviderRuntime);
+
+    await expect(
+      gateway.resolvePrepared({ capabilityId, sdkCallId, context }),
+    ).resolves.toBeUndefined();
+    await expect(
+      gateway.validateDecision({
+        proposalId: ids.proposal,
+        approvalDecisionId: ids.decision,
+        capabilityId,
+        context,
+        preparationContext: context,
+        decision: 'approve',
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      gateway.prepare({ capabilityId, sdkCallId, canonicalArguments, context }),
+    ).rejects.toThrow('api-provider-write-capability-unregistered');
+    expect(
+      noProviderRuntime.materializeProviderWriteProposal,
+    ).not.toHaveBeenCalled();
+  });
+
   it('prepares and resolves the same durable SDK-bound proposal without a process-local store', async () => {
     const { composition, gateway, lookup, materializeProviderWriteProposal } =
       setup();
@@ -571,5 +620,232 @@ describe('production provider proposal gateway', () => {
       }),
     ).resolves.toMatchObject({ outcome: 'rejected' });
     expect(rejectedInvoke).not.toHaveBeenCalled();
+  });
+
+  it('mints a Finance guarded-action permit only for an approved durable decision and never invokes on rejection', async () => {
+    const financeCapabilityId = 'finance.records.write';
+    const financeDescriptor = Object.freeze({
+      id: financeCapabilityId,
+      version: '1.0.0',
+      capabilityKind: 'local-write' as const,
+    });
+    const financeArguments = Object.freeze({
+      schemaVersion: 1 as const,
+      mutation: {
+        kind: 'adjust' as const,
+        transactionId: 'transaction-1',
+        amountCadMinor: 50,
+        reason: 'Correct the receipt total.',
+      },
+    });
+    const financeActionHash = hashCanonicalJson(financeArguments);
+    const financeExecutionBindingHash = hashCanonicalJson({
+      domain: 'test.finance.execution-binding',
+      proposalId: ids.proposal,
+    });
+    const financeProposalInput = {
+      ...proposalInput,
+      capabilityId: financeCapabilityId,
+      capabilityFingerprint: hashCapabilityDescriptorBinding(
+        financeDescriptor as never,
+      ),
+      canonicalArguments: financeArguments,
+      targets: [
+        {
+          kind: 'finance.guarded-action',
+          id: financeActionHash,
+          expectedVersion: '1.0.0',
+        },
+      ],
+      beforePreview: { state: 'not-applied' },
+      afterPreview: { state: 'approved-action' },
+      approvalDisplay: {
+        schemaVersion: 1 as const,
+        title: 'Review Finance action',
+        summary: 'EMDO needs approval before applying this Finance action.',
+        beforeSummary: 'No Finance change has been applied.',
+        afterSummary: 'EMDO will apply the approved action.',
+        fields: [{ label: 'Action', value: 'finance-adjustment' }],
+      },
+      providerPreconditions: [
+        {
+          kind: 'finance.guarded-action-binding',
+          targetId: financeActionHash,
+          expectedValue: financeExecutionBindingHash,
+        },
+      ],
+      providerAuthorityBindingHash: financeExecutionBindingHash,
+      providerSdkCallId: 'finance-sdk-call-1',
+      guardedAction: {
+        capabilityVersion: '1.0.0',
+        operation: 'finance-adjustment',
+        actionHash: financeActionHash,
+        executionBindingHash: financeExecutionBindingHash,
+      },
+      payloadHash: financeActionHash,
+      disclosureGrant: {
+        ...proposal.disclosureGrant,
+        agentId: 'finance',
+        purpose: 'Execute one Finance specialist action.',
+        recordAllowlist: [
+          {
+            dataClass: 'finance.transactions',
+            recordId: 'transaction-1',
+            fields: ['ledger'],
+          },
+        ],
+        provider: 'openai' as const,
+      },
+      idempotencyKey: 'proposal:finance:018f1f5e',
+      state: 'pending' as const,
+    };
+    const financeProposal = ActionProposalSchema.parse({
+      ...financeProposalInput,
+      approvalHash: hashActionProposalApproval(financeProposalInput),
+    });
+    const financePreparationBinding = {
+      ...preparationBinding,
+      proposalId: financeProposal.id,
+      agentId: 'finance',
+      capabilityId: financeCapabilityId,
+      sdkCallId: financeProposal.providerSdkCallId,
+      providerAuthorityBindingHash: financeExecutionBindingHash,
+      disclosureGrantId: financeProposal.disclosureGrant.id,
+    };
+    const financePreparation: StoredProposalPreparation = Object.freeze({
+      binding: financePreparationBinding,
+      bindingHash: hashCanonicalJson({
+        domain: 'emdo.provider-proposal-preparation.v1',
+        binding: financePreparationBinding,
+      }),
+    });
+    const financeApprovedProposal = ActionProposalSchema.parse({
+      ...financeProposal,
+      version: 2,
+      state: 'approved',
+    });
+    const financeApprovedDecision: StoredDecision = Object.freeze({
+      proposalId: financeProposal.id,
+      decision: ActionDecisionSchema.parse({
+        ...approvedDecision.decision,
+        proposalId: financeProposal.id,
+        payloadHash: financeProposal.payloadHash,
+        approvalHash: financeProposal.approvalHash,
+        decision: 'approved',
+      }),
+    });
+    const invoke = vi.fn(async () => ({
+      schemaVersion: 1,
+      result: { status: 'applied' },
+    }));
+    const lookup: DurableProviderProposalLookup = {
+      resolvePreparedBySdkBinding: vi.fn(async () => ({
+        proposal: financeProposal,
+        preparation: financePreparation,
+      })),
+      resolveDecisionById: vi.fn(async () => ({
+        proposal: financeApprovedProposal,
+        preparation: financePreparation,
+        decision: financeApprovedDecision,
+      })),
+      resolveProviderWriteCompletionByDecisionId: vi.fn(async () => undefined),
+    };
+    const presenter: TrustedProviderWriteDecisionPresenter = {
+      present: vi.fn(async () => ({
+        summary: 'Finance action completed.',
+        clarificationQuestion: null,
+        evidenceReferences: [],
+        derivedValueReferences: [],
+        actionProposalReferences: [financeProposal.id],
+      })),
+    };
+    const runtime = {
+      materializeProviderWriteProposal: vi.fn(),
+      materializeGuardedActionProposal: vi.fn(),
+      registry: {
+        resolveForAgent: vi.fn(() => [
+          { descriptor: financeDescriptor, invoke },
+        ]),
+      },
+      manifests: {
+        finance: {
+          id: 'finance',
+          capabilityAllowlist: [financeCapabilityId],
+        },
+      },
+    } as unknown as ProductionCapabilityRuntime;
+    const composition = createProductionProviderProposalComposition({
+      proposalService: { approvalStore, abandonPrepared: vi.fn() },
+      lookup,
+      presenter,
+      authenticatedSessionId: ids.session,
+      now: () => new Date('2026-08-10T14:02:00.000Z'),
+    });
+    const gateway = composition.createGateway(runtime);
+    const financeContext: AgentExecutionContext = Object.freeze({
+      ...context,
+      agentId: 'finance',
+      disclosureGrantId: financeProposal.disclosureGrant.id,
+      approvalDecisionId: ids.decision,
+    });
+
+    await expect(
+      gateway.executeDecision({
+        proposalId: financeProposal.id,
+        approvalDecisionId: ids.decision,
+        capabilityId: financeCapabilityId,
+        context: financeContext,
+        preparationContext: financeContext,
+        decision: 'approve',
+      }),
+    ).resolves.toMatchObject({
+      outcome: 'executed-readback-verified',
+      idempotencyKey: financeProposal.idempotencyKey,
+    });
+    expect(invoke).toHaveBeenCalledWith(
+      financeArguments,
+      expect.objectContaining({
+        guardedActionPermit: {
+          proposalId: financeProposal.id,
+          decisionId: ids.decision,
+          capabilityId: financeCapabilityId,
+          capabilityVersion: '1.0.0',
+          capabilityFingerprint: financeProposal.capabilityFingerprint,
+          operation: 'finance-adjustment',
+          actionHash: financeActionHash,
+          executionBindingHash: financeExecutionBindingHash,
+        },
+      }),
+    );
+
+    const rejectedProposal = ActionProposalSchema.parse({
+      ...financeProposal,
+      version: 2,
+      state: 'rejected',
+    });
+    const rejectedDecision: StoredDecision = Object.freeze({
+      proposalId: financeProposal.id,
+      decision: ActionDecisionSchema.parse({
+        ...financeApprovedDecision.decision,
+        decision: 'rejected',
+      }),
+    });
+    vi.mocked(lookup.resolveDecisionById).mockResolvedValue({
+      proposal: rejectedProposal,
+      preparation: financePreparation,
+      decision: rejectedDecision,
+    });
+    invoke.mockClear();
+    await expect(
+      gateway.executeDecision({
+        proposalId: financeProposal.id,
+        approvalDecisionId: ids.decision,
+        capabilityId: financeCapabilityId,
+        context: financeContext,
+        preparationContext: financeContext,
+        decision: 'reject',
+      }),
+    ).resolves.toMatchObject({ outcome: 'rejected' });
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

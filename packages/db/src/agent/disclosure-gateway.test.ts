@@ -36,7 +36,7 @@ const resolvedGrant = {
     {
       dataClass: 'finance.transactions',
       recordId: 'transaction-1',
-      fields: ['merchant', 'amount-cad-minor'],
+      fields: ['amount-cad-minor', 'merchant'],
     },
   ],
   grant_hash: 'a'.repeat(64),
@@ -135,6 +135,34 @@ const schedulerGrantResolution = {
   created_at: new Date(schedulerGrant.createdAt),
   expires_at: new Date(schedulerGrant.expiresAt),
   database_time: new Date('2026-08-10T12:02:00.000Z'),
+};
+
+const financeGrant = {
+  schemaVersion: 1 as const,
+  id: ids.grantId,
+  version: 3,
+  userId: ids.userId,
+  householdId: ids.householdId,
+  agentId: 'finance' as const,
+  purpose: 'Explain this run budget without unrelated private records.',
+  runId: ids.runId,
+  recordAllowlist: [
+    {
+      dataClass: 'finance.transactions',
+      recordId: 'transaction-1',
+      fields: ['amount-cad-minor', 'merchant'],
+    },
+  ],
+  provider: 'openai' as const,
+  createdAt: '2026-08-10T12:00:00.000Z',
+  expiresAt: '2026-08-10T12:10:00.000Z',
+  oneRunOnly: true as const,
+};
+
+const financeGrantResolution = {
+  ...resolvedGrant,
+  record_allowlist: financeGrant.recordAllowlist,
+  grant_hash: hashDataDisclosureGrant(financeGrant),
 };
 
 const schedulerResolverScope = {
@@ -404,6 +432,38 @@ describe('PostgresSchedulerDisclosureGrantResolver', () => {
     ).toBe(false);
   });
 
+  it('resolves only the exact active Finance specialist grant', async () => {
+    const { pool, query } = poolFor((sql) =>
+      sql.includes('resolve_model_disclosure_grant')
+        ? [financeGrantResolution]
+        : [],
+    );
+    const resolver = new PostgresSchedulerDisclosureGrantResolver(
+      pool,
+      principal,
+      {
+        ...schedulerResolverScope,
+        agentId: 'finance',
+      },
+    );
+
+    await expect(resolver.resolve(ids.grantId)).resolves.toEqual(financeGrant);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('resolve_model_disclosure_grant'),
+      [
+        ids.grantId,
+        ids.runId,
+        ids.householdId,
+        ids.userId,
+        ids.spaceAccessGrantId,
+        'finance',
+        'specialist-execution',
+        'openai',
+        '[]',
+      ],
+    );
+  });
+
   it('fails closed on a malformed active binding or a durable denial without recording authorization', async () => {
     const malformed = {
       ...schedulerGrantResolution,
@@ -455,6 +515,21 @@ describe('PostgresSchedulerDisclosureGrantResolver', () => {
     ).toThrow(/active principal/i);
     expect(query).not.toHaveBeenCalled();
   });
+
+  it.each(['manager', 'shopping', 'unknown'])(
+    'fails closed for an unregistered specialist agent %s',
+    (agentId) => {
+      const { pool, query } = poolFor(() => []);
+      expect(
+        () =>
+          new PostgresSchedulerDisclosureGrantResolver(pool, principal, {
+            ...schedulerResolverScope,
+            agentId,
+          } as never),
+      ).toThrow(/active principal/i);
+      expect(query).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('PostgresDataDisclosureGrantIssuer', () => {

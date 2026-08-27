@@ -21,6 +21,7 @@ const turn = (
     runId: `018f1f5e-6f47-7d61-a6dd-1e86f8b8${suffix.padStart(4, '0')}`,
     ...baseEvalIdentity,
     disclosureGrantId: disclosureFixture.grantId,
+    locale: 'en-CA',
     message,
     escalationTriggers: escalationTriggers ?? [],
   });

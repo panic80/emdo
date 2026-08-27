@@ -1090,7 +1090,7 @@ describe('real AgentOrchestrator eval path', () => {
     );
   });
 
-  it('fails the whole turn when parallel delegations each attempt a provider write', async () => {
+  it('rejects duplicate section delegations before either provider write can start', async () => {
     const item = evalCase('multiple-provider-writes-require-separate-turns');
     const traces = new TraceBuffer();
     const providerAuthorityBindingHash = 'b'.repeat(64);
@@ -1276,24 +1276,16 @@ describe('real AgentOrchestrator eval path', () => {
     expect(result).toMatchObject({
       status: 'failed',
       safeError: {
-        code: 'multiple-provider-writes-require-separate-turns',
+        code: 'invalid-manager-plan',
         retryable: false,
       },
     });
-    expect(result.specialistOutcomes).toHaveLength(2);
-    expect(
-      result.specialistOutcomes.every(
-        (outcome) =>
-          outcome.status === 'failed' &&
-          outcome.safeError?.code ===
-            'multiple-provider-writes-require-separate-turns',
-      ),
-    ).toBe(true);
-    expect(proposalPreparations).toBe(1);
-    expect(proposalAbandonments).toBe(1);
+    expect(result.specialistOutcomes).toHaveLength(0);
+    expect(proposalPreparations).toBe(0);
+    expect(proposalAbandonments).toBe(0);
     expect(providerActionExecutions).toBe(0);
     expect(checkpointCreates).toBe(0);
-    expect(runnerCalls).toBe(2);
+    expect(runnerCalls).toBe(0);
     expect(
       traces
         .take(result.localTraceReference)

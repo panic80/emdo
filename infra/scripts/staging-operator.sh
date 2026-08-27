@@ -259,22 +259,49 @@ install_release() {
 }
 
 deploy_release() {
-  [[ "$#" == 3 ]] || die 'deploy requires run ID, initial-deployment flag, and TTL'
+  [[ "$#" == 3 || "$#" == 4 ]] ||
+    die 'deploy requires run ID, initial-deployment flag, TTL, and optional Finance synthetic-staging flag'
   local run_id="$1"
   local initial_deployment="$2"
   local ttl_minutes="$3"
+  local finance_synthetic_staging="${4:-false}"
+  local -a finance_key_lines=()
   assert_safe_run_id "$run_id"
   [[ "$initial_deployment" == true || "$initial_deployment" == false ]] ||
     die 'initial-deployment flag is invalid'
   [[ "$ttl_minutes" =~ ^[0-9]{1,3}$ ]] || die 'staging TTL is invalid'
+  [[ "$finance_synthetic_staging" == true || "$finance_synthetic_staging" == false ]] ||
+    die 'Finance synthetic-staging flag is invalid'
+  if [[ "$finance_synthetic_staging" == true ]]; then
+    # Receive the Finance-only key through this root action's stdin before the
+    # one-use release record is consumed. It never becomes an argument, env var,
+    # log entry, or on-host command line.
+    mapfile -t finance_key_lines
+    [[ "${#finance_key_lines[@]}" == 1 && ${#finance_key_lines[0]} -ge 16 &&
+      ${#finance_key_lines[0]} -le 512 &&
+      "${finance_key_lines[0]}" =~ ^[A-Za-z0-9_-]+$ ]] ||
+      die 'Finance staging key must be one protected stdin line with a valid format'
+  fi
   load_record "$run_id"
   [[ "$RECORD_STATUS" == installed ]] || die 'staging release has already been consumed'
   # Consume before invoking candidate code. A failed attempt must use a new,
   # separately signed workflow run and cannot be replayed with the staging key.
   write_record "$record_root/$run_id.env" "$RECORD_RELEASE" "$RECORD_SOURCE_SHA" "$RECORD_ARCHIVE_SHA" consumed
-  INITIAL_STAGING_BOOTSTRAP="$initial_deployment" \
-    "$RECORD_RELEASE/infra/scripts/deploy-staging.sh" \
-      "$run_id" "$RECORD_RELEASE/images.env" "$ttl_minutes"
+  if [[ "$finance_synthetic_staging" == true ]]; then
+    # The signed release reads this same root-owned protected stdin stream to
+    # create its run-scoped env files without receiving a secret argument.
+    printf '%s\n' "${finance_key_lines[0]}" |
+      INITIAL_STAGING_BOOTSTRAP="$initial_deployment" \
+        EMDO_FINANCE_SYNTHETIC_STAGING=true \
+        "$RECORD_RELEASE/infra/scripts/deploy-staging.sh" \
+          "$run_id" "$RECORD_RELEASE/images.env" "$ttl_minutes" true
+    finance_key_lines[0]=''
+  else
+    INITIAL_STAGING_BOOTSTRAP="$initial_deployment" \
+      EMDO_FINANCE_SYNTHETIC_STAGING=false \
+      "$RECORD_RELEASE/infra/scripts/deploy-staging.sh" \
+        "$run_id" "$RECORD_RELEASE/images.env" "$ttl_minutes" false
+  fi
 }
 
 accept_release() {
@@ -283,8 +310,57 @@ accept_release() {
   assert_safe_run_id "$run_id"
   load_record "$run_id"
   [[ "$RECORD_STATUS" == consumed ]] || die 'staging release has not been deployed'
+  # The signed candidate owns the exact Finance marker and receipt validators.
+  # It is sourced only after the immutable release record has been verified.
+  # shellcheck source=/dev/null
+  source "$RECORD_RELEASE/infra/scripts/_common.sh"
   "$RECORD_RELEASE/infra/scripts/run-staging-acceptance.sh" "$run_id"
-  cat -- "/var/lib/emdo/staging/$run_id/http-api-subset.json"
+  if finance_staging_marker_is_valid "/var/lib/emdo/staging/$run_id"; then
+    cat -- "/var/lib/emdo/staging/$run_id/finance-synthetic-staging-probe.json"
+  else
+    cat -- "/var/lib/emdo/staging/$run_id/http-api-subset.json"
+  fi
+}
+
+finance_restore_receipt_release() {
+  [[ "$#" == 1 ]] || die 'finance-restore-receipt requires a workflow run ID'
+  local run_id="$1"
+  local state_dir receipt
+
+  assert_safe_run_id "$run_id"
+  load_record "$run_id"
+  [[ "$RECORD_STATUS" == consumed ]] || die 'staging release has not been deployed'
+  # shellcheck source=/dev/null
+  source "$RECORD_RELEASE/infra/scripts/_common.sh"
+  state_dir="$STAGING_STATE_ROOT/$run_id"
+  assert_governed_parent_chain "$state_dir" "$STAGING_STATE_ROOT"
+  finance_staging_marker_is_valid "$state_dir" ||
+    die 'Finance restore receipt is unavailable for a baseline staging run'
+  receipt="$state_dir/finance-staging-restore-receipt.json"
+  assert_root_owned_bounded_file "$receipt" 600 16384
+  node --input-type=module --eval '
+    import { readFile } from "node:fs/promises";
+    const [path, sourceSha, runId] = process.argv.slice(1);
+    const value = JSON.parse(await readFile(path, "utf8"));
+    const expectedKeys = [
+      "authenticatedOriginalHash", "committedDocumentReadback",
+      "committedEvidenceReadback", "environment", "evidenceClass",
+      "releaseEligible", "schemaVersion", "secondAuthenticatedUserDenied",
+      "sourceSha", "stagingRunId", "workflowRunId",
+    ].sort();
+    if (value?.schemaVersion !== 1 ||
+        value?.evidenceClass !== "finance-staging-restore-verification" ||
+        value?.releaseEligible !== false || value?.environment !== "staging" ||
+        value?.sourceSha !== sourceSha || value?.workflowRunId !== runId ||
+        value?.stagingRunId !== runId ||
+        value?.committedDocumentReadback !== true ||
+        value?.authenticatedOriginalHash !== true ||
+        value?.committedEvidenceReadback !== true ||
+        value?.secondAuthenticatedUserDenied !== true ||
+        JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(expectedKeys)) process.exit(1);
+  ' "$receipt" "$RECORD_SOURCE_SHA" "$run_id" ||
+    die 'Finance restore receipt is invalid for this signed staging run'
+  cat -- "$receipt"
 }
 
 teardown_release() {
@@ -301,6 +377,7 @@ case "$action" in
   install) install_release "$@" ;;
   deploy) deploy_release "$@" ;;
   accept) accept_release "$@" ;;
+  finance-restore-receipt) finance_restore_receipt_release "$@" ;;
   teardown) teardown_release "$@" ;;
-  *) die 'allowed actions are install, deploy, accept, and teardown' ;;
+  *) die 'allowed actions are install, deploy, accept, finance-restore-receipt, and teardown' ;;
 esac

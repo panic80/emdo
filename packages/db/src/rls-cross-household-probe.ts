@@ -39,7 +39,7 @@ export interface RlsCrossHouseholdProbe {
     readonly event: RlsCrossHouseholdProbeContext['event'];
   };
   readonly database: {
-    readonly postgresqlMajor: 17;
+    readonly postgresqlMajor: 18;
     readonly serverVersionNum: number;
     readonly pgvectorExtensionVersion: string;
   };
@@ -121,10 +121,10 @@ export const parseRlsCrossHouseholdProbe = (
       'serverVersionNum',
       'pgvectorExtensionVersion',
     ]) ||
-    value.database.postgresqlMajor !== 17 ||
+    value.database.postgresqlMajor !== 18 ||
     !Number.isSafeInteger(value.database.serverVersionNum) ||
-    (value.database.serverVersionNum as number) < 170_000 ||
-    (value.database.serverVersionNum as number) >= 180_000 ||
+    (value.database.serverVersionNum as number) < 180_000 ||
+    (value.database.serverVersionNum as number) >= 190_000 ||
     !/^\d+\.\d+(?:\.\d+)?$/u.test(
       typeof value.database.pgvectorExtensionVersion === 'string'
         ? value.database.pgvectorExtensionVersion

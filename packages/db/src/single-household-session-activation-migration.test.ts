@@ -16,11 +16,15 @@ const normalizedSql = async (): Promise<string> =>
     .toLowerCase();
 
 describe('single-household session activation migration', () => {
-  it('is the exact next ordered migration', async () => {
+  it('remains migration 0015 immediately before Finance document knowledge', async () => {
     const migrations = await loadOrderedMigrations();
-    expect(migrations.at(-1)).toMatchObject({
+    expect(migrations.at(15)).toMatchObject({
       id: '0015_single_household_session_activation',
       index: 15,
+    });
+    expect(migrations.at(16)).toMatchObject({
+      id: '0016_finance_document_knowledge',
+      index: 16,
     });
   });
 

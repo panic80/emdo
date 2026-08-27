@@ -29,6 +29,7 @@ import {
   type ProviderWriteCapabilityName,
   type SpecialistCapabilityId,
 } from './capability-runtime.js';
+import type { FinanceDocumentGuardedActionPort } from '../production/finance-agent-services.js';
 
 export type StandardSpecialistCapabilityId = Exclude<
   SpecialistCapabilityId,
@@ -56,8 +57,17 @@ type FinanceWriteInput = z.output<
 type FinanceImportInput = z.output<
   (typeof specialistCapabilitySchemas)['finance.statement.import']['input']
 >;
-type FinanceBudgetInput = z.output<
-  (typeof specialistCapabilitySchemas)['finance.budget.calculate']['input']
+type FinanceAnalyticsInput = z.output<
+  (typeof specialistCapabilitySchemas)['finance.analytics.calculate']['input']
+>;
+type FinanceDocumentSearchInput = z.output<
+  (typeof specialistCapabilitySchemas)['finance.documents.search']['input']
+>;
+type FinanceDocumentReadInput = z.output<
+  (typeof specialistCapabilitySchemas)['finance.documents.read']['input']
+>;
+type FinanceMatchReadInput = z.output<
+  (typeof specialistCapabilitySchemas)['finance.matches.read']['input']
 >;
 type ShoppingReadInput = z.output<
   (typeof specialistCapabilitySchemas)['shopping.items.read']['input']
@@ -115,6 +125,15 @@ export interface TrustedStandardSpecialistServices {
   readonly loadFinanceBudgetInputs: TrustedCapabilityService<
     Readonly<{ month: string }>
   >;
+  readonly searchFinanceDocuments: TrustedCapabilityService<
+    Readonly<Omit<FinanceDocumentSearchInput, 'schemaVersion'>>
+  >;
+  readonly readFinanceDocument: TrustedCapabilityService<
+    Readonly<Omit<FinanceDocumentReadInput, 'schemaVersion'>>
+  >;
+  readonly readFinanceMatches: TrustedCapabilityService<
+    Readonly<Omit<FinanceMatchReadInput, 'schemaVersion'>>
+  >;
   readonly readShoppingItems: TrustedCapabilityService<
     Readonly<Omit<ShoppingReadInput, 'schemaVersion'>>
   >;
@@ -132,6 +151,23 @@ export interface TrustedStandardSpecialistServices {
     Readonly<Omit<LinkOutInput, 'schemaVersion'>>
   >;
 }
+
+export type TrustedFinanceSpecialistServices = Pick<
+  TrustedStandardSpecialistServices,
+  | 'readFinanceRecords'
+  | 'writeFinanceRecord'
+  | 'executeStatementImport'
+  | 'loadFinanceBudgetInputs'
+  | 'searchFinanceDocuments'
+  | 'readFinanceDocument'
+  | 'readFinanceMatches'
+> & {
+  /**
+   * Internal request-scoped port for the three approved document mutations.
+   * It is deliberately not a registered capability and never reaches a model.
+   */
+  readonly guardedDocumentActions?: FinanceDocumentGuardedActionPort;
+};
 
 const parseInput = <Id extends StandardSpecialistCapabilityId>(
   capabilityId: Id,
@@ -188,7 +224,7 @@ const BudgetInputsSchema = z.strictObject({
 });
 
 const mapBudgetResult = (
-  input: FinanceBudgetInput,
+  input: FinanceAnalyticsInput,
   trustedInputs: unknown,
 ): unknown => {
   const trusted = BudgetInputsSchema.parse(trustedInputs);
@@ -198,7 +234,7 @@ const mapBudgetResult = (
     spaceId: trusted.spaceId,
     transactions: trusted.transactions,
   });
-  return wrapOutput('finance.budget.calculate', { result });
+  return wrapOutput('finance.analytics.calculate', { result });
 };
 
 const mapShoppingMutation = (
@@ -330,6 +366,9 @@ const assertServiceMap = (
     'writeFinanceRecord',
     'executeStatementImport',
     'loadFinanceBudgetInputs',
+    'searchFinanceDocuments',
+    'readFinanceDocument',
+    'readFinanceMatches',
     'readShoppingItems',
     'writeShoppingItem',
     'readOffers',
@@ -340,6 +379,142 @@ const assertServiceMap = (
       throw new Error(`api-specialist-service-missing:${method}`);
     }
   }
+};
+
+const assertFinanceServiceMap = (
+  services: TrustedFinanceSpecialistServices,
+): void => {
+  for (const method of [
+    'readFinanceRecords',
+    'writeFinanceRecord',
+    'executeStatementImport',
+    'loadFinanceBudgetInputs',
+    'searchFinanceDocuments',
+    'readFinanceDocument',
+    'readFinanceMatches',
+  ] as const) {
+    if (typeof services[method] !== 'function') {
+      throw new Error(`api-finance-specialist-service-missing:${method}`);
+    }
+  }
+};
+
+export const createFinanceSpecialistCapabilityExecutors = (
+  services: TrustedFinanceSpecialistServices,
+): Readonly<
+  Record<
+    | 'finance.records.read'
+    | 'finance.records.write'
+    | 'finance.statement.import'
+    | 'finance.analytics.calculate'
+    | 'finance.documents.search'
+    | 'finance.documents.read'
+    | 'finance.matches.read',
+    CapabilityExecutor<unknown, unknown>
+  >
+> => {
+  assertFinanceServiceMap(services);
+  return Object.freeze({
+    'finance.records.read': async (raw, context) => {
+      const input = parseInput('finance.records.read', raw);
+      return wrapOutput(
+        'finance.records.read',
+        asPlainRecord(
+          await services.readFinanceRecords(
+            deepFreeze({
+              recordTypes: input.recordTypes,
+              cursor: input.cursor,
+              limit: input.limit,
+            }),
+            context,
+          ),
+          'api-finance-service-result-invalid',
+        ),
+      );
+    },
+    'finance.records.write': async (raw, context) => {
+      const { mutation } = parseInput('finance.records.write', raw);
+      return wrapOutput(
+        'finance.records.write',
+        asPlainRecord(
+          await services.writeFinanceRecord(deepFreeze(mutation), context),
+          'api-finance-service-result-invalid',
+        ),
+      );
+    },
+    'finance.statement.import': async (raw, context) => {
+      const { request } = parseInput('finance.statement.import', raw);
+      return wrapOutput(
+        'finance.statement.import',
+        asPlainRecord(
+          await services.executeStatementImport(deepFreeze(request), context),
+          'api-finance-import-service-result-invalid',
+        ),
+      );
+    },
+    'finance.analytics.calculate': async (raw, context) => {
+      const input = parseInput('finance.analytics.calculate', raw);
+      return mapBudgetResult(
+        input,
+        await services.loadFinanceBudgetInputs(
+          deepFreeze({ month: input.month }),
+          context,
+        ),
+      );
+    },
+    'finance.documents.search': async (raw, context) => {
+      const input = parseInput('finance.documents.search', raw);
+      return wrapOutput(
+        'finance.documents.search',
+        asPlainRecord(
+          await services.searchFinanceDocuments(
+            deepFreeze({
+              query: input.query,
+              documentTypes: input.documentTypes,
+              from: input.from,
+              to: input.to,
+              limit: input.limit,
+            }),
+            context,
+          ),
+          'api-finance-document-search-service-result-invalid',
+        ),
+      );
+    },
+    'finance.documents.read': async (raw, context) => {
+      const input = parseInput('finance.documents.read', raw);
+      return wrapOutput(
+        'finance.documents.read',
+        asPlainRecord(
+          await services.readFinanceDocument(
+            deepFreeze({
+              documentId: input.documentId,
+              evidenceIds: input.evidenceIds,
+            }),
+            context,
+          ),
+          'api-finance-document-read-service-result-invalid',
+        ),
+      );
+    },
+    'finance.matches.read': async (raw, context) => {
+      const input = parseInput('finance.matches.read', raw);
+      return wrapOutput(
+        'finance.matches.read',
+        asPlainRecord(
+          await services.readFinanceMatches(
+            deepFreeze({
+              documentId: input.documentId,
+              states: input.states,
+              limit: input.limit,
+            }),
+            context,
+          ),
+          'api-finance-match-read-service-result-invalid',
+        ),
+      );
+    },
+  });
 };
 
 export const createStandardSpecialistCapabilityExecutors = (
@@ -438,13 +613,65 @@ export const createStandardSpecialistCapabilityExecutors = (
         ),
       );
     },
-    'finance.budget.calculate': async (raw, context) => {
-      const input = parseInput('finance.budget.calculate', raw);
+    'finance.analytics.calculate': async (raw, context) => {
+      const input = parseInput('finance.analytics.calculate', raw);
       return mapBudgetResult(
         input,
         await services.loadFinanceBudgetInputs(
           deepFreeze({ month: input.month }),
           context,
+        ),
+      );
+    },
+    'finance.documents.search': async (raw, context) => {
+      const input = parseInput('finance.documents.search', raw);
+      return wrapOutput(
+        'finance.documents.search',
+        asPlainRecord(
+          await services.searchFinanceDocuments(
+            deepFreeze({
+              query: input.query,
+              documentTypes: input.documentTypes,
+              from: input.from,
+              to: input.to,
+              limit: input.limit,
+            }),
+            context,
+          ),
+          'api-finance-document-search-service-result-invalid',
+        ),
+      );
+    },
+    'finance.documents.read': async (raw, context) => {
+      const input = parseInput('finance.documents.read', raw);
+      return wrapOutput(
+        'finance.documents.read',
+        asPlainRecord(
+          await services.readFinanceDocument(
+            deepFreeze({
+              documentId: input.documentId,
+              evidenceIds: input.evidenceIds,
+            }),
+            context,
+          ),
+          'api-finance-document-read-service-result-invalid',
+        ),
+      );
+    },
+    'finance.matches.read': async (raw, context) => {
+      const input = parseInput('finance.matches.read', raw);
+      return wrapOutput(
+        'finance.matches.read',
+        asPlainRecord(
+          await services.readFinanceMatches(
+            deepFreeze({
+              documentId: input.documentId,
+              states: input.states,
+              limit: input.limit,
+            }),
+            context,
+          ),
+          'api-finance-match-read-service-result-invalid',
         ),
       );
     },
@@ -560,6 +787,8 @@ export const materializeFinanceRecordCreate = (input: {
         reversal: null,
         appliedOperationIds: [],
         source: { kind: 'manual' },
+        annotation: null,
+        revision: 0,
       };
       break;
     case 'category':

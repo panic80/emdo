@@ -16,6 +16,7 @@ import {
   SchedulePageSchema,
   Sha256Schema,
   SyncOperationSchema,
+  SupportedLocaleSchema,
   SettingsViewSchema,
   ShoppingPageSchema,
   TodayViewSchema,
@@ -452,6 +453,7 @@ export const HouseholdMembershipDeactivationResponseSchema = z.strictObject({
 export const TurnRequestSchema = z.strictObject({
   schemaVersion: z.literal(1),
   conversationId: UuidSchema.optional(),
+  locale: SupportedLocaleSchema.optional().default('en-CA'),
   message: z
     .string()
     .trim()

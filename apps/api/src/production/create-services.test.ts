@@ -28,6 +28,7 @@ const configuredServices = (): Omit<ApiServices, 'metrics' | 'readiness'> => ({
   },
   financeRead: {
     list: async () => ({ schemaVersion: 1, items: [] }),
+    readSnapshot: async () => ({ reviewedCadTotals: [], budgets: [] }),
   },
   financeImports: {
     listDestinations: async () => ({
@@ -58,6 +59,28 @@ const configuredServices = (): Omit<ApiServices, 'metrics' | 'readiness'> => ({
       sourceDeletionAuthorized: true,
     }),
   },
+  financeDocuments: Object.fromEntries(
+    [
+      'list',
+      'get',
+      'upload',
+      'downloadOriginal',
+      'retry',
+      'getReview',
+      'updateReview',
+      'commitReview',
+      'listMatches',
+      'decideMatch',
+      'getEvidence',
+      'delete',
+      'readExperience',
+    ].map((name) => [
+      name,
+      async () => {
+        throw new Error('finance-document-test-service-not-configured');
+      },
+    ]),
+  ) as unknown as ApiServices['financeDocuments'],
   managerTurns: {
     start: async () => ({
       schemaVersion: 1,
@@ -293,6 +316,7 @@ describe('bundled production API composition', () => {
         'agents.run-events': 'unavailable',
         experience: 'unavailable',
         'experience.activity-read': 'unavailable',
+        'experience.finance-documents': 'unavailable',
         'experience.finance-read': 'unavailable',
         'experience.finance-imports': 'unavailable',
         'experience.notification-preferences': 'unavailable',

@@ -12,6 +12,9 @@ export {
 } from './primitives.js';
 export type { DeepReadonly, JsonValue } from './primitives.js';
 
+export { SupportedLocaleSchema } from './locale.js';
+export type { SupportedLocale } from './locale.js';
+
 export {
   FinanceImportDestinationAccountSchema,
   FinanceImportDestinationCategorySchema,

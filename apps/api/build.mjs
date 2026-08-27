@@ -71,6 +71,7 @@ const allowedExternal = (specifier) =>
     '@better-auth/core',
     '@better-auth/utils',
     '@better-fetch/fetch',
+    '@fastify/multipart',
     '@openai/agents',
     'better-call',
     'better-auth',
@@ -81,6 +82,7 @@ const allowedExternal = (specifier) =>
     'kysely',
     'music-metadata',
     'nanostores',
+    'pdf-parse',
     'pg',
     'zod',
   ].some(

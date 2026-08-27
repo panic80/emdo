@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { createApp, type ApiServices } from './app.js';
 import { createProductionApiServices } from './production/create-services.js';
+import type { SyntheticFinanceInvitationHandoff } from './production/synthetic-finance-invitation-handoff.js';
 import { CanonicalAppOriginSchema } from './schemas.js';
 import { EdgeProxySecretSchema } from './trusted-ingress.js';
 
@@ -83,6 +84,21 @@ const REQUIRED_SERVICE_METHODS = Object.freeze({
   activityRead: ['list'],
   financeRead: ['list'],
   financeImports: ['listDestinations', 'preview', 'commit'],
+  financeDocuments: [
+    'list',
+    'get',
+    'upload',
+    'downloadOriginal',
+    'retry',
+    'getReview',
+    'updateReview',
+    'commitReview',
+    'listMatches',
+    'decideMatch',
+    'getEvidence',
+    'delete',
+    'readExperience',
+  ],
   managerTurns: ['start'],
   notificationPreferences: ['get', 'update'],
   runEvents: ['open'],
@@ -163,6 +179,14 @@ const startApiServer = async (input: {
   const config = ApiServerConfigSchema.parse(
     input.config ?? loadApiServerConfig(input.environment ?? process.env),
   );
+  const syntheticFinanceInvitationHandoff =
+    input.services !== null && typeof input.services === 'object'
+      ? (
+          input.services as {
+            readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
+          }
+        ).syntheticFinanceInvitationHandoff
+      : undefined;
   const app = await createApp({
     services,
     publicOrigin: config.publicOrigin,
@@ -170,6 +194,11 @@ const startApiServer = async (input: {
     allowLoopbackApiIngress: config.allowLoopbackApiIngress,
     enableSyntheticHttpSubsetReadiness:
       config.enableSyntheticHttpSubsetReadiness,
+    ...(syntheticFinanceInvitationHandoff === undefined
+      ? {}
+      : {
+          syntheticFinanceInvitationHandoff: syntheticFinanceInvitationHandoff,
+        }),
   });
   const close = (services as ApiServices & { readonly close?: unknown }).close;
   if (typeof close === 'function') {

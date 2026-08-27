@@ -29,6 +29,7 @@ const knownDatabaseEnvironmentNames = Object.freeze([
   'TEST_DISCLOSURE_DATABASE_URL',
   'TEST_DURABLE_DATABASE_URL',
   'TEST_FINANCE_IMPORT_DATABASE_URL',
+  'TEST_FINANCE_DOCUMENT_DATABASE_URL',
   'TEST_FINANCE_RETENTION_DATABASE_URL',
   'TEST_GOOGLE_OAUTH_AUTHORITY_DATABASE_URL',
   'TEST_HOUSEHOLD_ADMIN_DATABASE_URL',
@@ -99,6 +100,11 @@ export const POSTGRES_INTEGRATION_SUITES = Object.freeze([
     databaseEnvironment: 'TEST_FINANCE_IMPORT_DATABASE_URL',
   }),
   Object.freeze({
+    id: 'finance-document-knowledge',
+    file: 'packages/db/src/finance/postgres-finance-document-repository.integration.test.ts',
+    databaseEnvironment: 'TEST_FINANCE_DOCUMENT_DATABASE_URL',
+  }),
+  Object.freeze({
     id: 'finance-import-retention-runner',
     file: 'packages/db/src/finance/finance-import-retention-runner.integration.test.ts',
     databaseEnvironment: 'TEST_FINANCE_RETENTION_DATABASE_URL',
@@ -136,9 +142,9 @@ export type PostgresIntegrationSuite =
   (typeof POSTGRES_INTEGRATION_SUITES)[number];
 
 export interface PostgresServerInspection {
-  readonly adminDatabase?: string;
-  readonly adminIsSuperuser?: boolean;
-  readonly emdoRoleCount?: number;
+  readonly adminDatabase: string;
+  readonly adminIsSuperuser: boolean;
+  readonly emdoRoleCount: number;
   readonly pgvectorExtensionVersion: string | null;
   readonly serverVersionNum: number;
 }
@@ -163,7 +169,7 @@ export interface PostgresIntegrationRawReport {
     readonly event: 'pull_request' | 'push';
   };
   readonly database: {
-    readonly postgresqlMajor: 17;
+    readonly postgresqlMajor: 18;
     readonly serverVersionNum: number;
     readonly pgvectorExtensionVersion: string;
   };
@@ -748,17 +754,16 @@ export const runPostgresIntegrationSuites = async (input: {
   const server = await dependencies.inspectServer({ adminUrl: input.adminUrl });
   if (
     !Number.isSafeInteger(server.serverVersionNum) ||
-    server.serverVersionNum < 170_000 ||
-    server.serverVersionNum >= 180_000 ||
+    server.serverVersionNum < 180_000 ||
+    server.serverVersionNum >= 190_000 ||
     server.pgvectorExtensionVersion === null ||
     !/^\d+\.\d+(?:\.\d+)?$/u.test(server.pgvectorExtensionVersion) ||
-    (server.adminDatabase !== undefined &&
-      server.adminDatabase !== 'postgres') ||
-    (server.adminIsSuperuser !== undefined && !server.adminIsSuperuser) ||
-    (server.emdoRoleCount !== undefined && server.emdoRoleCount !== 0)
+    server.adminDatabase !== 'postgres' ||
+    !server.adminIsSuperuser ||
+    server.emdoRoleCount !== 0
   ) {
     throw new Error(
-      'PostgreSQL 17 with pgvector and a disposable superuser admin database is required.',
+      'PostgreSQL 18 with pgvector and a disposable superuser admin database is required.',
     );
   }
 
@@ -851,7 +856,7 @@ export const runPostgresIntegrationSuites = async (input: {
       event: input.event,
     }),
     database: Object.freeze({
-      postgresqlMajor: 17,
+      postgresqlMajor: 18,
       serverVersionNum: server.serverVersionNum,
       pgvectorExtensionVersion: server.pgvectorExtensionVersion,
     }),

@@ -565,6 +565,12 @@
   border-bottom: 1px solid var(--color-divider);
 }
 
+.finance-view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .budget-row {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) auto;

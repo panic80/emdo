@@ -27,6 +27,11 @@ on:
         required: true
         default: true
         type: boolean
+      finance_synthetic_staging:
+        description: Explicitly enable the isolated Finance overlay with synthetic documents only
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -156,6 +161,7 @@ jobs:
           ssh "$VPS_USER@$VPS_HOST" \
             "sudo /usr/local/sbin/emdo-staging-operator install '/tmp/$archive_name' /tmp/release-images.env '/tmp/$descriptor_name' '/tmp/$signature_name'"
       - name: Deploy isolated synthetic staging
+        if: ${{ !inputs.finance_synthetic_staging }}
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.STAGING_SSH_USER }}
@@ -163,25 +169,112 @@ jobs:
         run: |
           [[ "$INITIAL_STAGING_BOOTSTRAP" == true || "$INITIAL_STAGING_BOOTSTRAP" == false ]]
           ssh "$VPS_USER@$VPS_HOST" \
-            "sudo /usr/local/sbin/emdo-staging-operator deploy '${{ github.run_id }}' '$INITIAL_STAGING_BOOTSTRAP' '${{ inputs.ttl_minutes }}'"
+            "sudo /usr/local/sbin/emdo-staging-operator deploy '${{ github.run_id }}' '$INITIAL_STAGING_BOOTSTRAP' '${{ inputs.ttl_minutes }}' false"
+      - name: Deploy isolated Finance synthetic staging
+        if: ${{ inputs.finance_synthetic_staging }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.STAGING_SSH_USER }}
+          INITIAL_STAGING_BOOTSTRAP: ${{ inputs.initial_deployment }}
+          EMDO_OPENAI_FINANCE_API_KEY: ${{ secrets.EMDO_OPENAI_FINANCE_API_KEY }}
+        run: |
+          [[ "$INITIAL_STAGING_BOOTSTRAP" == true || "$INITIAL_STAGING_BOOTSTRAP" == false ]]
+          [[ ${#EMDO_OPENAI_FINANCE_API_KEY} -ge 16 && ${#EMDO_OPENAI_FINANCE_API_KEY} -le 512 ]]
+          # The Finance-only key travels solely over SSH stdin to the fixed
+          # root operator. It never becomes an SSH argument or remote env var.
+          printf '%s\n' "$EMDO_OPENAI_FINANCE_API_KEY" | ssh -T "$VPS_USER@$VPS_HOST" \
+            "sudo /usr/local/sbin/emdo-staging-operator deploy '${{ github.run_id }}' '$INITIAL_STAGING_BOOTSTRAP' '${{ inputs.ttl_minutes }}' true"
       - name: Run staging health acceptance
         env:
           EMDO_ACCEPTANCE_ENVIRONMENT: staging
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.STAGING_SSH_USER }}
           STAGING_HTTP_PORT: ${{ vars.STAGING_HTTP_PORT }}
+          FINANCE_SYNTHETIC_STAGING: ${{ inputs.finance_synthetic_staging }}
+          SOURCE_SHA: ${{ steps.source.outputs.result }}
+          STAGING_RUN_ID: ${{ github.run_id }}
         run: |
           [[ "$STAGING_HTTP_PORT" =~ ^[0-9]{2,5}$ ]]
+          [[ "$FINANCE_SYNTHETIC_STAGING" == true || "$FINANCE_SYNTHETIC_STAGING" == false ]]
+          if [[ "$FINANCE_SYNTHETIC_STAGING" == true ]]; then
+            ssh "$VPS_USER@$VPS_HOST" \
+              "sudo /usr/local/sbin/emdo-staging-operator accept '${{ github.run_id }}'" \
+              > release/finance-synthetic-staging-probe.json
+            chmod 0600 release/finance-synthetic-staging-probe.json
+            node --input-type=module --eval '
+              import { readFile } from "node:fs/promises";
+              const value = JSON.parse(await readFile(process.argv[1], "utf8"));
+              if (value.sourceSha !== process.env.SOURCE_SHA ||
+                  value.execution?.runId !== process.env.STAGING_RUN_ID ||
+                  value.evidenceClass !== "finance-synthetic-staging-probe" ||
+                  value.releaseEligible !== false ||
+                  !["blocked", "passed"].includes(value.outcome) ||
+                  !["blocked", "passed"].includes(value.proof?.backupRestore) ||
+                  JSON.stringify(value).includes("owner_cookie") ||
+                  JSON.stringify(value).includes("member_cookie")) process.exit(1);
+            ' release/finance-synthetic-staging-probe.json
+          else
+            ssh "$VPS_USER@$VPS_HOST" \
+              "sudo /usr/local/sbin/emdo-staging-operator accept '${{ github.run_id }}'" \
+              > release/staging-http-subset-probe.json
+            chmod 0600 release/staging-http-subset-probe.json
+            node scripts/release/write-staging-http-receipt.mjs \
+              --probe release/staging-http-subset-probe.json \
+              --image-lock release/release-images.env \
+              --receipts-root release/acceptance-evidence
+          fi
+      - name: Fetch Finance backup/restore receipt
+        if: ${{ inputs.finance_synthetic_staging }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.STAGING_SSH_USER }}
+          SOURCE_SHA: ${{ steps.source.outputs.result }}
+          STAGING_RUN_ID: ${{ github.run_id }}
+        run: |
           ssh "$VPS_USER@$VPS_HOST" \
-            "sudo /usr/local/sbin/emdo-staging-operator accept '${{ github.run_id }}'" \
-            > release/staging-http-subset-probe.json
-          chmod 0600 release/staging-http-subset-probe.json
-          node scripts/release/write-staging-http-receipt.mjs \
-            --probe release/staging-http-subset-probe.json \
-            --image-lock release/release-images.env \
-            --receipts-root release/acceptance-evidence
+            "sudo /usr/local/sbin/emdo-staging-operator finance-restore-receipt '${{ github.run_id }}'" \
+            > release/finance-staging-restore-receipt.json
+          chmod 0600 release/finance-staging-restore-receipt.json
+          node --input-type=module --eval '
+            import { readFile } from "node:fs/promises";
+            const value = JSON.parse(await readFile(process.argv[1], "utf8"));
+            const expectedKeys = [
+              "authenticatedOriginalHash", "committedDocumentReadback",
+              "committedEvidenceReadback", "environment", "evidenceClass",
+              "releaseEligible", "schemaVersion", "secondAuthenticatedUserDenied",
+              "sourceSha", "stagingRunId", "workflowRunId",
+            ].sort();
+            if (value?.schemaVersion !== 1 ||
+                value?.evidenceClass !== "finance-staging-restore-verification" ||
+                value?.releaseEligible !== false || value?.environment !== "staging" ||
+                value?.sourceSha !== process.env.SOURCE_SHA ||
+                value?.workflowRunId !== process.env.STAGING_RUN_ID ||
+                value?.stagingRunId !== process.env.STAGING_RUN_ID ||
+                value?.committedDocumentReadback !== true ||
+                value?.authenticatedOriginalHash !== true ||
+                value?.committedEvidenceReadback !== true ||
+                value?.secondAuthenticatedUserDenied !== true ||
+                JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(expectedKeys)) process.exit(1);
+          ' release/finance-staging-restore-receipt.json
+      - name: Require complete Finance synthetic staging proof
+        if: ${{ inputs.finance_synthetic_staging }}
+        run: |
+          node --input-type=module --eval '
+            import { readFile } from "node:fs/promises";
+            const value = JSON.parse(await readFile(process.argv[1], "utf8"));
+            if (value.outcome !== "passed" || value.proof?.backupRestore !== "passed") process.exit(1);
+          ' release/finance-synthetic-staging-probe.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ always() && inputs.finance_synthetic_staging }}
+        with:
+          name: finance-synthetic-staging-probe
+          path: |
+            release/finance-synthetic-staging-probe.json
+            release/finance-staging-restore-receipt.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Assemble, sign, and verify the complete release evidence
-        if: ${{ !inputs.mvp_core_only }}
+        if: ${{ !inputs.mvp_core_only && !inputs.finance_synthetic_staging }}
         env:
           ACCEPTANCE_EVIDENCE_PRIVATE_KEY: ${{ secrets.ACCEPTANCE_EVIDENCE_PRIVATE_KEY }}
           ACCEPTANCE_EVIDENCE_PUBLIC_KEY: ${{ secrets.ACCEPTANCE_EVIDENCE_PUBLIC_KEY }}
@@ -222,7 +315,7 @@ jobs:
             --ci-head-sha '${{ steps.source.outputs.result }}' \
             --ci-conclusion success
       - name: Record tested digests
-        if: ${{ !inputs.mvp_core_only }}
+        if: ${{ !inputs.mvp_core_only && !inputs.finance_synthetic_staging }}
         env:
           INITIAL_STAGING_BOOTSTRAP: ${{ inputs.initial_deployment }}
         run: |
@@ -236,7 +329,7 @@ jobs:
             "$evidence_digest" '${{ github.run_id }}' '${{ inputs.ci_run_id }}' \
             >> release/staging-tested.env
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: ${{ !inputs.mvp_core_only }}
+        if: ${{ !inputs.mvp_core_only && !inputs.finance_synthetic_staging }}
         with:
           name: staging-tested-images
           path: |
@@ -245,7 +338,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Record non-release-eligible MVP staging proof
-        if: ${{ inputs.mvp_core_only }}
+        if: ${{ inputs.mvp_core_only && !inputs.finance_synthetic_staging }}
         run: |
           receipt='release/acceptance-evidence/artifacts/gates/http-api-subset.json'
           descriptor='release/acceptance-evidence/descriptors/gates/http-api-subset.json'
@@ -261,7 +354,7 @@ jobs:
             "$descriptor_digest" '${{ inputs.ci_run_id }}' \
             >> release/mvp-staging-tested.env
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: ${{ inputs.mvp_core_only }}
+        if: ${{ inputs.mvp_core_only && !inputs.finance_synthetic_staging }}
         with:
           name: mvp-staging-core-proof
           path: |
@@ -273,7 +366,6 @@ jobs:
           retention-days: 14
       - name: Tear down staging at the end of the test window
         if: always()
-        continue-on-error: true
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.STAGING_SSH_USER }}

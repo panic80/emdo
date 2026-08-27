@@ -247,6 +247,7 @@ const turn = (overrides: Partial<TurnInput> = {}): TurnInput => {
     conversationId: ids.conversationId,
     spaceAccessGrantId: ids.spaceAccessGrantId,
     authorizationScopeFingerprint: ids.authorizationScopeFingerprint,
+    locale: 'en-CA',
     message: 'Schedule a dentist visit and update my shopping plan.',
     escalationTriggers: [],
     abortSignal: new AbortController().signal,
@@ -333,6 +334,7 @@ const setup = (
     readonly schedulerInputSchema?: z.ZodObject;
     readonly schedulerOutputSchema?: z.ZodObject;
     readonly schedulerCapabilities?: readonly ResolvedAgentCapability[];
+    readonly financeCapabilities?: readonly ResolvedAgentCapability[];
     readonly managerOutputSchema?: z.ZodObject;
     readonly clock?: () => Date;
   } = {},
@@ -426,7 +428,13 @@ const setup = (
             capability('google-calendar.event.create', 'provider-write'),
           ]),
       ),
-      agent('finance', 'specialist'),
+      agent(
+        'finance',
+        'specialist',
+        z.looseObject({}),
+        z.looseObject({}),
+        overrides.financeCapabilities,
+      ),
       agent('shopping', 'specialist'),
     ],
     executionProvider: {
@@ -599,6 +607,11 @@ describe('AgentOrchestrator', () => {
       'specialist',
       'synthesize',
     ]);
+    expect(requests.map((request) => request.context.locale)).toEqual([
+      'en-CA',
+      'en-CA',
+      'en-CA',
+    ]);
     expect(requests[0]!.input).toMatchObject({
       schemaVersion: 1,
       records: [
@@ -668,7 +681,7 @@ describe('AgentOrchestrator', () => {
               },
               {
                 id: 'schedule-optometrist',
-                specialistId: 'scheduler',
+                specialistId: 'finance',
                 input: { request: 'optometrist' },
                 dependsOn: [],
               },
@@ -1176,15 +1189,20 @@ describe('AgentOrchestrator', () => {
     ).not.toContain('privateAccountNumber');
   });
 
-  it('caps independent Promise.allSettled specialist execution at three', async () => {
+  it('runs three unique specialists concurrently within the ceiling', async () => {
     let active = 0;
     let maximumActive = 0;
     const { orchestrator, traceEvents } = setup(async (request) => {
       if (request.phase === 'plan') {
         return completed({
-          delegations: ['one', 'two', 'three', 'four'].map((id) => ({
+          delegations: ['one', 'two', 'three'].map((id) => ({
             id,
-            specialistId: id === 'two' ? 'finance' : 'scheduler',
+            specialistId:
+              id === 'one'
+                ? 'scheduler'
+                : id === 'two'
+                  ? 'finance'
+                  : 'shopping',
             input: { id },
             dependsOn: [],
           })),
@@ -1197,7 +1215,7 @@ describe('AgentOrchestrator', () => {
         active -= 1;
         return completed({ ok: true });
       }
-      return completed({ message: 'All four tasks completed.' });
+      return completed({ message: 'All three tasks completed.' });
     });
 
     const result = await orchestrator.runTurn(turn());
@@ -1206,7 +1224,7 @@ describe('AgentOrchestrator', () => {
     expect(maximumActive).toBe(3);
     expect(
       traceEvents.filter((event) => event.type === 'specialist.dispatched'),
-    ).toHaveLength(4);
+    ).toHaveLength(3);
   });
 
   it('sequences dependencies and synthesizes independent partial failures', async () => {
@@ -2107,7 +2125,7 @@ describe('AgentOrchestrator', () => {
               },
               {
                 id: 'calendar-write-b',
-                specialistId: 'scheduler',
+                specialistId: 'finance',
                 input: { request: 'create optometrist event' },
                 dependsOn: [],
               },
@@ -2146,7 +2164,13 @@ describe('AgentOrchestrator', () => {
         }
         return completed({ message: 'must not synthesize' });
       },
-      { abandonPrepared, checkpointCreate },
+      {
+        abandonPrepared,
+        checkpointCreate,
+        financeCapabilities: Object.freeze([
+          capability('google-calendar.event.create', 'provider-write'),
+        ]),
+      },
     );
 
     await expect(orchestrator.runTurn(turn())).resolves.toMatchObject({
@@ -2294,7 +2318,7 @@ describe('AgentOrchestrator', () => {
             },
             {
               id: 'calendar-write-second',
-              specialistId: 'scheduler',
+              specialistId: 'finance',
               input: { request: 'create optometrist event' },
               dependsOn: ['calendar-write-first'],
             },
@@ -2342,7 +2366,12 @@ describe('AgentOrchestrator', () => {
       }
       return completed({ message: 'must not synthesize' });
     });
-    const { orchestrator, traceEvents } = setup(execute, { executeDecision });
+    const { orchestrator, traceEvents } = setup(execute, {
+      executeDecision,
+      financeCapabilities: Object.freeze([
+        capability('google-calendar.event.create', 'provider-write'),
+      ]),
+    });
 
     const paused = await orchestrator.runTurn(turn());
     if (paused.status !== 'needs-approval') throw new Error('expected pause');
@@ -2875,6 +2904,7 @@ describe('AgentOrchestrator', () => {
           },
         });
         expect(request.context.approvalDecisionId).toBe(approvalDecisionId);
+        expect(request.context.locale).toBe('en-CA');
         return completed({ eventProposal: 'ready' });
       }
       if (request.phase === 'synthesize') {
@@ -2882,6 +2912,7 @@ describe('AgentOrchestrator', () => {
         expect(request.context.spaceAccessGrantId).toBe(
           resumeSpaceAccessGrantId,
         );
+        expect(request.context.locale).toBe('en-CA');
       }
       return completed({
         message: 'The calendar proposal is ready to review.',

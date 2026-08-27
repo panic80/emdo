@@ -340,7 +340,7 @@ const issueInvitation = async (
 };
 
 describeDatabase(
-  'PostgreSQL 17 household administration authority (requires isolated TEST_HOUSEHOLD_ADMIN_DATABASE_URL)',
+  'PostgreSQL 18 household administration authority (requires isolated TEST_HOUSEHOLD_ADMIN_DATABASE_URL)',
   () => {
     let admin: import('pg').Client;
     let app: import('pg').Client;
@@ -364,9 +364,9 @@ describeDatabase(
           where role.rolname = current_user`,
       );
       const serverVersion = Number(identity.rows[0]?.server_version_num);
-      if (serverVersion < 170_000 || serverVersion >= 180_000) {
+      if (serverVersion < 180_000 || serverVersion >= 190_000) {
         throw new Error(
-          'TEST_HOUSEHOLD_ADMIN_DATABASE_URL must use PostgreSQL 17',
+          'TEST_HOUSEHOLD_ADMIN_DATABASE_URL must use PostgreSQL 18',
         );
       }
       if (identity.rows[0]?.is_superuser !== true) {
@@ -390,7 +390,7 @@ describeDatabase(
         `select extversion from pg_catalog.pg_extension where extname = 'vector'`,
       );
       if (vector.rowCount !== 1) {
-        throw new Error('PostgreSQL 17 pgvector extension is required');
+        throw new Error('PostgreSQL 18 pgvector extension is required');
       }
 
       const existingApplicationRole = await admin.query(

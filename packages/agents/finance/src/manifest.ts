@@ -28,6 +28,9 @@ export const financeManifest: AgentManifest = AgentManifestSchema.parse({
     'finance.bill',
     'finance.subscription',
     'finance.goal',
+    'finance.document',
+    'finance.search',
+    'finance.match',
   ],
   instructionIds: financeInstructions.map(({ id }) => id),
   skillIds: [
@@ -46,6 +49,9 @@ export const financeManifest: AgentManifest = AgentManifestSchema.parse({
     'finance.subscriptions',
     'finance.goals',
     'finance.imports',
+    'finance.documents',
+    'finance.document-evidence',
+    'finance.document-matches',
   ],
   modelPolicy: {
     defaultModel: 'gpt-5.6-luna',

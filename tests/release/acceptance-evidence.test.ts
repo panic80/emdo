@@ -94,11 +94,11 @@ const ciProofs: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
     evalCaseCount: 24,
   },
   'postgres-integration': {
-    postgresqlMajor: 17,
+    postgresqlMajor: 18,
     pgvectorExtension: 'passed',
     isolatedDatabases: true,
     sequentialSuites: 'passed',
-    suiteCount: 16,
+    suiteCount: 17,
     attackCaseCount: 15,
   },
 };

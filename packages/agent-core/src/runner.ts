@@ -11,7 +11,9 @@ import {
 } from '@openai/agents';
 import {
   EffectiveAuthorizationScopeFingerprintSchema,
+  SupportedLocaleSchema,
   type EffectiveAuthorizationScopeFingerprint,
+  type SupportedLocale,
 } from '@emdo/contracts';
 import { z } from 'zod';
 
@@ -149,6 +151,8 @@ export interface AgentExecutionContext {
   readonly authenticatedSessionId: string;
   readonly spaceAccessGrantId: string;
   readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
+  /** Fixed server-derived response locale for this turn; models cannot alter it. */
+  readonly locale: SupportedLocale;
   readonly disclosureGrantId?: string;
   readonly disclosureGrantVersion?: string;
   readonly approvalDecisionId?: string;
@@ -297,6 +301,11 @@ export interface ProviderWriteDecisionExecution {
  * must persist the SDK call binding; the model never supplies proposal IDs.
  */
 export interface ProviderWriteProposalGateway {
+  /**
+   * Local-write/import materializers may return undefined after trusted
+   * classification, which lets the same capability execute a safe input
+   * directly. Provider writes must always return a proposal.
+   */
   prepare(
     input: Readonly<{
       capabilityId: string;
@@ -304,7 +313,7 @@ export interface ProviderWriteProposalGateway {
       canonicalArguments: JsonValue;
       context: AgentExecutionContext;
     }>,
-  ): Promise<PreparedProviderWriteProposal>;
+  ): Promise<PreparedProviderWriteProposal | undefined>;
   resolvePrepared(
     input: Readonly<{
       capabilityId: string;
@@ -409,7 +418,7 @@ interface TurnProviderWriteEffectLedger {
   providerWriteSdkCallId?: string;
   providerWriteCanonicalArgumentsHash?: string;
   multipleProviderWritesRequested: boolean;
-  providerWritePreparation?: Promise<PreparedProviderWriteBinding>;
+  providerWritePreparation?: Promise<PreparedProviderWriteBinding | undefined>;
   proposalFinalizationPending: boolean;
   proposalAbandonmentAttempted: boolean;
   proposalAbandonmentConfirmed: boolean;
@@ -497,6 +506,9 @@ const abandonPreparedProviderWrite = async (
     ledger.proposalFinalizationPending = true;
     return false;
   }
+  if (prepared === undefined) {
+    return ledger.providerWriteProposalCount === 0 || ledger.priorWriteTerminal;
+  }
   try {
     const abandonment = snapshotPreparedProposalAbandonment(
       await gateway.abandonPrepared(
@@ -574,6 +586,7 @@ export const createOpenAiAgentsSdkFacade = (
             throw new Error('provider-write-live-execution-ledger-required');
           }
           const turnLedger = ledger.turnProviderWrites;
+          const isProviderWrite = config.capabilityKind === 'provider-write';
           const canonicalArgumentsHash = createHash('sha256')
             .update(JSON.stringify(snapshotJson(input)))
             .digest('hex');
@@ -586,8 +599,7 @@ export const createOpenAiAgentsSdkFacade = (
                 canonicalArgumentsHash &&
               turnLedger.providerWritePreparation !== undefined
             ) {
-              await turnLedger.providerWritePreparation;
-              return true;
+              return (await turnLedger.providerWritePreparation) !== undefined;
             }
             turnLedger.multipleProviderWritesRequested = true;
             if (
@@ -611,20 +623,20 @@ export const createOpenAiAgentsSdkFacade = (
             canonicalArgumentsHash;
           recordCapabilityInvocation(
             runContext.context,
-            'provider-write',
+            config.capabilityKind,
             callId,
           );
           const preparation = (async () => {
-            const proposal = snapshotPreparedProposal(
-              await gateway.prepare(
-                Object.freeze({
-                  capabilityId: config.canonicalCapabilityId,
-                  sdkCallId: callId,
-                  canonicalArguments: snapshotJson(input),
-                  context,
-                }),
-              ),
+            const rawProposal = await gateway.prepare(
+              Object.freeze({
+                capabilityId: config.canonicalCapabilityId,
+                sdkCallId: callId,
+                canonicalArguments: snapshotJson(input),
+                context,
+              }),
             );
+            if (rawProposal === undefined) return undefined;
+            const proposal = snapshotPreparedProposal(rawProposal);
             return Object.freeze({
               capabilityId: config.canonicalCapabilityId,
               sdkCallId: callId,
@@ -634,7 +646,18 @@ export const createOpenAiAgentsSdkFacade = (
           })();
           turnLedger.providerWritePreparation = preparation;
           try {
-            await preparation;
+            const prepared = await preparation;
+            if (prepared === undefined) {
+              if (isProviderWrite) {
+                throw new Error('provider-write-proposal-required');
+              }
+              turnLedger.providerWriteProposalCount = 0;
+              turnLedger.providerWriteCapabilityId = undefined;
+              turnLedger.providerWriteSdkCallId = undefined;
+              turnLedger.providerWriteCanonicalArgumentsHash = undefined;
+              turnLedger.providerWritePreparation = undefined;
+              return false;
+            }
           } catch (error) {
             turnLedger.proposalFinalizationPending = true;
             throw error;
@@ -695,6 +718,7 @@ export interface TurnInput {
   readonly conversationId: string;
   readonly spaceAccessGrantId: string;
   readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
+  readonly locale: SupportedLocale;
   readonly message: string;
   readonly escalationTriggers: readonly RequestedModelEscalationTrigger[];
   readonly abortSignal: AbortSignal;
@@ -911,6 +935,7 @@ interface PersistedTurnScope {
   readonly conversationId: string;
   readonly spaceAccessGrantId: string;
   readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
+  readonly locale: SupportedLocale;
   readonly message: string;
   readonly currentMessage: ConversationMemoryEntry;
 }
@@ -1406,6 +1431,7 @@ const snapshotExecutionContext = (raw: unknown): AgentExecutionContext => {
       EffectiveAuthorizationScopeFingerprintSchema.parse(
         value.authorizationScopeFingerprint,
       ),
+    locale: SupportedLocaleSchema.parse(value.locale),
     ...(value.disclosureGrantId === undefined
       ? {}
       : { disclosureGrantId: assertUuid(value.disclosureGrantId) }),
@@ -1613,6 +1639,7 @@ const snapshotTurn = (input: TurnInput): TurnInput => {
     'conversationId',
     'spaceAccessGrantId',
     'authorizationScopeFingerprint',
+    'locale',
     'message',
     'escalationTriggers',
     'abortSignal',
@@ -1661,6 +1688,7 @@ const snapshotTurn = (input: TurnInput): TurnInput => {
       EffectiveAuthorizationScopeFingerprintSchema.parse(
         input.authorizationScopeFingerprint,
       ),
+    locale: SupportedLocaleSchema.parse(input.locale),
     message: input.message,
     escalationTriggers: Object.freeze([...input.escalationTriggers]),
     abortSignal: input.abortSignal,
@@ -1769,6 +1797,7 @@ const persistedScope = (turn: PreparedTurnInput): PersistedTurnScope =>
     conversationId: turn.conversationId,
     spaceAccessGrantId: turn.spaceAccessGrantId,
     authorizationScopeFingerprint: turn.authorizationScopeFingerprint,
+    locale: turn.locale,
     message: turn.message,
     currentMessage: snapshotConversationEntry(turn.currentMessage),
   });
@@ -1821,6 +1850,10 @@ const parseManagerPlan = (
   );
   const ids = new Set(delegations.map((item) => item.id));
   if (ids.size !== delegations.length) throw new Error('invalid-manager-plan');
+  const specialistIds = new Set(delegations.map((item) => item.specialistId));
+  if (specialistIds.size !== delegations.length) {
+    throw new Error('invalid-manager-plan');
+  }
   if (
     delegations.some((item) =>
       item.dependsOn.some((dependency) => !ids.has(dependency)),
@@ -2243,6 +2276,13 @@ export class OpenAiAgentsExecutionProvider implements AgentExecutionProvider {
     const materialized = request.agent.materialize(request.model, {
       exposeCapabilities,
       outputType,
+      ...(effectivePhase === 'synthesize'
+        ? {
+            trustedInstructions: Object.freeze([
+              `Write the final EMDO synthesis in ${request.context.locale}. Keep evidence excerpts in their source language; do not translate those excerpts.`,
+            ]),
+          }
+        : {}),
     });
     if (!(materialized instanceof Agent)) {
       throw new Error('invalid-openai-sdk-agent');
@@ -2574,6 +2614,9 @@ export class OpenAiAgentsExecutionProvider implements AgentExecutionProvider {
         );
         if (turnProviderWrites.providerWritePreparation !== undefined) {
           const prepared = await turnProviderWrites.providerWritePreparation;
+          if (prepared === undefined) {
+            throw new Error('prepared-proposal-interruption-missing');
+          }
           if (
             normalized.sdkCallId !== prepared.sdkCallId ||
             normalized.capabilityId !== prepared.capabilityId ||
@@ -2680,8 +2723,10 @@ export class OpenAiAgentsExecutionProvider implements AgentExecutionProvider {
     );
     if (
       capability === undefined ||
-      capability.descriptor.capabilityKind !== 'provider-write' ||
-      capability.descriptor.approval.rule !== 'authenticated-visual-proposal'
+      capability.descriptor.approval.rule !== 'authenticated-visual-proposal' ||
+      (capability.descriptor.capabilityKind !== 'provider-write' &&
+        capability.descriptor.capabilityKind !== 'local-write' &&
+        capability.descriptor.capabilityKind !== 'import')
     ) {
       throw new Error('invalid-sdk-interruption-capability');
     }
@@ -3078,7 +3123,7 @@ export class AgentOrchestrator {
         ),
       );
     }
-    let scope: Omit<TurnInput, 'message' | 'escalationTriggers'> &
+    let scope: Omit<TurnInput, 'message' | 'escalationTriggers' | 'locale'> &
       Readonly<{
         disclosureGrantId: string;
         disclosureGrantVersion: string;
@@ -3200,6 +3245,7 @@ export class AgentOrchestrator {
               spaceAccessGrantId: scope.spaceAccessGrantId,
               authorizationScopeFingerprint:
                 scope.operationAuthorizationScopeFingerprint,
+              locale: state.turn.locale,
               disclosureGrantId: scope.disclosureGrantId,
               disclosureGrantVersion: scope.disclosureGrantVersion,
               approvalDecisionId: rawInput.approvalDecisionId,
@@ -3215,6 +3261,7 @@ export class AgentOrchestrator {
               spaceAccessGrantId: state.turn.spaceAccessGrantId,
               authorizationScopeFingerprint:
                 selected.execution.authorizationScopeFingerprint,
+              locale: state.turn.locale,
               disclosureGrantId: selected.execution.disclosureGrantId,
               disclosureGrantVersion: selected.execution.disclosureGrantVersion,
               approvalDecisionId: rawInput.approvalDecisionId,
@@ -3296,6 +3343,7 @@ export class AgentOrchestrator {
       conversationId: scope.conversationId,
       spaceAccessGrantId: scope.spaceAccessGrantId,
       authorizationScopeFingerprint: scope.authorizationScopeFingerprint,
+      locale: state.turn.locale,
       abortSignal: scope.abortSignal,
       message: state.turn.message,
       escalationTriggers: Object.freeze([]),
@@ -3324,6 +3372,7 @@ export class AgentOrchestrator {
       spaceAccessGrantId: scope.spaceAccessGrantId,
       authorizationScopeFingerprint:
         scope.operationAuthorizationScopeFingerprint,
+      locale: state.turn.locale,
       disclosureGrantId: scope.disclosureGrantId,
       disclosureGrantVersion: scope.disclosureGrantVersion,
       approvalDecisionId: rawInput.approvalDecisionId,
@@ -3339,6 +3388,7 @@ export class AgentOrchestrator {
       spaceAccessGrantId: state.turn.spaceAccessGrantId,
       authorizationScopeFingerprint:
         selected.execution.authorizationScopeFingerprint,
+      locale: state.turn.locale,
       disclosureGrantId: selected.execution.disclosureGrantId,
       disclosureGrantVersion: selected.execution.disclosureGrantVersion,
       approvalDecisionId: rawInput.approvalDecisionId,
@@ -3611,6 +3661,7 @@ export class AgentOrchestrator {
             authenticatedSessionId: turn.authenticatedSessionId,
             spaceAccessGrantId: turn.spaceAccessGrantId,
             authorizationScopeFingerprint: turn.authorizationScopeFingerprint,
+            locale: turn.locale,
             disclosureGrantId: authorization.grantId,
             disclosureGrantVersion: authorization.grantVersion,
             ...(options.approvalDecisionId === undefined
@@ -3864,8 +3915,11 @@ export class AgentOrchestrator {
       interruption.authorizationScopeFingerprint !== undefined &&
       specialist !== undefined &&
       delegation?.specialistId === execution.agentId &&
-      capability?.descriptor.capabilityKind === 'provider-write' &&
-      capability.descriptor.approval.rule === 'authenticated-visual-proposal'
+      capability?.descriptor.approval.rule ===
+        'authenticated-visual-proposal' &&
+      (capability.descriptor.capabilityKind === 'provider-write' ||
+        capability.descriptor.capabilityKind === 'local-write' ||
+        capability.descriptor.capabilityKind === 'import')
     );
   }
 
@@ -4675,18 +4729,23 @@ export class AgentOrchestrator {
       throw new Error('invalid-runtime-checkpoint');
     }
     const turn = asObject(value.turn);
-    assertExactKeys(turn, [
-      'requestId',
-      'runId',
-      'householdId',
-      'userId',
-      'authenticatedSessionId',
-      'conversationId',
-      'spaceAccessGrantId',
-      'authorizationScopeFingerprint',
-      'message',
-      'currentMessage',
-    ]);
+    assertExactKeys(
+      turn,
+      [
+        'requestId',
+        'runId',
+        'householdId',
+        'userId',
+        'authenticatedSessionId',
+        'conversationId',
+        'spaceAccessGrantId',
+        'authorizationScopeFingerprint',
+        'locale',
+        'message',
+        'currentMessage',
+      ],
+      ['locale'],
+    );
     const model = asObject(value.modelResolution);
     if (
       model.status !== 'resolved' ||
@@ -4710,6 +4769,10 @@ export class AgentOrchestrator {
         EffectiveAuthorizationScopeFingerprintSchema.parse(
           turn.authorizationScopeFingerprint,
         ),
+      locale:
+        turn.locale === undefined
+          ? 'en-CA'
+          : SupportedLocaleSchema.parse(turn.locale),
       message:
         typeof turn.message === 'string' &&
         turn.message.length <= MAX_MESSAGE_LENGTH

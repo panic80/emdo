@@ -56,6 +56,7 @@ export type {
   DisclosurePayloadFilterResult,
   IssuedDataDisclosureGrant,
   ModelDisclosureDenialReason,
+  SpecialistDisclosureGrantResolverScope,
   SchedulerDisclosureGrantResolverScope,
 } from './agent/disclosure-gateway.js';
 export { PostgresApprovalCheckpointRepository } from './agent/approval-checkpoint-repository.js';
@@ -138,6 +139,31 @@ export {
   FinanceImportPersistenceError,
   PostgresFinanceImportRepository,
 } from './finance/postgres-finance-import-repository.js';
+export {
+  FinanceDocumentRepositoryError,
+  PostgresFinanceDocumentRepository,
+} from './finance/postgres-finance-document-repository.js';
+export {
+  FinanceSpecialistRecordRepositoryError,
+  PostgresFinanceSpecialistRecordRepository,
+} from './finance/postgres-finance-specialist-record-repository.js';
+export type {
+  FinanceSpecialistRecordRepositoryScope,
+  FinanceSpecialistRecordWriteAudit,
+  FinanceSpecialistRecordWriteCommand,
+  FinanceSpecialistRecordWriteReceipt,
+} from './finance/postgres-finance-specialist-record-repository.js';
+export type {
+  FinanceDocumentCurrencyLabel,
+  FinanceDocumentMatchSuggestion,
+  FinanceDocumentMetadataView,
+  FinanceDocumentOriginalAuthorization,
+  FinanceDocumentRepositoryPrincipal,
+  FinanceDocumentReviewDraft,
+  FinanceDocumentReviewedChunk,
+  FinanceDocumentReviewedEvidence,
+  FinanceDocumentReviewedPayload,
+} from './finance/postgres-finance-document-repository.js';
 
 export {
   checkPostgresExperienceReadiness,

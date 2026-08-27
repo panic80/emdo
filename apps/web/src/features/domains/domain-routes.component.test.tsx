@@ -364,6 +364,105 @@ describe(
       expect(screen.getByText('$12.34')).toBeVisible();
     });
 
+    it('creates an exact monthly CAD category budget through the safe offline record path', async () => {
+      const operations: SyncOperation[] = [];
+      await renderPath('/finance', operations);
+
+      await userEvent.click(screen.getByRole('tab', { name: 'Planning' }));
+      await userEvent.clear(screen.getByLabelText('Month'));
+      await userEvent.type(screen.getByLabelText('Month'), '2026-09');
+      await userEvent.type(screen.getByLabelText('Category ID'), 'groceries');
+      await userEvent.type(screen.getByLabelText('Allocation (CAD)'), '650.25');
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Save budget allocation' }),
+      );
+
+      await waitFor(() => expect(operations).toHaveLength(1));
+      expect(operations[0]).toMatchObject({
+        entity: { type: 'finance.budget', id: 'budget-2026-09' },
+        mutation: {
+          kind: 'create',
+          payload: {
+            value: {
+              id: 'budget-2026-09',
+              currency: 'CAD',
+              allocationsCadMinor: { groceries: 65_025 },
+            },
+          },
+        },
+      });
+    });
+
+    it('shows accessible localized validation errors before queueing a budget change', async () => {
+      const operations: SyncOperation[] = [];
+      await renderPath('/finance', operations);
+
+      await userEvent.click(screen.getByRole('tab', { name: 'Planning' }));
+      await userEvent.type(screen.getByLabelText('Category ID'), 'Groceries');
+      await userEvent.type(screen.getByLabelText('Allocation (CAD)'), '-1');
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Save budget allocation' }),
+      );
+
+      expect(
+        await screen.findByText('Enter a lowercase category ID.'),
+      ).toHaveAttribute('role', 'alert');
+      expect(
+        screen.getByText(
+          'Enter a non-negative CAD amount with up to two decimal places.',
+        ),
+      ).toHaveAttribute('role', 'alert');
+      expect(operations).toHaveLength(0);
+    });
+
+    it('updates one monthly category allocation with the canonical base/local budget merge', async () => {
+      const operations: SyncOperation[] = [];
+      const base = {
+        id: 'budget-2026-08',
+        currency: 'CAD' as const,
+        allocationsCadMinor: { groceries: 40_000, transit: 10_000 },
+      };
+      await renderPath('/finance', operations, [
+        {
+          domain: 'finance',
+          entityType: 'finance.budget',
+          id: base.id,
+          value: base,
+          revision: 3,
+          tombstoned: false,
+          updatedAt: '2026-08-10T12:00:00.000Z',
+          spaceId: '11111111-1111-4111-8111-111111111111',
+        },
+      ]);
+
+      await userEvent.click(screen.getByRole('tab', { name: 'Planning' }));
+      await userEvent.clear(screen.getByLabelText('Month'));
+      await userEvent.type(screen.getByLabelText('Month'), '2026-08');
+      await userEvent.type(screen.getByLabelText('Category ID'), 'groceries');
+      await userEvent.type(screen.getByLabelText('Allocation (CAD)'), '450.00');
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Save budget allocation' }),
+      );
+
+      await waitFor(() => expect(operations).toHaveLength(1));
+      expect(operations[0]).toMatchObject({
+        baseRevision: 3,
+        entity: { type: 'finance.budget', id: base.id },
+        mutation: {
+          kind: 'update',
+          payload: {
+            patch: {
+              base,
+              local: {
+                ...base,
+                allocationsCadMinor: { groceries: 45_000, transit: 10_000 },
+              },
+            },
+          },
+        },
+      });
+    });
+
     it('renders finance records from DomainData without seeded production fallbacks', async () => {
       const records: DomainRecord[] = [
         {

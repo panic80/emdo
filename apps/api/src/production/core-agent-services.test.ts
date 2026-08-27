@@ -150,6 +150,7 @@ vi.mock('./core-openai-services.js', async (importOriginal) => {
 });
 
 import {
+  CapabilityDescriptorSchema,
   DataDisclosureGrantSchema,
   EffectiveAuthorizationScopeFingerprintSchema,
 } from '@emdo/contracts';
@@ -160,6 +161,8 @@ import type { ProductionOpenAiAgentServiceBundle } from './core-openai-services.
 import {
   createRequestScopedCoreAgentRuntimeFactory,
   createRequestScopedCoreCalendarProposalAdapter,
+  createRequestScopedFinanceGuardedActionProposalAdapter,
+  createRequestScopedManagerFinanceAgentRuntimeFactory,
 } from './core-agent-services.js';
 
 const ids = Object.freeze({
@@ -387,6 +390,206 @@ describe('request-scoped core Calendar proposal adapter', () => {
   });
 });
 
+describe('request-scoped Finance guarded action proposal adapter', () => {
+  const financeDisclosureGrant = DataDisclosureGrantSchema.parse({
+    ...disclosureGrant,
+    agentId: 'finance',
+    purpose: 'Execute one Finance specialist action.',
+    recordAllowlist: [
+      {
+        dataClass: 'finance.transactions',
+        recordId: 'transaction-1',
+        fields: ['ledger'],
+      },
+    ],
+  });
+  const financeWriteDescriptor = CapabilityDescriptorSchema.parse({
+    schemaVersion: 1,
+    id: 'finance.records.write',
+    version: '1.0.0',
+    capabilityKind: 'local-write',
+    inputSchema: { id: 'finance.records.write.input', version: '1.0.0' },
+    outputSchema: { id: 'finance.records.write.output', version: '1.0.0' },
+    requiredScopes: [],
+    requiredDataClasses: ['finance.transactions'],
+    riskClass: 'local-write',
+    timeoutMs: 15_000,
+    freshness: {
+      required: false,
+      maxAgeMs: 60_000,
+      revalidateBeforeExecution: false,
+    },
+    idempotency: { required: true, scope: 'actor', ttlMs: 86_400_000 },
+    approval: {
+      rule: 'authenticated-visual-proposal',
+      expiresInSeconds: 600,
+    },
+    audit: {
+      required: true,
+      eventType: 'finance.records.write.invoked',
+      redactFields: [],
+    },
+    executorId: 'finance.records.write.v1',
+  });
+
+  it('persists one Finance-local approval proposal and binds it to the exact action and disclosure scope', async () => {
+    const readPool = { connect: vi.fn() } as never;
+    const workflowPool = { connect: vi.fn() } as never;
+    const resolve = vi.fn(async () => financeDisclosureGrant);
+    const create = vi.fn(async (proposal) => proposal);
+    const createProposalService = vi.fn(() => ({ create }));
+    const createProposalRepository = vi.fn(
+      () => ({ transaction: vi.fn() }) as never,
+    );
+    const adapter = createRequestScopedFinanceGuardedActionProposalAdapter(
+      {
+        principal,
+        requestId: ids.request,
+        runId: ids.run,
+        readPool,
+        workflowPool,
+      },
+      {
+        createDisclosureGrantResolver: () => ({ resolve }),
+        createProposalRepository,
+        createProposalService,
+        createProposalId: () => ids.proposal,
+        now: () => new Date('2026-08-15T12:05:00.000Z'),
+      },
+    );
+    const argumentsValue = {
+      schemaVersion: 1 as const,
+      mutation: {
+        kind: 'adjust' as const,
+        transactionId: 'transaction-1',
+        amountCadMinor: 50,
+        reason: 'Correct the receipt total.',
+      },
+    };
+
+    const materialized = await adapter.materializeProposal({
+      capabilityId: 'finance.records.write',
+      descriptor: financeWriteDescriptor,
+      arguments: argumentsValue,
+      operation: 'finance-adjustment',
+      context: {
+        requestId: ids.request,
+        runId: ids.run,
+        householdId: ids.household,
+        userId: ids.user,
+        authenticatedSessionId: ids.session,
+        spaceAccessGrantId: ids.spaceGrant,
+        authorizationScopeFingerprint,
+        disclosureGrantId: ids.disclosureGrant,
+        disclosureGrantVersion: '7.2.5',
+        sdkCallId: 'finance-sdk-call-1',
+        agentId: 'finance',
+        abortSignal: new AbortController().signal,
+      },
+    });
+
+    expect(resolve).toHaveBeenCalledWith(ids.disclosureGrant);
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: ids.proposal,
+        runId: ids.run,
+        capabilityId: 'finance.records.write',
+        canonicalArguments: argumentsValue,
+        disclosureGrant: financeDisclosureGrant,
+        guardedAction: expect.objectContaining({
+          capabilityVersion: '1.0.0',
+          operation: 'finance-adjustment',
+          actionHash: hashCanonicalJson(argumentsValue),
+        }),
+        expiresAt: '2026-08-15T12:10:00.000Z',
+        state: 'pending',
+      }),
+      expect.objectContaining({
+        agentId: 'finance',
+        originRequestId: ids.request,
+        runId: ids.run,
+        originSessionId: ids.session,
+        originSpaceAccessGrantId: ids.spaceGrant,
+        disclosureGrantId: ids.disclosureGrant,
+        capabilityId: 'finance.records.write',
+        sdkCallId: 'finance-sdk-call-1',
+      }),
+    );
+    expect(materialized).toMatchObject({
+      sdkCallId: 'finance-sdk-call-1',
+      proposal: {
+        id: ids.proposal,
+        guardedAction: {
+          operation: 'finance-adjustment',
+        },
+      },
+    });
+    expect(createProposalRepository).toHaveBeenCalledWith({
+      readPool,
+      workflowPool,
+      principal: {
+        userId: ids.user,
+        householdId: ids.household,
+        sessionId: ids.session,
+        requestId: ids.request,
+      },
+    });
+  });
+
+  it('fails closed before persistence when the Finance disclosure grant cannot be resolved', async () => {
+    const create = vi.fn(async (proposal) => proposal);
+    const adapter = createRequestScopedFinanceGuardedActionProposalAdapter(
+      {
+        principal,
+        requestId: ids.request,
+        runId: ids.run,
+        readPool: { connect: vi.fn() } as never,
+        workflowPool: { connect: vi.fn() } as never,
+      },
+      {
+        createDisclosureGrantResolver: () => ({
+          resolve: vi.fn(async () => undefined),
+        }),
+        createProposalRepository: () => ({ transaction: vi.fn() }) as never,
+        createProposalService: () => ({ create }),
+        createProposalId: () => ids.proposal,
+        now: () => new Date('2026-08-15T12:05:00.000Z'),
+      },
+    );
+
+    await expect(
+      adapter.materializeProposal({
+        capabilityId: 'finance.records.write',
+        descriptor: financeWriteDescriptor,
+        arguments: {
+          schemaVersion: 1,
+          mutation: {
+            kind: 'reverse',
+            transactionId: 'transaction-1',
+            reason: 'Reverse duplicate entry.',
+          },
+        },
+        operation: 'finance-reversal',
+        context: {
+          requestId: ids.request,
+          runId: ids.run,
+          householdId: ids.household,
+          userId: ids.user,
+          authenticatedSessionId: ids.session,
+          spaceAccessGrantId: ids.spaceGrant,
+          authorizationScopeFingerprint,
+          disclosureGrantId: ids.disclosureGrant,
+          disclosureGrantVersion: '7.2.5',
+          sdkCallId: 'finance-sdk-call-2',
+          agentId: 'finance',
+          abortSignal: new AbortController().signal,
+        },
+      }),
+    ).rejects.toThrow('api-finance-guarded-action-disclosure-invalid');
+    expect(create).not.toHaveBeenCalled();
+  });
+});
+
 describe('request-scoped core agent runtime factory', () => {
   it('constructs the exact scoped manager+scheduler graph without provider I/O', async () => {
     const readPool = { connect: vi.fn() } as never;
@@ -471,8 +674,162 @@ describe('request-scoped core agent runtime factory', () => {
 
     await expect(factory?.check()).resolves.toBe(true);
     expect(checkGlobalDependencies).toHaveBeenCalledOnce();
-    expect(isAvailable).toHaveBeenNthCalledWith(1, 'gpt-5.6-luna');
-    expect(isAvailable).toHaveBeenNthCalledWith(2, 'gpt-5.6-terra');
+    expect(isAvailable).toHaveBeenCalledOnce();
+    expect(isAvailable).toHaveBeenCalledWith('gpt-5.6-terra');
+  });
+
+  it('composes a manager-only fallback without Google, and a guarded Finance graph only with workflow persistence', async () => {
+    const readPool = { connect: vi.fn() } as never;
+    const workflowPool = { connect: vi.fn() } as never;
+    const isAvailable = vi.fn(async () => true);
+    const openAi: ProductionOpenAiAgentServiceBundle = {
+      modelAvailability: { isAvailable },
+      costCalculator: { calculateCadMinor: () => 1 },
+      runner: { run: vi.fn(async () => ({ state: {} }) as never) },
+      close: vi.fn(async () => undefined),
+    };
+    const common = {
+      principal,
+      requestId: ids.request,
+      runId: ids.run,
+      conversationId: ids.conversation,
+      readPool,
+      openAi,
+      checkpointCipher: {
+        security: {
+          atRest: 'authenticated-encryption' as const,
+          algorithm: 'AES-256-GCM' as const,
+          keyRotation: 'versioned-keyring' as const,
+        },
+        seal: vi.fn(),
+        open: vi.fn(),
+      },
+      checkGlobalDependencies: vi.fn(async () => true),
+    };
+    const managerOnly =
+      createRequestScopedManagerFinanceAgentRuntimeFactory(common);
+    expect(managerOnly?.runtime.agentIds).toEqual(['manager']);
+    expect(managerOnly?.runtime.capabilityIds).toEqual([]);
+
+    const unavailable = async () => {
+      throw new Error('test-finance-service-must-not-run');
+    };
+    const financeOnly = createRequestScopedManagerFinanceAgentRuntimeFactory({
+      ...common,
+      workflowPool,
+      finance: {
+        readFinanceRecords: unavailable,
+        writeFinanceRecord: unavailable,
+        executeStatementImport: unavailable,
+        loadFinanceBudgetInputs: unavailable,
+        searchFinanceDocuments: unavailable,
+        readFinanceDocument: unavailable,
+        readFinanceMatches: unavailable,
+      },
+    });
+    expect(financeOnly?.runtime.agentIds).toEqual(['manager', 'finance']);
+    expect(financeOnly?.runtime.capabilityIds).toEqual([
+      'agent.finance.delegate',
+      'finance.records.read',
+      'finance.records.write',
+      'finance.statement.import',
+      'finance.analytics.calculate',
+      'finance.documents.search',
+      'finance.documents.read',
+      'finance.matches.read',
+    ]);
+    expect(poolConstructorCalls.proposal).toEqual([
+      expect.objectContaining({ readPool, workflowPool }),
+    ]);
+    expect(poolConstructorCalls.calendarBinding).toEqual([]);
+    await expect(managerOnly?.check()).resolves.toBe(true);
+    await expect(financeOnly?.check()).resolves.toBe(true);
+  });
+
+  it('treats Terra as the required ready model when Luna is unavailable', async () => {
+    const readPool = { connect: vi.fn() } as never;
+    const isAvailable = vi.fn(
+      async (model: string) => model === 'gpt-5.6-terra',
+    );
+    const factory = createRequestScopedManagerFinanceAgentRuntimeFactory({
+      principal,
+      requestId: ids.request,
+      runId: ids.run,
+      conversationId: ids.conversation,
+      readPool,
+      openAi: {
+        modelAvailability: { isAvailable },
+        costCalculator: { calculateCadMinor: () => 1 },
+        runner: { run: vi.fn(async () => ({ state: {} }) as never) },
+        close: vi.fn(async () => undefined),
+      },
+      checkpointCipher: {
+        security: {
+          atRest: 'authenticated-encryption' as const,
+          algorithm: 'AES-256-GCM' as const,
+          keyRotation: 'versioned-keyring' as const,
+        },
+        seal: vi.fn(),
+        open: vi.fn(),
+      },
+      checkGlobalDependencies: vi.fn(async () => true),
+    });
+
+    await expect(factory?.check()).resolves.toBe(true);
+    expect(isAvailable).toHaveBeenCalledOnce();
+    expect(isAvailable).toHaveBeenCalledWith('gpt-5.6-terra');
+  });
+
+  it('adds Finance to the registered Scheduler graph without exposing Shopping', () => {
+    const readPool = { connect: vi.fn() } as never;
+    const unavailable = async () => {
+      throw new Error('test-finance-service-must-not-run');
+    };
+    const factory = createRequestScopedCoreAgentRuntimeFactory({
+      principal,
+      requestId: ids.request,
+      runId: ids.run,
+      conversationId: ids.conversation,
+      readPool,
+      workflowPool: { connect: vi.fn() } as never,
+      google: {
+        createProposalTargetReader: vi.fn(),
+        createConditionalGateway: vi.fn(),
+      },
+      openAi: {
+        modelAvailability: { isAvailable: vi.fn(async () => true) },
+        costCalculator: { calculateCadMinor: () => 1 },
+        runner: { run: vi.fn(async () => ({ state: {} }) as never) },
+        close: vi.fn(async () => undefined),
+      },
+      checkpointCipher: {
+        security: {
+          atRest: 'authenticated-encryption',
+          algorithm: 'AES-256-GCM',
+          keyRotation: 'versioned-keyring',
+        },
+        seal: vi.fn(),
+        open: vi.fn(),
+      },
+      checkGlobalDependencies: async () => true,
+      finance: {
+        readFinanceRecords: unavailable,
+        writeFinanceRecord: unavailable,
+        executeStatementImport: unavailable,
+        loadFinanceBudgetInputs: unavailable,
+        searchFinanceDocuments: unavailable,
+        readFinanceDocument: unavailable,
+        readFinanceMatches: unavailable,
+      },
+    });
+    expect(factory?.runtime.agentIds).toEqual([
+      'manager',
+      'scheduler',
+      'finance',
+    ]);
+    expect(factory?.runtime.capabilityIds).not.toContain(
+      'agent.shopping.delegate',
+    );
   });
 
   it('fails closed for incomplete dependencies or a shared read/workflow pool', () => {

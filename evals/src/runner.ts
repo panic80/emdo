@@ -1,4 +1,5 @@
 import type { EffectiveAuthorizationScopeFingerprint } from '../../packages/contracts/src/capability.js';
+import type { SupportedLocale } from '../../packages/contracts/src/locale.js';
 
 type EvalAuthorizationScopeFingerprint = EffectiveAuthorizationScopeFingerprint;
 
@@ -27,6 +28,7 @@ export interface AgentEvalTurn {
   readonly authorizationScopeFingerprint: EvalAuthorizationScopeFingerprint;
   /** Eval fixtures model the fresh disclosure grant required for a resume. */
   readonly disclosureGrantId: string;
+  readonly locale: SupportedLocale;
   readonly message: string;
   readonly escalationTriggers: readonly (
     | 'dependent-cross-domain'

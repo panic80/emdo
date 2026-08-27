@@ -4,6 +4,10 @@ import type { FinanceImportDestinations } from '@emdo/contracts/browser';
 
 import { Button } from '../../components/button.js';
 import {
+  financeCopy,
+  type FinanceImportCopy,
+} from '../finance-v1/finance-locales.js';
+import {
   type FinanceImportApi,
   type FinanceImportPreview,
 } from './finance-import-api.js';
@@ -93,10 +97,6 @@ function suggestedColumn(headers: readonly string[], terms: readonly string[]) {
   );
 }
 
-function createIdempotencyKey(planId: string): string {
-  return `finance-import:${planId}:${crypto.randomUUID()}`;
-}
-
 function planIsExpired(plan: FinanceImportPreview['plan']): boolean {
   return Date.parse(plan.expiresAt) <= Date.now();
 }
@@ -107,14 +107,20 @@ function clearFileInput(input: HTMLInputElement | null): void {
 
 export function FinanceImportPanel({
   api,
+  copy = financeCopy['en-CA'].importPanel,
   csrfToken,
   online,
-  onCommitted,
+  onRequestCommit = () => false,
 }: {
   readonly api: FinanceImportApi;
+  readonly copy?: FinanceImportCopy;
   readonly csrfToken?: string;
   readonly online: boolean;
-  readonly onCommitted: () => void | Promise<void>;
+  readonly onRequestCommit?: (
+    plan: FinanceImportPreview['plan'],
+  ) => Promise<boolean> | boolean;
+  /** @deprecated kept only for callers migrating to guarded EMDO requests. */
+  readonly onCommitted?: () => void | Promise<void>;
 }) {
   const sourceRef = useRef<string | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -153,9 +159,8 @@ export function FinanceImportPanel({
     'yyyy-mm-dd' | 'mm/dd/yyyy' | 'dd/mm/yyyy'
   >('yyyy-mm-dd');
   const [plan, setPlan] = useState<FinanceImportPreview['plan']>();
-  const [idempotencyKey, setIdempotencyKey] = useState<string>();
   const [reviewed, setReviewed] = useState(false);
-  const [phase, setPhase] = useState<'idle' | 'previewing' | 'committing'>(
+  const [phase, setPhase] = useState<'idle' | 'previewing' | 'requesting'>(
     'idle',
   );
   const [message, setMessage] = useState<string>();
@@ -199,7 +204,6 @@ export function FinanceImportPanel({
     setFormat(undefined);
     setHeaders([]);
     setPlan(undefined);
-    setIdempotencyKey(undefined);
     setReviewed(false);
     setPhase('idle');
   };
@@ -208,7 +212,6 @@ export function FinanceImportPanel({
     abortOperation();
     planSourceRef.current = undefined;
     setPlan(undefined);
-    setIdempotencyKey(undefined);
     setReviewed(false);
     setError(undefined);
     setPhase('idle');
@@ -270,7 +273,7 @@ export function FinanceImportPanel({
       }
     } catch {
       if (!operationIsCurrent(operation.generation)) return;
-      setError('Import destinations are unavailable. Try again while online.');
+      setError(copy.destinationsUnavailable);
     } finally {
       if (operationIsCurrent(operation.generation)) setLoadingOptions(false);
     }
@@ -284,11 +287,11 @@ export function FinanceImportPanel({
     if (!file) return;
     const nextFormat = detectFormat(file);
     if (!nextFormat) {
-      setError('Choose a CSV or OFX statement file.');
+      setError(copy.invalidFile);
       return;
     }
     if (file.size === 0 || file.size > MAXIMUM_FILE_BYTES) {
-      setError('Choose a non-empty statement smaller than 1 MB.');
+      setError(copy.fileSize);
       return;
     }
     let source: string;
@@ -296,7 +299,7 @@ export function FinanceImportPanel({
       source = await file.text();
     } catch {
       if (!sourceGenerationIsCurrent(sourceGeneration)) return;
-      setError('EMDO could not read that statement file.');
+      setError(copy.unreadableFile);
       return;
     }
     if (
@@ -310,12 +313,12 @@ export function FinanceImportPanel({
       !source ||
       new TextEncoder().encode(source).byteLength > MAXIMUM_FILE_BYTES
     ) {
-      setError('Choose a non-empty statement smaller than 1 MB.');
+      setError(copy.fileSize);
       return;
     }
     const nextHeaders = nextFormat === 'csv' ? parseCsvHeader(source) : [];
     if (nextFormat === 'csv' && !nextHeaders) {
-      setError('Use a CSV with a valid header row of up to 50 named columns.');
+      setError(copy.invalidCsvHeader);
       return;
     }
     sourceRef.current = source;
@@ -350,9 +353,7 @@ export function FinanceImportPanel({
         (!columns.amount && !(columns.debit && columns.credit)) ||
         (columns.amount && (columns.debit || columns.credit)))
     ) {
-      setError(
-        'Choose a date, description, and one signed amount or both debit and credit columns.',
-      );
+      setError(copy.incompleteMapping);
       return;
     }
     const operation = beginOperation();
@@ -361,7 +362,6 @@ export function FinanceImportPanel({
     setError(undefined);
     setMessage(undefined);
     setPlan(undefined);
-    setIdempotencyKey(undefined);
     setReviewed(false);
     try {
       const result = await api.preview(
@@ -405,7 +405,6 @@ export function FinanceImportPanel({
       )
         return;
       setPlan(result.plan);
-      setIdempotencyKey(createIdempotencyKey(result.plan.id));
       planSourceRef.current = {
         id: result.plan.id,
         source,
@@ -413,9 +412,7 @@ export function FinanceImportPanel({
       };
     } catch {
       if (!operationIsCurrent(operation.generation)) return;
-      setError(
-        'EMDO could not preview that statement. Try again while online.',
-      );
+      setError(copy.previewUnavailable);
     } finally {
       if (operationIsCurrent(operation.generation)) setPhase('idle');
     }
@@ -430,40 +427,24 @@ export function FinanceImportPanel({
       !planSource ||
       planSource.id !== plan.id ||
       !sourceIsCurrent(planSource.sourceGeneration, planSource.source) ||
-      !idempotencyKey ||
       !reviewed ||
       planIsExpired(plan)
     )
       return;
     const operation = beginOperation();
-    setPhase('committing');
+    setPhase('requesting');
     setError(undefined);
     try {
-      const result = await api.commit({
-        csrfToken,
-        idempotencyKey,
-        planId: plan.id,
-        signal: operation.controller.signal,
-      });
+      const requested = await onRequestCommit(plan);
       if (
         !operationIsCurrent(operation.generation) ||
         !sourceIsCurrent(planSource.sourceGeneration, planSource.source)
       )
         return;
-      if (!result.sourceDeletionAuthorized) {
-        setError('EMDO did not authorize deletion of the local statement.');
-        return;
-      }
-      clearSource();
-      setMessage(
-        `${result.status === 'replayed' ? 'Import already committed: ' : 'Imported '}${result.receipt.transactionCount} transactions.`,
-      );
-      await onCommitted();
+      setMessage(requested ? copy.commitRequested : copy.commitUnavailable);
     } catch {
       if (!operationIsCurrent(operation.generation)) return;
-      setError(
-        'EMDO could not commit that import. The statement remains in memory for retry.',
-      );
+      setError(copy.commitUnavailable);
     } finally {
       if (operationIsCurrent(operation.generation)) setPhase('idle');
     }
@@ -472,14 +453,14 @@ export function FinanceImportPanel({
   if (!effectiveOnline) {
     return (
       <p className="import-panel" role="status">
-        Statement import is available only while online.
+        {copy.offline}
       </p>
     );
   }
   if (!csrfToken) {
     return (
       <p className="import-panel" role="status">
-        Statement import needs a current secure session.
+        {copy.secureSessionRequired}
       </p>
     );
   }
@@ -489,17 +470,14 @@ export function FinanceImportPanel({
         className="import-panel"
         aria-labelledby="statement-import-heading"
       >
-        <h2 id="statement-import-heading">Import a statement</h2>
-        <p>
-          CSV and OFX statements are reviewed online and are never queued for
-          offline sync.
-        </p>
+        <h2 id="statement-import-heading">{copy.heading}</h2>
+        <p>{copy.description}</p>
         <Button
           busy={loadingOptions}
           onClick={() => void activate()}
           type="button"
         >
-          Import statement
+          {copy.open}
         </Button>
       </section>
     );
@@ -517,19 +495,10 @@ export function FinanceImportPanel({
       className="import-panel finance-import-panel"
       aria-labelledby="statement-import-heading"
     >
-      <h2 id="statement-import-heading">Import a statement</h2>
-      <p>
-        CSV and OFX statements are reviewed online and are never queued for
-        offline sync.
-      </p>
-      {loadingOptions ? (
-        <p role="status">Loading import destinations…</p>
-      ) : null}
-      {noAccounts ? (
-        <p role="status">
-          Add an active finance account before importing a statement.
-        </p>
-      ) : null}
+      <h2 id="statement-import-heading">{copy.heading}</h2>
+      <p>{copy.description}</p>
+      {loadingOptions ? <p role="status">{copy.loadingDestinations}</p> : null}
+      {noAccounts ? <p role="status">{copy.noAccounts}</p> : null}
       {error ? (
         <p className="inline-error" role="alert">
           {error}
@@ -538,7 +507,7 @@ export function FinanceImportPanel({
       {message ? <p role="status">{message}</p> : null}
       {destinations && !noAccounts ? (
         <>
-          <label htmlFor="finance-import-account">Import account</label>
+          <label htmlFor="finance-import-account">{copy.accountLabel}</label>
           <select
             id="finance-import-account"
             value={accountId}
@@ -547,7 +516,7 @@ export function FinanceImportPanel({
               clearSource();
             }}
           >
-            <option value="">Choose an account</option>
+            <option value="">{copy.chooseAccount}</option>
             {destinations.accounts.map((account) => (
               <option key={account.id} value={account.id}>
                 {account.name}
@@ -555,7 +524,7 @@ export function FinanceImportPanel({
             ))}
           </select>
           <label htmlFor="finance-import-category">
-            Default category (optional)
+            {copy.defaultCategoryLabel}
           </label>
           <select
             id="finance-import-category"
@@ -565,14 +534,14 @@ export function FinanceImportPanel({
               setDefaultCategoryId(event.target.value);
             }}
           >
-            <option value="">No default category</option>
+            <option value="">{copy.noDefaultCategory}</option>
             {destinations.categories.map((category) => (
               <option key={category.id} value={category.id}>
                 {category.name}
               </option>
             ))}
           </select>
-          <label htmlFor="finance-import-file">Statement file</label>
+          <label htmlFor="finance-import-file">{copy.statementFileLabel}</label>
           <input
             ref={fileInputRef}
             id="finance-import-file"
@@ -584,9 +553,11 @@ export function FinanceImportPanel({
           />
           {format === 'csv' ? (
             <fieldset className="finance-import-panel__mapping">
-              <legend>CSV column mapping</legend>
+              <legend>{copy.mappingLegend}</legend>
               <ColumnSelect
-                label="Posted date column"
+                id="finance-import-posted-date-column"
+                label={copy.postedOnColumn}
+                emptyLabel={copy.chooseColumn}
                 value={columns.postedOn}
                 headers={headers}
                 onChange={(value) => {
@@ -595,7 +566,9 @@ export function FinanceImportPanel({
                 }}
               />
               <ColumnSelect
-                label="Description column"
+                id="finance-import-description-column"
+                label={copy.descriptionColumn}
+                emptyLabel={copy.chooseColumn}
                 value={columns.description}
                 headers={headers}
                 onChange={(value) => {
@@ -604,7 +577,9 @@ export function FinanceImportPanel({
                 }}
               />
               <ColumnSelect
-                label="Signed amount column"
+                id="finance-import-signed-amount-column"
+                label={copy.amountColumn}
+                emptyLabel={copy.chooseColumn}
                 value={columns.amount}
                 headers={headers}
                 onChange={(value) => {
@@ -617,7 +592,9 @@ export function FinanceImportPanel({
                 }}
               />
               <ColumnSelect
-                label="Debit column"
+                id="finance-import-debit-column"
+                label={copy.debitColumn}
+                emptyLabel={copy.chooseColumn}
                 value={columns.debit}
                 headers={headers}
                 onChange={(value) => {
@@ -630,7 +607,9 @@ export function FinanceImportPanel({
                 }}
               />
               <ColumnSelect
-                label="Credit column"
+                id="finance-import-credit-column"
+                label={copy.creditColumn}
+                emptyLabel={copy.chooseColumn}
                 value={columns.credit}
                 headers={headers}
                 onChange={(value) => {
@@ -643,7 +622,9 @@ export function FinanceImportPanel({
                 }}
               />
               <ColumnSelect
-                label="External ID column (optional)"
+                id="finance-import-external-id-column"
+                label={copy.externalIdColumn}
+                emptyLabel={copy.chooseColumn}
                 value={columns.externalId}
                 headers={headers}
                 onChange={(value) => {
@@ -652,7 +633,9 @@ export function FinanceImportPanel({
                 }}
               />
               <ColumnSelect
-                label="Category column (optional)"
+                id="finance-import-category-column"
+                label={copy.categoryColumn}
+                emptyLabel={copy.chooseColumn}
                 value={columns.categoryId}
                 headers={headers}
                 onChange={(value) => {
@@ -660,7 +643,9 @@ export function FinanceImportPanel({
                   setColumns((current) => ({ ...current, categoryId: value }));
                 }}
               />
-              <label htmlFor="finance-import-date-format">Date format</label>
+              <label htmlFor="finance-import-date-format">
+                {copy.dateFormatLabel}
+              </label>
               <select
                 id="finance-import-date-format"
                 value={dateFormat}
@@ -682,7 +667,7 @@ export function FinanceImportPanel({
               onClick={() => void preview()}
               type="button"
             >
-              Preview import
+              {copy.preview}
             </Button>
             <Button
               variant="quiet"
@@ -692,7 +677,7 @@ export function FinanceImportPanel({
               }}
               type="button"
             >
-              Cancel import
+              {copy.cancel}
             </Button>
           </div>
         </>
@@ -702,24 +687,24 @@ export function FinanceImportPanel({
           className="finance-import-panel__preview"
           aria-labelledby="import-preview-heading"
         >
-          <h3 id="import-preview-heading">Review import</h3>
+          <h3 id="import-preview-heading">{copy.reviewHeading}</h3>
           <p role="status">
-            {plan.summary.accepted} accepted · {plan.summary.rejected} rejected
-            · {plan.summary.duplicates} duplicates
+            {plan.summary.accepted} {copy.accepted} · {plan.summary.rejected}{' '}
+            {copy.rejected} · {plan.summary.duplicates} {copy.duplicates}
           </p>
           {plan.rejectedRows.slice(0, 100).map((row) => (
             <p key={`rejected-${row.sourceRow}`}>
-              Row {row.sourceRow}: {row.code}
+              {copy.row} {row.sourceRow}: {row.code}
             </p>
           ))}
           {plan.duplicateRows.slice(0, 100).map((row) => (
             <p key={`duplicate-${row.sourceRow}`}>
-              Row {row.sourceRow}: {row.reason}
+              {copy.row} {row.sourceRow}: {row.reason}
             </p>
           ))}
           {planIsExpired(plan) ? (
             <p className="inline-error" role="alert">
-              This preview has expired. Create a new preview before committing.
+              {copy.previewExpired}
             </p>
           ) : null}
           <label className="finance-import-panel__review">
@@ -728,15 +713,15 @@ export function FinanceImportPanel({
               checked={reviewed}
               onChange={(event) => setReviewed(event.target.checked)}
             />
-            I reviewed this import and want to commit it.
+            {copy.reviewedLabel}
           </label>
           <Button
-            busy={phase === 'committing'}
+            busy={phase === 'requesting'}
             disabled={commitDisabled}
             onClick={() => void commit()}
             type="button"
           >
-            Commit {plan.summary.accepted} transactions
+            {copy.commit} {plan.summary.accepted} {copy.transactions}
           </Button>
         </section>
       ) : null}
@@ -745,17 +730,20 @@ export function FinanceImportPanel({
 }
 
 function ColumnSelect({
+  id,
   label,
+  emptyLabel,
   value,
   headers,
   onChange,
 }: {
+  readonly id: string;
   readonly label: string;
+  readonly emptyLabel: string;
   readonly value: string;
   readonly headers: readonly string[];
   readonly onChange: (value: string) => void;
 }) {
-  const id = `finance-import-${label.toLowerCase().replace(/[^a-z0-9]+/gu, '-')}`;
   return (
     <>
       <label htmlFor={id}>{label}</label>
@@ -764,7 +752,7 @@ function ColumnSelect({
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
-        <option value="">Choose a column</option>
+        <option value="">{emptyLabel}</option>
         {headers.map((header) => (
           <option key={header} value={header}>
             {header}

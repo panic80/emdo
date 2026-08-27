@@ -150,6 +150,9 @@ describe('container and edge configuration', () => {
     expect(dockerfile).toContain('pnpm build');
     expect(dockerfile).toContain('pnpm --filter @emdo/api deploy --prod');
     expect(dockerfile).toContain('pnpm --filter @emdo/worker deploy --prod');
+    expect(dockerfile).toContain(
+      'test -f apps/worker/dist/cli/finance-document-extraction.js',
+    );
     expect(dockerfile).toContain("-name '*.map'");
     expect(dockerfile).toContain("-name '*.d.ts'");
     expect(dockerfile).toContain('validate-runtime-package.mjs /opt/emdo/api');
@@ -173,6 +176,9 @@ describe('container and edge configuration', () => {
     );
     expect(dockerfile).toContain('createUnavailableWorkerProviderRuntime');
     expect(dockerfile).toContain("runtime.status.overall !== 'degraded'");
+    expect(dockerfile).toContain(
+      "import('./dist/cli/finance-document-extraction.js')",
+    );
     expect(dockerfile).toContain(
       'validate-runtime-package.mjs /workspace/apps/web',
     );
@@ -430,7 +436,7 @@ describe('container and edge configuration', () => {
       /loopback-ingress:\n\s+name: emdo-staging-\$\{STAGING_RUN_ID:\?STAGING_RUN_ID is required\}-loopback-ingress\n(?!\s+internal: true)/,
     );
     expect(common).toContain(
-      'for resource in edge egress auth-egress backend loopback-ingress; do',
+      'for resource in edge egress auth-egress backend loopback-ingress finance-extraction-egress; do',
     );
     expect(staging).toMatch(
       /api:[\s\S]*?networks: !override\n\s+- backend\n\s+- edge\n\s+- auth-egress/,
@@ -443,6 +449,109 @@ describe('container and edge configuration', () => {
     expect(
       staging.match(/limits:\n\s+memory:/g)?.length,
     ).toBeGreaterThanOrEqual(6);
+  });
+
+  it('keeps Finance document staging opt-in, run-scoped, and least-privilege', async () => {
+    const [compose, staging, financeStaging] = await Promise.all([
+      read('infra/compose/compose.yml'),
+      read('infra/compose/compose.staging.yml'),
+      read('infra/compose/compose.finance-staging.yml'),
+    ]);
+    const apiService = financeStaging.match(
+      /\n {2}api:\n[\s\S]+?\n {2}staging-acceptance:\n/u,
+    )?.[0];
+    const financeExtractionService = financeStaging.match(
+      /\n {2}finance-extraction:\n[\s\S]+?\nnetworks:\n/u,
+    )?.[0];
+    const hostStore =
+      '${FINANCE_STAGING_DOCUMENT_STORE_DIR:?FINANCE_STAGING_DOCUMENT_STORE_DIR must point to a run-scoped finance document store outside the repository}';
+    const apiEnv =
+      '${FINANCE_STAGING_API_ENV_FILE:?FINANCE_STAGING_API_ENV_FILE must point to a run-scoped finance-api env file}';
+    const extractionEnv =
+      '${FINANCE_STAGING_EXTRACTION_ENV_FILE:?FINANCE_STAGING_EXTRACTION_ENV_FILE must point to a run-scoped finance-extraction env file}';
+    const restoreVerifierHandoff =
+      '${FINANCE_STAGING_RESTORE_VERIFIER_INPUT_FILE:?FINANCE_STAGING_RESTORE_VERIFIER_INPUT_FILE must point to the pre-created run-scoped Finance restore verifier handoff}';
+
+    expect(apiService).toBeDefined();
+    expect(financeExtractionService).toBeDefined();
+    expect(apiService).toContain('env_file: !override');
+    expect(apiService).toContain(apiEnv);
+    expect(apiService).toContain(
+      '${SECRETS_DIR:?SECRETS_DIR must point to staging credentials}/api.env',
+    );
+    expect(apiService).toContain(
+      '${SECRETS_DIR:?SECRETS_DIR must point to staging credentials}/edge-proxy.env',
+    );
+    expect(apiService).toContain(
+      'EMDO_FINANCE_DOCUMENT_STORE_DIR: /var/lib/emdo/finance-documents',
+    );
+    expect(apiService).toContain("EMDO_FINANCE_SYNTHETIC_STAGING: 'true'");
+    expect(apiService).toContain(`source: '${hostStore}'`);
+    expect(apiService).toMatch(
+      /target: \/var\/lib\/emdo\/finance-documents\n\s+read_only: false\n\s+bind:\n\s+create_host_path: false/,
+    );
+    expect(financeStaging).toMatch(
+      /staging-acceptance:[\s\S]*?EMDO_FINANCE_SYNTHETIC_STAGING: 'true'[\s\S]*?EMDO_STAGING_API_ORIGIN: 'http:\/\/127\.0\.0\.1:3000'[\s\S]*?source: '\$\{FINANCE_STAGING_RESTORE_VERIFIER_INPUT_FILE:\?FINANCE_STAGING_RESTORE_VERIFIER_INPUT_FILE must point to the pre-created run-scoped Finance restore verifier handoff\}'[\s\S]*?target: \/run\/emdo\/finance-restore\/finance-staging-restore-verifier-input\.env[\s\S]*?read_only: false[\s\S]*?network_mode: service:api/,
+    );
+    expect(financeStaging).toMatch(
+      /synthetic-data:[\s\S]*?EMDO_FINANCE_SYNTHETIC_STAGING: 'true'/,
+    );
+    expect(financeStaging).toContain(restoreVerifierHandoff);
+    expect(apiService).not.toContain('RESTORE_VERIFIER_INPUT_FILE');
+    expect(financeExtractionService).not.toContain(
+      'RESTORE_VERIFIER_INPUT_FILE',
+    );
+
+    expect(financeExtractionService).toContain(
+      "image: '${WORKER_IMAGE:?WORKER_IMAGE must be an immutable application image reference}'",
+    );
+    expect(financeExtractionService).toContain("user: '10001:10001'");
+    expect(financeExtractionService).toContain(extractionEnv);
+    expect(financeExtractionService).toContain(
+      'EMDO_FINANCE_DOCUMENT_STORE_DIR: /var/lib/emdo/finance-documents',
+    );
+    expect(financeExtractionService).toContain(`source: '${hostStore}'`);
+    expect(financeExtractionService).toMatch(
+      /command:\n\s+- node\n\s+- dist\/cli\/finance-document-extraction\.js/,
+    );
+    expect(financeExtractionService).toContain('read_only: true');
+    expect(financeExtractionService).toContain('cap_drop:');
+    expect(financeExtractionService).toContain('- ALL');
+    expect(financeExtractionService).toContain('no-new-privileges:true');
+    expect(financeExtractionService).toContain(
+      '/tmp:size=32m,noexec,nosuid,nodev,mode=0700',
+    );
+    expect(financeExtractionService).toMatch(
+      /target: \/var\/lib\/emdo\/finance-documents\n\s+read_only: true\n\s+bind:\n\s+create_host_path: false/,
+    );
+    expect(financeExtractionService).toMatch(
+      /networks:\n\s+- backend\n\s+- finance-extraction-egress/,
+    );
+    for (const forbiddenGrant of [
+      'ports:',
+      '- edge',
+      'worker.env',
+      'api.env',
+      'EMDO_OPENAI_AUDIO_API_KEY',
+      'EMDO_EXTERNAL_PROVIDERS_ENABLED',
+    ]) {
+      expect(financeExtractionService).not.toContain(forbiddenGrant);
+    }
+    expect(financeStaging).toMatch(
+      /finance-extraction-egress:\n\s+name: emdo-staging-\$\{STAGING_RUN_ID:\?STAGING_RUN_ID is required\}-finance-extraction-egress\n(?!\s+internal: true)/,
+    );
+
+    for (const baseline of [compose, staging]) {
+      expect(baseline).not.toContain('finance-extraction:');
+      expect(baseline).not.toContain('EMDO_FINANCE_SYNTHETIC_STAGING');
+      expect(baseline).not.toContain('FINANCE_STAGING_API_ENV_FILE');
+      expect(baseline).not.toContain('FINANCE_STAGING_EXTRACTION_ENV_FILE');
+      expect(baseline).not.toContain('FINANCE_STAGING_DOCUMENT_STORE_DIR');
+      expect(baseline).not.toContain(
+        'FINANCE_STAGING_RESTORE_VERIFIER_INPUT_FILE',
+      );
+      expect(baseline).not.toContain('finance-extraction-egress');
+    }
   });
 
   it('sets TLS/security headers and forbids caching or buffering event/audio responses', async () => {
@@ -1188,6 +1297,10 @@ describe('host deployment and recovery scripts', () => {
     expect(staging).not.toContain('systemd-run');
     expect(sweeper).toContain('emdo-staging-operator teardown');
     expect(sweeper).toContain('deadline_epoch');
+    expect(sweeper).toContain(
+      'protected state was retained for a verified retry',
+    );
+    expect(sweeper).not.toContain('remove_expired_run_state');
     expect(staging).toContain('synthetic-data');
     expect(staging).toContain('assert_staging_secret_manifest "$SECRETS_DIR"');
     expect(acceptance).toContain('staging-acceptance');
@@ -1373,6 +1486,7 @@ describe('GitHub delivery policy', () => {
     expect(staging).toContain('EMDO_SYNTHETIC_DATA_ONLY: true');
     expect(staging).toContain('initial_deployment:');
     expect(staging).toContain('mvp_core_only:');
+    expect(staging).toContain('finance_synthetic_staging:');
     expect(staging).toContain(
       'INITIAL_STAGING_BOOTSTRAP: ${{ inputs.initial_deployment }}',
     );
@@ -1384,12 +1498,27 @@ describe('GitHub delivery policy', () => {
     expect(staging).toContain('MVP_STAGING_TESTED=true');
     expect(staging).toContain('MVP_RELEASE_ELIGIBLE=false');
     expect(
-      staging.match(/if: \$\{\{ !inputs\.mvp_core_only \}\}/g),
+      staging.match(
+        /if: \$\{\{ !inputs\.mvp_core_only && !inputs\.finance_synthetic_staging \}\}/g,
+      ),
     ).toHaveLength(3);
     expect(
-      staging.match(/if: \$\{\{ inputs\.mvp_core_only \}\}/g),
+      staging.match(
+        /if: \$\{\{ inputs\.mvp_core_only && !inputs\.finance_synthetic_staging \}\}/g,
+      ),
     ).toHaveLength(2);
+    expect(staging).toContain('finance-restore-receipt');
+    expect(staging).toContain('release/finance-staging-restore-receipt.json');
+    expect(staging).toContain('value.proof?.backupRestore');
+    expect(staging).toContain('value.sourceSha !== process.env.SOURCE_SHA');
+    expect(staging).toContain(
+      'value?.workflowRunId !== process.env.STAGING_RUN_ID',
+    );
     expect(staging).toContain('if: always()');
+    const teardownStep = staging.slice(
+      staging.indexOf('name: Tear down staging at the end of the test window'),
+    );
+    expect(teardownStep).not.toContain('continue-on-error: true');
     expect(staging).toContain('PUBLISH_RUN_ID: ${{ inputs.publish_run_id }}');
     expect(staging).toContain('CI_RUN_ID: ${{ inputs.ci_run_id }}');
     expect(staging).toContain("run.path !== '.github/workflows/ci.yml'");

@@ -85,7 +85,7 @@ const hashAuthority = (input: {
     .digest('hex');
 
 describeDatabase(
-  'PostgreSQL 17 Google Calendar authority binding (isolated canonical database only)',
+  'PostgreSQL 18 Google Calendar authority binding (isolated canonical database only)',
   () => {
     let admin: import('pg').Client;
     let reconciliation: import('pg').Pool;

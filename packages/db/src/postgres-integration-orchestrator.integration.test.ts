@@ -9,7 +9,7 @@ const event = process.env.POSTGRES_INTEGRATION_EVENT_NAME;
 const describePostgres = adminUrl === undefined ? describe.skip : describe;
 
 describePostgres(
-  'sequential isolated PostgreSQL 17 integration suites (requires POSTGRES_INTEGRATION_ADMIN_URL)',
+  'sequential isolated PostgreSQL 18 integration suites (requires POSTGRES_INTEGRATION_ADMIN_URL)',
   () => {
     it(
       'executes every live suite and emits only a non-release raw probe',
@@ -32,8 +32,14 @@ describePostgres(
         });
 
         expect(report.releaseEligible).toBe(false);
+        expect(report.database.postgresqlMajor).toBe(18);
+        expect(report.database.serverVersionNum).toBeGreaterThanOrEqual(
+          180_000,
+        );
+        expect(report.database.serverVersionNum).toBeLessThan(190_000);
         expect(report.execution).toBe('sequential');
         expect(report.databaseIsolation).toBe('dedicated-database-per-suite');
+        expect(report.suites).toHaveLength(17);
         expect(report.rlsCrossHouseholdAttacks).toMatchObject({
           crossHouseholdReadDenied: true,
           crossHouseholdWriteDenied: true,
