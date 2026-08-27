@@ -132,7 +132,6 @@ export const createSyntheticFinanceInvitationHandoff = (
   const wrapHouseholdAdministration: SyntheticFinanceInvitationHandoff['wrapHouseholdAdministration'] =
     (gateway) =>
       Object.freeze({
-        ...gateway,
         issueInvitation: async (
           input: Parameters<
             HouseholdAdministrationGateway['issueInvitation']
@@ -179,6 +178,31 @@ export const createSyntheticFinanceInvitationHandoff = (
           );
           return result;
         },
+        listInvitations: (
+          input: Parameters<
+            HouseholdAdministrationGateway['listInvitations']
+          >[0],
+        ) => gateway.listInvitations(input),
+        revokeInvitation: (
+          input: Parameters<
+            HouseholdAdministrationGateway['revokeInvitation']
+          >[0],
+        ) => gateway.revokeInvitation(input),
+        listMemberships: (
+          input: Parameters<
+            HouseholdAdministrationGateway['listMemberships']
+          >[0],
+        ) => gateway.listMemberships(input),
+        changeMembershipRole: (
+          input: Parameters<
+            HouseholdAdministrationGateway['changeMembershipRole']
+          >[0],
+        ) => gateway.changeMembershipRole(input),
+        deactivateMembership: (
+          input: Parameters<
+            HouseholdAdministrationGateway['deactivateMembership']
+          >[0],
+        ) => gateway.deactivateMembership(input),
       });
 
   return Object.freeze({

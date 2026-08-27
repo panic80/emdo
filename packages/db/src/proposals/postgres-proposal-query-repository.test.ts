@@ -120,6 +120,8 @@ describe('PostgresProposalQueryRepository', () => {
     await expect(repository.check()).resolves.toBe(true);
     expect(query).toHaveBeenCalledOnce();
     expect(query.mock.calls[0]?.[0]).toContain('has_function_privilege');
+    expect(query.mock.calls[0]?.[0]).toMatch(/\bcoalesce\(/u);
+    expect(query.mock.calls[0]?.[0]).not.toContain('pg_catalog.coalesce');
     expect(query.mock.calls[0]?.[1]).toEqual([
       [
         'emdo.list_proposal_approval_sources(uuid,uuid,text,text,timestamptz,uuid,integer)',
