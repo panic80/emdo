@@ -1453,34 +1453,130 @@ describe('staging acceptance CLI', () => {
     expect(formatStagingAcceptanceFailure(undefined)).toBe(
       'Staging acceptance failed.\n',
     );
+    expect(
+      formatStagingAcceptanceFailure(
+        'member-invitation:http-503-private-content' as never,
+      ),
+    ).toBe('Staging acceptance failed.\n');
   });
 
   it.each([
     {
       failurePath: '/api/v1/household/invitations',
-      expectedStage: 'member-invitation',
+      failure: { kind: 'throw' },
+      expectedFailure:
+        'Staging acceptance failed at stage=member-invitation outcome=request-or-network-failed.\n',
+    },
+    {
+      failurePath: '/api/v1/household/invitations',
+      failure: { kind: 'problem', status: 500, code: 'internal-error' },
+      expectedFailure:
+        'Staging acceptance failed at stage=member-invitation outcome=http-500-internal-error.\n',
+    },
+    {
+      failurePath: '/api/v1/household/invitations',
+      failure: { kind: 'problem', status: 503, code: 'invalid-result' },
+      expectedFailure:
+        'Staging acceptance failed at stage=member-invitation outcome=http-503-invalid-result.\n',
+    },
+    {
+      failurePath: '/api/v1/household/invitations',
+      failure: { kind: 'problem', status: 418, code: 'private-id' },
+      expectedFailure:
+        'Staging acceptance failed at stage=member-invitation outcome=http-problem-unrecognized.\n',
+    },
+    {
+      failurePath: '/api/v1/household/invitations',
+      failure: { kind: 'malformed-problem' },
+      expectedFailure:
+        'Staging acceptance failed at stage=member-invitation outcome=http-problem-unrecognized.\n',
+    },
+    {
+      failurePath: '/api/v1/household/invitations',
+      failure: { kind: 'invalid-readback' },
+      expectedFailure:
+        'Staging acceptance failed at stage=member-invitation outcome=readback-invalid.\n',
     },
     {
       failurePath: '/api/internal/finance-synthetic/invitation-token',
-      expectedStage: 'member-token-handoff',
+      failure: { kind: 'throw' },
+      expectedFailure:
+        'Staging acceptance failed at stage=member-token-handoff.\n',
     },
     {
       failurePath: '/api/v1/auth/invitations/csrf',
-      expectedStage: 'member-redemption',
+      failure: { kind: 'throw' },
+      expectedFailure:
+        'Staging acceptance failed at stage=member-redemption.\n',
     },
     {
       failurePath: '/api/v1/household/memberships',
-      expectedStage: 'member-membership-readback',
+      failure: { kind: 'throw' },
+      expectedFailure:
+        'Staging acceptance failed at stage=member-membership-readback.\n',
     },
   ] as const)(
-    'reports only the fixed $expectedStage checkpoint for a member provisioning failure',
-    async ({ failurePath, expectedStage }) => {
+    'reports only a fixed member provisioning failure outcome',
+    async ({ failurePath, failure, expectedFailure }) => {
       const sensitiveFailure =
         'cookie=owner-secret token=invitation-secret member=private-id';
       let reportedStage: FinanceAcceptanceStage | null = null;
       const fetch = vi.fn(async (request: Request) => {
         const path = new URL(request.url).pathname;
-        if (path === failurePath) throw new Error(sensitiveFailure);
+        if (path === failurePath) {
+          if (failure.kind === 'throw') throw new Error(sensitiveFailure);
+          if (failure.kind === 'problem') {
+            return Response.json(
+              {
+                type: 'about:blank',
+                title: sensitiveFailure,
+                status: failure.status,
+                code: failure.code,
+                detail: sensitiveFailure,
+                requestId: REQUEST_ID,
+              },
+              {
+                status: failure.status,
+                headers: {
+                  'content-type': 'application/problem+json',
+                  'x-request-id': REQUEST_ID,
+                },
+              },
+            );
+          }
+          if (failure.kind === 'malformed-problem') {
+            return Response.json(
+              {
+                type: 'about:blank',
+                title: sensitiveFailure,
+                status: 503,
+                code: 'invalid-result',
+                detail: sensitiveFailure,
+              },
+              {
+                status: 503,
+                headers: { 'content-type': 'application/problem+json' },
+              },
+            );
+          }
+          return jsonWithRequestId(
+            {
+              schemaVersion: 1,
+              invitation: {
+                id: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f96',
+                email: 'private-id@emdo.invalid',
+                role: 'member',
+                status: 'pending',
+                deliveryStatus: 'queued',
+                version: 1,
+                createdAt: '2026-08-12T15:00:00.000Z',
+                expiresAt: '2026-08-12T15:15:00.000Z',
+              },
+              replayed: false,
+            },
+            { status: 201 },
+          );
+        }
         if (path === '/healthz') return jsonWithRequestId({ status: 'ok' });
         if (path === '/openapi.json')
           return Response.json({
@@ -1593,14 +1689,12 @@ describe('staging acceptance CLI', () => {
             reportedStage = stage;
           },
         }),
-      ).rejects.toThrow(sensitiveFailure);
+      ).rejects.toThrow();
 
       const message = formatStagingAcceptanceFailure(
         reportedStage ?? undefined,
       );
-      expect(message).toBe(
-        `Staging acceptance failed at stage=${expectedStage}.\n`,
-      );
+      expect(message).toBe(expectedFailure);
       expect(message).not.toContain('owner-secret');
       expect(message).not.toContain('invitation-secret');
       expect(message).not.toContain('private-id');

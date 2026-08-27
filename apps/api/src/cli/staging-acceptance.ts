@@ -76,35 +76,96 @@ const FINANCE_FINALIZE_ACCEPTANCE_ARGS = Object.freeze([
   '--finance-synthetic-document-finalize',
 ] as const);
 
-type FinanceStagingAcceptanceStage =
-  | 'configuration'
-  | 'health-and-contract'
-  | 'owner-authentication'
-  | 'member-invitation'
-  | 'member-token-handoff'
-  | 'member-redemption'
-  | 'member-membership-readback'
-  | 'member-authentication'
-  | 'document-ingestion-and-review'
-  | 'guarded-review-commit'
-  | 'guarded-delete-denial'
-  | 'qna-and-isolation'
-  | 'safe-write-and-handoff'
-  | 'finalize-configuration'
-  | 'finalize-attestation'
-  | 'finalize-health-and-contract'
-  | 'finalize-owner-authentication'
-  | 'finalize-member-authentication'
-  | 'finalize-document-and-evidence'
-  | 'finalize-guarded-delete'
-  | 'finalize-purge-and-revocation';
+const FinanceStagingAcceptanceStageSchema = z.enum([
+  'configuration',
+  'health-and-contract',
+  'owner-authentication',
+  'member-invitation',
+  'member-token-handoff',
+  'member-redemption',
+  'member-membership-readback',
+  'member-authentication',
+  'document-ingestion-and-review',
+  'guarded-review-commit',
+  'guarded-delete-denial',
+  'qna-and-isolation',
+  'safe-write-and-handoff',
+  'finalize-configuration',
+  'finalize-attestation',
+  'finalize-health-and-contract',
+  'finalize-owner-authentication',
+  'finalize-member-authentication',
+  'finalize-document-and-evidence',
+  'finalize-guarded-delete',
+  'finalize-purge-and-revocation',
+]);
+
+type FinanceStagingAcceptanceStage = z.output<
+  typeof FinanceStagingAcceptanceStageSchema
+>;
+
+const FinanceMemberInvitationDiagnosticSchema = z.enum([
+  'member-invitation:request-or-network-failed',
+  'member-invitation:http-401-authentication-required',
+  'member-invitation:http-401-authentication-invalid',
+  'member-invitation:http-403-mutation-proof-invalid',
+  'member-invitation:http-403-household-owner-required',
+  'member-invitation:http-403-authorization-revoked',
+  'member-invitation:http-409-conflict',
+  'member-invitation:http-500-internal-error',
+  'member-invitation:http-502-service-contract-invalid',
+  'member-invitation:http-503-authentication-unavailable',
+  'member-invitation:http-503-mutation-verification-unavailable',
+  'member-invitation:http-503-invalid-result',
+  'member-invitation:http-problem-unrecognized',
+  'member-invitation:readback-invalid',
+]);
+
+type FinanceMemberInvitationDiagnostic = z.output<
+  typeof FinanceMemberInvitationDiagnosticSchema
+>;
+
+type FinanceStagingAcceptanceProgress =
+  FinanceStagingAcceptanceStage | FinanceMemberInvitationDiagnostic;
+
+const FinanceMemberInvitationOutcome = Object.freeze({
+  'member-invitation:request-or-network-failed': 'request-or-network-failed',
+  'member-invitation:http-401-authentication-required':
+    'http-401-authentication-required',
+  'member-invitation:http-401-authentication-invalid':
+    'http-401-authentication-invalid',
+  'member-invitation:http-403-mutation-proof-invalid':
+    'http-403-mutation-proof-invalid',
+  'member-invitation:http-403-household-owner-required':
+    'http-403-household-owner-required',
+  'member-invitation:http-403-authorization-revoked':
+    'http-403-authorization-revoked',
+  'member-invitation:http-409-conflict': 'http-409-conflict',
+  'member-invitation:http-500-internal-error': 'http-500-internal-error',
+  'member-invitation:http-502-service-contract-invalid':
+    'http-502-service-contract-invalid',
+  'member-invitation:http-503-authentication-unavailable':
+    'http-503-authentication-unavailable',
+  'member-invitation:http-503-mutation-verification-unavailable':
+    'http-503-mutation-verification-unavailable',
+  'member-invitation:http-503-invalid-result': 'http-503-invalid-result',
+  'member-invitation:http-problem-unrecognized': 'http-problem-unrecognized',
+  'member-invitation:readback-invalid': 'readback-invalid',
+} satisfies Record<FinanceMemberInvitationDiagnostic, string>);
 
 export const formatStagingAcceptanceFailure = (
-  financeStage: FinanceStagingAcceptanceStage | undefined,
-): string =>
-  financeStage === undefined
-    ? 'Staging acceptance failed.\n'
-    : `Staging acceptance failed at stage=${financeStage}.\n`;
+  progress: FinanceStagingAcceptanceProgress | undefined,
+): string => {
+  const diagnostic =
+    FinanceMemberInvitationDiagnosticSchema.safeParse(progress);
+  if (diagnostic.success) {
+    return `Staging acceptance failed at stage=member-invitation outcome=${FinanceMemberInvitationOutcome[diagnostic.data]}.\n`;
+  }
+  const stage = FinanceStagingAcceptanceStageSchema.safeParse(progress);
+  return stage.success
+    ? `Staging acceptance failed at stage=${stage.data}.\n`
+    : 'Staging acceptance failed.\n';
+};
 
 const FINANCE_DOCUMENT_FILENAME = 'emdo-synthetic-staging.pdf';
 const FINANCE_REVIEW_ISSUER = 'EMDO synthetic staged review';
@@ -397,7 +458,7 @@ type StagingAcceptanceCommandInput = {
   readonly financeExtractionMaxPolls?: number;
   /** CLI-only content-safe progress observer; it never receives user data. */
   readonly financeStageReporter?: (
-    stage: FinanceStagingAcceptanceStage,
+    progress: FinanceStagingAcceptanceProgress,
   ) => void;
   /** Test-only dependency injection; production uses the protected writer. */
   readonly financeRestoreVerifierHandoffWriter?: (
@@ -461,6 +522,44 @@ const parseProblem = async (response: Response) => {
     throw new Error('Staging acceptance problem response is invalid');
   }
   return parsed.data;
+};
+
+const FinanceMemberInvitationProblemDiagnostic = Object.freeze({
+  '401:authentication-required':
+    'member-invitation:http-401-authentication-required',
+  '401:authentication-invalid':
+    'member-invitation:http-401-authentication-invalid',
+  '403:mutation-proof-invalid':
+    'member-invitation:http-403-mutation-proof-invalid',
+  '403:household-owner-required':
+    'member-invitation:http-403-household-owner-required',
+  '403:authorization-revoked':
+    'member-invitation:http-403-authorization-revoked',
+  '409:conflict': 'member-invitation:http-409-conflict',
+  '500:internal-error': 'member-invitation:http-500-internal-error',
+  '502:service-contract-invalid':
+    'member-invitation:http-502-service-contract-invalid',
+  '503:authentication-unavailable':
+    'member-invitation:http-503-authentication-unavailable',
+  '503:mutation-verification-unavailable':
+    'member-invitation:http-503-mutation-verification-unavailable',
+  '503:invalid-result': 'member-invitation:http-503-invalid-result',
+} satisfies Readonly<Record<string, FinanceMemberInvitationDiagnostic>>);
+
+const classifyFinanceMemberInvitationProblem = async (
+  response: Response,
+): Promise<FinanceMemberInvitationDiagnostic> => {
+  try {
+    const problem = await parseProblem(response);
+    const key = `${problem.status}:${problem.code}`;
+    return Object.hasOwn(FinanceMemberInvitationProblemDiagnostic, key)
+      ? FinanceMemberInvitationProblemDiagnostic[
+          key as keyof typeof FinanceMemberInvitationProblemDiagnostic
+        ]
+      : 'member-invitation:http-problem-unrecognized';
+  } catch {
+    return 'member-invitation:http-problem-unrecognized';
+  }
 };
 
 const TERMINAL_RUN_EVENT_TYPES = new Set([
@@ -1405,35 +1504,52 @@ const runFinanceStagingAcceptance = async (
   };
 
   input.financeStageReporter?.('member-invitation');
-  const issueInvitation = await send('/api/v1/household/invitations', {
-    method: 'POST',
-    headers: {
-      ...mutationHeaders,
-      'content-type': 'application/json',
-      'idempotency-key': 'finance-staging-secondary-member-invitation-v1',
-    },
-    body: JSON.stringify({
-      schemaVersion: 1,
-      email: FINANCE_SYNTHETIC_MEMBER_EMAIL,
-      role: 'member',
-      expiresInSeconds: 900,
-    }),
-  });
-  requireResponseRequestId(issueInvitation);
+  let issueInvitation: Response;
+  try {
+    issueInvitation = await send('/api/v1/household/invitations', {
+      method: 'POST',
+      headers: {
+        ...mutationHeaders,
+        'content-type': 'application/json',
+        'idempotency-key': 'finance-staging-secondary-member-invitation-v1',
+      },
+      body: JSON.stringify({
+        schemaVersion: 1,
+        email: FINANCE_SYNTHETIC_MEMBER_EMAIL,
+        role: 'member',
+        expiresInSeconds: 900,
+      }),
+    });
+  } catch (error) {
+    input.financeStageReporter?.('member-invitation:request-or-network-failed');
+    throw error;
+  }
   if (issueInvitation.status !== 201) {
+    input.financeStageReporter?.(
+      await classifyFinanceMemberInvitationProblem(issueInvitation),
+    );
     throw new Error('Finance synthetic member invitation was not issued');
   }
-  const issuedInvitation = HouseholdInvitationIssueResponseSchema.parse(
-    await requireOkJson(issueInvitation),
-  );
-  if (
-    issuedInvitation.replayed ||
-    issuedInvitation.invitation.email !== FINANCE_SYNTHETIC_MEMBER_EMAIL ||
-    issuedInvitation.invitation.role !== 'member' ||
-    issuedInvitation.invitation.status !== 'pending' ||
-    issuedInvitation.invitation.deliveryStatus !== 'queued'
-  ) {
-    throw new Error('Finance synthetic member invitation readback is invalid');
+  let issuedInvitation: z.output<typeof HouseholdInvitationIssueResponseSchema>;
+  try {
+    requireResponseRequestId(issueInvitation);
+    issuedInvitation = HouseholdInvitationIssueResponseSchema.parse(
+      await requireOkJson(issueInvitation),
+    );
+    if (
+      issuedInvitation.replayed ||
+      issuedInvitation.invitation.email !== FINANCE_SYNTHETIC_MEMBER_EMAIL ||
+      issuedInvitation.invitation.role !== 'member' ||
+      issuedInvitation.invitation.status !== 'pending' ||
+      issuedInvitation.invitation.deliveryStatus !== 'queued'
+    ) {
+      throw new Error(
+        'Finance synthetic member invitation readback is invalid',
+      );
+    }
+  } catch (error) {
+    input.financeStageReporter?.('member-invitation:readback-invalid');
+    throw error;
   }
 
   input.financeStageReporter?.('member-token-handoff');
@@ -2386,17 +2502,17 @@ if (
   invokedPath !== undefined &&
   pathToFileURL(invokedPath).href === import.meta.url
 ) {
-  let financeStage: FinanceStagingAcceptanceStage | undefined;
+  let financeProgress: FinanceStagingAcceptanceProgress | undefined;
   void runStagingAcceptanceCommand({
     argv: process.argv.slice(2),
     environment: process.env,
-    financeStageReporter: (stage) => {
-      financeStage = stage;
+    financeStageReporter: (progress) => {
+      financeProgress = progress;
     },
   })
     .then((result) => process.stdout.write(`${JSON.stringify(result)}\n`))
     .catch(() => {
-      process.stderr.write(formatStagingAcceptanceFailure(financeStage));
+      process.stderr.write(formatStagingAcceptanceFailure(financeProgress));
       process.exitCode = 1;
     });
 }
