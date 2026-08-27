@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { SyncOperationSchema } from '@emdo/contracts';
+import { CanonicalSyncUploadValidator } from '@emdo/db/sync';
 import { resolveDeterministicSyncOperation } from '@emdo/domains/conflicts';
-import { FinanceRecordSchema } from '@emdo/domains/finance';
 
 import {
   formatSyntheticSeedFailure,
@@ -211,11 +211,13 @@ describe('synthetic staging seed CLI', () => {
     ).toEqual(['applied', 'applied', 'applied']);
   });
 
-  it('adds only the canonical owner-bound Finance account in explicit Finance mode', async () => {
+  it('creates the Finance account internally before uploading the canonical three-operation batch', async () => {
     const bootstrapOwner = vi.fn(async () => 0);
     let uploadedBody: { operations: unknown[] } | undefined;
     let uploadRequest: Request | undefined;
+    const requests: Request[] = [];
     const fetch = vi.fn(async (request: Request) => {
+      requests.push(request);
       const path = new URL(request.url).pathname;
       if (path === '/api/auth/sign-in/email') {
         return new Response('{}', {
@@ -225,9 +227,6 @@ describe('synthetic staging seed CLI', () => {
               '__Secure-emdo.session_token=synthetic-session; Path=/; Secure; HttpOnly',
           },
         });
-      }
-      if (path === '/api/auth/get-session') {
-        return Response.json({ user: { id: USER_ID } });
       }
       if (path === '/api/v1/auth/csrf') {
         return Response.json({
@@ -261,20 +260,59 @@ describe('synthetic staging seed CLI', () => {
           },
         });
       }
+      if (path === '/api/internal/finance-synthetic/account') {
+        expect(request.method).toBe('POST');
+        expect(request.headers.get('cookie')).toContain(
+          '__Secure-emdo.session_token=synthetic-session',
+        );
+        expect(request.headers.get('origin')).toBe('https://staging.emdo.invalid');
+        expect(request.headers.get('x-csrf-token')).toBe(
+          'csrf-token-01234567890123456789',
+        );
+        expect(request.headers.get('idempotency-key')).toBe(
+          'synthetic-finance-account-seed-v1',
+        );
+        await expect(request.json()).resolves.toEqual({ schemaVersion: 1 });
+        return Response.json({
+          schemaVersion: 1,
+          accountId: 'synthetic-finance-account-v1',
+          status: 'applied',
+        });
+      }
       if (path === '/api/v1/sync/ops') {
         uploadRequest = request;
         uploadedBody = (await request.json()) as { operations: unknown[] };
+        const validated = new CanonicalSyncUploadValidator({
+          currentSchemaVersion: 1,
+          clock: { now: () => new Date('2026-01-01T00:01:00.000Z') },
+        }).validate(
+          { operations: uploadedBody.operations },
+          {
+            authenticatedClientId: CLIENT_ID,
+            authorizedSpaceIds: [SPACE_ID],
+          },
+        );
+        const results = validated.operations.map((entry) => {
+          const resolution = resolveDeterministicSyncOperation({
+            operation: entry,
+          });
+          expect(resolution.status).toBe('applied');
+          if (resolution.status !== 'applied') {
+            throw new Error('expected deterministic sync operation to apply');
+          }
+          return {
+            operationId: entry.operationId,
+            status: 'applied' as const,
+            revision: 1,
+            resolution: resolution.resolution,
+            conflicts: [],
+            replayed: false,
+          };
+        });
         return Response.json({
           schemaVersion: 1,
           clientId: CLIENT_ID,
-          results: uploadedBody.operations.map((entry) => ({
-            operationId: (entry as { operationId: string }).operationId,
-            status: 'applied',
-            revision: 1,
-            resolution: 'created',
-            conflicts: [],
-            replayed: false,
-          })),
+          results,
         });
       }
       return new Response(null, { status: 404 });
@@ -290,48 +328,109 @@ describe('synthetic staging seed CLI', () => {
         bootstrapOwner,
         fetch,
       }),
-    ).resolves.toEqual({ status: 'seeded', operationCount: 4 });
+    ).resolves.toEqual({ status: 'seeded', operationCount: 3 });
 
     expect(uploadRequest?.headers.get('idempotency-key')).toBe(
-      'synthetic-finance-domain-seed-v1',
+      'synthetic-domain-seed-v1',
     );
+    expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
+      '/api/auth/sign-in/email',
+      '/api/v1/auth/csrf',
+      '/api/v1/sync/clients',
+      '/api/v1/sync/token',
+      '/api/internal/finance-synthetic/account',
+      '/api/v1/sync/ops',
+    ]);
     const uploadedOperations = SyncOperationSchema.array().parse(
       uploadedBody?.operations,
     );
-    expect(uploadedOperations).toHaveLength(4);
-    const account = uploadedOperations.find(
-      (seedOperation) => seedOperation.entity.type === 'finance.account',
-    );
-    expect(account).toMatchObject({
-      operationId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f84',
-      entity: { id: 'synthetic-finance-account-v1' },
-      mutation: { payload: { spaceId: SPACE_ID } },
+    expect(uploadedOperations).toHaveLength(3);
+    expect(
+      uploadedOperations.map((seedOperation) => seedOperation.entity.type),
+    ).toEqual(['scheduler.item', 'finance.budget', 'shopping.item']);
+    expect(
+      uploadedOperations.some(
+        (seedOperation) => seedOperation.entity.type === 'finance.account',
+      ),
+    ).toBe(false);
+  });
+
+  it('sanitizes a failed internal Finance account response', async () => {
+    const secret = 'private-finance-account-response';
+    const fetch = vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === '/api/auth/sign-in/email') {
+        return new Response('{}', {
+          status: 200,
+          headers: {
+            'set-cookie':
+              '__Secure-emdo.session_token=synthetic-session; Path=/; Secure; HttpOnly',
+          },
+        });
+      }
+      if (path === '/api/v1/auth/csrf') {
+        return Response.json({
+          schemaVersion: 1,
+          token: 'csrf-token-01234567890123456789',
+        });
+      }
+      if (path === '/api/v1/sync/clients') {
+        return Response.json({
+          schemaVersion: 1,
+          clientId: CLIENT_ID,
+          status: 'registered',
+          replayed: false,
+        });
+      }
+      if (path === '/api/v1/sync/token') {
+        return Response.json({
+          schemaVersion: 1,
+          endpoint: 'https://staging.emdo.invalid/powersync',
+          token: jwt(),
+          expiresAt: '2026-08-09T12:05:00.000Z',
+          writeScope: {
+            clientId: CLIENT_ID,
+            spaces: [
+              {
+                id: SPACE_ID,
+                visibility: 'private',
+                originalOwnerUserId: USER_ID,
+              },
+            ],
+          },
+        });
+      }
+      if (path === '/api/internal/finance-synthetic/account') {
+        return new Response(secret, { status: 500 });
+      }
+      return new Response(null, { status: 404 });
     });
-    const payload = account?.mutation.payload;
-    if (
-      payload === null ||
-      payload === undefined ||
-      typeof payload !== 'object' ||
-      !('value' in payload)
-    ) {
-      throw new Error('expected Finance account payload');
+
+    let caught: unknown;
+    try {
+      await runSyntheticSeedCommand({
+        argv: ['--fail-if-nonempty', '--staging-only'],
+        environment: {
+          ...environment(),
+          EMDO_FINANCE_SYNTHETIC_STAGING: 'true',
+        },
+        bootstrapOwner: vi.fn(async () => 0),
+        fetch,
+      });
+    } catch (error) {
+      caught = error;
     }
-    const record = FinanceRecordSchema.parse(payload.value);
-    expect(record).toEqual({
-      schemaVersion: 1,
-      id: 'synthetic-finance-account-v1',
-      spaceId: SPACE_ID,
-      ownerUserId: USER_ID,
-      createdAt: '2026-01-01T00:00:00.000Z',
-      updatedAt: '2026-01-01T00:00:00.000Z',
-      recordType: 'account',
-      name: 'Synthetic staging chequing',
-      accountKind: 'chequing',
-      currency: 'CAD',
-      openingBalanceCadMinor: 0,
-      active: true,
-      source: 'manual',
-    });
+
+    expect(formatSyntheticSeedFailure(caught)).toBe(
+      'Synthetic staging seed failed at stage=finance-account.\n',
+    );
+    expect(formatSyntheticSeedFailure(caught)).not.toContain(secret);
+    expect(
+      fetch.mock.calls.some(
+        ([request]) =>
+          new URL((request as Request).url).pathname === '/api/v1/sync/ops',
+      ),
+    ).toBe(false);
   });
 
   it('fails closed outside an isolated provider-disabled staging environment', async () => {
