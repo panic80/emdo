@@ -1353,16 +1353,16 @@ export class PostgresFinanceSpecialistRecordRepository {
     const authority = singleRow(
       (
         await client.query(
-          `select grant.grant_id::text as "grantId",
-                  grant.original_owner_user_id::text as "userId",
-                  grant.session_id::text as "sessionId",
-                  grant.request_id::text as "requestId",
-                  grant.household_id::text as "householdId",
-                  grant.private_space_id::text as "privateSpaceId",
-                  grant.writable_space_ids::text[] as "writableSpaceIds"
+          `select access_grant.grant_id::text as "grantId",
+                  access_grant.original_owner_user_id::text as "userId",
+                  access_grant.session_id::text as "sessionId",
+                  access_grant.request_id::text as "requestId",
+                  access_grant.household_id::text as "householdId",
+                  access_grant.private_space_id::text as "privateSpaceId",
+                  access_grant.writable_space_ids::text[] as "writableSpaceIds"
              from emdo.resolve_space_access_grant(
                $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6::uuid
-             ) as grant`,
+             ) as access_grant`,
           [
             scope.spaceAccessGrantId,
             scope.householdId,

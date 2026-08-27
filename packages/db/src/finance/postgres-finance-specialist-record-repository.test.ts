@@ -383,6 +383,12 @@ describe('PostgresFinanceSpecialistRecordRepository', () => {
       auditEventId: ids.audit,
     });
 
+    const authorityQuery = query.mock.calls.find(([sql]) =>
+      String(sql).includes('resolve_space_access_grant'),
+    );
+    expect(String(authorityQuery?.[0])).toMatch(/\)\s+as\s+access_grant\b/iu);
+    expect(String(authorityQuery?.[0])).not.toMatch(/\)\s+as\s+grant\b/iu);
+
     const targetLock = query.mock.calls.find(
       ([sql, values]) =>
         String(sql).includes('pg_advisory_xact_lock') &&
