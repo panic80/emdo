@@ -678,6 +678,7 @@ export function FinanceDocuments({
   const [requestState, setRequestState] = useState<RequestState>('idle');
   const reviewGenerationRef = useRef(0);
   const reviewSavedGenerationRef = useRef<number | undefined>(undefined);
+  const requestGenerationRef = useRef(0);
   const canMutate = online && Boolean(csrfToken);
   const authority = (operation: string) => ({
     csrfToken: csrfToken ?? '',
@@ -687,6 +688,15 @@ export function FinanceDocuments({
     reviewGenerationRef.current += 1;
     return reviewGenerationRef.current;
   }, []);
+  const invalidateRequestGeneration = useCallback(() => {
+    requestGenerationRef.current += 1;
+    return requestGenerationRef.current;
+  }, []);
+  const invalidateRequest = useCallback(() => {
+    const generation = invalidateRequestGeneration();
+    setRequestState('idle');
+    return generation;
+  }, [invalidateRequestGeneration]);
   const invalidateReview = useCallback(() => {
     const generation = invalidateReviewGeneration();
     setReview(undefined);
@@ -695,9 +705,9 @@ export function FinanceDocuments({
     setReviewLoadingDocumentId(undefined);
     reviewSavedGenerationRef.current = undefined;
     setReviewSavedGeneration(undefined);
-    setRequestState('idle');
+    invalidateRequest();
     return generation;
-  }, [invalidateReviewGeneration]);
+  }, [invalidateRequest, invalidateReviewGeneration]);
   const markReviewUnsaved = useCallback(() => {
     const generation = invalidateReviewGeneration();
     reviewSavedGenerationRef.current = undefined;
@@ -786,8 +796,16 @@ export function FinanceDocuments({
     invalidateReview();
     return () => {
       invalidateReviewGeneration();
+      invalidateRequestGeneration();
     };
-  }, [api, csrfToken, invalidateReview, invalidateReviewGeneration, online]);
+  }, [
+    api,
+    csrfToken,
+    invalidateRequestGeneration,
+    invalidateReview,
+    invalidateReviewGeneration,
+    online,
+  ]);
   const upload = async (files: FileList | null) => {
     const selected = Array.from(files ?? []).slice(0, MAXIMUM_FILES);
     if (inputRef.current) inputRef.current.value = '';
@@ -869,12 +887,16 @@ export function FinanceDocuments({
   };
   const request = async (work: () => Promise<boolean> | boolean) => {
     if (!canMutate) return;
+    const generation = requestGenerationRef.current + 1;
+    requestGenerationRef.current = generation;
     setRequestState('requesting');
     setActionError(undefined);
     try {
-      setRequestState((await work()) ? 'requested' : 'error');
+      const requested = await work();
+      if (requestGenerationRef.current === generation)
+        setRequestState(requested ? 'requested' : 'error');
     } catch {
-      setRequestState('error');
+      if (requestGenerationRef.current === generation) setRequestState('error');
     }
   };
   const openMatches = async (document: FinanceDocumentSummary) => {

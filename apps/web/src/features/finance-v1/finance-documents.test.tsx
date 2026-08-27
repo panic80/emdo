@@ -1182,6 +1182,181 @@ describe('FinanceDocuments', () => {
     expect(onRequestCommit).not.toHaveBeenCalled();
   });
 
+  it('ignores deferred commit outcomes after scope invalidation and unmount', async () => {
+    const draft = reviewDraft({
+      proposedRecord: { kind: 'expense', description: 'Ready to commit' },
+    });
+    const pendingRequests = Array.from({ length: 4 }, () =>
+      deferred<boolean>(),
+    );
+    let requestIndex = 0;
+    const onRequestCommit = vi.fn(
+      () => pendingRequests[requestIndex++]!.promise,
+    );
+    const api = createApi({
+      list: vi.fn(async () => ({
+        schemaVersion: 1 as const,
+        items: [summary],
+      })),
+      readReview: vi.fn(async () => draft),
+    });
+    const replacementApi = createApi({
+      list: vi.fn(async () => ({
+        schemaVersion: 1 as const,
+        items: [summary],
+      })),
+      readReview: vi.fn(async () => draft),
+    });
+    const onRequestDeletion = vi.fn(() => true);
+    const onRequestMatchDecision = vi.fn(() => true);
+    const user = userEvent.setup();
+    const view = render(
+      <FinanceDocuments
+        api={api}
+        locale="en-CA"
+        online
+        csrfToken="csrf-initial"
+        onRequestDeletion={onRequestDeletion}
+        onRequestCommit={onRequestCommit}
+        onRequestMatchDecision={onRequestMatchDecision}
+      />,
+    );
+    const startCommit = async () => {
+      await user.click(
+        await screen.findByRole('button', { name: 'Review extraction' }),
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: 'Commit reviewed document' }),
+        ).not.toBeDisabled(),
+      );
+      await user.click(
+        screen.getByRole('button', { name: 'Commit reviewed document' }),
+      );
+      await waitFor(() => expect(onRequestCommit).toHaveBeenCalledTimes(1));
+    };
+    const expectNoRequestOutcome = () => {
+      expect(
+        screen.queryByText('Your request was sent to EMDO for approval.'),
+      ).toBeNull();
+      expect(
+        screen.queryByText('EMDO could not send this request. Try again.'),
+      ).toBeNull();
+    };
+
+    await startCommit();
+    view.rerender(
+      <FinanceDocuments
+        api={api}
+        locale="en-CA"
+        online
+        csrfToken="csrf-replaced"
+        onRequestDeletion={onRequestDeletion}
+        onRequestCommit={onRequestCommit}
+        onRequestMatchDecision={onRequestMatchDecision}
+      />,
+    );
+    await waitFor(expectNoRequestOutcome);
+    await act(async () => {
+      pendingRequests[0]!.resolve(true);
+      await pendingRequests[0]!.promise;
+    });
+    expectNoRequestOutcome();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Review extraction' }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Commit reviewed document' }),
+      ).not.toBeDisabled(),
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    );
+    await waitFor(() => expect(onRequestCommit).toHaveBeenCalledTimes(2));
+    view.rerender(
+      <FinanceDocuments
+        api={replacementApi}
+        locale="en-CA"
+        online
+        csrfToken="csrf-replaced"
+        onRequestDeletion={onRequestDeletion}
+        onRequestCommit={onRequestCommit}
+        onRequestMatchDecision={onRequestMatchDecision}
+      />,
+    );
+    await waitFor(expectNoRequestOutcome);
+    await act(async () => {
+      pendingRequests[1]!.resolve(false);
+      await pendingRequests[1]!.promise;
+    });
+    expectNoRequestOutcome();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Review extraction' }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Commit reviewed document' }),
+      ).not.toBeDisabled(),
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    );
+    await waitFor(() => expect(onRequestCommit).toHaveBeenCalledTimes(3));
+    view.rerender(
+      <FinanceDocuments
+        api={replacementApi}
+        locale="en-CA"
+        online={false}
+        csrfToken="csrf-replaced"
+        onRequestDeletion={onRequestDeletion}
+        onRequestCommit={onRequestCommit}
+        onRequestMatchDecision={onRequestMatchDecision}
+      />,
+    );
+    await waitFor(expectNoRequestOutcome);
+    await act(async () => {
+      pendingRequests[2]!.reject(new Error('unavailable'));
+      try {
+        await pendingRequests[2]!.promise;
+      } catch {
+        // The invalidated request must not surface this stale rejection.
+      }
+    });
+    expectNoRequestOutcome();
+
+    view.rerender(
+      <FinanceDocuments
+        api={replacementApi}
+        locale="en-CA"
+        online
+        csrfToken="csrf-replaced"
+        onRequestDeletion={onRequestDeletion}
+        onRequestCommit={onRequestCommit}
+        onRequestMatchDecision={onRequestMatchDecision}
+      />,
+    );
+    await user.click(
+      await screen.findByRole('button', { name: 'Review extraction' }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Commit reviewed document' }),
+      ).not.toBeDisabled(),
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Commit reviewed document' }),
+    );
+    await waitFor(() => expect(onRequestCommit).toHaveBeenCalledTimes(4));
+    view.unmount();
+    await act(async () => {
+      pendingRequests[3]!.resolve(true);
+      await pendingRequests[3]!.promise;
+    });
+  });
+
   it('shows, edits, and preserves an invoice payment status in the review update', async () => {
     const draft = reviewDraft({
       documentType: 'invoice',
