@@ -87,6 +87,7 @@ type FinanceStagingAcceptanceStage =
   | 'guarded-delete-denial'
   | 'qna-and-isolation'
   | 'safe-write-and-handoff'
+  | 'finalize-configuration'
   | 'finalize-attestation'
   | 'finalize-health-and-contract'
   | 'finalize-owner-authentication'
@@ -1994,7 +1995,7 @@ const requireOwnerFinanceContentRevocation = async (
 const runFinanceStagingFinalize = async (
   input: StagingAcceptanceCommandInput,
 ): Promise<FinanceStagingFinalizeResult> => {
-  input.financeStageReporter?.('finalize-attestation');
+  input.financeStageReporter?.('finalize-configuration');
   const configuration = FinanceAcceptanceConfigurationSchema.safeParse({
     apiOrigin: input.environment.EMDO_STAGING_API_ORIGIN,
     environment: input.environment.EMDO_ENVIRONMENT,
@@ -2014,6 +2015,7 @@ const runFinanceStagingFinalize = async (
     throw new Error('Finance staging finalization configuration is invalid');
   }
   const config = configuration.data;
+  input.financeStageReporter?.('finalize-attestation');
   const rawAttestation = await (
     input.financePhase2RootAttestationReader ??
     consumeFinanceStagingPhase2RootAttestation

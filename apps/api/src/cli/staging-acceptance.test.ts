@@ -1381,6 +1381,34 @@ describe('staging acceptance CLI', () => {
     );
   });
 
+  it('reports finalization configuration before reading the phase-2 handoff', async () => {
+    const fetch = vi.fn();
+    const readAttestation = vi.fn();
+    let reportedStage: FinanceAcceptanceStage | null = null;
+    await expect(
+      runStagingAcceptanceCommand({
+        argv: [
+          '--all-mvp-gates',
+          '--require-synthetic',
+          '--forbid-worker-provider-execution',
+          '--finance-synthetic-document-gates',
+          '--finance-synthetic-document-finalize',
+        ],
+        environment,
+        fetch,
+        financeStageReporter: (stage) => {
+          reportedStage = stage;
+        },
+        financePhase2RootAttestationReader: readAttestation,
+      }),
+    ).rejects.toThrow('Finance staging finalization configuration is invalid');
+    expect(fetch).not.toHaveBeenCalled();
+    expect(readAttestation).not.toHaveBeenCalled();
+    expect(formatStagingAcceptanceFailure(reportedStage ?? undefined)).toBe(
+      'Staging acceptance failed at stage=finalize-configuration.\n',
+    );
+  });
+
   it('reports only a fixed Finance stage when an underlying failure contains sensitive text', async () => {
     const sensitiveFailure =
       'cookie=owner-secret token=provider-secret document=private-content';
