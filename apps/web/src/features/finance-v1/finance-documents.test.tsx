@@ -863,21 +863,26 @@ describe('FinanceDocuments', () => {
     });
     await user.click(reviewButtons[0]!);
     await user.click(reviewButtons[1]!);
-    const editor = await screen.findByRole('textbox', {
+    await screen.findByRole('textbox', {
       name: 'Proposed record',
     });
-    await waitFor(() =>
+    await act(async () => {});
+    const editor = screen.getByRole('textbox', { name: 'Proposed record' });
+    await waitFor(() => {
+      expect(editor).not.toBeDisabled();
       expect(
         screen.getByRole('button', { name: 'Commit reviewed document' }),
-      ).not.toBeDisabled(),
-    );
-    const editedRecord = { kind: 'expense', description: 'Edited review' };
-    fireEvent.change(editor, {
-      target: { value: JSON.stringify(editedRecord) },
+      ).not.toBeDisabled();
     });
-    expect(
-      screen.getByRole('button', { name: 'Commit reviewed document' }),
-    ).toBeDisabled();
+    const editedRecord: readonly unknown[] = [];
+    const commitButton = screen.getByRole('button', {
+      name: 'Commit reviewed document',
+    });
+    await user.clear(editor);
+    await user.paste(JSON.stringify(editedRecord));
+    expect(commitButton).toBeDisabled();
+    fireEvent.click(commitButton);
+    expect(onRequestCommit).not.toHaveBeenCalled();
 
     await act(async () => {
       firstRead.resolve(

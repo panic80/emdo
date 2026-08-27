@@ -335,7 +335,6 @@ function ReviewEditor({
   disabled,
   onSave,
   onReviewEdited,
-  onReviewReset,
   generation,
 }: {
   readonly draft: FinanceDocumentReviewDraft;
@@ -343,7 +342,6 @@ function ReviewEditor({
   readonly disabled: boolean;
   readonly onSave: (envelope: FinanceDocumentEnvelopeV1) => void;
   readonly onReviewEdited: () => void;
-  readonly onReviewReset: (generation: number) => void;
   readonly generation: number;
 }) {
   const copy = financeCopy[locale];
@@ -362,8 +360,7 @@ function ReviewEditor({
     setCollectionPages({});
     setInvalidJsonEditors(new Set());
     setEditorRevision((current) => current + 1);
-    onReviewReset(generation);
-  }, [draft, generation, onReviewReset]);
+  }, [draft, generation]);
   const setField = (field: string, value: unknown) => {
     onReviewEdited();
     setEnvelope((current) => ({ ...current, [field]: value }));
@@ -675,9 +672,12 @@ export function FinanceDocuments({
   const [reviewLoadingDocumentId, setReviewLoadingDocumentId] = useState<
     string | undefined
   >();
-  const [reviewIsSaved, setReviewIsSaved] = useState(false);
+  const [reviewSavedGeneration, setReviewSavedGeneration] = useState<
+    number | undefined
+  >();
   const [requestState, setRequestState] = useState<RequestState>('idle');
   const reviewGenerationRef = useRef(0);
+  const reviewSavedGenerationRef = useRef<number | undefined>(undefined);
   const canMutate = online && Boolean(csrfToken);
   const authority = (operation: string) => ({
     csrfToken: csrfToken ?? '',
@@ -693,20 +693,19 @@ export function FinanceDocuments({
     setReviewSaving(false);
     setReviewLoading(false);
     setReviewLoadingDocumentId(undefined);
-    setReviewIsSaved(false);
+    reviewSavedGenerationRef.current = undefined;
+    setReviewSavedGeneration(undefined);
     setRequestState('idle');
     return generation;
   }, [invalidateReviewGeneration]);
   const markReviewUnsaved = useCallback(() => {
     const generation = invalidateReviewGeneration();
-    setReviewIsSaved(false);
+    reviewSavedGenerationRef.current = undefined;
+    setReviewSavedGeneration(undefined);
     setReviewLoading(false);
     setReviewLoadingDocumentId(undefined);
     return generation;
   }, [invalidateReviewGeneration]);
-  const markReviewSaved = useCallback((generation: number) => {
-    if (reviewGenerationRef.current === generation) setReviewIsSaved(true);
-  }, []);
   const refresh = () => {
     controllerRef.current?.abort();
     const controller = new AbortController();
@@ -820,6 +819,8 @@ export function FinanceDocuments({
       const draft = await api.readReview(document.id);
       if (reviewGenerationRef.current !== generation) return;
       setReview({ draft, generation });
+      reviewSavedGenerationRef.current = generation;
+      setReviewSavedGeneration(generation);
     } catch {
       if (reviewGenerationRef.current === generation)
         setActionError(copy.reviewError);
@@ -843,8 +844,11 @@ export function FinanceDocuments({
         envelope,
         ...authority('review'),
       });
-      if (reviewGenerationRef.current === generation)
+      if (reviewGenerationRef.current === generation) {
         setReview({ draft, generation });
+        reviewSavedGenerationRef.current = generation;
+        setReviewSavedGeneration(generation);
+      }
     } catch {
       if (reviewGenerationRef.current === generation)
         setActionError(copy.reviewError);
@@ -881,6 +885,11 @@ export function FinanceDocuments({
       setActionError(copy.matchError);
     }
   };
+  const reviewReadyToCommit =
+    review !== undefined &&
+    reviewGenerationRef.current === review.generation &&
+    reviewSavedGenerationRef.current === review.generation &&
+    reviewSavedGeneration === review.generation;
   return (
     <section aria-labelledby="finance-documents-heading">
       <div className="section-title-row">
@@ -1011,18 +1020,23 @@ export function FinanceDocuments({
             disabled={!canMutate || reviewLoading || reviewSaving}
             onSave={(envelope) => void saveReview(envelope)}
             onReviewEdited={markReviewUnsaved}
-            onReviewReset={markReviewSaved}
           />
           <Button
             disabled={
               !canMutate ||
               reviewSaving ||
               reviewLoading ||
-              !reviewIsSaved ||
+              !reviewReadyToCommit ||
               requestState === 'requesting'
             }
             onClick={() => {
-              if (!reviewIsSaved || reviewLoading) return;
+              if (
+                !reviewReadyToCommit ||
+                reviewGenerationRef.current !== review.generation ||
+                reviewSavedGenerationRef.current !== review.generation ||
+                reviewSavedGeneration !== review.generation
+              )
+                return;
               void request(() => onRequestCommit(review.draft));
             }}
           >
