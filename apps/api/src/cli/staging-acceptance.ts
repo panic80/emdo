@@ -80,7 +80,10 @@ type FinanceStagingAcceptanceStage =
   | 'configuration'
   | 'health-and-contract'
   | 'owner-authentication'
-  | 'member-provisioning'
+  | 'member-invitation'
+  | 'member-token-handoff'
+  | 'member-redemption'
+  | 'member-membership-readback'
   | 'member-authentication'
   | 'document-ingestion-and-review'
   | 'guarded-review-commit'
@@ -1401,7 +1404,7 @@ const runFinanceStagingAcceptance = async (
     'x-csrf-token': csrf.token,
   };
 
-  input.financeStageReporter?.('member-provisioning');
+  input.financeStageReporter?.('member-invitation');
   const issueInvitation = await send('/api/v1/household/invitations', {
     method: 'POST',
     headers: {
@@ -1433,6 +1436,7 @@ const runFinanceStagingAcceptance = async (
     throw new Error('Finance synthetic member invitation readback is invalid');
   }
 
+  input.financeStageReporter?.('member-token-handoff');
   const handoffResponse = await send(
     '/api/internal/finance-synthetic/invitation-token',
     {
@@ -1456,6 +1460,7 @@ const runFinanceStagingAcceptance = async (
     })
     .parse(await requireOkJson(handoffResponse)).invitationToken;
 
+  input.financeStageReporter?.('member-redemption');
   const invitationCsrfResponse = await send('/api/v1/auth/invitations/csrf');
   requireResponseRequestId(invitationCsrfResponse);
   const invitationCsrf = z
@@ -1498,6 +1503,7 @@ const runFinanceStagingAcceptance = async (
     throw new Error('Finance synthetic member redemption readback is invalid');
   }
 
+  input.financeStageReporter?.('member-membership-readback');
   const membershipsResponse = await send('/api/v1/household/memberships', {
     headers: { cookie: ownerCookie },
   });
