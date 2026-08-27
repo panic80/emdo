@@ -76,6 +76,33 @@ const FINANCE_FINALIZE_ACCEPTANCE_ARGS = Object.freeze([
   '--finance-synthetic-document-finalize',
 ] as const);
 
+type FinanceStagingAcceptanceStage =
+  | 'configuration'
+  | 'health-and-contract'
+  | 'owner-authentication'
+  | 'member-provisioning'
+  | 'member-authentication'
+  | 'document-ingestion-and-review'
+  | 'guarded-review-commit'
+  | 'guarded-delete-denial'
+  | 'qna-and-isolation'
+  | 'safe-write-and-handoff'
+  | 'finalize-configuration'
+  | 'finalize-attestation'
+  | 'finalize-health-and-contract'
+  | 'finalize-owner-authentication'
+  | 'finalize-member-authentication'
+  | 'finalize-document-and-evidence'
+  | 'finalize-guarded-delete'
+  | 'finalize-purge-and-revocation';
+
+export const formatStagingAcceptanceFailure = (
+  financeStage: FinanceStagingAcceptanceStage | undefined,
+): string =>
+  financeStage === undefined
+    ? 'Staging acceptance failed.\n'
+    : `Staging acceptance failed at stage=${financeStage}.\n`;
+
 const FINANCE_DOCUMENT_FILENAME = 'emdo-synthetic-staging.pdf';
 const FINANCE_REVIEW_ISSUER = 'EMDO synthetic staged review';
 const FINANCE_SYNTHETIC_MEMBER_EMAIL = 'finance-staging-member@emdo.invalid';
@@ -365,6 +392,10 @@ type StagingAcceptanceCommandInput = {
   readonly now?: () => Date;
   readonly sleep?: (milliseconds: number) => Promise<void>;
   readonly financeExtractionMaxPolls?: number;
+  /** CLI-only content-safe progress observer; it never receives user data. */
+  readonly financeStageReporter?: (
+    stage: FinanceStagingAcceptanceStage,
+  ) => void;
   /** Test-only dependency injection; production uses the protected writer. */
   readonly financeRestoreVerifierHandoffWriter?: (
     handoff: FinanceRestoreVerifierHandoff,
@@ -1265,6 +1296,7 @@ type FinanceStagingFinalizeResult = Readonly<{
 const runFinanceStagingAcceptance = async (
   input: StagingAcceptanceCommandInput,
 ): Promise<FinanceStagingAcceptanceResult> => {
+  input.financeStageReporter?.('configuration');
   const configuration = FinanceAcceptanceConfigurationSchema.safeParse({
     apiOrigin: input.environment.EMDO_STAGING_API_ORIGIN,
     environment: input.environment.EMDO_ENVIRONMENT,
@@ -1289,6 +1321,7 @@ const runFinanceStagingAcceptance = async (
     throw new Error('Finance staging acceptance configuration is invalid');
   }
   const config = configuration.data;
+  input.financeStageReporter?.('health-and-contract');
   const fetchRequest =
     input.fetch ?? ((request: Request) => globalThis.fetch(request));
   const send = async (path: string, init: RequestInit = {}) => {
@@ -1323,6 +1356,7 @@ const runFinanceStagingAcceptance = async (
     requiredFinanceOpenApiOperations,
   );
 
+  input.financeStageReporter?.('owner-authentication');
   const signIn = await send('/api/auth/sign-in/email', {
     method: 'POST',
     headers: {
@@ -1367,6 +1401,7 @@ const runFinanceStagingAcceptance = async (
     'x-csrf-token': csrf.token,
   };
 
+  input.financeStageReporter?.('member-provisioning');
   const issueInvitation = await send('/api/v1/household/invitations', {
     method: 'POST',
     headers: {
@@ -1482,6 +1517,7 @@ const runFinanceStagingAcceptance = async (
     throw new Error('Finance synthetic member membership is unavailable');
   }
 
+  input.financeStageReporter?.('member-authentication');
   const memberSignIn = await send('/api/auth/sign-in/email', {
     method: 'POST',
     headers: {
@@ -1532,6 +1568,7 @@ const runFinanceStagingAcceptance = async (
     ...cookiesFrom(memberCsrfResponse),
   ].join('; ');
 
+  input.financeStageReporter?.('document-ingestion-and-review');
   const form = new FormData();
   const fixtureBytes = new Uint8Array(SYNTHETIC_FINANCE_PDF.byteLength);
   fixtureBytes.set(SYNTHETIC_FINANCE_PDF);
@@ -1659,6 +1696,7 @@ const runFinanceStagingAcceptance = async (
     throw new Error('Finance direct review commit defense gate failed');
   }
 
+  input.financeStageReporter?.('guarded-review-commit');
   const guardedCommitTurn = await acceptFinanceTurn({
     send,
     mutationHeaders,
@@ -1724,6 +1762,7 @@ const runFinanceStagingAcceptance = async (
     throw new Error('Finance committed experience readback is invalid');
   }
 
+  input.financeStageReporter?.('guarded-delete-denial');
   const deleteDenied = await send(
     `/api/v1/finance/documents/${encodeURIComponent(documentId)}`,
     {
@@ -1750,6 +1789,7 @@ const runFinanceStagingAcceptance = async (
   }
   await parseProblem(anonymousOriginal);
 
+  input.financeStageReporter?.('qna-and-isolation');
   const financeQuestionTurn = await acceptFinanceTurn({
     send,
     mutationHeaders,
@@ -1827,6 +1867,7 @@ const runFinanceStagingAcceptance = async (
     );
   }
 
+  input.financeStageReporter?.('safe-write-and-handoff');
   const directSafeWriteTurn = await acceptFinanceTurn({
     send,
     mutationHeaders,
@@ -1954,6 +1995,7 @@ const requireOwnerFinanceContentRevocation = async (
 const runFinanceStagingFinalize = async (
   input: StagingAcceptanceCommandInput,
 ): Promise<FinanceStagingFinalizeResult> => {
+  input.financeStageReporter?.('finalize-configuration');
   const configuration = FinanceAcceptanceConfigurationSchema.safeParse({
     apiOrigin: input.environment.EMDO_STAGING_API_ORIGIN,
     environment: input.environment.EMDO_ENVIRONMENT,
@@ -1973,6 +2015,7 @@ const runFinanceStagingFinalize = async (
     throw new Error('Finance staging finalization configuration is invalid');
   }
   const config = configuration.data;
+  input.financeStageReporter?.('finalize-attestation');
   const rawAttestation = await (
     input.financePhase2RootAttestationReader ??
     consumeFinanceStagingPhase2RootAttestation
@@ -2002,6 +2045,7 @@ const runFinanceStagingFinalize = async (
       'Finance staging finalization handoff does not bind this run',
     );
   }
+  input.financeStageReporter?.('finalize-health-and-contract');
   const fetchRequest =
     input.fetch ?? ((request: Request) => globalThis.fetch(request));
   const send: SameOriginSend = async (path, init = {}) => {
@@ -2035,6 +2079,7 @@ const runFinanceStagingFinalize = async (
     requiredFinanceOpenApiOperations,
   );
 
+  input.financeStageReporter?.('finalize-owner-authentication');
   const ownerSignIn = await send('/api/auth/sign-in/email', {
     method: 'POST',
     headers: {
@@ -2081,6 +2126,7 @@ const runFinanceStagingFinalize = async (
     'x-csrf-token': ownerCsrf.token,
   };
 
+  input.financeStageReporter?.('finalize-member-authentication');
   const memberSignIn = await send('/api/auth/sign-in/email', {
     method: 'POST',
     headers: {
@@ -2126,6 +2172,7 @@ const runFinanceStagingFinalize = async (
   memberCookies.push(...cookiesFrom(memberCsrfResponse));
   const memberCookie = memberCookies.join('; ');
 
+  input.financeStageReporter?.('finalize-document-and-evidence');
   const committed = await financeDocumentDetailFor({
     documentId: attestation.documentId,
     send,
@@ -2154,6 +2201,7 @@ const runFinanceStagingFinalize = async (
     throw new Error('Finance finalization evidence binding is invalid');
   }
 
+  input.financeStageReporter?.('finalize-guarded-delete');
   const guardedDeleteTurn = await acceptFinanceTurn({
     send,
     mutationHeaders: ownerMutationHeaders,
@@ -2193,6 +2241,7 @@ const runFinanceStagingFinalize = async (
     runId: guardedDeleteTurn.runId,
   });
 
+  input.financeStageReporter?.('finalize-purge-and-revocation');
   const tombstone = await financeDocumentDetailFor({
     documentId: attestation.documentId,
     send,
@@ -2331,13 +2380,17 @@ if (
   invokedPath !== undefined &&
   pathToFileURL(invokedPath).href === import.meta.url
 ) {
+  let financeStage: FinanceStagingAcceptanceStage | undefined;
   void runStagingAcceptanceCommand({
     argv: process.argv.slice(2),
     environment: process.env,
+    financeStageReporter: (stage) => {
+      financeStage = stage;
+    },
   })
     .then((result) => process.stdout.write(`${JSON.stringify(result)}\n`))
     .catch(() => {
-      process.stderr.write('Staging acceptance failed.\n');
+      process.stderr.write(formatStagingAcceptanceFailure(financeStage));
       process.exitCode = 1;
     });
 }
