@@ -15,6 +15,10 @@ import {
   type VersionedSchemaReference,
 } from './primitives.js';
 import type { SupportedLocale } from './locale.js';
+import {
+  isApprovedFinanceGuardedCapabilityOperation,
+  isFinanceDocumentGuardedOperation,
+} from './guarded-action.js';
 
 export * from './primitives.js';
 
@@ -284,6 +288,32 @@ export const GuardedActionPermitSchema = z
     operation: IdentifierSchema,
     actionHash: Sha256Schema,
     executionBindingHash: Sha256Schema,
+    targetBindingHash: Sha256Schema.optional(),
+  })
+  .superRefine((value, context) => {
+    if (
+      isFinanceDocumentGuardedOperation(value.operation) !==
+      (value.targetBindingHash !== undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['targetBindingHash'],
+        message:
+          'Finance document guarded permits require an exact target binding',
+      });
+    }
+    if (
+      !isApprovedFinanceGuardedCapabilityOperation(
+        value.capabilityId,
+        value.operation,
+      )
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['operation'],
+        message: 'Guarded Finance operation must match its approved capability',
+      });
+    }
   })
   .transform(deepFreeze);
 

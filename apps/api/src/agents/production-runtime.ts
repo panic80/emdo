@@ -842,6 +842,8 @@ export interface ProductionAgentRuntimeFactory {
     readonly requestId: string;
     readonly runId: string;
     readonly conversationId: string;
+    /** The durable turn's proposal/run-operation scope, not collection scope. */
+    readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
     readonly approvalResume?: Readonly<{
       checkpointId: string;
       proposalId: string;
@@ -948,6 +950,7 @@ export const createProductionAgentServiceBindingsFromDependencies = (
         requestId: input.requestId,
         runId: claim.runId,
         conversationId: claim.conversationId,
+        authorizationScopeFingerprint: claim.authorizationScopeFingerprint,
       });
       const result = await runtime.orchestrator.runTurn({
         requestId: input.requestId,

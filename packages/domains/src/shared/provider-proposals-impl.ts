@@ -148,6 +148,9 @@ export const hashActionProposalApproval = (
     providerPreconditions: proposal.providerPreconditions,
     providerAuthorityBindingHash: proposal.providerAuthorityBindingHash,
     providerSdkCallId: proposal.providerSdkCallId,
+    ...(proposal.guardedAction === undefined
+      ? {}
+      : { guardedAction: proposal.guardedAction }),
     payloadHash: proposal.payloadHash,
     disclosureGrant: proposal.disclosureGrant,
     createdAt: proposal.createdAt,
@@ -1114,6 +1117,7 @@ const bindingMatches = (
   proposal: ActionProposal,
   binding: ProviderWriteApprovalBinding,
 ): boolean =>
+  proposal.guardedAction === undefined &&
   decision.decision === 'approved' &&
   decision.userId === binding.userId &&
   proposal.disclosureGrant.agentId === binding.agentId &&

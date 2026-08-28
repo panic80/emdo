@@ -514,6 +514,46 @@ describe('PostgresProposalRepository', () => {
     expect(workflow.query).not.toHaveBeenCalled();
   });
 
+  it('hydrates an optional Finance guarded action from the immutable proposal row', async () => {
+    const guardedProposal = ActionProposalSchema.parse({
+      ...proposal,
+      capabilityId: 'finance.records.write',
+      guardedAction: {
+        capabilityVersion: '1.0.0',
+        operation: 'finance-document-delete',
+        actionHash: proposal.payloadHash,
+        executionBindingHash: proposal.providerAuthorityBindingHash,
+        targetBindingHash: hash('f'),
+      },
+    });
+    const read = poolFor((sql) =>
+      sql.includes('from emdo.action_proposals')
+        ? [
+            {
+              proposal: {
+                ...guardedProposal,
+                createdAt: '2026-08-10T10:00:00.000-04:00',
+                expiresAt: '2026-08-10T10:10:00.000-04:00',
+              },
+            },
+          ]
+        : [],
+    );
+    const repository = repositoryFor(read.pool, poolFor(() => []).pool);
+
+    await expect(
+      repository.transaction((transaction) =>
+        transaction.getProposal(guardedProposal.id),
+      ),
+    ).resolves.toEqual(guardedProposal);
+
+    const select = read.query.mock.calls.find(([sql]) =>
+      sql.includes('from emdo.action_proposals'),
+    )?.[0];
+    expect(select).toContain('proposal.guarded_action is null');
+    expect(select).toContain("'guardedAction', proposal.guarded_action");
+  });
+
   it('destroys a read session whose commit response is ambiguous', async () => {
     const read = clientFor((sql) => {
       if (sql === 'commit') throw new Error('read commit response lost');

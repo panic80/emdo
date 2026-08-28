@@ -195,6 +195,7 @@ describe('production approval resume binding', () => {
       requestId: ids.turnRequest,
       runId: ids.run,
       conversationId: ids.conversation,
+      authorizationScopeFingerprint: runScopeFingerprint,
       approvalResume: {
         checkpointId: ids.checkpoint,
         proposalId: ids.proposal,

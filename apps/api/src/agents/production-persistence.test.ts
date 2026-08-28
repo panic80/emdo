@@ -251,6 +251,7 @@ describe('production agent persistence bridge', () => {
         requestId: ids.request,
         runId: accepted.runId,
         conversationId: ids.conversation,
+        authorizationScopeFingerprint: 'e'.repeat(64),
       }),
     );
     expect(runTurn).toHaveBeenCalledWith(

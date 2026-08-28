@@ -11,6 +11,7 @@ import {
   CommerceOfferSchema,
   DataDisclosureGrantSchema,
   EffectiveAuthorizationScopeFingerprintSchema,
+  GuardedActionPermitSchema,
   JsonValueSchema,
   ProviderWriteAuthorizationSchema,
   SyncOperationSchema,
@@ -255,6 +256,84 @@ describe('shared contract schemas', () => {
         expiresAt: '2026-08-09T16:10:00.001Z',
       }),
     ).toThrow(/ten minutes/i);
+  });
+
+  it('binds guarded local actions to an optional server-materialized target', () => {
+    const guarded = {
+      ...proposal,
+      capabilityId: 'finance.records.write',
+      providerAuthorityBindingHash: '9'.repeat(64),
+      payloadHash: 'a'.repeat(64),
+      guardedAction: {
+        capabilityVersion: '1.0.0',
+        operation: 'finance-document-review-commit',
+        actionHash: 'a'.repeat(64),
+        executionBindingHash: '9'.repeat(64),
+        targetBindingHash: '8'.repeat(64),
+      },
+    } as const;
+
+    expect(ActionProposalSchema.parse(guarded).guardedAction).toEqual(
+      guarded.guardedAction,
+    );
+    expect(() =>
+      ActionProposalSchema.parse({
+        ...guarded,
+        guardedAction: {
+          ...guarded.guardedAction,
+          targetBindingHash: 'not-a-hash',
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      ActionProposalSchema.parse({
+        ...guarded,
+        guardedAction: {
+          ...guarded.guardedAction,
+          targetBindingHash: undefined,
+        },
+      }),
+    ).toThrow(/target binding/i);
+    expect(() =>
+      ActionProposalSchema.parse({
+        ...guarded,
+        guardedAction: {
+          ...guarded.guardedAction,
+          operation: 'finance-adjustment',
+        },
+      }),
+    ).toThrow(/target binding/i);
+
+    const permit = {
+      proposalId: ids.proposal,
+      decisionId: ids.operation,
+      capabilityId: 'finance.records.write',
+      capabilityVersion: '1.0.0',
+      capabilityFingerprint: '7'.repeat(64),
+      operation: guarded.guardedAction.operation,
+      actionHash: guarded.guardedAction.actionHash,
+      executionBindingHash: guarded.guardedAction.executionBindingHash,
+      targetBindingHash: guarded.guardedAction.targetBindingHash,
+    } as const;
+    expect(GuardedActionPermitSchema.parse(permit)).toEqual(permit);
+    expect(() =>
+      GuardedActionPermitSchema.parse({
+        ...permit,
+        targetBindingHash: undefined,
+      }),
+    ).toThrow(/target binding/i);
+    expect(() =>
+      ActionProposalSchema.parse({
+        ...guarded,
+        capabilityId: 'finance.statement.import',
+      }),
+    ).toThrow(/approved capability/i);
+    expect(() =>
+      GuardedActionPermitSchema.parse({
+        ...permit,
+        capabilityId: 'finance.statement.import',
+      }),
+    ).toThrow(/approved capability/i);
   });
 
   it('requires an exact, deeply frozen, bounded approval display without kind or capability ID', () => {

@@ -437,6 +437,7 @@ describe('production durable API service composition', () => {
       requestId: '61300000-0000-4000-8000-000000000006',
       runId: '61300000-0000-4000-8000-000000000007',
       conversationId: '61300000-0000-4000-8000-000000000008',
+      authorizationScopeFingerprint: 'e'.repeat(64),
     });
     expect(finance.createForPrincipal).toHaveBeenCalledWith(principal);
     expect(coreAgentMocks.createManagerRuntimeFactory).toHaveBeenCalledWith(
@@ -446,6 +447,7 @@ describe('production durable API service composition', () => {
           runner: { run: expect.any(Function) },
         }),
         workflowPool: expect.any(Object),
+        authorizationScopeFingerprint: 'e'.repeat(64),
       }),
     );
     const syntheticBundle = coreAgentMocks.createManagerRuntimeFactory.mock
@@ -521,6 +523,7 @@ describe('production durable API service composition', () => {
       requestId: '61000000-0000-4000-8000-000000000006',
       runId: '61000000-0000-4000-8000-000000000007',
       conversationId: '61000000-0000-4000-8000-000000000008',
+      authorizationScopeFingerprint: 'e'.repeat(64),
     });
     const apiDatabase = vi.mocked(adapters.createDatabaseClient).mock
       .results[0]!.value;
@@ -530,6 +533,7 @@ describe('production durable API service composition', () => {
       expect.objectContaining({
         readPool: apiDatabase.scopedPool,
         workflowPool: workflowDatabase.scopedPool,
+        authorizationScopeFingerprint: 'e'.repeat(64),
       }),
     );
     expect(coreAgentMocks.createOpenAi).toHaveBeenCalledOnce();
@@ -651,11 +655,13 @@ describe('production durable API service composition', () => {
       requestId: '61000000-0000-4000-8000-000000000006',
       runId: '61000000-0000-4000-8000-000000000007',
       conversationId: '61000000-0000-4000-8000-000000000008',
+      authorizationScopeFingerprint: 'e'.repeat(64),
     });
     expect(coreAgentMocks.createManagerRuntimeFactory).toHaveBeenCalledWith(
       expect.objectContaining({
         readPool: vi.mocked(adapters.createDatabaseClient).mock.results[0]!
           .value.scopedPool,
+        authorizationScopeFingerprint: 'e'.repeat(64),
       }),
     );
     expect(
@@ -693,6 +699,7 @@ describe('production durable API service composition', () => {
       requestId: '61100000-0000-4000-8000-000000000006',
       runId: '61100000-0000-4000-8000-000000000007',
       conversationId: '61100000-0000-4000-8000-000000000008',
+      authorizationScopeFingerprint: 'f'.repeat(64),
     });
 
     expect(finance.checkReady).toHaveBeenCalledOnce();
@@ -701,6 +708,7 @@ describe('production durable API service composition', () => {
       expect.objectContaining({
         finance: finance.services,
         workflowPool: expect.any(Object),
+        authorizationScopeFingerprint: 'f'.repeat(64),
       }),
     );
     expect(
@@ -754,11 +762,15 @@ describe('production durable API service composition', () => {
       requestId: '61200000-0000-4000-8000-000000000006',
       runId: '61200000-0000-4000-8000-000000000007',
       conversationId: '61200000-0000-4000-8000-000000000008',
+      authorizationScopeFingerprint: 'd'.repeat(64),
     });
 
     expect(finance.checkReady).toHaveBeenCalledOnce();
     expect(coreAgentMocks.createCoreRuntimeFactory).toHaveBeenCalledWith(
-      expect.objectContaining({ finance: finance.services }),
+      expect.objectContaining({
+        finance: finance.services,
+        authorizationScopeFingerprint: 'd'.repeat(64),
+      }),
     );
     expect(coreAgentMocks.createManagerRuntimeFactory).not.toHaveBeenCalled();
     expect(result.bindings.financeDocuments).toBeDefined();

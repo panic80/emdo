@@ -49,6 +49,15 @@ const tableDelta = (previous: Snapshot, current: Snapshot) => {
   };
 };
 
+const snapshotColumns = (
+  snapshot: Snapshot,
+  table: string,
+): readonly string[] =>
+  Object.keys(
+    (snapshot.tables[table] as { readonly columns: Record<string, unknown> })
+      .columns,
+  );
+
 describe('ordered migration snapshot chain', () => {
   it('has one continuous snapshot for every exact journal entry', async () => {
     const [journal, files] = await Promise.all([
@@ -61,7 +70,7 @@ describe('ordered migration snapshot chain', () => {
       readdir(metadataUrl),
     ]);
     expect(journal.entries.map(({ idx }) => idx)).toEqual([
-      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
     ]);
     expect(journal.entries.map(({ tag }) => tag)).toEqual([
       '0000_household_foundation',
@@ -82,18 +91,19 @@ describe('ordered migration snapshot chain', () => {
       '0015_single_household_session_activation',
       '0016_finance_document_knowledge',
       '0017_approval_resume_public_events',
+      '0018_finance_guarded_proposal_authority',
     ]);
     expect(
       files.filter((file) => /^\d{4}_snapshot\.json$/u.test(file)).sort(),
     ).toEqual(
       Array.from(
-        { length: 18 },
+        { length: 19 },
         (_, index) => `${index.toString().padStart(4, '0')}_snapshot.json`,
       ),
     );
 
     const snapshots = await Promise.all(
-      Array.from({ length: 18 }, (_, index) => readSnapshot(index)),
+      Array.from({ length: 19 }, (_, index) => readSnapshot(index)),
     );
     expect(snapshots[0]?.prevId).toBe('00000000-0000-0000-0000-000000000000');
     for (let index = 1; index < snapshots.length; index += 1) {
@@ -104,6 +114,27 @@ describe('ordered migration snapshot chain', () => {
       changed: [],
       removed: [],
     });
+    expect(tableDelta(snapshots[17]!, snapshots[18]!)).toEqual({
+      added: [],
+      changed: ['emdo.action_proposals'],
+      removed: [],
+    });
+    for (const snapshot of [snapshots[16]!, snapshots[17]!]) {
+      expect(snapshotColumns(snapshot, 'emdo.finance_documents')).toEqual(
+        expect.arrayContaining([
+          'deletion_proposal_id',
+          'deletion_decision_id',
+          'deletion_target_binding_hash',
+          'deletion_execution_binding_hash',
+        ]),
+      );
+      expect(
+        snapshotColumns(snapshot, 'emdo.finance_document_chunks'),
+      ).not.toEqual(expect.arrayContaining(['deletion_proposal_id']));
+      expect(
+        snapshotColumns(snapshot, 'emdo.finance_document_evidence'),
+      ).not.toEqual(expect.arrayContaining(['deletion_proposal_id']));
+    }
   });
 
   it('keeps audio, household, sync, and preference structures in their owned boundary', async () => {

@@ -683,11 +683,12 @@ describe('production agent runtime', () => {
         })(),
       check: async () => true,
     };
+    const create = vi.fn(async () => runtime);
     const services = createProductionAgentServiceBindingsFromDependencies({
       turns,
       runEvents: source,
       runtimeFactory: {
-        create: async () => runtime,
+        create,
         check: async () => true,
       },
     });
@@ -717,6 +718,13 @@ describe('production agent runtime', () => {
         idempotencyKey: 'turn-idempotency-00000001',
       }),
     );
+    expect(create).toHaveBeenCalledWith({
+      principal,
+      requestId: ids.request,
+      runId: ids.run,
+      conversationId: ids.conversation,
+      authorizationScopeFingerprint: runScopeFingerprint,
+    });
     expect(complete).toHaveBeenCalledWith(
       expect.objectContaining({
         claimId: 'turn-claim-00000001',
