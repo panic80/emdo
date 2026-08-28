@@ -681,7 +681,7 @@ describe('staging acceptance CLI', () => {
     ]);
   });
 
-  it('proves Finance phase 1 through guarded turns, then finalizes only from a receipt-bound root handoff', async () => {
+  it('replays an exact Finance visual proof through its guarded turn, then finalizes only from a receipt-bound root handoff', async () => {
     const requests: Request[] = [];
     const handoffs: unknown[] = [];
     const phaseOneStages: FinanceAcceptanceStage[] = [];
@@ -1237,7 +1237,7 @@ describe('staging acceptance CLI', () => {
             proofToken: FINANCE_VISUAL_PROOF_TOKEN,
             issuedAt: '2026-08-12T15:06:00.000Z',
             expiresAt: '2026-08-12T15:07:00.000Z',
-            replayed: false,
+            replayed: proposalId === FINANCE_COMMIT_PROPOSAL_ID,
           });
         }
         if (url.pathname.endsWith('/decision')) {
@@ -1308,6 +1308,7 @@ describe('staging acceptance CLI', () => {
       ],
     });
     expect(handoffs).toHaveLength(1);
+    expect(committed).toBe(true);
     expect(phaseOneStages).toEqual([
       'configuration',
       'health-and-contract',

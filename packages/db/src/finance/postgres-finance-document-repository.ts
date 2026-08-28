@@ -152,6 +152,9 @@ export interface FinanceDocumentReviewDraft {
   readonly id: string;
   readonly documentId: string;
   readonly extractionRevision: number;
+  readonly authenticatedSessionId: string;
+  readonly spaceAccessGrantId: string;
+  readonly scopeFingerprint: string;
   readonly payloadHash: string;
   readonly reviewTokenHash: string;
   readonly idempotencyKey: string;
@@ -1209,6 +1212,9 @@ const reviewFromRow = (row: unknown): FinanceDocumentReviewDraft => {
     id: parsed.id,
     documentId: parsed.documentId,
     extractionRevision: parsed.extractionRevision,
+    authenticatedSessionId: parsed.authenticatedSessionId,
+    spaceAccessGrantId: parsed.spaceAccessGrantId,
+    scopeFingerprint: parsed.scopeFingerprint,
     payloadHash: parsed.payloadHash,
     reviewTokenHash: parsed.reviewTokenHash,
     idempotencyKey: parsed.idempotencyKey,
@@ -2165,8 +2171,7 @@ export class PostgresFinanceDocumentRepository {
               and review.document_id = $4
               and review.extraction_revision = document.extraction_revision
               and review.authenticated_session_id = $5
-              and review.space_access_grant_id = $6
-              and review.scope_fingerprint = $7
+              and review.scope_fingerprint = $6
               and review.state = 'pending'
               and review.expires_at > pg_catalog.clock_timestamp()
               and document.state = 'awaiting-review'
@@ -2177,7 +2182,6 @@ export class PostgresFinanceDocumentRepository {
               ...scopeValues(principal),
               parsed.documentId,
               principal.sessionId,
-              principal.spaceAccessGrantId,
               principal.scopeFingerprint,
             ],
           ),
@@ -2221,9 +2225,8 @@ export class PostgresFinanceDocumentRepository {
                 and review.document_id = $4
                 and review.extraction_revision = document.extraction_revision
                 and review.authenticated_session_id = $5
-                and review.space_access_grant_id = $6
-                and review.scope_fingerprint = $7
-                and review.review_token_hash = $8
+                and review.scope_fingerprint = $6
+                and review.review_token_hash = $7
                 and review.state = 'committed'
                 and document.state = 'committed'
                 and document.deleted_at is null
@@ -2233,7 +2236,6 @@ export class PostgresFinanceDocumentRepository {
               ...scopeValues(principal),
               parsed.documentId,
               principal.sessionId,
-              principal.spaceAccessGrantId,
               principal.scopeFingerprint,
               reviewTokenHash,
             ],
@@ -2282,8 +2284,7 @@ export class PostgresFinanceDocumentRepository {
                 and review.document_id = $4
                 and review.extraction_revision = document.extraction_revision
                 and review.authenticated_session_id = $5
-                and review.space_access_grant_id = $6
-                and review.scope_fingerprint = $7
+                and review.scope_fingerprint = $6
                 and review.state = 'committed'
                 and document.state = 'committed'
                 and document.deleted_at is null
@@ -2293,7 +2294,6 @@ export class PostgresFinanceDocumentRepository {
               ...scopeValues(principal),
               parsed.documentId,
               principal.sessionId,
-              principal.spaceAccessGrantId,
               principal.scopeFingerprint,
             ],
           ),
@@ -2389,7 +2389,6 @@ export class PostgresFinanceDocumentRepository {
             existing.documentId === parsed.documentId &&
             existing.extractionRevision === parsed.extractionRevision &&
             existing.authenticatedSessionId === principal.sessionId &&
-            existing.spaceAccessGrantId === principal.spaceAccessGrantId &&
             existing.scopeFingerprint === principal.scopeFingerprint &&
             existing.payloadHash === payloadHash &&
             existing.reviewTokenHash === reviewTokenHash;
@@ -2423,8 +2422,8 @@ export class PostgresFinanceDocumentRepository {
            )
            select $5::uuid, document.id, $6, document.household_id, document.space_id,
                   document.original_owner_user_id, $7::uuid, $8::uuid, $9, $10, $11,
-                  $12::jsonb, 'pending', $13, pg_catalog.clock_timestamp(),
-                  pg_catalog.clock_timestamp() + interval '30 minutes'
+                  $12::jsonb, 'pending', $13, pg_catalog.statement_timestamp(),
+                  pg_catalog.statement_timestamp() + interval '30 minutes'
              from emdo.finance_documents as document
             where document.household_id = $1
               and document.space_id = $2
@@ -2520,11 +2519,10 @@ export class PostgresFinanceDocumentRepository {
               and review.document_id = $5
               and review.extraction_revision = $6
               and review.authenticated_session_id = $7
-              and review.space_access_grant_id = $8
-              and review.scope_fingerprint = $9
-              and review.payload_hash = $10
-              and review.review_token_hash = $11
-              and review.idempotency_key = $12
+              and review.scope_fingerprint = $8
+              and review.payload_hash = $9
+              and review.review_token_hash = $10
+              and review.idempotency_key = $11
             for update`,
             [
               ...scopeValues(principal),
@@ -2532,7 +2530,6 @@ export class PostgresFinanceDocumentRepository {
               parsed.documentId,
               parsed.extractionRevision,
               principal.sessionId,
-              principal.spaceAccessGrantId,
               principal.scopeFingerprint,
               parsed.payloadHash,
               tokenHash,
@@ -2755,7 +2752,7 @@ export class PostgresFinanceDocumentRepository {
               suggestion.recordType,
               suggestion.recordId,
               suggestion.scoreBasisPoints,
-              suggestion.reasons,
+              stableJson(suggestion.reasons),
             ],
           );
           if (row.rowCount !== 1) {
@@ -2775,11 +2772,10 @@ export class PostgresFinanceDocumentRepository {
             and review.document_id = $5
             and review.extraction_revision = $6
             and review.authenticated_session_id = $7
-            and review.space_access_grant_id = $8
-            and review.scope_fingerprint = $9
-            and review.payload_hash = $10
-            and review.review_token_hash = $11
-            and review.idempotency_key = $12
+            and review.scope_fingerprint = $8
+            and review.payload_hash = $9
+            and review.review_token_hash = $10
+            and review.idempotency_key = $11
             and review.state = 'pending'
             and review.expires_at > pg_catalog.clock_timestamp()`,
           [
@@ -2788,7 +2784,6 @@ export class PostgresFinanceDocumentRepository {
             parsed.documentId,
             parsed.extractionRevision,
             principal.sessionId,
-            principal.spaceAccessGrantId,
             principal.scopeFingerprint,
             parsed.payloadHash,
             tokenHash,
@@ -3294,8 +3289,7 @@ export class PostgresFinanceDocumentRepository {
               and review.document_id = $5
               and review.extraction_revision = $6
               and review.authenticated_session_id = $7
-              and review.space_access_grant_id = $8
-              and review.scope_fingerprint = $9
+              and review.scope_fingerprint = $8
               and review.state = 'committed'
             for update`,
             [
@@ -3304,7 +3298,6 @@ export class PostgresFinanceDocumentRepository {
               parsed.documentId,
               document.extractionRevision,
               principal.sessionId,
-              principal.spaceAccessGrantId,
               principal.scopeFingerprint,
             ],
           ),

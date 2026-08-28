@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
 import { financeDocumentOriginalAssociatedData } from '@emdo/integrations/finance-documents';
@@ -74,6 +74,10 @@ const principal: AuthenticatedPrincipal = Object.freeze({
   collectionAuthorizationScopeFingerprint:
     EffectiveAuthorizationScopeFingerprintSchema.parse('a'.repeat(64)),
 });
+
+const principalWith = (
+  overrides: Partial<AuthenticatedPrincipal>,
+): AuthenticatedPrincipal => Object.freeze({ ...principal, ...overrides });
 
 const envelope = Object.freeze({
   schemaVersion: 1 as const,
@@ -177,7 +181,20 @@ const sourceOf = (bytes: Uint8Array): AsyncIterable<Uint8Array> => ({
 const request = <Value>(value: Value): Value & { readonly requestId: string } =>
   Object.freeze({ ...value, requestId: IDS.request });
 
-const guardedScope = Object.freeze({
+type GuardedScopeFixture = Readonly<{
+  readonly requestId: string;
+  readonly runId: string;
+  readonly userId: string;
+  readonly householdId: string;
+  readonly sessionId: string;
+  readonly privateSpaceId: string;
+  readonly spaceAccessGrantId: string;
+  readonly collectionAuthorizationScopeFingerprint: string;
+  readonly disclosureGrantId: string;
+  readonly abortSignal: AbortSignal;
+}>;
+
+const guardedScope: GuardedScopeFixture = Object.freeze({
   requestId: IDS.request,
   runId: IDS.run,
   userId: IDS.user,
@@ -215,10 +232,18 @@ const executeGuardedDocumentAction = async (
           readonly documentId: string;
         }>;
       }>,
+  options: Readonly<{
+    readonly principal?: AuthenticatedPrincipal;
+    readonly executionScope?: GuardedScopeFixture;
+    readonly proposalScope?: GuardedScopeFixture;
+  }> = {},
 ) => {
-  const port = gateway.createGuardedActionPort(principal);
+  const executionPrincipal = options.principal ?? principal;
+  const executionScope = options.executionScope ?? guardedScope;
+  const proposalScope = options.proposalScope ?? executionScope;
+  const port = gateway.createGuardedActionPort(executionPrincipal);
   const target = await port.materializeTarget({
-    scope: guardedScope,
+    scope: executionScope,
     operation: input.operation,
     intent: input.intent,
   });
@@ -231,7 +256,7 @@ const executeGuardedDocumentAction = async (
   });
   const executionBindingHash = hashFinanceGuardedActionExecutionBinding({
     proposalId: IDS.proposal,
-    scope: guardedScope,
+    scope: proposalScope,
     capabilityId: 'finance.records.write',
     capabilityVersion: '1.0.0',
     capabilityFingerprint,
@@ -240,7 +265,7 @@ const executeGuardedDocumentAction = async (
     targetBindingHash: target.targetBindingHash,
   });
   return port.executeApproved({
-    scope: guardedScope,
+    scope: executionScope,
     operation: input.operation,
     intent: input.intent,
     permit: {
@@ -318,10 +343,18 @@ const createHarness = () => {
       reviewCommitted ? storedReview : undefined,
     ),
     replaceCurrentReviewDraft: vi.fn(async (input: Record<string, unknown>) => {
+      const inputPrincipal = input.principal as {
+        readonly sessionId: string;
+        readonly spaceAccessGrantId: string;
+        readonly scopeFingerprint: string;
+      };
       storedReview = {
         id: IDS.review,
         documentId: input.documentId,
         extractionRevision: input.extractionRevision,
+        authenticatedSessionId: inputPrincipal.sessionId,
+        spaceAccessGrantId: inputPrincipal.spaceAccessGrantId,
+        scopeFingerprint: inputPrincipal.scopeFingerprint,
         payloadHash: hex(stableJson(input.selectedFacts)),
         reviewTokenHash: hex(input.reviewToken as string),
         idempotencyKey: input.idempotencyKey,
@@ -500,6 +533,10 @@ const createHarness = () => {
     embeddings,
     pdfInspector,
     capturedAads,
+    currentStoredReview: () => storedReview,
+    replaceStoredReview: (review: Record<string, unknown>) => {
+      storedReview = review;
+    },
     setFinancePage: (items: readonly unknown[]) =>
       financeRead.list.mockResolvedValue({ schemaVersion: 1, items }),
     setFinanceSnapshot: (snapshot: {
@@ -521,6 +558,59 @@ const createHarness = () => {
       );
     },
   };
+};
+
+const legacyReviewHmac = (domain: string, binding: unknown): string => {
+  const key = Buffer.alloc(32, 7);
+  try {
+    return createHmac('sha256', key)
+      .update(domain, 'utf8')
+      .update(stableJson(binding), 'utf8')
+      .digest('base64url');
+  } finally {
+    key.fill(0);
+  }
+};
+
+const installLegacyReview = (
+  harness: ReturnType<typeof createHarness>,
+): Readonly<{
+  readonly reviewToken: string;
+  readonly idempotencyKey: string;
+}> => {
+  const stored = harness.currentStoredReview();
+  if (stored === undefined) throw new Error('missing legacy review fixture');
+  const documentId = stored.documentId as string;
+  const extractionRevision = stored.extractionRevision as number;
+  const payloadHash = stored.payloadHash as string;
+  const binding = {
+    householdId: principal.householdId,
+    privateSpaceId: principal.privateSpaceId,
+    ownerUserId: principal.userId,
+    sessionId: principal.sessionId,
+    spaceAccessGrantId: principal.spaceAccessGrantId,
+    scopeFingerprint: principal.collectionAuthorizationScopeFingerprint,
+    documentId,
+    extractionRevision,
+    payloadHash,
+  };
+  const reviewToken = legacyReviewHmac(
+    'emdo.finance-document.review-token.v1\0',
+    binding,
+  );
+  const idempotencyKey = `finance-review:${legacyReviewHmac(
+    'emdo.finance-document.review-idempotency.v1\0',
+    binding,
+  )}`;
+  harness.replaceStoredReview({
+    ...stored,
+    authenticatedSessionId: principal.sessionId,
+    spaceAccessGrantId: principal.spaceAccessGrantId,
+    scopeFingerprint: principal.collectionAuthorizationScopeFingerprint,
+    reviewTokenHash: hex(reviewToken),
+    idempotencyKey,
+  });
+  return Object.freeze({ reviewToken, idempotencyKey });
 };
 
 describe('production Finance document gateway', () => {
@@ -622,6 +712,315 @@ describe('production Finance document gateway', () => {
     expect(harness.repository.getCurrentCommittedReview).toHaveBeenCalledWith(
       expect.objectContaining({ documentId: IDS.document }),
     );
+  });
+
+  it('reads and commits a legacy pending review after a live grant renewal', async () => {
+    const harness = createHarness();
+    await harness.gateway.getReview(
+      request({ documentId: IDS.document, principal }),
+    );
+    const legacy = installLegacyReview(harness);
+    const Gresume = principalWith({
+      spaceAccessGrantId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f80',
+    });
+    const resumedScope = Object.freeze({
+      ...guardedScope,
+      spaceAccessGrantId: Gresume.spaceAccessGrantId,
+    });
+
+    await expect(
+      harness.gateway.getReview(
+        request({ documentId: IDS.document, principal: Gresume }),
+      ),
+    ).resolves.toMatchObject({ reviewToken: legacy.reviewToken });
+    await expect(
+      executeGuardedDocumentAction(
+        harness.gateway,
+        {
+          operation: 'finance-document-review-commit',
+          intent: {
+            kind: 'commit-document-review',
+            documentId: IDS.document,
+          },
+        },
+        {
+          principal: Gresume,
+          executionScope: resumedScope,
+          proposalScope: guardedScope,
+        },
+      ),
+    ).resolves.toEqual({
+      status: 'document-committed',
+      documentId: IDS.document,
+      extractionRevision: 1,
+    });
+    expect(harness.repository.commitReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewToken: legacy.reviewToken,
+        idempotencyKey: legacy.idempotencyKey,
+      }),
+    );
+  });
+
+  it('authorizes legacy committed reviews for guarded and direct match decisions', async () => {
+    const harness = createHarness();
+    await harness.gateway.getReview(
+      request({ documentId: IDS.document, principal }),
+    );
+    const legacy = installLegacyReview(harness);
+    await executeGuardedDocumentAction(harness.gateway, {
+      operation: 'finance-document-review-commit',
+      intent: { kind: 'commit-document-review', documentId: IDS.document },
+    });
+
+    await expect(
+      executeGuardedDocumentAction(harness.gateway, {
+        operation: 'finance-document-match-accept',
+        intent: { kind: 'accept-document-match', matchId: IDS.match },
+      }),
+    ).resolves.toEqual({
+      status: 'match-accepted',
+      documentId: IDS.document,
+      matchId: IDS.match,
+    });
+    await expect(
+      harness.gateway.decideMatch(
+        request({
+          matchId: IDS.match,
+          decision: 'reject' as const,
+          reviewToken: legacy.reviewToken,
+          idempotencyKey: 'route:match:legacy',
+          principal,
+        }),
+      ),
+    ).resolves.toMatchObject({ schemaVersion: 1, items: [] });
+    expect(harness.repository.decideMatch).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails closed when a legacy review has malformed or changed durable binding material', async () => {
+    const createLegacyHarness = async () => {
+      const harness = createHarness();
+      await harness.gateway.getReview(
+        request({ documentId: IDS.document, principal }),
+      );
+      installLegacyReview(harness);
+      return harness;
+    };
+    const sessionHarness = await createLegacyHarness();
+    const scopeHarness = await createLegacyHarness();
+    const ownerHarness = await createLegacyHarness();
+    const payloadHarness = await createLegacyHarness();
+    const malformedHarness = await createLegacyHarness();
+    const payloadStored = payloadHarness.currentStoredReview();
+    const malformedStored = malformedHarness.currentStoredReview();
+    if (payloadStored === undefined || malformedStored === undefined) {
+      throw new Error('missing legacy review fixture');
+    }
+    payloadHarness.replaceStoredReview({
+      ...payloadStored,
+      payloadHash: 'c'.repeat(64),
+    });
+    const malformedStoredRow = { ...malformedStored };
+    Reflect.deleteProperty(malformedStoredRow, 'spaceAccessGrantId');
+    malformedHarness.replaceStoredReview(malformedStoredRow);
+
+    await expect(
+      sessionHarness.gateway.getReview(
+        request({
+          documentId: IDS.document,
+          principal: principalWith({
+            sessionId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f81',
+          }),
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'finance-documents-unavailable' });
+    await expect(
+      scopeHarness.gateway.getReview(
+        request({
+          documentId: IDS.document,
+          principal: principalWith({
+            collectionAuthorizationScopeFingerprint:
+              EffectiveAuthorizationScopeFingerprintSchema.parse(
+                'b'.repeat(64),
+              ),
+          }),
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'finance-documents-unavailable' });
+    await expect(
+      ownerHarness.gateway.getReview(
+        request({
+          documentId: IDS.document,
+          principal: principalWith({
+            userId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f82',
+          }),
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'finance-documents-unavailable' });
+    await expect(
+      payloadHarness.gateway.getReview(
+        request({ documentId: IDS.document, principal }),
+      ),
+    ).rejects.toMatchObject({ code: 'finance-documents-unavailable' });
+    await expect(
+      malformedHarness.gateway.getReview(
+        request({ documentId: IDS.document, principal }),
+      ),
+    ).rejects.toMatchObject({ code: 'finance-documents-unavailable' });
+  });
+
+  it('keeps review HMACs stable across a live grant renewal and changes them for durable review state', async () => {
+    const Gturn = principal;
+    const Gresume = principalWith({
+      spaceAccessGrantId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f80',
+    });
+    const issued = await createHarness().gateway.getReview(
+      request({ documentId: IDS.document, principal: Gturn }),
+    );
+    const resumed = await createHarness().gateway.getReview(
+      request({ documentId: IDS.document, principal: Gresume }),
+    );
+    const changedSession = await createHarness().gateway.getReview(
+      request({
+        documentId: IDS.document,
+        principal: principalWith({
+          sessionId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f81',
+        }),
+      }),
+    );
+    const changedScope = await createHarness().gateway.getReview(
+      request({
+        documentId: IDS.document,
+        principal: principalWith({
+          collectionAuthorizationScopeFingerprint:
+            EffectiveAuthorizationScopeFingerprintSchema.parse('b'.repeat(64)),
+        }),
+      }),
+    );
+    const changedOwner = await createHarness().gateway.getReview(
+      request({
+        documentId: IDS.document,
+        principal: principalWith({
+          userId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f82',
+        }),
+      }),
+    );
+    const changedPayload = await createHarness().gateway.updateReview(
+      request({
+        documentId: IDS.document,
+        expectedExtractionRevision: 1,
+        envelope: { ...envelope, merchant: 'Changed merchant' },
+        idempotencyKey: 'route:review:changed-payload',
+        principal: Gturn,
+      }),
+    );
+    const changedRevision = await createHarness().gateway.updateReview(
+      request({
+        documentId: IDS.document,
+        expectedExtractionRevision: 2,
+        envelope,
+        idempotencyKey: 'route:review:changed-revision',
+        principal: Gturn,
+      }),
+    );
+
+    expect(resumed.reviewToken).toBe(issued.reviewToken);
+    expect(changedSession.reviewToken).not.toBe(issued.reviewToken);
+    expect(changedScope.reviewToken).not.toBe(issued.reviewToken);
+    expect(changedOwner.reviewToken).not.toBe(issued.reviewToken);
+    expect(changedPayload.reviewToken).not.toBe(issued.reviewToken);
+    expect(changedRevision.reviewToken).not.toBe(issued.reviewToken);
+  });
+
+  it('verifies a document permit after grant renewal but rejects a changed target', async () => {
+    const Gturn = principal;
+    const Gresume = principalWith({
+      spaceAccessGrantId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f80',
+    });
+    const scopeAtResume = Object.freeze({
+      ...guardedScope,
+      spaceAccessGrantId: Gresume.spaceAccessGrantId,
+    });
+    const input = {
+      operation: 'finance-document-review-commit' as const,
+      intent: {
+        kind: 'commit-document-review' as const,
+        documentId: IDS.document,
+      },
+    };
+    const capabilityFingerprint = financeGuardedActionCapabilityFingerprint(
+      'finance.records.write',
+    );
+    const actionHash = hashCanonicalJson({
+      schemaVersion: 1,
+      mutation: input.intent,
+    });
+    const permitFor = (targetBindingHash: string) => ({
+      proposalId: IDS.proposal,
+      decisionId: IDS.approval,
+      capabilityId: 'finance.records.write' as const,
+      capabilityVersion: '1.0.0' as const,
+      capabilityFingerprint,
+      operation: input.operation,
+      actionHash,
+      executionBindingHash: hashFinanceGuardedActionExecutionBinding({
+        proposalId: IDS.proposal,
+        scope: guardedScope,
+        capabilityId: 'finance.records.write',
+        capabilityVersion: '1.0.0',
+        capabilityFingerprint,
+        operation: input.operation,
+        actionHash,
+        targetBindingHash,
+      }),
+    });
+
+    const resumedHarness = createHarness();
+    await resumedHarness.gateway.getReview(
+      request({ documentId: IDS.document, principal: Gturn }),
+    );
+    const turnPort = resumedHarness.gateway.createGuardedActionPort(Gturn);
+    const targetAtTurn = await turnPort.materializeTarget({
+      scope: guardedScope,
+      ...input,
+    });
+    await expect(
+      resumedHarness.gateway.createGuardedActionPort(Gresume).executeApproved({
+        scope: scopeAtResume,
+        ...input,
+        permit: permitFor(targetAtTurn.targetBindingHash),
+        capabilityFingerprint,
+        approvalDecisionId: IDS.approval,
+      }),
+    ).resolves.toEqual({
+      status: 'document-committed',
+      documentId: IDS.document,
+      extractionRevision: 1,
+    });
+
+    const changedTargetHarness = createHarness();
+    await changedTargetHarness.gateway.getReview(
+      request({ documentId: IDS.document, principal: Gturn }),
+    );
+    const changedTargetAtTurn = await changedTargetHarness.gateway
+      .createGuardedActionPort(Gturn)
+      .materializeTarget({ scope: guardedScope, ...input });
+    changedTargetHarness.repository.getOriginalAuthorization.mockResolvedValue({
+      ...originalAuthorization,
+      plaintextSha256: 'b'.repeat(64),
+    });
+    await expect(
+      changedTargetHarness.gateway
+        .createGuardedActionPort(Gresume)
+        .executeApproved({
+          scope: scopeAtResume,
+          ...input,
+          permit: permitFor(changedTargetAtTurn.targetBindingHash),
+          capabilityFingerprint,
+          approvalDecisionId: IDS.approval,
+        }),
+    ).rejects.toMatchObject({ code: 'authorization-revoked' });
+    expect(changedTargetHarness.repository.commitReview).not.toHaveBeenCalled();
   });
 
   it('keeps direct commit, match acceptance, and deletion fail-closed even with a token or decision UUID', async () => {

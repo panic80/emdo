@@ -161,6 +161,7 @@ import type { ProductionOpenAiAgentServiceBundle } from './core-openai-services.
 import {
   createRequestScopedCoreAgentRuntimeFactory,
   createRequestScopedCoreCalendarProposalAdapter,
+  createFinanceGuardedActionPresenter,
   createRequestScopedFinanceGuardedActionProposalAdapter,
   createRequestScopedManagerFinanceAgentRuntimeFactory,
 } from './core-agent-services.js';
@@ -176,6 +177,10 @@ const ids = Object.freeze({
   disclosureGrant: '52000000-0000-4000-8000-000000000008',
   proposal: '52000000-0000-4000-8000-000000000009',
   conversation: '52000000-0000-4000-8000-000000000010',
+  document: '52000000-0000-4000-8000-000000000011',
+  otherDocument: '52000000-0000-4000-8000-000000000012',
+  match: '52000000-0000-4000-8000-000000000013',
+  otherMatch: '52000000-0000-4000-8000-000000000014',
 });
 
 const authorizationScopeFingerprint =
@@ -431,6 +436,140 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
     },
     executorId: 'finance.records.write.v1',
   });
+  const financeImportDescriptor = CapabilityDescriptorSchema.parse({
+    schemaVersion: 1,
+    id: 'finance.statement.import',
+    version: '1.0.0',
+    capabilityKind: 'import',
+    inputSchema: { id: 'finance.statement.import.input', version: '1.0.0' },
+    outputSchema: { id: 'finance.statement.import.output', version: '1.0.0' },
+    requiredScopes: [],
+    requiredDataClasses: ['finance.transactions'],
+    riskClass: 'local-write',
+    timeoutMs: 15_000,
+    freshness: {
+      required: false,
+      maxAgeMs: 60_000,
+      revalidateBeforeExecution: false,
+    },
+    idempotency: { required: true, scope: 'actor', ttlMs: 86_400_000 },
+    approval: {
+      rule: 'authenticated-visual-proposal',
+      expiresInSeconds: 600,
+    },
+    audit: {
+      required: true,
+      eventType: 'finance.statement.import.invoked',
+      redactFields: [],
+    },
+    executorId: 'finance.statement.import.v1',
+  });
+
+  const materializeFinancePresentationProposal = async (input: {
+    readonly capabilityId: 'finance.records.write' | 'finance.statement.import';
+    readonly descriptor: unknown;
+    readonly arguments: unknown;
+    readonly operation: string;
+    readonly target?: Readonly<{
+      readonly targetBindingHash: string;
+      readonly preview: Readonly<{
+        readonly documentId: string;
+        readonly beforeState: string;
+        readonly afterState: string;
+        readonly extractionRevision: number | null;
+        readonly matchId?: string;
+      }>;
+    }>;
+  }) => {
+    const adapter = createRequestScopedFinanceGuardedActionProposalAdapter(
+      {
+        principal,
+        requestId: ids.request,
+        runId: ids.run,
+        readPool: { connect: vi.fn() } as never,
+        workflowPool: { connect: vi.fn() } as never,
+        ...(input.target === undefined
+          ? {}
+          : {
+              guardedDocumentActions: {
+                materializeTarget: async () => input.target!,
+                executeApproved: async () => {
+                  throw new Error('test-document-execution-must-not-run');
+                },
+              },
+            }),
+      },
+      {
+        createDisclosureGrantResolver: () => ({
+          resolve: vi.fn(async () => financeDisclosureGrant),
+        }),
+        createProposalRepository: () => ({ transaction: vi.fn() }) as never,
+        createProposalService: () => ({
+          create: async (proposal) => proposal,
+        }),
+        createProposalId: () => ids.proposal,
+        now: () => new Date('2026-08-15T12:05:00.000Z'),
+      },
+    );
+    const materialized = await adapter.materializeProposal({
+      capabilityId: input.capabilityId,
+      descriptor: input.descriptor as never,
+      arguments: input.arguments,
+      operation: input.operation,
+      context: {
+        requestId: ids.request,
+        runId: ids.run,
+        householdId: ids.household,
+        userId: ids.user,
+        authenticatedSessionId: ids.session,
+        spaceAccessGrantId: ids.spaceGrant,
+        authorizationScopeFingerprint,
+        disclosureGrantId: ids.disclosureGrant,
+        disclosureGrantVersion: '7.2.5',
+        sdkCallId: `finance-presentation-${input.operation}`,
+        agentId: 'finance',
+        abortSignal: new AbortController().signal,
+      },
+    });
+    if (materialized === undefined) {
+      throw new Error('test-finance-presentation-materialization-missing');
+    }
+    return materialized.proposal;
+  };
+
+  const approvedFinanceDecision = (proposal: {
+    readonly id: string;
+    readonly payloadHash: string;
+    readonly approvalHash: string;
+  }) => ({
+    schemaVersion: 1 as const,
+    id: ids.conversation,
+    proposalId: proposal.id,
+    userId: ids.user,
+    authenticatedSessionId: ids.session,
+    payloadHash: proposal.payloadHash,
+    approvalHash: proposal.approvalHash,
+    decision: 'approved' as const,
+    channel: 'authenticated-visual' as const,
+    decidedAt: '2026-08-15T12:06:00.000Z',
+    idempotencyKey: 'finance-presentation-approval-000001',
+  });
+
+  const presentApprovedFinanceProposal = (
+    proposal: {
+      readonly id: string;
+      readonly payloadHash: string;
+      readonly approvalHash: string;
+    },
+    capabilityOutput: unknown,
+  ) =>
+    createFinanceGuardedActionPresenter().present({
+      decision: 'approve',
+      proposal: proposal as never,
+      visualDecision: approvedFinanceDecision(proposal),
+      capabilityOutput: capabilityOutput as never,
+      context: {} as never,
+    });
 
   it('persists one Finance-local approval proposal and binds it to the exact action and disclosure scope', async () => {
     const readPool = { connect: vi.fn() } as never;
@@ -534,6 +673,396 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
         requestId: ids.request,
       },
     });
+  });
+
+  it('presents approved Finance guarded actions only when their successful output matches the canonical mutation', async () => {
+    const recordOutput = (
+      transactionId: string,
+      outcome = 'applied',
+      recordState = 'active',
+    ) => ({
+      schemaVersion: 1,
+      result: {
+        status: outcome,
+        record: {
+          id: transactionId,
+          recordType: 'transaction',
+          label: 'Corrected receipt',
+          currency: 'CAD',
+          amountCadMinor: -1_250,
+          effectiveOn: '2026-08-15',
+          status: recordState,
+          revision: 2,
+          updatedAt: '2026-08-15T12:06:00.000Z',
+        },
+      },
+    });
+    const documentTarget = (input: {
+      readonly documentId: string;
+      readonly afterState: string;
+      readonly matchId?: string;
+    }) => ({
+      targetBindingHash: 'b'.repeat(64),
+      preview: {
+        documentId: input.documentId,
+        beforeState: 'awaiting-review',
+        afterState: input.afterState,
+        extractionRevision: 1,
+        ...(input.matchId === undefined ? {} : { matchId: input.matchId }),
+      },
+    });
+    const adjustment = await materializeFinancePresentationProposal({
+      capabilityId: 'finance.records.write',
+      descriptor: financeWriteDescriptor,
+      arguments: {
+        schemaVersion: 1,
+        mutation: {
+          kind: 'adjust',
+          transactionId: 'transaction-1',
+          amountCadMinor: 50,
+          reason: 'Correct the receipt total.',
+        },
+      },
+      operation: 'finance-adjustment',
+    });
+    const reversal = await materializeFinancePresentationProposal({
+      capabilityId: 'finance.records.write',
+      descriptor: financeWriteDescriptor,
+      arguments: {
+        schemaVersion: 1,
+        mutation: {
+          kind: 'reverse',
+          transactionId: 'transaction-1',
+          reason: 'Reverse duplicate entry.',
+        },
+      },
+      operation: 'finance-reversal',
+    });
+    const imported = await materializeFinancePresentationProposal({
+      capabilityId: 'finance.statement.import',
+      descriptor: financeImportDescriptor,
+      arguments: {
+        schemaVersion: 1,
+        request: { kind: 'commit', planId: 'import-plan-1' },
+      },
+      operation: 'finance-statement-import-commit',
+    });
+    const committed = await materializeFinancePresentationProposal({
+      capabilityId: 'finance.records.write',
+      descriptor: financeWriteDescriptor,
+      arguments: {
+        schemaVersion: 1,
+        mutation: { kind: 'commit-document-review', documentId: ids.document },
+      },
+      operation: 'finance-document-review-commit',
+      target: documentTarget({
+        documentId: ids.document,
+        afterState: 'committed',
+      }),
+    });
+    const acceptedMatch = await materializeFinancePresentationProposal({
+      capabilityId: 'finance.records.write',
+      descriptor: financeWriteDescriptor,
+      arguments: {
+        schemaVersion: 1,
+        mutation: { kind: 'accept-document-match', matchId: ids.match },
+      },
+      operation: 'finance-document-match-accept',
+      target: documentTarget({
+        documentId: ids.document,
+        afterState: 'accepted',
+        matchId: ids.match,
+      }),
+    });
+    const deleted = await materializeFinancePresentationProposal({
+      capabilityId: 'finance.records.write',
+      descriptor: financeWriteDescriptor,
+      arguments: {
+        schemaVersion: 1,
+        mutation: { kind: 'delete-document', documentId: ids.document },
+      },
+      operation: 'finance-document-delete',
+      target: documentTarget({
+        documentId: ids.document,
+        afterState: 'deleted',
+      }),
+    });
+
+    await expect(
+      presentApprovedFinanceProposal(adjustment, recordOutput('transaction-1')),
+    ).resolves.toMatchObject({
+      summary: `Finance action proposal ${ids.proposal} was approved and executed.`,
+    });
+    await expect(
+      presentApprovedFinanceProposal(
+        reversal,
+        recordOutput('transaction-1', 'duplicate', 'reversed'),
+      ),
+    ).resolves.toMatchObject({
+      actionProposalReferences: [ids.proposal],
+    });
+    await expect(
+      presentApprovedFinanceProposal(imported, {
+        schemaVersion: 1,
+        result: {
+          status: 'replayed',
+          receipt: {
+            id: 'import-receipt-1',
+            planId: 'import-plan-1',
+            transactionCount: 2,
+            verified: true,
+          },
+          sourceDeletionAuthorized: true,
+        },
+      }),
+    ).resolves.toMatchObject({
+      actionProposalReferences: [ids.proposal],
+    });
+    await expect(
+      presentApprovedFinanceProposal(committed, {
+        schemaVersion: 1,
+        result: {
+          status: 'document-committed',
+          documentId: ids.document,
+          extractionRevision: 1,
+        },
+      }),
+    ).resolves.toMatchObject({
+      actionProposalReferences: [ids.proposal],
+    });
+    await expect(
+      presentApprovedFinanceProposal(acceptedMatch, {
+        schemaVersion: 1,
+        result: {
+          status: 'match-accepted',
+          documentId: ids.document,
+          matchId: ids.match,
+        },
+      }),
+    ).resolves.toMatchObject({
+      actionProposalReferences: [ids.proposal],
+    });
+    await expect(
+      presentApprovedFinanceProposal(deleted, {
+        schemaVersion: 1,
+        result: { status: 'document-deleted', documentId: ids.document },
+      }),
+    ).resolves.toMatchObject({
+      actionProposalReferences: [ids.proposal],
+    });
+    await expect(
+      presentApprovedFinanceProposal(deleted, {
+        schemaVersion: 1,
+        result: {
+          status: 'document-purge-pending',
+          documentId: ids.document,
+        },
+      }),
+    ).resolves.toMatchObject({
+      summary: `Finance action proposal ${ids.proposal} was approved. Access was revoked, but verified deletion finalization is pending and requires a retry.`,
+      actionProposalReferences: [ids.proposal],
+    });
+  });
+
+  it('refuses rejection, review, confirmation, and target-mismatched outputs for approved Finance guarded actions', async () => {
+    const recordOutput = (input: {
+      readonly outcome?: string;
+      readonly recordType?: string;
+      readonly recordState?: string;
+    }) => ({
+      schemaVersion: 1,
+      result: {
+        status: input.outcome ?? 'applied',
+        record: {
+          id: 'transaction-1',
+          recordType: input.recordType ?? 'transaction',
+          label: 'Corrected receipt',
+          currency: 'CAD',
+          amountCadMinor: -1_250,
+          effectiveOn: '2026-08-15',
+          status: input.recordState ?? 'active',
+          revision: 2,
+          updatedAt: '2026-08-15T12:06:00.000Z',
+        },
+      },
+    });
+    const documentTarget = (input: {
+      readonly documentId: string;
+      readonly afterState: string;
+      readonly matchId?: string;
+    }) => ({
+      targetBindingHash: 'c'.repeat(64),
+      preview: {
+        documentId: input.documentId,
+        beforeState: 'awaiting-review',
+        afterState: input.afterState,
+        extractionRevision: 1,
+        ...(input.matchId === undefined ? {} : { matchId: input.matchId }),
+      },
+    });
+    const adjustment = await materializeFinancePresentationProposal({
+      capabilityId: 'finance.records.write',
+      descriptor: financeWriteDescriptor,
+      arguments: {
+        schemaVersion: 1,
+        mutation: {
+          kind: 'adjust',
+          transactionId: 'transaction-1',
+          amountCadMinor: 50,
+          reason: 'Correct the receipt total.',
+        },
+      },
+      operation: 'finance-adjustment',
+    });
+    const reversal = await materializeFinancePresentationProposal({
+      capabilityId: 'finance.records.write',
+      descriptor: financeWriteDescriptor,
+      arguments: {
+        schemaVersion: 1,
+        mutation: {
+          kind: 'reverse',
+          transactionId: 'transaction-1',
+          reason: 'Reverse duplicate entry.',
+        },
+      },
+      operation: 'finance-reversal',
+    });
+    const committed = await materializeFinancePresentationProposal({
+      capabilityId: 'finance.records.write',
+      descriptor: financeWriteDescriptor,
+      arguments: {
+        schemaVersion: 1,
+        mutation: { kind: 'commit-document-review', documentId: ids.document },
+      },
+      operation: 'finance-document-review-commit',
+      target: documentTarget({
+        documentId: ids.document,
+        afterState: 'committed',
+      }),
+    });
+    const acceptedMatch = await materializeFinancePresentationProposal({
+      capabilityId: 'finance.records.write',
+      descriptor: financeWriteDescriptor,
+      arguments: {
+        schemaVersion: 1,
+        mutation: { kind: 'accept-document-match', matchId: ids.match },
+      },
+      operation: 'finance-document-match-accept',
+      target: documentTarget({
+        documentId: ids.document,
+        afterState: 'accepted',
+        matchId: ids.match,
+      }),
+    });
+    const deleted = await materializeFinancePresentationProposal({
+      capabilityId: 'finance.records.write',
+      descriptor: financeWriteDescriptor,
+      arguments: {
+        schemaVersion: 1,
+        mutation: { kind: 'delete-document', documentId: ids.document },
+      },
+      operation: 'finance-document-delete',
+      target: documentTarget({
+        documentId: ids.document,
+        afterState: 'deleted',
+      }),
+    });
+    const rejected = {
+      schemaVersion: 1,
+      result: {
+        status: 'rejected',
+        record: null,
+        safeError: {
+          code: 'operation-rejected',
+          message: 'The operation was rejected.',
+          retryable: false,
+        },
+      },
+    };
+    const needsReview = {
+      ...rejected,
+      result: { ...rejected.result, status: 'needs-review' },
+    };
+    const confirmationRequired = {
+      schemaVersion: 1,
+      result: {
+        status: 'confirmation-required',
+        proposal: {
+          state: 'proposed',
+          operation: 'finance-adjustment',
+          channel: 'emdo-authenticated-visual',
+          canonicalHash: 'd'.repeat(64),
+        },
+      },
+    };
+
+    for (const capabilityOutput of [
+      rejected,
+      needsReview,
+      confirmationRequired,
+    ]) {
+      await expect(
+        presentApprovedFinanceProposal(adjustment, capabilityOutput),
+      ).rejects.toThrow('api-finance-guarded-action-presentation-invalid');
+    }
+    for (const capabilityOutput of [
+      recordOutput({ outcome: 'ignored' }),
+      recordOutput({ recordType: 'budget' }),
+      recordOutput({ recordState: 'reversed' }),
+    ]) {
+      await expect(
+        presentApprovedFinanceProposal(adjustment, capabilityOutput),
+      ).rejects.toThrow('api-finance-guarded-action-presentation-invalid');
+    }
+    await expect(
+      presentApprovedFinanceProposal(reversal, recordOutput({})),
+    ).rejects.toThrow('api-finance-guarded-action-presentation-invalid');
+    await expect(
+      presentApprovedFinanceProposal(committed, {
+        schemaVersion: 1,
+        result: {
+          status: 'document-committed',
+          documentId: ids.otherDocument,
+          extractionRevision: 1,
+        },
+      }),
+    ).rejects.toThrow('api-finance-guarded-action-presentation-invalid');
+    await expect(
+      presentApprovedFinanceProposal(committed, {
+        schemaVersion: 1,
+        result: {
+          status: 'document-committed',
+          documentId: ids.document,
+          extractionRevision: 2,
+        },
+      }),
+    ).rejects.toThrow('api-finance-guarded-action-presentation-invalid');
+    await expect(
+      presentApprovedFinanceProposal(acceptedMatch, {
+        schemaVersion: 1,
+        result: {
+          status: 'match-accepted',
+          documentId: ids.document,
+          matchId: ids.otherMatch,
+        },
+      }),
+    ).rejects.toThrow('api-finance-guarded-action-presentation-invalid');
+    await expect(
+      presentApprovedFinanceProposal(acceptedMatch, {
+        schemaVersion: 1,
+        result: {
+          status: 'match-accepted',
+          documentId: ids.otherDocument,
+          matchId: ids.match,
+        },
+      }),
+    ).rejects.toThrow('api-finance-guarded-action-presentation-invalid');
+    await expect(
+      presentApprovedFinanceProposal(deleted, {
+        schemaVersion: 1,
+        result: { status: 'document-deleted', documentId: ids.otherDocument },
+      }),
+    ).rejects.toThrow('api-finance-guarded-action-presentation-invalid');
   });
 
   it('fails closed before persistence when the Finance disclosure grant cannot be resolved', async () => {

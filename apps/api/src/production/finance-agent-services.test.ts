@@ -754,6 +754,159 @@ describe('request-scoped Finance specialist services', () => {
     });
   });
 
+  it('accepts a v2 permit after grant renewal but rejects changed durable bindings', async () => {
+    const { dependencies } = createDependencies();
+    const commit = vi.fn(async () => ({
+      schemaVersion: 1 as const,
+      status: 'committed' as const,
+      receipt: {
+        id: 'import-receipt-1',
+        planId: 'plan-1',
+        transactionCount: 2,
+        verified: true as const,
+      },
+      sourceDeletionAuthorized: true as const,
+    }));
+    const Gturn = ids.spaceGrant;
+    const Gresume = '72000000-0000-4000-8000-000000000015';
+    const capabilityFingerprint = financeGuardedActionCapabilityFingerprint(
+      'finance.statement.import',
+    );
+    const request = { kind: 'commit' as const, planId: 'plan-1' };
+    const preparedScope = {
+      runId: ids.run,
+      userId: ids.user,
+      householdId: ids.household,
+      sessionId: ids.session,
+      privateSpaceId: ids.privateSpace,
+      spaceAccessGrantId: Gturn,
+      collectionAuthorizationScopeFingerprint:
+        principal.collectionAuthorizationScopeFingerprint,
+      disclosureGrantId: ids.disclosureGrant,
+    };
+    const permit = {
+      proposalId: ids.proposal,
+      decisionId: ids.decision,
+      capabilityId: 'finance.statement.import' as const,
+      capabilityVersion: '1.0.0' as const,
+      capabilityFingerprint,
+      operation: 'finance-statement-import-commit' as const,
+      actionHash: hashCanonicalJson({ schemaVersion: 1, request }),
+      executionBindingHash: hashFinanceGuardedActionExecutionBinding({
+        proposalId: ids.proposal,
+        scope: preparedScope,
+        capabilityId: 'finance.statement.import',
+        capabilityVersion: '1.0.0',
+        capabilityFingerprint,
+        operation: 'finance-statement-import-commit',
+        actionHash: hashCanonicalJson({ schemaVersion: 1, request }),
+      }),
+    };
+    const guardedDependencies = {
+      ...dependencies,
+      imports: { commit },
+      guardedActionCapabilityFingerprints: {
+        recordsWrite: financeGuardedActionCapabilityFingerprint(
+          'finance.records.write',
+        ),
+        statementImport: capabilityFingerprint,
+      },
+    } satisfies RequestScopedFinanceSpecialistServiceDependencies;
+    const resumedPrincipal = {
+      ...principal,
+      spaceAccessGrantId: Gresume,
+    };
+    const resumedContext = {
+      ...context,
+      spaceAccessGrantId: Gresume,
+      approvalDecisionId: ids.decision,
+      guardedActionPermit: permit,
+    } satisfies CapabilityInvocationContext;
+    const resumedServices = createRequestScopedFinanceSpecialistServices({
+      principal: resumedPrincipal,
+      dependencies: guardedDependencies,
+    });
+
+    const resumed = (await resumedServices.executeStatementImport(
+      request,
+      resumedContext,
+    )) as { result: { status: string } };
+    expect(resumed.result.status).toBe('committed');
+    expect(commit).toHaveBeenCalledOnce();
+
+    const legacyExecutionBindingHash = hashCanonicalJson({
+      schemaVersion: 1,
+      domain: 'emdo.finance-guarded-action-execution-binding.v1',
+      proposalId: ids.proposal,
+      runId: preparedScope.runId,
+      householdId: preparedScope.householdId,
+      userId: preparedScope.userId,
+      authenticatedSessionId: preparedScope.sessionId,
+      privateSpaceId: preparedScope.privateSpaceId,
+      spaceAccessGrantId: preparedScope.spaceAccessGrantId,
+      authorizationScopeFingerprint:
+        preparedScope.collectionAuthorizationScopeFingerprint,
+      disclosureGrantId: preparedScope.disclosureGrantId,
+      capabilityId: permit.capabilityId,
+      capabilityVersion: permit.capabilityVersion,
+      capabilityFingerprint: permit.capabilityFingerprint,
+      operation: permit.operation,
+      actionHash: permit.actionHash,
+    });
+    const legacy = (await createRequestScopedFinanceSpecialistServices({
+      principal,
+      dependencies: guardedDependencies,
+    }).executeStatementImport(request, {
+      ...context,
+      approvalDecisionId: ids.decision,
+      guardedActionPermit: {
+        ...permit,
+        executionBindingHash: legacyExecutionBindingHash,
+      },
+    })) as { result: { status: string; safeError: { code: string } } };
+
+    const scopeChangedServices = createRequestScopedFinanceSpecialistServices({
+      principal: {
+        ...resumedPrincipal,
+        collectionAuthorizationScopeFingerprint: 'b'.repeat(64),
+      },
+      dependencies: guardedDependencies,
+    });
+    const changedScope = (await scopeChangedServices.executeStatementImport(
+      request,
+      resumedContext,
+    )) as { result: { status: string; safeError: { code: string } } };
+    const changedDisclosure = (await resumedServices.executeStatementImport(
+      request,
+      {
+        ...resumedContext,
+        disclosureGrantId: '72000000-0000-4000-8000-000000000016',
+      },
+    )) as { result: { status: string; safeError: { code: string } } };
+    const changedAction = (await resumedServices.executeStatementImport(
+      { kind: 'commit', planId: 'plan-2' },
+      resumedContext,
+    )) as { result: { status: string; safeError: { code: string } } };
+
+    expect(changedScope.result).toMatchObject({
+      status: 'rejected',
+      safeError: { code: 'service-unavailable' },
+    });
+    expect(legacy.result).toMatchObject({
+      status: 'rejected',
+      safeError: { code: 'service-unavailable' },
+    });
+    expect(changedDisclosure.result).toMatchObject({
+      status: 'rejected',
+      safeError: { code: 'service-unavailable' },
+    });
+    expect(changedAction.result).toMatchObject({
+      status: 'rejected',
+      safeError: { code: 'service-unavailable' },
+    });
+    expect(commit).toHaveBeenCalledOnce();
+  });
+
   it('allows one exact monthly category budget change and proposes bulk replacements', async () => {
     const { dependencies, records } = createDependencies();
     const current = ownedBudget();
