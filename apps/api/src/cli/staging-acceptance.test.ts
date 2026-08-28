@@ -691,6 +691,7 @@ describe('staging acceptance CLI', () => {
     let committed = false;
     let deleted = false;
     let manualTransaction = false;
+    let commitRunFailed = true;
     const reviewEnvelope = {
       schemaVersion: 1,
       sourceLocale: 'en-CA',
@@ -837,6 +838,26 @@ describe('staging acceptance CLI', () => {
           type: 'run.completed',
           occurredAt: '2026-08-12T15:05:03.000Z',
           data: { status: 'completed', runId, output },
+        },
+      ]);
+    const failedEvents = (runId: string, after: number) =>
+      sse([
+        {
+          schemaVersion: 1,
+          runId,
+          sequence: after + 1,
+          type: 'run.failed',
+          occurredAt: '2026-08-12T15:05:03.000Z',
+          data: {
+            status: 'failed',
+            runId,
+            safeError: {
+              code: 'fixture-private-code',
+              message:
+                'cookie=fixture-private-cookie provider-body=fixture-private-body',
+              retryable: false,
+            },
+          },
         },
       ]);
     const fetch = vi.fn(async (request: Request) => {
@@ -1184,14 +1205,16 @@ describe('staging acceptance CLI', () => {
         if (runId === FINANCE_COMMIT_RUN_ID)
           return after === null
             ? approvalEvents(runId, FINANCE_COMMIT_PROPOSAL_ID)
-            : completedEvents(
-                runId,
-                financeOutput({
-                  summary: 'The reviewed document was committed.',
-                  actionProposalReferences: [FINANCE_COMMIT_PROPOSAL_ID],
-                }),
-                2,
-              );
+            : commitRunFailed
+              ? failedEvents(runId, 2)
+              : completedEvents(
+                  runId,
+                  financeOutput({
+                    summary: 'The reviewed document was committed.',
+                    actionProposalReferences: [FINANCE_COMMIT_PROPOSAL_ID],
+                  }),
+                  2,
+                );
         if (runId === FINANCE_DELETE_RUN_ID)
           return after === null
             ? approvalEvents(runId, FINANCE_DELETE_PROPOSAL_ID)
@@ -1273,6 +1296,66 @@ describe('staging acceptance CLI', () => {
       throw new Error(`Unexpected Finance acceptance request: ${url.pathname}`);
     });
 
+    const resetFinanceFixture = () => {
+      uploaded = undefined;
+      reviewReads = 0;
+      committed = false;
+      deleted = false;
+      manualTransaction = false;
+      requests.length = 0;
+      handoffs.length = 0;
+    };
+    await expect(
+      runStagingAcceptanceCommand({
+        argv: [
+          '--all-mvp-gates',
+          '--require-synthetic',
+          '--forbid-worker-provider-execution',
+          '--finance-synthetic-document-gates',
+        ],
+        environment: financeEnvironment,
+        fetch,
+        now: () => OBSERVED_AT,
+        sleep: async () => undefined,
+      }),
+    ).rejects.toThrow('Finance guarded turn failed after approval');
+    resetFinanceFixture();
+
+    const failedStages: FinanceAcceptanceStage[] = [];
+    await expect(
+      runStagingAcceptanceCommand({
+        argv: [
+          '--all-mvp-gates',
+          '--require-synthetic',
+          '--forbid-worker-provider-execution',
+          '--finance-synthetic-document-gates',
+        ],
+        environment: financeEnvironment,
+        fetch,
+        now: () => OBSERVED_AT,
+        sleep: async () => undefined,
+        financeStageReporter: (stage) => {
+          failedStages.push(stage);
+        },
+      }),
+    ).rejects.toThrow('Finance guarded turn failed after approval');
+    expect(failedStages.at(-1)).toBe(
+      'guarded-review-commit:resumed-run-failed',
+    );
+    const safeGuardedFailure = formatStagingAcceptanceFailure(
+      failedStages.at(-1),
+    );
+    expect(safeGuardedFailure).toBe(
+      'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed.\n',
+    );
+    expect(safeGuardedFailure).not.toContain('fixture-private-cookie');
+    expect(safeGuardedFailure).not.toContain('fixture-private-body');
+    expect(safeGuardedFailure).not.toContain(FINANCE_DOCUMENT_ID);
+    expect(safeGuardedFailure).not.toContain(FINANCE_COMMIT_PROPOSAL_ID);
+
+    resetFinanceFixture();
+    commitRunFailed = false;
+
     const phaseOne = await runStagingAcceptanceCommand({
       argv: [
         '--all-mvp-gates',
@@ -1324,6 +1407,15 @@ describe('staging acceptance CLI', () => {
       'document-review-read-edit',
       'document-direct-commit-denial',
       'guarded-review-commit',
+      'guarded-review-commit:initial-turn',
+      'guarded-review-commit:approval-parsing',
+      'guarded-review-commit:proposal-read',
+      'guarded-review-commit:visual-proof',
+      'guarded-review-commit:decision-receipt',
+      'guarded-review-commit:resumed-run',
+      'guarded-review-commit:resumed-run-completed',
+      'guarded-review-commit:commit-readback',
+      'guarded-review-commit:quota-readback',
       'guarded-delete-denial',
       'qna-and-isolation',
       'safe-write-and-handoff',
