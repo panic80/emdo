@@ -697,10 +697,23 @@ describe('staging acceptance CLI', () => {
       | 'turn-post-or-response-invalid'
       | 'turn-acceptance-json-or-schema-invalid'
       | 'initial-sse-request-failed'
-      | 'initial-sse-non-ok-or-non-sse'
+      | 'initial-sse-non-ok'
+      | 'initial-sse-non-sse'
+      | 'initial-sse-invalid-media-type-suffix'
+      | 'initial-sse-declared-oversized'
+      | 'initial-sse-body-oversized'
+      | 'initial-sse-reader-error'
+      | 'initial-sse-untyped-response-error'
       | 'initial-sse-malformed-framing'
+      | 'initial-sse-malformed-json'
+      | 'initial-sse-wrong-run'
       | 'initial-sse-sequence-discontinuity'
-      | 'initial-sse-terminal-ambiguous'
+      | 'initial-sse-terminal-run-failed'
+      | 'initial-sse-terminal-run-indeterminate'
+      | 'initial-sse-terminal-other'
+      | 'initial-sse-terminal-absent'
+      | 'initial-sse-terminal-duplicate'
+      | 'initial-sse-terminal-not-last'
       | 'approval-terminal-invalid'
       | undefined;
     const reviewEnvelope = {
@@ -1251,7 +1264,7 @@ describe('staging acceptance CLI', () => {
                 'cookie=initial-turn-private-cookie provider-body=initial-turn-private-body',
               );
             }
-            if (initialTurnFailure === 'initial-sse-non-ok-or-non-sse') {
+            if (initialTurnFailure === 'initial-sse-non-ok') {
               return new Response(
                 'cookie=initial-turn-private-cookie provider-body=initial-turn-private-body',
                 {
@@ -1260,11 +1273,109 @@ describe('staging acceptance CLI', () => {
                 },
               );
             }
+            if (initialTurnFailure === 'initial-sse-non-sse') {
+              return new Response(
+                'cookie=initial-turn-private-cookie provider-body=initial-turn-private-body',
+                { headers: { 'content-type': 'text/plain' } },
+              );
+            }
+            if (
+              initialTurnFailure === 'initial-sse-invalid-media-type-suffix'
+            ) {
+              const response = sse([
+                {
+                  schemaVersion: 1,
+                  runId,
+                  sequence: 1,
+                  type: 'approval.required',
+                  occurredAt: '2026-08-12T15:05:01.000Z',
+                  data: {
+                    status: 'needs-approval',
+                    runId,
+                    interruptions: [],
+                  },
+                },
+              ]);
+              response.headers.set('content-type', 'text/event-stream-bogus');
+              return response;
+            }
+            if (initialTurnFailure === 'initial-sse-declared-oversized') {
+              return new Response(
+                'id: 1\nevent: approval.required\ndata: {}\n\n',
+                {
+                  headers: {
+                    'content-type': 'text/event-stream',
+                    'content-length': String(256 * 1024 + 1),
+                  },
+                },
+              );
+            }
+            if (initialTurnFailure === 'initial-sse-body-oversized') {
+              return new Response(
+                `cookie=initial-turn-private-cookie provider-body=initial-turn-private-body${'x'.repeat(256 * 1024)}`,
+                { headers: { 'content-type': 'text/event-stream' } },
+              );
+            }
+            if (initialTurnFailure === 'initial-sse-reader-error') {
+              return new Response(
+                new ReadableStream({
+                  start(controller) {
+                    controller.error(
+                      new Error(
+                        'cookie=initial-turn-private-cookie provider-body=initial-turn-private-body',
+                      ),
+                    );
+                  },
+                }),
+                { headers: { 'content-type': 'text/event-stream' } },
+              );
+            }
+            if (initialTurnFailure === 'initial-sse-untyped-response-error') {
+              const response = new Response('', {
+                headers: { 'content-type': 'text/event-stream' },
+              });
+              return new Proxy(response, {
+                get(target, property, receiver) {
+                  if (property === 'headers') {
+                    return {
+                      get: () => {
+                        throw new Error(
+                          'cookie=initial-turn-private-cookie provider-body=initial-turn-private-body',
+                        );
+                      },
+                    };
+                  }
+                  return Reflect.get(target, property, receiver);
+                },
+              });
+            }
             if (initialTurnFailure === 'initial-sse-malformed-framing') {
               return new Response(
                 'data: cookie=initial-turn-private-cookie provider-body=initial-turn-private-body\n\n',
                 { headers: { 'content-type': 'text/event-stream' } },
               );
+            }
+            if (initialTurnFailure === 'initial-sse-malformed-json') {
+              return new Response(
+                'id: 1\nevent: approval.required\ndata: {cookie=initial-turn-private-cookie provider-body=initial-turn-private-body}\n\n',
+                { headers: { 'content-type': 'text/event-stream' } },
+              );
+            }
+            if (initialTurnFailure === 'initial-sse-wrong-run') {
+              return sse([
+                {
+                  schemaVersion: 1,
+                  runId: FINANCE_QNA_RUN_ID,
+                  sequence: 1,
+                  type: 'approval.required',
+                  occurredAt: '2026-08-12T15:05:01.000Z',
+                  data: {
+                    status: 'needs-approval',
+                    runId: FINANCE_QNA_RUN_ID,
+                    interruptions: [],
+                  },
+                },
+              ]);
             }
             if (initialTurnFailure === 'initial-sse-sequence-discontinuity') {
               return sse([
@@ -1282,18 +1393,73 @@ describe('staging acceptance CLI', () => {
                 },
               ]);
             }
-            if (initialTurnFailure === 'initial-sse-terminal-ambiguous') {
+            if (initialTurnFailure === 'initial-sse-terminal-run-failed')
+              return failedEvents(runId, 0);
+            if (initialTurnFailure === 'initial-sse-terminal-run-indeterminate')
               return sse([
                 {
                   schemaVersion: 1,
                   runId,
                   sequence: 1,
-                  type: 'run.completed',
+                  type: 'run.indeterminate',
                   occurredAt: '2026-08-12T15:05:01.000Z',
-                  data: { status: 'completed', runId },
+                  data: {
+                    status: 'indeterminate',
+                    private: 'cookie=initial-turn-private-cookie',
+                  },
                 },
               ]);
-            }
+            if (initialTurnFailure === 'initial-sse-terminal-other')
+              return completedEvents(runId, { status: 'completed' });
+            if (initialTurnFailure === 'initial-sse-terminal-absent')
+              return sse([
+                {
+                  schemaVersion: 1,
+                  runId,
+                  sequence: 1,
+                  type: 'specialist.interrupted',
+                  occurredAt: '2026-08-12T15:05:01.000Z',
+                  data: { status: 'interrupted' },
+                },
+              ]);
+            if (initialTurnFailure === 'initial-sse-terminal-duplicate')
+              return sse([
+                {
+                  schemaVersion: 1,
+                  runId,
+                  sequence: 1,
+                  type: 'approval.required',
+                  occurredAt: '2026-08-12T15:05:01.000Z',
+                  data: { status: 'needs-approval', runId, interruptions: [] },
+                },
+                {
+                  schemaVersion: 1,
+                  runId,
+                  sequence: 2,
+                  type: 'approval.required',
+                  occurredAt: '2026-08-12T15:05:02.000Z',
+                  data: { status: 'needs-approval', runId, interruptions: [] },
+                },
+              ]);
+            if (initialTurnFailure === 'initial-sse-terminal-not-last')
+              return sse([
+                {
+                  schemaVersion: 1,
+                  runId,
+                  sequence: 1,
+                  type: 'approval.required',
+                  occurredAt: '2026-08-12T15:05:01.000Z',
+                  data: { status: 'needs-approval', runId, interruptions: [] },
+                },
+                {
+                  schemaVersion: 1,
+                  runId,
+                  sequence: 2,
+                  type: 'specialist.interrupted',
+                  occurredAt: '2026-08-12T15:05:02.000Z',
+                  data: { status: 'interrupted' },
+                },
+              ]);
             if (initialTurnFailure === 'approval-terminal-invalid') {
               return invalidApprovalEvents(runId);
             }
@@ -1418,20 +1584,72 @@ describe('staging acceptance CLI', () => {
         outcome: 'initial-sse-request-failed',
       },
       {
-        fixtureFailure: 'initial-sse-non-ok-or-non-sse',
-        outcome: 'initial-sse-framing-or-sequence-invalid',
+        fixtureFailure: 'initial-sse-non-ok',
+        outcome: 'initial-sse-http-or-content-type-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-non-sse',
+        outcome: 'initial-sse-http-or-content-type-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-invalid-media-type-suffix',
+        outcome: 'initial-sse-http-or-content-type-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-declared-oversized',
+        outcome: 'initial-sse-byte-or-framing-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-body-oversized',
+        outcome: 'initial-sse-byte-or-framing-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-reader-error',
+        outcome: 'initial-sse-byte-or-framing-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-untyped-response-error',
+        outcome: undefined,
       },
       {
         fixtureFailure: 'initial-sse-malformed-framing',
-        outcome: 'initial-sse-framing-or-sequence-invalid',
+        outcome: 'initial-sse-byte-or-framing-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-malformed-json',
+        outcome: 'initial-sse-event-schema-run-or-sequence-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-wrong-run',
+        outcome: 'initial-sse-event-schema-run-or-sequence-invalid',
       },
       {
         fixtureFailure: 'initial-sse-sequence-discontinuity',
-        outcome: 'initial-sse-framing-or-sequence-invalid',
+        outcome: 'initial-sse-event-schema-run-or-sequence-invalid',
       },
       {
-        fixtureFailure: 'initial-sse-terminal-ambiguous',
-        outcome: 'initial-sse-framing-or-sequence-invalid',
+        fixtureFailure: 'initial-sse-terminal-run-failed',
+        outcome: 'initial-sse-terminal-run-failed',
+      },
+      {
+        fixtureFailure: 'initial-sse-terminal-run-indeterminate',
+        outcome: 'initial-sse-terminal-run-indeterminate',
+      },
+      {
+        fixtureFailure: 'initial-sse-terminal-other',
+        outcome: 'initial-sse-terminal-other-or-cardinality-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-terminal-absent',
+        outcome: 'initial-sse-terminal-other-or-cardinality-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-terminal-duplicate',
+        outcome: 'initial-sse-terminal-other-or-cardinality-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-terminal-not-last',
+        outcome: 'initial-sse-terminal-other-or-cardinality-invalid',
       },
       {
         fixtureFailure: 'approval-terminal-invalid',
@@ -1462,10 +1680,15 @@ describe('staging acceptance CLI', () => {
         initialTurnStages.at(-1),
       );
       expect(diagnostic).toBe(
-        `Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=${outcome}.\n`,
+        outcome === undefined
+          ? 'Staging acceptance failed at stage=guarded-review-commit:initial-turn.\n'
+          : `Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=${outcome}.\n`,
       );
       expect(diagnostic).not.toContain('initial-turn-private-cookie');
       expect(diagnostic).not.toContain('initial-turn-private-body');
+      expect(diagnostic).not.toContain('fixture-private-code');
+      expect(diagnostic).not.toContain('fixture-private-cookie');
+      expect(diagnostic).not.toContain('fixture-private-body');
       expect(diagnostic).not.toContain(FINANCE_DOCUMENT_ID);
       expect(diagnostic).not.toContain(REQUEST_ID);
     }

@@ -107,7 +107,12 @@ finance_staging_acceptance_failure_diagnostic() {
     'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=turn-post-or-response-invalid.' | \
     'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=turn-acceptance-json-or-schema-invalid.' | \
     'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=initial-sse-request-failed.' | \
-    'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=initial-sse-framing-or-sequence-invalid.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=initial-sse-http-or-content-type-invalid.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=initial-sse-byte-or-framing-invalid.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=initial-sse-event-schema-run-or-sequence-invalid.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=initial-sse-terminal-run-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=initial-sse-terminal-run-indeterminate.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=initial-sse-terminal-other-or-cardinality-invalid.' | \
     'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=approval-terminal-invalid.' | \
     'Staging acceptance failed at stage=guarded-review-commit:approval-parsing.' | \
     'Staging acceptance failed at stage=guarded-review-commit:proposal-read.' | \

@@ -134,6 +134,13 @@
       "when": 1787934828912,
       "tag": "0018_finance_guarded_proposal_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787948022133,
+      "tag": "0019_manager_turn_spend_warning",
+      "breakpoints": true
     }
   ]
 }

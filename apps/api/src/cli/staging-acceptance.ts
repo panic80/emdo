@@ -176,7 +176,12 @@ const FinanceInitialGuardedReviewDiagnosticSchema = z.enum([
   'turn-post-or-response-invalid',
   'turn-acceptance-json-or-schema-invalid',
   'initial-sse-request-failed',
-  'initial-sse-framing-or-sequence-invalid',
+  'initial-sse-http-or-content-type-invalid',
+  'initial-sse-byte-or-framing-invalid',
+  'initial-sse-event-schema-run-or-sequence-invalid',
+  'initial-sse-terminal-run-failed',
+  'initial-sse-terminal-run-indeterminate',
+  'initial-sse-terminal-other-or-cardinality-invalid',
   'approval-terminal-invalid',
 ]);
 
@@ -656,17 +661,89 @@ const TERMINAL_RUN_EVENT_TYPES = new Set([
   'approval.required',
   'run.completed',
   'run.failed',
+  'run.indeterminate',
 ]);
 
 type ParsedRunEvent = z.output<typeof RunEventSchema>;
 
-const readBoundedSseText = async (response: Response): Promise<string> => {
+const InitialSseFailureCategory = Object.freeze({
+  httpOrContentType: 'http-or-content-type',
+  byteOrFraming: 'byte-or-framing',
+  eventSchemaRunOrSequence: 'event-schema-run-or-sequence',
+  terminalRunFailed: 'terminal-run-failed',
+  terminalRunIndeterminate: 'terminal-run-indeterminate',
+  terminalOtherOrCardinality: 'terminal-other-or-cardinality',
+} as const);
+
+type InitialSseFailureCategory =
+  (typeof InitialSseFailureCategory)[keyof typeof InitialSseFailureCategory];
+
+class InitialSseReadError extends Error {
+  readonly category: InitialSseFailureCategory;
+
+  constructor(category: InitialSseFailureCategory) {
+    super('Initial SSE validation failed');
+    this.category = category;
+  }
+}
+
+const throwSseFailure = (
+  initialSseDiagnostic: boolean | undefined,
+  category: InitialSseFailureCategory,
+  message: string,
+): never => {
+  if (initialSseDiagnostic === true) {
+    throw new InitialSseReadError(category);
+  }
+  throw new Error(message);
+};
+
+const InitialSseDiagnosticByFailure = Object.freeze({
+  [InitialSseFailureCategory.httpOrContentType]:
+    'initial-sse-http-or-content-type-invalid',
+  [InitialSseFailureCategory.byteOrFraming]:
+    'initial-sse-byte-or-framing-invalid',
+  [InitialSseFailureCategory.eventSchemaRunOrSequence]:
+    'initial-sse-event-schema-run-or-sequence-invalid',
+  [InitialSseFailureCategory.terminalRunFailed]:
+    'initial-sse-terminal-run-failed',
+  [InitialSseFailureCategory.terminalRunIndeterminate]:
+    'initial-sse-terminal-run-indeterminate',
+  [InitialSseFailureCategory.terminalOtherOrCardinality]:
+    'initial-sse-terminal-other-or-cardinality-invalid',
+} satisfies Record<
+  InitialSseFailureCategory,
+  FinanceInitialGuardedReviewDiagnostic
+>);
+
+const initialSseDiagnosticFromError = (
+  error: unknown,
+): FinanceInitialGuardedReviewDiagnostic | undefined =>
+  error instanceof InitialSseReadError
+    ? InitialSseDiagnosticByFailure[error.category]
+    : undefined;
+
+const readBoundedSseText = async (input: {
+  readonly response: Response;
+  readonly initialSseDiagnostic?: boolean;
+}): Promise<string> => {
+  const { response } = input;
+  const responseMediaType = response.headers
+    .get('content-type')
+    ?.split(';', 1)
+    .at(0)
+    ?.trim()
+    .toLowerCase();
   if (
     !response.ok ||
     response.redirected ||
-    !response.headers.get('content-type')?.startsWith('text/event-stream')
+    responseMediaType !== 'text/event-stream'
   ) {
-    throw new Error('Acceptance run event stream failed');
+    throwSseFailure(
+      input.initialSseDiagnostic,
+      InitialSseFailureCategory.httpOrContentType,
+      'Acceptance run event stream failed',
+    );
   }
   const declaredLength = response.headers.get('content-length');
   if (
@@ -674,12 +751,21 @@ const readBoundedSseText = async (response: Response): Promise<string> => {
     (!/^(?:0|[1-9][0-9]*)$/u.test(declaredLength) ||
       Number(declaredLength) > FINANCE_SSE_MAXIMUM_BYTES)
   ) {
-    throw new Error('Acceptance run event stream exceeds its byte bound');
+    throwSseFailure(
+      input.initialSseDiagnostic,
+      InitialSseFailureCategory.byteOrFraming,
+      'Acceptance run event stream exceeds its byte bound',
+    );
   }
-  const reader = response.body?.getReader();
-  if (reader === undefined) {
-    throw new Error('Acceptance run event stream is not finite');
+  const responseReader = response.body?.getReader();
+  if (responseReader === undefined) {
+    throwSseFailure(
+      input.initialSseDiagnostic,
+      InitialSseFailureCategory.byteOrFraming,
+      'Acceptance run event stream is not finite',
+    );
   }
+  const reader = responseReader!;
   const decoder = new TextDecoder();
   let receivedBytes = 0;
   let text = '';
@@ -688,21 +774,41 @@ const readBoundedSseText = async (response: Response): Promise<string> => {
       const chunk = await reader.read();
       if (chunk.done) break;
       if (!(chunk.value instanceof Uint8Array)) {
-        throw new Error('Acceptance run event stream is invalid');
+        throwSseFailure(
+          input.initialSseDiagnostic,
+          InitialSseFailureCategory.byteOrFraming,
+          'Acceptance run event stream is invalid',
+        );
       }
       receivedBytes += chunk.value.byteLength;
       if (receivedBytes > FINANCE_SSE_MAXIMUM_BYTES) {
         void reader.cancel();
-        throw new Error('Acceptance run event stream exceeds its byte bound');
+        throwSseFailure(
+          input.initialSseDiagnostic,
+          InitialSseFailureCategory.byteOrFraming,
+          'Acceptance run event stream exceeds its byte bound',
+        );
       }
       text += decoder.decode(chunk.value, { stream: true });
     }
     text += decoder.decode();
+  } catch (error) {
+    if (input.initialSseDiagnostic !== true) throw error;
+    if (error instanceof InitialSseReadError) throw error;
+    throwSseFailure(
+      input.initialSseDiagnostic,
+      InitialSseFailureCategory.byteOrFraming,
+      'Acceptance run event stream is unreadable',
+    );
   } finally {
     reader.releaseLock();
   }
   if (Buffer.byteLength(text, 'utf8') !== receivedBytes) {
-    throw new Error('Acceptance run event stream encoding is invalid');
+    throwSseFailure(
+      input.initialSseDiagnostic,
+      InitialSseFailureCategory.byteOrFraming,
+      'Acceptance run event stream encoding is invalid',
+    );
   }
   return text;
 };
@@ -719,13 +825,22 @@ const readFiniteRunEvents = async (input: {
   readonly expectedTerminalType: 'approval.required' | 'run.completed';
   /** Guarded-review diagnostics may distinguish only the static failed type. */
   readonly allowRunFailedTerminal?: boolean;
+  /** Only the initial guarded-review replay emits categorized diagnostics. */
+  readonly initialSseDiagnostic?: boolean;
 }): Promise<readonly ParsedRunEvent[]> => {
   if (!Number.isSafeInteger(input.afterSequence) || input.afterSequence < 0) {
     throw new Error('Acceptance run event cursor is invalid');
   }
-  const text = await readBoundedSseText(input.response);
+  const text = await readBoundedSseText({
+    response: input.response,
+    initialSseDiagnostic: input.initialSseDiagnostic,
+  });
   if (!text.endsWith('\n\n') || text.includes('\r')) {
-    throw new Error('Acceptance run event stream framing is invalid');
+    throwSseFailure(
+      input.initialSseDiagnostic,
+      InitialSseFailureCategory.byteOrFraming,
+      'Acceptance run event stream framing is invalid',
+    );
   }
   const frames = text.slice(0, -2).split('\n\n');
   if (
@@ -733,7 +848,11 @@ const readFiniteRunEvents = async (input: {
     frames.length > FINANCE_SSE_MAXIMUM_FRAMES ||
     frames.some((frame) => frame.length === 0)
   ) {
-    throw new Error('Acceptance run event stream frame count is invalid');
+    throwSseFailure(
+      input.initialSseDiagnostic,
+      InitialSseFailureCategory.byteOrFraming,
+      'Acceptance run event stream frame count is invalid',
+    );
   }
   let expectedSequence = input.afterSequence + 1;
   const events: ParsedRunEvent[] = [];
@@ -745,7 +864,11 @@ const readFiniteRunEvents = async (input: {
       !lines[1]!.startsWith('event: ') ||
       !lines[2]!.startsWith('data: ')
     ) {
-      throw new Error('Acceptance run event stream framing is invalid');
+      throwSseFailure(
+        input.initialSseDiagnostic,
+        InitialSseFailureCategory.byteOrFraming,
+        'Acceptance run event stream framing is invalid',
+      );
     }
     const eventId = lines[0]!.slice('id: '.length);
     const eventType = lines[1]!.slice('event: '.length);
@@ -755,13 +878,21 @@ const readFiniteRunEvents = async (input: {
       eventType.length === 0 ||
       serialized.length === 0
     ) {
-      throw new Error('Acceptance run event stream frame is invalid');
+      throwSseFailure(
+        input.initialSseDiagnostic,
+        InitialSseFailureCategory.byteOrFraming,
+        'Acceptance run event stream frame is invalid',
+      );
     }
     let raw: unknown;
     try {
       raw = JSON.parse(serialized);
     } catch {
-      throw new Error('Acceptance run event stream JSON is invalid');
+      throwSseFailure(
+        input.initialSseDiagnostic,
+        InitialSseFailureCategory.eventSchemaRunOrSequence,
+        'Acceptance run event stream JSON is invalid',
+      );
     }
     const parsed = RunEventSchema.safeParse(raw);
     if (
@@ -771,27 +902,59 @@ const readFiniteRunEvents = async (input: {
       parsed.data.sequence !== expectedSequence ||
       eventId !== String(parsed.data.sequence)
     ) {
-      throw new Error('Acceptance run event sequence is invalid');
+      throwSseFailure(
+        input.initialSseDiagnostic,
+        InitialSseFailureCategory.eventSchemaRunOrSequence,
+        'Acceptance run event sequence is invalid',
+      );
     }
-    events.push(parsed.data);
+    events.push(parsed.data!);
     expectedSequence += 1;
   }
   const terminals = events.filter((event) =>
     TERMINAL_RUN_EVENT_TYPES.has(event.type),
   );
   const terminal = terminals[0];
-  if (
-    terminals.length !== 1 ||
-    terminal === undefined ||
-    (terminal.type !== input.expectedTerminalType &&
-      !(
-        input.allowRunFailedTerminal === true &&
-        input.expectedTerminalType === 'run.completed' &&
-        terminal.type === 'run.failed'
-      )) ||
-    terminal !== events.at(-1)
-  ) {
-    throw new Error('Acceptance run terminal event is ambiguous');
+  if (terminal === undefined) {
+    throwSseFailure(
+      input.initialSseDiagnostic,
+      InitialSseFailureCategory.terminalOtherOrCardinality,
+      'Acceptance run terminal event is ambiguous',
+    );
+  }
+  const resolvedTerminal = terminal!;
+  if (terminals.length !== 1 || resolvedTerminal !== events.at(-1)) {
+    throwSseFailure(
+      input.initialSseDiagnostic,
+      InitialSseFailureCategory.terminalOtherOrCardinality,
+      'Acceptance run terminal event is ambiguous',
+    );
+  }
+  if (resolvedTerminal.type !== input.expectedTerminalType) {
+    const allowsRunFailedTerminal =
+      input.allowRunFailedTerminal === true &&
+      input.expectedTerminalType === 'run.completed' &&
+      resolvedTerminal.type === 'run.failed';
+    if (allowsRunFailedTerminal) return Object.freeze(events);
+    if (resolvedTerminal.type === 'run.failed') {
+      throwSseFailure(
+        input.initialSseDiagnostic,
+        InitialSseFailureCategory.terminalRunFailed,
+        'Acceptance run terminal event is ambiguous',
+      );
+    }
+    if (resolvedTerminal.type === 'run.indeterminate') {
+      throwSseFailure(
+        input.initialSseDiagnostic,
+        InitialSseFailureCategory.terminalRunIndeterminate,
+        'Acceptance run terminal event is ambiguous',
+      );
+    }
+    throwSseFailure(
+      input.initialSseDiagnostic,
+      InitialSseFailureCategory.terminalOtherOrCardinality,
+      'Acceptance run terminal event is ambiguous',
+    );
   }
   return Object.freeze(events);
 };
@@ -1267,6 +1430,7 @@ type FinanceTurnEventsInput = {
   readonly afterSequence: number;
   readonly expectedTerminalType: 'approval.required' | 'run.completed';
   readonly allowRunFailedTerminal?: boolean;
+  readonly initialSseDiagnostic?: boolean;
 };
 
 const requestFinanceTurnEvents = async (input: FinanceTurnEventsInput) => {
@@ -1292,6 +1456,9 @@ const parseFinanceTurnEvents = async (
     ...(input.allowRunFailedTerminal === undefined
       ? {}
       : { allowRunFailedTerminal: input.allowRunFailedTerminal }),
+    ...(input.initialSseDiagnostic === true
+      ? { initialSseDiagnostic: true }
+      : {}),
   });
 
 const readFinanceTurnEvents = async (input: FinanceTurnEventsInput) =>
@@ -2014,6 +2181,7 @@ const runFinanceStagingAcceptance = async (
     turn: guardedCommitTurn,
     afterSequence: 0,
     expectedTerminalType: 'approval.required' as const,
+    initialSseDiagnostic: true,
   };
   let guardedCommitInitialEventsResponse: Response;
   try {
@@ -2031,7 +2199,8 @@ const runFinanceStagingAcceptance = async (
       response: guardedCommitInitialEventsResponse,
     });
   } catch (error) {
-    input.financeStageReporter?.('initial-sse-framing-or-sequence-invalid');
+    const diagnostic = initialSseDiagnosticFromError(error);
+    if (diagnostic !== undefined) input.financeStageReporter?.(diagnostic);
     throw error;
   }
   input.financeStageReporter?.('guarded-review-commit:approval-parsing');

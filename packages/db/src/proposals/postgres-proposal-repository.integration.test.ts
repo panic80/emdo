@@ -7,6 +7,7 @@ import {
   type ActionDecision,
   type ActionProposal,
   type EffectiveAuthorizationScopeFingerprint,
+  type JsonValue,
 } from '@emdo/contracts';
 import {
   ProposalPreparationBindingSchema,
@@ -29,6 +30,7 @@ import {
   it,
 } from 'vitest';
 
+import { PostgresManagerTurnStore } from '../agent/manager-turn-store.js';
 import { loadOrderedMigrations } from '../migrations.js';
 import type { DatabasePool } from '../scoped-repository.js';
 import { ProposalQueryCursorCodec } from './proposal-query-cursor-codec.js';
@@ -164,7 +166,13 @@ const ids = Object.freeze({
   }),
 });
 
-type ActorIds = (typeof ids)[keyof typeof ids];
+const managerReviewIds = Object.freeze({
+  disclosure: '96500000-0000-4000-8000-000000000001',
+  proposal: '96500000-0000-4000-8000-000000000002',
+  checkpoint: '96500000-0000-4000-8000-000000000003',
+});
+
+type ActorIds = Readonly<Record<keyof (typeof ids)['a'], string>>;
 type PgClient = import('pg').Client;
 type PgPool = import('pg').Pool;
 
@@ -380,12 +388,19 @@ const buildFinanceFixture = (
   options: Readonly<{
     proposalId?: string;
     sdkCallSuffix?: string;
+    action?: 'delete-document' | 'commit-document-review';
   }> = {},
 ): Fixture => {
   const disclosureCreatedAt = isoOffset(-60_000);
   const proposalCreatedAt = isoOffset(-1_000);
   const expiresAt = isoOffset(8 * 60_000);
   const proposalId = options.proposalId ?? actor.proposal;
+  const action = options.action ?? 'delete-document';
+  const isReviewCommit = action === 'commit-document-review';
+  const guardedOperation = isReviewCommit
+    ? 'finance-document-review-commit'
+    : 'finance-document-delete';
+  const documentId = `finance-document:${actor.proposal}`;
   const authorizationScopeFingerprint =
     EffectiveAuthorizationScopeFingerprintSchema.parse(
       hashCanonicalJson({
@@ -416,11 +431,19 @@ const buildFinanceFixture = (
         writableSpaceIds: [actor.space],
       }),
     );
-  const canonicalArguments = {
-    schemaVersion: 1,
-    action: 'delete-document',
-    documentId: `finance-document:${actor.proposal}`,
-  } as const;
+  const canonicalArguments: JsonValue = isReviewCommit
+    ? ({
+        schemaVersion: 1,
+        mutation: {
+          kind: 'commit-document-review',
+          documentId,
+        },
+      } as const)
+    : ({
+        schemaVersion: 1,
+        action: 'delete-document',
+        documentId,
+      } as const);
   const payloadHash = hashCanonicalJson(canonicalArguments);
   const capabilityFingerprint = hashCanonicalJson({
     schemaVersion: 1,
@@ -430,7 +453,7 @@ const buildFinanceFixture = (
   const targetBindingHash = hashCanonicalJson({
     schemaVersion: 1,
     domain: 'emdo.finance-document-target-binding.v1',
-    documentId: canonicalArguments.documentId,
+    documentId,
     expectedVersion: 'current',
   });
   const providerAuthorityBindingHash = hashCanonicalJson({
@@ -447,13 +470,13 @@ const buildFinanceFixture = (
     capabilityId: 'finance.records.write',
     capabilityVersion: '1.0.0',
     capabilityFingerprint,
-    operation: 'finance-document-delete',
+    operation: guardedOperation,
     actionHash: payloadHash,
     targetBindingHash,
   });
   const guardedAction = {
     capabilityVersion: '1.0.0',
-    operation: 'finance-document-delete',
+    operation: guardedOperation,
     actionHash: payloadHash,
     executionBindingHash: providerAuthorityBindingHash,
     targetBindingHash,
@@ -465,12 +488,14 @@ const buildFinanceFixture = (
     userId: actor.user,
     householdId: actor.household,
     agentId: 'finance',
-    purpose: 'Delete one visually approved Finance document',
+    purpose: isReviewCommit
+      ? 'Commit one visually approved Finance document review'
+      : 'Delete one visually approved Finance document',
     runId: actor.run,
     recordAllowlist: [
       {
         dataClass: 'finance.document',
-        recordId: canonicalArguments.documentId,
+        recordId: documentId,
         fields: ['status'],
       },
     ],
@@ -491,35 +516,43 @@ const buildFinanceFixture = (
     targets: [
       {
         kind: 'finance.document',
-        id: canonicalArguments.documentId,
+        id: documentId,
         expectedVersion: 'current',
       },
     ],
     beforePreview: { status: 'ready' },
-    afterPreview: { status: 'deleted' },
+    afterPreview: { status: isReviewCommit ? 'committed' : 'deleted' },
     approvalDisplay: {
       schemaVersion: 1 as const,
-      title: 'Delete Finance document',
-      summary: 'Delete one manually uploaded Finance document.',
-      beforeSummary: 'The document remains available.',
-      afterSummary: 'The document is deleted.',
-      fields: [{ label: 'Document', value: canonicalArguments.documentId }],
+      title: isReviewCommit
+        ? 'Commit Finance document review'
+        : 'Delete Finance document',
+      summary: isReviewCommit
+        ? 'Commit one manually uploaded Finance document review.'
+        : 'Delete one manually uploaded Finance document.',
+      beforeSummary: isReviewCommit
+        ? 'The document review is awaiting commitment.'
+        : 'The document remains available.',
+      afterSummary: isReviewCommit
+        ? 'The document review is committed.'
+        : 'The document is deleted.',
+      fields: [{ label: 'Document', value: documentId }],
     },
     providerPreconditions: [
       {
         kind: 'finance.document',
-        targetId: canonicalArguments.documentId,
+        targetId: documentId,
         expectedValue: 'current',
       },
     ],
     providerAuthorityBindingHash,
-    providerSdkCallId: `sdk-finance-delete-${options.sdkCallSuffix ?? 'main'}-${actor.user}`,
+    providerSdkCallId: `sdk-finance-${isReviewCommit ? 'review' : 'delete'}-${options.sdkCallSuffix ?? 'main'}-${actor.user}`,
     guardedAction,
     payloadHash,
     disclosureGrant: disclosure,
     createdAt: proposalCreatedAt,
     expiresAt,
-    idempotencyKey: `proposal:finance:${options.sdkCallSuffix ?? 'main'}:${actor.user}`,
+    idempotencyKey: `proposal:finance:${isReviewCommit ? 'review:' : ''}${options.sdkCallSuffix ?? 'main'}:${actor.user}`,
     state: 'pending' as const,
   };
   const proposal = ActionProposalSchema.parse({
@@ -749,6 +782,33 @@ describeDatabase(
         fixture.collectionAuthorizationScopeFingerprint,
     });
 
+    const seedDisclosureGrant = async (fixture: Fixture): Promise<void> => {
+      const actor = fixture.actor;
+      await admin.query(
+        `insert into emdo.disclosure_grants
+           (id, version, household_id, space_id, user_id, run_id, agent_id,
+            purpose, provider, record_allowlist, grant_hash, created_at,
+            expires_at, one_run_only)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11,
+                 $12::timestamptz, $13::timestamptz, true)`,
+        [
+          fixture.disclosure.id,
+          fixture.disclosure.version,
+          fixture.disclosure.householdId,
+          actor.space,
+          fixture.disclosure.userId,
+          fixture.disclosure.runId,
+          fixture.disclosure.agentId,
+          fixture.disclosure.purpose,
+          fixture.disclosure.provider,
+          JSON.stringify(fixture.disclosure.recordAllowlist),
+          fixture.disclosureHash,
+          fixture.disclosure.createdAt,
+          fixture.disclosure.expiresAt,
+        ],
+      );
+    };
+
     const seedActor = async (
       fixture: Fixture,
       label: string,
@@ -885,29 +945,7 @@ describeDatabase(
           ],
         );
       }
-      await admin.query(
-        `insert into emdo.disclosure_grants
-           (id, version, household_id, space_id, user_id, run_id, agent_id,
-            purpose, provider, record_allowlist, grant_hash, created_at,
-            expires_at, one_run_only)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11,
-                 $12::timestamptz, $13::timestamptz, true)`,
-        [
-          fixture.disclosure.id,
-          fixture.disclosure.version,
-          fixture.disclosure.householdId,
-          actor.space,
-          fixture.disclosure.userId,
-          fixture.disclosure.runId,
-          fixture.disclosure.agentId,
-          fixture.disclosure.purpose,
-          fixture.disclosure.provider,
-          JSON.stringify(fixture.disclosure.recordAllowlist),
-          fixture.disclosureHash,
-          fixture.disclosure.createdAt,
-          fixture.disclosure.expiresAt,
-        ],
-      );
+      await seedDisclosureGrant(fixture);
     };
 
     const directWorkflowCommit = async (
@@ -992,11 +1030,9 @@ describeDatabase(
         `alter role ${WORKER_LOGIN} password '${workerPassword}'`,
       );
 
-      const proposalMigrations = (await loadOrderedMigrations()).filter(
-        ({ index }) => index <= 3 || index === 18,
-      );
+      const proposalMigrations = await loadOrderedMigrations();
       expect(proposalMigrations.at(-1)?.id).toBe(
-        '0018_finance_guarded_proposal_authority',
+        '0019_manager_turn_spend_warning',
       );
       for (const migration of proposalMigrations) {
         try {
@@ -1519,6 +1555,219 @@ describeDatabase(
     });
 
     it('accepts guarded Finance create and visual decision without Google, but rejects forged Finance and Calendar without Google', async () => {
+      const managerTurns = new PostgresManagerTurnStore(databasePool(appPool));
+      const managerClaim = await managerTurns.claim({
+        request: {
+          schemaVersion: 1,
+          message: 'Commit this reviewed Finance document.',
+          routeHint: 'finance',
+        },
+        principal: visualPrincipal(fixtureA),
+        requestId: fixtureA.actor.request,
+        idempotencyKey: 'proposal-lifecycle-finance-review-0001',
+      });
+      expect(managerClaim.status).toBe('claimed');
+      if (managerClaim.status !== 'claimed') {
+        throw new Error('expected a newly claimed manager turn');
+      }
+
+      const managerReviewDocumentId = `finance-document:${managerReviewIds.proposal}`;
+      const managerReviewFixture = buildFinanceFixture(
+        Object.freeze({
+          ...fixtureA.actor,
+          disclosure: managerReviewIds.disclosure,
+          proposal: managerReviewIds.proposal,
+          run: managerClaim.runId,
+        }),
+        {
+          sdkCallSuffix: 'manager-review',
+          action: 'commit-document-review',
+        },
+      );
+      expect(managerReviewFixture.proposal.authorizationScopeFingerprint).toBe(
+        managerClaim.authorizationScopeFingerprint,
+      );
+      expect(managerReviewFixture.proposal).toMatchObject({
+        canonicalArguments: {
+          mutation: {
+            kind: 'commit-document-review',
+            documentId: managerReviewDocumentId,
+          },
+        },
+        guardedAction: {
+          operation: 'finance-document-review-commit',
+          targetBindingHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        },
+      });
+      await seedDisclosureGrant(managerReviewFixture);
+      await expect(
+        repositoryFor(
+          managerReviewFixture,
+          operationId('finance_manager_review_create'),
+        ).transaction((transaction) =>
+          transaction.insertProposal({
+            proposal: managerReviewFixture.proposal,
+            preparation: managerReviewFixture.preparation,
+            scope: scopeFor(
+              managerReviewFixture,
+              'proposal-create',
+              new Date().toISOString(),
+            ),
+            event: createdEventFor(managerReviewFixture),
+          }),
+        ),
+      ).resolves.toBe('created');
+
+      const checkpointCreatedAt = new Date().toISOString();
+      const checkpointExpiresAt = new Date(
+        Date.parse(checkpointCreatedAt) + 5 * 60_000,
+      ).toISOString();
+      const checkpointRetainUntil = new Date(
+        Date.parse(checkpointCreatedAt) + 89 * 24 * 60 * 60_000,
+      ).toISOString();
+      const checkpoint = Object.freeze({
+        checkpointId: managerReviewIds.checkpoint,
+        householdId: managerReviewFixture.actor.household,
+        userId: managerReviewFixture.actor.user,
+        runId: managerReviewFixture.actor.run,
+        agentGraphHash: 'a'.repeat(64),
+        sdkVersion: 'proposal-lifecycle-integration',
+        formatVersion: 1,
+        revision: 1,
+        state: 'pending' as const,
+        createdAt: checkpointCreatedAt,
+        expiresAt: checkpointExpiresAt,
+        updatedAt: checkpointCreatedAt,
+      });
+      await admin.query(
+        `insert into emdo.approval_checkpoints
+           (checkpoint_id, household_id, space_id, user_id, run_id,
+            format_version, revision, state, agent_graph_hash, sdk_version,
+            sealed_state, created_at, expires_at, updated_at, retain_until)
+         values ($1, $2, $3, $4, $5, 1, 1, 'pending', $6, $7,
+                 'sealed-manager-review-checkpoint', $8::timestamptz,
+                 $9::timestamptz, $8::timestamptz, $10::timestamptz)`,
+        [
+          checkpoint.checkpointId,
+          checkpoint.householdId,
+          managerReviewFixture.actor.space,
+          checkpoint.userId,
+          checkpoint.runId,
+          checkpoint.agentGraphHash,
+          checkpoint.sdkVersion,
+          checkpoint.createdAt,
+          checkpoint.expiresAt,
+          checkpointRetainUntil,
+        ],
+      );
+      const beforeCompletion = await admin.query(
+        `select 1
+           from emdo.approval_resume_jobs
+          where run_id = $1`,
+        [managerClaim.runId],
+      );
+      expect(beforeCompletion.rows).toEqual([]);
+
+      const interruptionId = `finance-review:${managerReviewFixture.proposal.id}`;
+      const managerApprovalResult = {
+        status: 'needs-approval',
+        runId: managerClaim.runId,
+        localTraceReference: 'proposal-lifecycle-finance-review',
+        checkpoint,
+        interruptions: [
+          {
+            id: interruptionId,
+            agentId: 'finance',
+            capabilityId: managerReviewFixture.proposal.capabilityId,
+            proposalId: managerReviewFixture.proposal.id,
+            argumentsPreview: {
+              mutation: {
+                kind: 'commit-document-review',
+                documentId: managerReviewDocumentId,
+              },
+            },
+          },
+        ],
+        specialistOutcomes: [],
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          modelCostCadMinor: 0,
+          spendWarning: true,
+        },
+        modelResolution: {
+          status: 'resolved',
+          requestedModel: 'gpt-5.6-luna',
+          resolvedModel: 'gpt-5.6-luna',
+          reason: 'default',
+        },
+      } as const;
+
+      await expect(
+        managerTurns.complete({
+          claimId: managerClaim.claimId,
+          ownershipToken: managerClaim.ownershipToken,
+          runId: managerClaim.runId,
+          result: managerApprovalResult,
+        }),
+      ).resolves.toEqual({ status: 'completed', terminalEventSequence: 2 });
+
+      const managerEvents = await admin.query<{
+        sequence: number;
+        eventType: string;
+        payload: unknown;
+      }>(
+        `select sequence::integer as sequence, event_type as "eventType", payload
+           from emdo.agent_run_events
+          where run_id = $1
+          order by sequence`,
+        [managerClaim.runId],
+      );
+      expect(
+        managerEvents.rows.map(({ sequence, eventType }) => ({
+          sequence,
+          eventType,
+        })),
+      ).toEqual([
+        { sequence: 1, eventType: 'run.accepted' },
+        { sequence: 2, eventType: 'approval.required' },
+      ]);
+      expect(managerEvents.rows.at(-1)?.payload).toMatchObject({
+        status: 'needs-approval',
+        runId: managerClaim.runId,
+        interruptions: [
+          {
+            id: interruptionId,
+            proposalId: managerReviewFixture.proposal.id,
+          },
+        ],
+      });
+      const approvalResumeJobs = await admin.query<{
+        checkpointId: string;
+        proposalId: string;
+        capabilityId: string;
+        approvalEventSequence: number;
+        state: string;
+      }>(
+        `select checkpoint_id::text as "checkpointId",
+                proposal_id::text as "proposalId",
+                capability_id as "capabilityId",
+                approval_event_sequence::integer as "approvalEventSequence",
+                state
+           from emdo.approval_resume_jobs
+          where run_id = $1`,
+        [managerClaim.runId],
+      );
+      expect(approvalResumeJobs.rows).toEqual([
+        {
+          checkpointId: checkpoint.checkpointId,
+          proposalId: managerReviewFixture.proposal.id,
+          capabilityId: 'finance.records.write',
+          approvalEventSequence: 2,
+          state: 'awaiting-decision',
+        },
+      ]);
+
       const financeFixture = buildFinanceFixture(ids.c);
       await seedActor(financeFixture, 'finance-no-google', {
         includeGoogle: false,

@@ -70,7 +70,7 @@ describe('ordered migration snapshot chain', () => {
       readdir(metadataUrl),
     ]);
     expect(journal.entries.map(({ idx }) => idx)).toEqual([
-      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
     ]);
     expect(journal.entries.map(({ tag }) => tag)).toEqual([
       '0000_household_foundation',
@@ -92,18 +92,19 @@ describe('ordered migration snapshot chain', () => {
       '0016_finance_document_knowledge',
       '0017_approval_resume_public_events',
       '0018_finance_guarded_proposal_authority',
+      '0019_manager_turn_spend_warning',
     ]);
     expect(
       files.filter((file) => /^\d{4}_snapshot\.json$/u.test(file)).sort(),
     ).toEqual(
       Array.from(
-        { length: 19 },
+        { length: 20 },
         (_, index) => `${index.toString().padStart(4, '0')}_snapshot.json`,
       ),
     );
 
     const snapshots = await Promise.all(
-      Array.from({ length: 19 }, (_, index) => readSnapshot(index)),
+      Array.from({ length: 20 }, (_, index) => readSnapshot(index)),
     );
     expect(snapshots[0]?.prevId).toBe('00000000-0000-0000-0000-000000000000');
     for (let index = 1; index < snapshots.length; index += 1) {
@@ -117,6 +118,11 @@ describe('ordered migration snapshot chain', () => {
     expect(tableDelta(snapshots[17]!, snapshots[18]!)).toEqual({
       added: [],
       changed: ['emdo.action_proposals'],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[18]!, snapshots[19]!)).toEqual({
+      added: [],
+      changed: [],
       removed: [],
     });
     for (const snapshot of [snapshots[16]!, snapshots[17]!]) {
