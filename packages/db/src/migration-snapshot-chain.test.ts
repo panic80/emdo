@@ -61,7 +61,7 @@ describe('ordered migration snapshot chain', () => {
       readdir(metadataUrl),
     ]);
     expect(journal.entries.map(({ idx }) => idx)).toEqual([
-      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
     ]);
     expect(journal.entries.map(({ tag }) => tag)).toEqual([
       '0000_household_foundation',
@@ -81,23 +81,29 @@ describe('ordered migration snapshot chain', () => {
       '0014_audio_spend_readiness',
       '0015_single_household_session_activation',
       '0016_finance_document_knowledge',
+      '0017_approval_resume_public_events',
     ]);
     expect(
       files.filter((file) => /^\d{4}_snapshot\.json$/u.test(file)).sort(),
     ).toEqual(
       Array.from(
-        { length: 17 },
+        { length: 18 },
         (_, index) => `${index.toString().padStart(4, '0')}_snapshot.json`,
       ),
     );
 
     const snapshots = await Promise.all(
-      Array.from({ length: 17 }, (_, index) => readSnapshot(index)),
+      Array.from({ length: 18 }, (_, index) => readSnapshot(index)),
     );
     expect(snapshots[0]?.prevId).toBe('00000000-0000-0000-0000-000000000000');
     for (let index = 1; index < snapshots.length; index += 1) {
       expect(snapshots[index]?.prevId).toBe(snapshots[index - 1]?.id);
     }
+    expect(tableDelta(snapshots[16]!, snapshots[17]!)).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
   });
 
   it('keeps audio, household, sync, and preference structures in their owned boundary', async () => {

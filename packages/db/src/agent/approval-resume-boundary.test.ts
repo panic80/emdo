@@ -188,6 +188,78 @@ describe('PostgresApprovalResumeBoundary', () => {
     ]);
   });
 
+  it('rejects an incomplete terminal result before the settlement function', async () => {
+    const { pool, query } = poolFor(() => []);
+    const boundary = new PostgresApprovalResumeBoundary({
+      pool,
+      decideAndLink: vi.fn(),
+    });
+
+    expect(() =>
+      boundary.complete({
+        claimId: 'approval-resume-claim-0001',
+        ownershipToken: 'approval-resume-owner-0001',
+        binding,
+        result: { status: 'failed', runId: ids.run },
+      }),
+    ).toThrow();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('rejects a nested approval result before the settlement function', async () => {
+    const { pool, query } = poolFor(() => []);
+    const boundary = new PostgresApprovalResumeBoundary({
+      pool,
+      decideAndLink: vi.fn(),
+    });
+
+    expect(() =>
+      boundary.complete({
+        claimId: 'approval-resume-claim-0001',
+        ownershipToken: 'approval-resume-owner-0001',
+        binding,
+        result: {
+          status: 'needs-approval',
+          runId: ids.run,
+          localTraceReference: 'nested-approval-trace',
+          specialistOutcomes: [],
+          usage: { inputTokens: 0, outputTokens: 0, modelCostCadMinor: 0 },
+          checkpoint: {},
+          interruptions: [],
+          modelResolution: {},
+        },
+      }),
+    ).toThrow();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('rejects an incomplete completed-model resolution before settlement', async () => {
+    const { pool, query } = poolFor(() => []);
+    const boundary = new PostgresApprovalResumeBoundary({
+      pool,
+      decideAndLink: vi.fn(),
+    });
+
+    expect(() =>
+      boundary.complete({
+        claimId: 'approval-resume-claim-0001',
+        ownershipToken: 'approval-resume-owner-0001',
+        binding,
+        result: {
+          status: 'completed',
+          runId: ids.run,
+          localTraceReference: 'completed-model-resolution-trace',
+          output: { summary: 'Completed.' },
+          specialistOutcomes: [],
+          hasPartialFailures: false,
+          usage: { inputTokens: 0, outputTokens: 0, modelCostCadMinor: 0 },
+          modelResolution: {},
+        },
+      }),
+    ).toThrow();
+    expect(query).not.toHaveBeenCalled();
+  });
+
   it('treats a claimed job as in progress and never exposes another owner token', async () => {
     const { pool } = poolFor((sql) =>
       sql.includes('claim_approval_resume_job')

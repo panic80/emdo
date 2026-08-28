@@ -39,6 +39,7 @@ describe('database migration runner', () => {
       '0014_audio_spend_readiness',
       '0015_single_household_session_activation',
       '0016_finance_document_knowledge',
+      '0017_approval_resume_public_events',
     ]);
     expect(migrations.map(({ index }) => index)).toEqual(
       migrations.map((_, index) => index),
@@ -88,6 +89,9 @@ describe('database migration runner', () => {
     );
     expect(migrations[16]?.sql).toContain(
       'CREATE TABLE "emdo"."finance_documents"',
+    );
+    expect(migrations[17]?.sql).toContain(
+      'CREATE OR REPLACE FUNCTION "emdo"."settle_approval_resume_job"',
     );
   });
 

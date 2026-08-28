@@ -59,8 +59,8 @@ describeDatabase(
       }
 
       const migrations = await loadOrderedMigrations();
-      expect(migrations).toHaveLength(17);
-      expect(migrations.at(-1)?.id).toBe('0016_finance_document_knowledge');
+      expect(migrations).toHaveLength(18);
+      expect(migrations.at(-1)?.id).toBe('0017_approval_resume_public_events');
       for (const migration of migrations) await admin.query(migration.sql);
 
       await expect(
