@@ -421,6 +421,78 @@ describe('PostgresFinanceDocumentRepository', () => {
     });
   });
 
+  it('returns every strict deletion receipt field when creating uploaded metadata', async () => {
+    const insertedDocument = documentRow({
+      deletionProposalId: null,
+      deletionDecisionId: null,
+      deletionTargetBindingHash: null,
+      deletionExecutionBindingHash: null,
+    });
+    const { pool, query } = poolFor((sql) => {
+      const lock = lockRows(sql);
+      if (lock !== undefined) return lock;
+      if (sql.startsWith('insert into emdo.finance_documents')) {
+        return [insertedDocument];
+      }
+      if (sql.includes('from emdo.spaces')) return [{ id: ids.space }];
+      if (sql.includes('plaintext_sha256')) return [];
+      if (sql.includes('count(*)::integer')) {
+        return [{ documentCount: 0, byteCount: 0 }];
+      }
+      return [];
+    });
+    const repository = new PostgresFinanceDocumentRepository(pool, {
+      generateUuid: () => ids.document,
+    });
+
+    await expect(
+      repository.createUploadedMetadata({
+        principal,
+        requestId: ids.request,
+        storage,
+      }),
+    ).resolves.toEqual({
+      status: 'created',
+      document: {
+        id: ids.document,
+        state: 'uploaded',
+        displayName: storage.displayName,
+        mimeType: storage.mimeType,
+        byteSize: storage.byteSize,
+        pageCount: storage.pageCount,
+        imageWidth: storage.imageWidth,
+        imageHeight: storage.imageHeight,
+        plaintextSha256: storage.plaintextSha256,
+        documentType: null,
+        sourceLocale: null,
+        currency: null,
+        currencyLabel: 'unknown',
+        extractionRevision: null,
+        createdAt: '2026-08-26T12:00:00.000Z',
+        updatedAt: '2026-08-26T12:00:00.000Z',
+        deletedAt: null,
+      },
+    });
+
+    const insertSql = String(
+      query.mock.calls.find(([sql]) =>
+        String(sql).startsWith('insert into emdo.finance_documents'),
+      )?.[0],
+    );
+    expect(insertSql).toContain(
+      'deletion_proposal_id::text as "deletionProposalId"',
+    );
+    expect(insertSql).toContain(
+      'deletion_decision_id::text as "deletionDecisionId"',
+    );
+    expect(insertSql).toContain(
+      'deletion_target_binding_hash as "deletionTargetBindingHash"',
+    );
+    expect(insertSql).toContain(
+      'deletion_execution_binding_hash as "deletionExecutionBindingHash"',
+    );
+  });
+
   it('supersedes a retry revision and atomically invalidates every pending review token', async () => {
     const { pool, query } = poolFor((sql) => {
       const lock = lockRows(sql);

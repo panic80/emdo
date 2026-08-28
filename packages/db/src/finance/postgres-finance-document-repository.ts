@@ -1513,7 +1513,11 @@ export class PostgresFinanceDocumentRepository {
                      storage_object_id as "storageObjectId", document_type as "documentType",
                      source_locale as "sourceLocale", currency as "currency",
                      extraction_revision as "extractionRevision", created_at as "createdAt",
-                     updated_at as "updatedAt", deleted_at as "deletedAt"`,
+                     updated_at as "updatedAt", deleted_at as "deletedAt",
+                     deletion_proposal_id::text as "deletionProposalId",
+                     deletion_decision_id::text as "deletionDecisionId",
+                     deletion_target_binding_hash as "deletionTargetBindingHash",
+                     deletion_execution_binding_hash as "deletionExecutionBindingHash"`,
             [
               ...scopeValues(principal),
               documentId,
