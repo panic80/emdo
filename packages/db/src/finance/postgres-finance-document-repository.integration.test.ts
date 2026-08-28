@@ -56,6 +56,8 @@ const ids = Object.freeze({
   ownerReplaySession: 'f2000000-0000-4000-8000-000000000036',
   ownerReplayRequest: 'f2000000-0000-4000-8000-000000000037',
   ownerReplaySpaceAccessGrant: 'f2000000-0000-4000-8000-000000000038',
+  ownerUploadedDocument: 'f2000000-0000-4000-8000-000000000039',
+  ownerUploadedExtraction: 'f2000000-0000-4000-8000-000000000040',
 });
 
 const sha256 = (character: string): string => character.repeat(64);
@@ -116,6 +118,16 @@ const ownerReplayPrincipal = Object.freeze({
   sessionId: ids.ownerReplaySession,
   requestId: ids.ownerReplayRequest,
 } satisfies Principal);
+
+const ownerRepositoryPrincipal = Object.freeze({
+  userId: ids.owner,
+  sessionId: ids.ownerSession,
+  householdId: ids.household,
+  privateSpaceId: ids.ownerPrivateSpace,
+  emailVerified: true as const,
+  spaceAccessGrantId: ids.ownerSpaceAccessGrant,
+  scopeFingerprint: sha256('f'),
+});
 
 const loginConnectionString = (role: string, password: string): string => {
   const url = new URL(databaseUrl!);
@@ -590,6 +602,97 @@ describeDatabase(
           },
         ]),
       );
+    });
+
+    it('persists a fresh upload, queues its first extraction, and reads back the current owner-scoped metadata', async () => {
+      const generatedIds = [
+        ids.ownerUploadedDocument,
+        ids.ownerUploadedExtraction,
+      ];
+      const repository = new PostgresFinanceDocumentRepository(
+        databasePool(app),
+        {
+          generateUuid: () => {
+            const id = generatedIds.shift();
+            if (id === undefined) throw new Error('unexpected generated UUID');
+            return id;
+          },
+        },
+      );
+      const storage = {
+        storageObjectId: 'finance-document-owner-upload-regression-0001',
+        displayName: 'Synthetic upload regression.pdf',
+        mimeType: 'application/pdf' as const,
+        byteSize: 683,
+        pageCount: 1,
+        imageWidth: null,
+        imageHeight: null,
+        plaintextSha256: sha256('9'),
+        ciphertextSha256: sha256('6'),
+        wrappedDataKey: {
+          algorithm: 'aes-256-gcm' as const,
+          wrappedKey: 'synthetic-wrapped-key',
+          nonce: 'synthetic-nonce',
+          authenticationTag: 'synthetic-authentication-tag',
+          aadVersion: 1 as const,
+        },
+        keyVersion: 'finance-document-test-key-v1',
+      };
+
+      try {
+        const created = await repository.createUploadedMetadata({
+          principal: ownerRepositoryPrincipal,
+          requestId: ids.ownerRequest,
+          storage,
+        });
+        expect(created).toMatchObject({
+          status: 'created',
+          document: {
+            id: ids.ownerUploadedDocument,
+            state: 'uploaded',
+            displayName: storage.displayName,
+            extractionRevision: null,
+          },
+        });
+
+        await expect(
+          repository.createOrRetryExtractionRevision({
+            principal: ownerRepositoryPrincipal,
+            requestId: ids.ownerRequest,
+            documentId: ids.ownerUploadedDocument,
+            retry: false,
+            model: null,
+          }),
+        ).resolves.toEqual({
+          id: ids.ownerUploadedExtraction,
+          documentId: ids.ownerUploadedDocument,
+          revision: 1,
+          attempt: 1,
+          state: 'queued',
+        });
+
+        await expect(
+          repository.getMetadata({
+            principal: ownerRepositoryPrincipal,
+            requestId: ids.ownerRequest,
+            documentId: ids.ownerUploadedDocument,
+          }),
+        ).resolves.toMatchObject({
+          id: ids.ownerUploadedDocument,
+          state: 'extracting',
+          displayName: storage.displayName,
+          extractionRevision: 1,
+        });
+        expect(generatedIds).toEqual([]);
+      } finally {
+        await admin.query(
+          `delete from emdo.finance_document_extractions where id = $1`,
+          [ids.ownerUploadedExtraction],
+        );
+        await admin.query(`delete from emdo.finance_documents where id = $1`, [
+          ids.ownerUploadedDocument,
+        ]);
+      }
     });
 
     it('allows each active household user only their own current private uploader scope', async () => {
