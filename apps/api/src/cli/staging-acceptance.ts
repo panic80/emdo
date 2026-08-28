@@ -130,8 +130,42 @@ type FinanceMemberInvitationDiagnostic = z.output<
   typeof FinanceMemberInvitationDiagnosticSchema
 >;
 
+const FinanceDocumentUploadDiagnosticSchema = z.enum([
+  'document-upload:request-or-network-failed',
+  'document-upload:http-400-request-header-invalid',
+  'document-upload:http-400-idempotency-key-required',
+  'document-upload:http-400-request-validation-failed',
+  'document-upload:http-400-invalid-input',
+  'document-upload:http-401-authentication-required',
+  'document-upload:http-401-authentication-invalid',
+  'document-upload:http-403-mutation-proof-invalid',
+  'document-upload:http-403-authorization-revoked',
+  'document-upload:http-404-document-not-found',
+  'document-upload:http-409-idempotency-conflict',
+  'document-upload:http-409-duplicate-document',
+  'document-upload:http-409-document-state-conflict',
+  'document-upload:http-413-finance-document-too-large',
+  'document-upload:http-413-request-body-too-large',
+  'document-upload:http-413-quota-exceeded',
+  'document-upload:http-415-unsupported-media-type',
+  'document-upload:http-500-internal-error',
+  'document-upload:http-502-service-contract-invalid',
+  'document-upload:http-503-authentication-unavailable',
+  'document-upload:http-503-mutation-verification-unavailable',
+  'document-upload:http-503-finance-documents-unavailable',
+  'document-upload:http-problem-unrecognized',
+  'document-upload:201-json-or-schema-invalid',
+  'document-upload:synthetic-metadata-or-hash-mismatch',
+]);
+
+type FinanceDocumentUploadDiagnostic = z.output<
+  typeof FinanceDocumentUploadDiagnosticSchema
+>;
+
 type FinanceStagingAcceptanceProgress =
-  FinanceStagingAcceptanceStage | FinanceMemberInvitationDiagnostic;
+  | FinanceStagingAcceptanceStage
+  | FinanceMemberInvitationDiagnostic
+  | FinanceDocumentUploadDiagnostic;
 
 const FinanceMemberInvitationOutcome = Object.freeze({
   'member-invitation:request-or-network-failed': 'request-or-network-failed',
@@ -166,6 +200,11 @@ export const formatStagingAcceptanceFailure = (
     FinanceMemberInvitationDiagnosticSchema.safeParse(progress);
   if (diagnostic.success) {
     return `Staging acceptance failed at stage=member-invitation outcome=${FinanceMemberInvitationOutcome[diagnostic.data]}.\n`;
+  }
+  const uploadDiagnostic =
+    FinanceDocumentUploadDiagnosticSchema.safeParse(progress);
+  if (uploadDiagnostic.success) {
+    return `Staging acceptance failed at stage=document-upload outcome=${uploadDiagnostic.data.slice('document-upload:'.length)}.\n`;
   }
   const stage = FinanceStagingAcceptanceStageSchema.safeParse(progress);
   return stage.success
@@ -566,6 +605,22 @@ const classifyFinanceMemberInvitationProblem = async (
       : 'member-invitation:http-problem-unrecognized';
   } catch {
     return 'member-invitation:http-problem-unrecognized';
+  }
+};
+
+const classifyFinanceDocumentUploadProblem = async (
+  response: Response,
+): Promise<FinanceDocumentUploadDiagnostic> => {
+  try {
+    const problem = await parseProblem(response);
+    const diagnostic = FinanceDocumentUploadDiagnosticSchema.safeParse(
+      `document-upload:http-${problem.status}-${problem.code}`,
+    );
+    return diagnostic.success
+      ? diagnostic.data
+      : 'document-upload:http-problem-unrecognized';
+  } catch {
+    return 'document-upload:http-problem-unrecognized';
   }
 };
 
@@ -1706,28 +1761,47 @@ const runFinanceStagingAcceptance = async (
     new Blob([fixtureBytes.buffer], { type: 'application/pdf' }),
     FINANCE_DOCUMENT_FILENAME,
   );
-  const uploadResponse = await send('/api/v1/finance/documents', {
-    method: 'POST',
-    headers: {
-      ...mutationHeaders,
-      'idempotency-key': 'finance-staging-upload-v1',
-    },
-    body: form,
-  });
-  requireResponseRequestId(uploadResponse);
+  let uploadResponse: Response;
+  try {
+    uploadResponse = await send('/api/v1/finance/documents', {
+      method: 'POST',
+      headers: {
+        ...mutationHeaders,
+        'idempotency-key': 'finance-staging-upload-v1',
+      },
+      body: form,
+    });
+  } catch (error) {
+    input.financeStageReporter?.('document-upload:request-or-network-failed');
+    throw error;
+  }
   if (uploadResponse.status !== 201) {
+    input.financeStageReporter?.(
+      await classifyFinanceDocumentUploadProblem(uploadResponse),
+    );
     throw new Error('Finance synthetic document was not accepted');
   }
-  const uploaded = FinanceDocumentSummarySchema.parse(
-    await requireOkJson(uploadResponse),
-  );
-  const documentId = z.uuid().parse(uploaded.id);
+  let uploaded: z.output<typeof FinanceDocumentSummarySchema>;
+  let documentId: string;
+  try {
+    requireResponseRequestId(uploadResponse);
+    uploaded = FinanceDocumentSummarySchema.parse(
+      await requireOkJson(uploadResponse),
+    );
+    documentId = z.uuid().parse(uploaded.id);
+  } catch (error) {
+    input.financeStageReporter?.('document-upload:201-json-or-schema-invalid');
+    throw error;
+  }
   if (
     uploaded.displayName !== FINANCE_DOCUMENT_FILENAME ||
     uploaded.mimeType !== 'application/pdf' ||
     uploaded.byteSize !== SYNTHETIC_FINANCE_PDF.byteLength ||
     uploaded.plaintextSha256 !== SYNTHETIC_FINANCE_PDF_SHA256
   ) {
+    input.financeStageReporter?.(
+      'document-upload:synthetic-metadata-or-hash-mismatch',
+    );
     throw new Error('Finance synthetic document upload readback is invalid');
   }
 

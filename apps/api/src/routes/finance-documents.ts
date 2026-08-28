@@ -94,6 +94,10 @@ const financeDocumentProblem = (error: unknown): ApiProblem | undefined => {
       title: 'Finance document request conflict',
     },
     'quota-exceeded': { status: 413, title: 'Finance document quota reached' },
+    'finance-documents-unavailable': {
+      status: 503,
+      title: 'Finance documents unavailable',
+    },
     'invalid-input': { status: 400, title: 'Invalid finance document request' },
     'approval-required': {
       status: 409,
