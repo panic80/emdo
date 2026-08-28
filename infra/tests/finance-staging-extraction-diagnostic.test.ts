@@ -24,6 +24,12 @@ const extractionDiagnostic = (source: string): string => {
 describe('Finance staging extraction terminal diagnostic', () => {
   it.each([
     'worker-provider-network-unavailable',
+    'worker-provider-credit-balance-exhausted',
+    'worker-provider-organization-spend-limit-exceeded',
+    'worker-provider-organization-usage-limit-exceeded',
+    'worker-provider-project-spend-limit-exceeded',
+    'worker-provider-quota-exhausted',
+    'worker-provider-rate-limit-unclassified',
     'worker-provider-rate-limited',
     'worker-provider-server-error',
     'worker-lease-expired',
@@ -78,7 +84,7 @@ finance_extraction_terminal_failure_diagnostic "$1"`,
     const directory = await mkdtemp(join(tmpdir(), 'emdo-finance-diagnostic-'));
     const inputPath = join(directory, 'acceptance.stderr');
     const secret =
-      'provider-request-id=secret-request-id document-id=secret-document-id';
+      'provider-id=secret-provider document-id=secret-document request-id=secret-request body=secret-body arbitrary-code=secret-code';
     await writeFile(
       inputPath,
       'Staging acceptance failed at stage=document-extraction-terminal.\n',
@@ -87,6 +93,12 @@ finance_extraction_terminal_failure_diagnostic "$1"`,
       for (const queryOutput of [
         `${secret}|1\n`,
         'worker-provider-network-unavailable:retrying|1\n',
+        'worker-provider-credit-balance-exhausted-suffixed|1\n',
+        'worker-provider-organization-spend-limit-exceeded|0\n',
+        'worker-provider-organization-usage-limit-exceeded|3\n',
+        'worker-provider-project-spend-limit-exceeded|01\n',
+        'worker-provider-quota-exhausted|2:retrying\n',
+        'worker-provider-rate-limit-unclassified|unknown\n',
         'worker-provider-network-unavailable|1|provider-request-id=secret-request-id\n',
         'worker-timeout|3\n',
       ]) {
