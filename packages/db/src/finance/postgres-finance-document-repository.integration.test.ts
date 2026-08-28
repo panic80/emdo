@@ -176,7 +176,8 @@ const insertDocument = async (
        ciphertext_sha256, wrapped_data_key, key_version
      ) values (
        $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6,
-       'application/pdf', 1024, 1, $7, $8, '{"algorithm":"test"}'::jsonb,
+       'application/pdf', 1024, 1, $7, $8,
+       '{"algorithm":"aes-256-gcm","wrappedKey":"dGVzdA","nonce":"dGVzdA","authenticationTag":"dGVzdA","aadVersion":1}'::jsonb,
        'finance-document-test-key-v1'
      )`,
     [
