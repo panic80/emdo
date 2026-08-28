@@ -4,6 +4,7 @@ import { UuidSchema } from '@emdo/contracts';
 import {
   FINANCE_DOCUMENT_LIMITS,
   FinanceDocumentEnvelopeV1Schema,
+  FinanceDocumentTypeSchema,
   redactFinanceDocumentEnvelopeForReview,
   type FinanceDocumentEnvelopeV1,
   type FinanceDocumentMimeType,
@@ -248,14 +249,36 @@ class WorkerAbort extends Error {
   }
 }
 
+const providerOutputSchema = z.strictObject({
+  envelope: FinanceDocumentEnvelopeV1Schema,
+});
+
 const outputJsonSchema = (() => {
   const generated = z.toJSONSchema(FinanceDocumentEnvelopeV1Schema, {
     io: 'input',
     target: 'draft-2020-12',
   }) as Record<string, unknown>;
-  const portable = { ...generated };
-  delete portable.$schema;
-  return Object.freeze(portable);
+  const variants = generated.oneOf;
+  const unexpectedKeys = Object.keys(generated).filter(
+    (key) => key !== '$schema' && key !== 'oneOf',
+  );
+  if (
+    !Array.isArray(variants) ||
+    variants.length !== FinanceDocumentTypeSchema.options.length ||
+    unexpectedKeys.length > 0
+  ) {
+    throw new Error('Finance document provider schema is invalid');
+  }
+  return Object.freeze({
+    type: 'object',
+    properties: Object.freeze({
+      envelope: Object.freeze({
+        anyOf: Object.freeze([...variants]),
+      }),
+    }),
+    required: Object.freeze(['envelope']),
+    additionalProperties: false,
+  });
 })();
 
 export const FINANCE_DOCUMENT_EXTRACTION_OUTPUT_CONTRACT: FinanceDocumentOutputContract<FinanceDocumentEnvelopeV1> =
@@ -263,7 +286,7 @@ export const FINANCE_DOCUMENT_EXTRACTION_OUTPUT_CONTRACT: FinanceDocumentOutputC
     name: 'finance_document_v1',
     jsonSchema: outputJsonSchema,
     parse(value: unknown): FinanceDocumentEnvelopeV1 {
-      return FinanceDocumentEnvelopeV1Schema.parse(value);
+      return providerOutputSchema.parse(value).envelope;
     },
   });
 
