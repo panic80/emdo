@@ -58,7 +58,7 @@ finance_extraction_terminal_failure_diagnostic() {
     --username postgres --dbname emdo_app --no-psqlrc \
     --tuples-only --no-align --field-separator '|' --quiet \
     --set ON_ERROR_STOP=1 \
-    --command "SELECT safe_error_code, attempt FROM emdo.finance_document_extractions WHERE state = 'failed' AND completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 1;" \
+    --command "SELECT extraction.safe_error_code, extraction.attempt FROM emdo.finance_document_extractions AS extraction INNER JOIN emdo.finance_documents AS document ON document.household_id = extraction.household_id AND document.space_id = extraction.space_id AND document.original_owner_user_id = extraction.original_owner_user_id AND document.id = extraction.document_id WHERE document.display_name = 'emdo-synthetic-staging.pdf' AND document.mime_type = 'application/pdf' AND document.byte_size = 683 AND document.plaintext_sha256 = '8d85942e0ee04fcfa42b1690e07844e7ac1a193fc15c149f9e27b989c77332e1' AND document.state = 'failed' AND document.extraction_revision = extraction.revision AND extraction.state = 'failed' AND extraction.completed_at IS NOT NULL ORDER BY extraction.completed_at DESC, extraction.id DESC LIMIT 1;" \
     2>/dev/null)" || return 1
   [[ "$diagnostic" != *$'\n'* ]] || return 1
   IFS='|' read -r safe_error_code attempt extra <<<"$diagnostic"
@@ -75,6 +75,96 @@ finance_extraction_terminal_failure_diagnostic() {
 
   printf 'Staging acceptance failed at stage=document-extraction-terminal outcome=%s attempt=%s.\n' \
     "$safe_error_code" "$attempt" >&2
+}
+
+finance_staging_acceptance_failure_diagnostic() {
+  local acceptance_stderr_path="$1"
+  local acceptance_stderr_bytes acceptance_failure
+  local acceptance_failure_matches=0 acceptance_failure_match=''
+
+  [[ -f "$acceptance_stderr_path" && ! -L "$acceptance_stderr_path" ]] || return 1
+  acceptance_stderr_bytes="$(LC_ALL=C wc -c < "$acceptance_stderr_path")" || return 1
+  [[ "$acceptance_stderr_bytes" =~ ^[[:space:]]*([0-9]+)[[:space:]]*$ ]] || return 1
+  acceptance_stderr_bytes="${BASH_REMATCH[1]}"
+  ((acceptance_stderr_bytes <= 4096)) || return 1
+  while IFS= read -r acceptance_failure; do
+    case "$acceptance_failure" in
+      'Staging acceptance failed at stage=configuration.' | \
+    'Staging acceptance failed at stage=health-and-contract.' | \
+    'Staging acceptance failed at stage=owner-authentication.' | \
+    'Staging acceptance failed at stage=member-invitation.' | \
+    'Staging acceptance failed at stage=member-token-handoff.' | \
+    'Staging acceptance failed at stage=member-redemption.' | \
+    'Staging acceptance failed at stage=member-membership-readback.' | \
+    'Staging acceptance failed at stage=member-authentication.' | \
+    'Staging acceptance failed at stage=document-upload.' | \
+    'Staging acceptance failed at stage=document-extraction-terminal.' | \
+    'Staging acceptance failed at stage=document-original-readback.' | \
+    'Staging acceptance failed at stage=document-review-read-edit.' | \
+    'Staging acceptance failed at stage=document-direct-commit-denial.' | \
+    'Staging acceptance failed at stage=guarded-review-commit.' | \
+    'Staging acceptance failed at stage=guarded-delete-denial.' | \
+    'Staging acceptance failed at stage=qna-and-isolation.' | \
+    'Staging acceptance failed at stage=safe-write-and-handoff.' | \
+    'Staging acceptance failed at stage=finalize-configuration.' | \
+    'Staging acceptance failed at stage=finalize-attestation.' | \
+    'Staging acceptance failed at stage=finalize-health-and-contract.' | \
+    'Staging acceptance failed at stage=finalize-owner-authentication.' | \
+    'Staging acceptance failed at stage=finalize-member-authentication.' | \
+    'Staging acceptance failed at stage=finalize-document-and-evidence.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete.' | \
+    'Staging acceptance failed at stage=finalize-purge-and-revocation.' | \
+    'Staging acceptance failed at stage=member-invitation outcome=request-or-network-failed.' | \
+    'Staging acceptance failed at stage=member-invitation outcome=http-401-authentication-required.' | \
+    'Staging acceptance failed at stage=member-invitation outcome=http-401-authentication-invalid.' | \
+    'Staging acceptance failed at stage=member-invitation outcome=http-400-invalid-input.' | \
+    'Staging acceptance failed at stage=member-invitation outcome=http-403-mutation-proof-invalid.' | \
+    'Staging acceptance failed at stage=member-invitation outcome=http-403-household-owner-required.' | \
+    'Staging acceptance failed at stage=member-invitation outcome=http-403-authorization-revoked.' | \
+    'Staging acceptance failed at stage=member-invitation outcome=http-409-conflict.' | \
+    'Staging acceptance failed at stage=member-invitation outcome=http-500-internal-error.' | \
+    'Staging acceptance failed at stage=member-invitation outcome=http-502-service-contract-invalid.' | \
+    'Staging acceptance failed at stage=member-invitation outcome=http-503-authentication-unavailable.' | \
+    'Staging acceptance failed at stage=member-invitation outcome=http-503-mutation-verification-unavailable.' | \
+    'Staging acceptance failed at stage=member-invitation outcome=http-503-invalid-result.' | \
+    'Staging acceptance failed at stage=member-invitation outcome=http-problem-unrecognized.' | \
+    'Staging acceptance failed at stage=member-invitation outcome=readback-invalid.' | \
+    'Staging acceptance failed at stage=document-upload outcome=request-or-network-failed.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-400-request-header-invalid.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-400-idempotency-key-required.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-400-request-validation-failed.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-400-invalid-input.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-401-authentication-required.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-401-authentication-invalid.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-403-mutation-proof-invalid.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-403-authorization-revoked.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-404-document-not-found.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-409-idempotency-conflict.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-409-duplicate-document.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-409-document-state-conflict.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-413-finance-document-too-large.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-413-request-body-too-large.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-413-quota-exceeded.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-415-unsupported-media-type.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-500-internal-error.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-502-service-contract-invalid.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-503-authentication-unavailable.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-503-mutation-verification-unavailable.' | \
+    'Staging acceptance failed at stage=document-upload outcome=http-503-finance-documents-unavailable.' | \
+      'Staging acceptance failed at stage=document-upload outcome=http-problem-unrecognized.' | \
+      'Staging acceptance failed at stage=document-upload outcome=201-json-or-schema-invalid.' | \
+      'Staging acceptance failed at stage=document-upload outcome=synthetic-metadata-or-hash-mismatch.')
+        ((acceptance_failure_matches += 1))
+        ((acceptance_failure_matches == 1)) || return 1
+        acceptance_failure_match="$acceptance_failure"
+        ;;
+      *) ;;
+    esac
+  done < "$acceptance_stderr_path"
+  [[ -z "$acceptance_failure" ]] || return 1
+
+  [[ -n "$acceptance_failure_match" ]] || return 1
+  printf '%s\n' "$acceptance_failure_match" >&2
 }
 
 assert_compose_healthy staging_compose
@@ -138,11 +228,13 @@ if [[ "$EMDO_FINANCE_SYNTHETIC_STAGING" == true ]]; then
     finance_acceptance_stderr=''
   else
     finance_acceptance_status=$?
-    if ! finance_extraction_terminal_failure_diagnostic "$finance_acceptance_stderr"; then
+    if ! finance_extraction_terminal_failure_diagnostic "$finance_acceptance_stderr" && \
+      ! finance_staging_acceptance_failure_diagnostic "$finance_acceptance_stderr"; then
       printf '%s\n' 'Staging acceptance failed.' >&2
     fi
-    rm -f -- "$finance_acceptance_stderr"
-    finance_acceptance_stderr=''
+    if rm -f -- "$finance_acceptance_stderr"; then
+      finance_acceptance_stderr=''
+    fi
     exit "$finance_acceptance_status"
   fi
 
