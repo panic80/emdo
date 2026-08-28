@@ -14,6 +14,7 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import {
+  FINANCE_DOCUMENT_EXTRACTION_OUTPUT_CONTRACT,
   createFinanceDocumentExtractionWorker,
   type FinanceDocumentAuthenticatedOriginalStore,
   type FinanceDocumentExtractionAdapter,
@@ -267,6 +268,31 @@ const createHarness = (options: HarnessOptions = {}) => {
 };
 
 describe('finance document extraction worker', () => {
+  it('uses an OpenAI-compatible root object around the document variants', () => {
+    expect(
+      FINANCE_DOCUMENT_EXTRACTION_OUTPUT_CONTRACT.jsonSchema,
+    ).toMatchObject({
+      type: 'object',
+      properties: {
+        envelope: {
+          anyOf: expect.any(Array),
+        },
+      },
+      required: ['envelope'],
+      additionalProperties: false,
+    });
+    const serialized = JSON.stringify(
+      FINANCE_DOCUMENT_EXTRACTION_OUTPUT_CONTRACT.jsonSchema,
+    );
+    expect(serialized).not.toContain('"oneOf"');
+    expect(
+      FINANCE_DOCUMENT_EXTRACTION_OUTPUT_CONTRACT.parse({ envelope }),
+    ).toEqual(envelope);
+    expect(() =>
+      FINANCE_DOCUMENT_EXTRACTION_OUTPUT_CONTRACT.parse(envelope),
+    ).toThrow();
+  });
+
   it('claims one original, derives canonical AAD, encrypts only the redacted envelope, and zeroizes bytes', async () => {
     const sourceChunks = [
       new Uint8Array(sourceDocument.subarray(0, 7)),
@@ -302,7 +328,15 @@ describe('finance document extraction worker', () => {
     expect(calls.extract[0]).toMatchObject({
       model: OPENAI_FINANCE_DOCUMENT_EXTRACTION_MODEL,
       timeoutMs: 60_000,
-      output: { name: 'finance_document_v1' },
+      output: {
+        name: 'finance_document_v1',
+        jsonSchema: {
+          type: 'object',
+          properties: { envelope: { anyOf: expect.any(Array) } },
+          required: ['envelope'],
+          additionalProperties: false,
+        },
+      },
       input: { kind: 'file', mimeType: 'application/pdf' },
     });
     const providerInput = calls.extract[0]?.input;
