@@ -387,7 +387,7 @@ describe('OpenAiFetchFinanceDocumentExtractionTransport', () => {
       await expect(
         transport.extract(extractionRequest()),
       ).rejects.toMatchObject({
-        kind: status === 401 ? 'provider-rejected' : 'provider-unavailable',
+        kind: status === 401 ? 'provider-rejected' : 'provider-rate-limited',
       });
       expect(calls).toBe(1);
     }
@@ -409,35 +409,108 @@ describe('OpenAiFetchFinanceDocumentExtractionTransport', () => {
     expect(schemaCalls).toBe(1);
   });
 
-  it('returns sanitized errors without provider or request bodies', async () => {
+  it('classifies provider transport and HTTP failures without exposing response data', async () => {
     const privateDetail = 'private household tax document detail';
-    const transport = new OpenAiFetchFinanceDocumentExtractionTransport({
-      fetch: async () =>
-        new Response(
-          JSON.stringify({
-            error: { message: `${apiKey} ${privateDetail}` },
-          }),
-          {
-            status: 400,
-            headers: { 'x-request-id': 'req_safe_failure' },
+    const privateRequestId = 'req_private_provider_detail';
+    const cases = [
+      {
+        name: 'network rejection',
+        fetch: async (): Promise<Response> => {
+          throw new Error(`${apiKey} ${privateDetail} ${privateRequestId}`);
+        },
+        expected: { kind: 'network', retryable: true },
+      },
+      {
+        name: 'rate limit',
+        status: 429,
+        expected: {
+          kind: 'provider-rate-limited',
+          retryable: true,
+        },
+      },
+      {
+        name: 'request timeout',
+        status: 408,
+        expected: { kind: 'timeout', retryable: true },
+      },
+      {
+        name: 'rejected request',
+        status: 400,
+        expected: { kind: 'provider-rejected', retryable: false },
+      },
+      {
+        name: 'server error',
+        status: 500,
+        expected: { kind: 'provider-server-error', retryable: true },
+      },
+      {
+        name: 'gateway timeout',
+        status: 504,
+        expected: { kind: 'provider-server-error', retryable: true },
+      },
+      {
+        name: 'highest server error',
+        status: 599,
+        expected: { kind: 'provider-server-error', retryable: true },
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      let calls = 0;
+      let dispatches = 0;
+      const responses: Response[] = [];
+      const transport = new OpenAiFetchFinanceDocumentExtractionTransport({
+        fetch: async () => {
+          calls += 1;
+          if ('fetch' in testCase) return testCase.fetch();
+          const response = new Response(
+            JSON.stringify({
+              error: { message: `${apiKey} ${privateDetail}` },
+            }),
+            {
+              status: testCase.status,
+              headers: { 'x-request-id': privateRequestId },
+            },
+          );
+          responses.push(response);
+          return response;
+        },
+        getApiKey: () => apiKey,
+      });
+
+      const failure = await transport
+        .extract({
+          ...extractionRequest(),
+          onDispatch: async () => {
+            dispatches += 1;
           },
-        ),
-      getApiKey: () => apiKey,
-    });
+        })
+        .catch((error: unknown) => error);
 
-    const failure = await transport
-      .extract(extractionRequest())
-      .catch((error: unknown) => error);
-
-    expect(failure).toBeInstanceOf(OpenAiFinanceDocumentExtractionError);
-    expect(failure).toMatchObject({
-      kind: 'provider-rejected',
-      httpStatus: 400,
-      retryable: false,
-      providerRequestId: 'req_safe_failure',
-    });
-    expect(String(failure)).not.toContain(apiKey);
-    expect(String(failure)).not.toContain(privateDetail);
+      expect(failure, testCase.name).toBeInstanceOf(
+        OpenAiFinanceDocumentExtractionError,
+      );
+      expect(failure, testCase.name).toMatchObject({
+        ...testCase.expected,
+        ...('status' in testCase ? { httpStatus: testCase.status } : {}),
+      });
+      expect(failure, testCase.name).not.toHaveProperty('providerRequestId');
+      const serializedFailure = JSON.stringify(failure);
+      const errorDetails = Object.getOwnPropertyNames(failure as object)
+        .map((name) => String((failure as Record<string, unknown>)[name]))
+        .join(' ');
+      for (const secret of [apiKey, privateDetail, privateRequestId]) {
+        expect(String(failure), testCase.name).not.toContain(secret);
+        expect(serializedFailure, testCase.name).not.toContain(secret);
+        expect(errorDetails, testCase.name).not.toContain(secret);
+      }
+      expect(calls, testCase.name).toBe(1);
+      expect(dispatches, testCase.name).toBe(1);
+      if ('status' in testCase) {
+        expect(responses, testCase.name).toHaveLength(1);
+        expect(responses[0]?.bodyUsed, testCase.name).toBe(true);
+      }
+    }
   });
 
   it('stops waiting when the caller aborts even if fetch ignores cancellation', async () => {

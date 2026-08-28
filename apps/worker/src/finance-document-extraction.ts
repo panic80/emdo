@@ -58,9 +58,12 @@ export type FinanceDocumentExtractionSafeErrorCode =
   | 'worker-original-unavailable'
   | 'worker-payload-encryption-failed'
   | 'worker-provider-credential-unavailable'
+  | 'worker-provider-network-unavailable'
+  | 'worker-provider-rate-limited'
   | 'worker-provider-rejected'
   | 'worker-provider-request-invalid'
   | 'worker-provider-response-invalid'
+  | 'worker-provider-server-error'
   | 'worker-provider-unavailable'
   | 'worker-timeout';
 
@@ -1103,6 +1106,11 @@ const codeForError = (
       case 'provider-rejected':
         return 'worker-provider-rejected';
       case 'network':
+        return 'worker-provider-network-unavailable';
+      case 'provider-rate-limited':
+        return 'worker-provider-rate-limited';
+      case 'provider-server-error':
+        return 'worker-provider-server-error';
       case 'provider-unavailable':
         return 'worker-provider-unavailable';
       case 'request-aborted':

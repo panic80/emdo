@@ -619,34 +619,48 @@ describe('finance document extraction worker', () => {
     ]);
   });
 
-  it('maps provider-safe failures without retaining a provider body or attempting completion', async () => {
-    const { worker, calls } = createHarness({
-      extraction: async () => {
-        throw new OpenAiFinanceDocumentExtractionError({
-          kind: 'provider-rejected',
-          retryable: false,
-          providerRequestId: 'req_private_provider_detail',
-        });
-      },
-    });
+  it.each([
+    ['network', 'worker-provider-network-unavailable'],
+    ['provider-rate-limited', 'worker-provider-rate-limited'],
+    ['provider-rejected', 'worker-provider-rejected'],
+    ['provider-server-error', 'worker-provider-server-error'],
+    ['provider-unavailable', 'worker-provider-unavailable'],
+  ] as const)(
+    'maps provider failure %s to %s, settles once, and retains no sensitive detail',
+    async (kind, safeErrorCode) => {
+      const providerSecret = 'req_private_provider_detail';
+      const documentSecret = 'document_private_detail';
+      const { worker, calls } = createHarness({
+        extraction: async () => {
+          throw new OpenAiFinanceDocumentExtractionError({
+            kind,
+            retryable: false,
+            providerRequestId: providerSecret,
+          });
+        },
+      });
 
-    await expect(
-      worker.runOnce({ signal: new AbortController().signal }),
-    ).resolves.toEqual({
-      status: 'failed',
-      documentId: ids.documentId,
-      extractionRevision: 1,
-      safeErrorCode: 'worker-provider-rejected',
-    });
+      const result = await worker.runOnce({
+        signal: new AbortController().signal,
+      });
 
-    expect(calls.complete).toEqual([]);
-    expect(calls.fail).toEqual([
-      expect.objectContaining({ safeErrorCode: 'worker-provider-rejected' }),
-    ]);
-    expect(JSON.stringify(calls.fail)).not.toContain(
-      'req_private_provider_detail',
-    );
-  });
+      expect(result).toEqual({
+        status: 'failed',
+        documentId: ids.documentId,
+        extractionRevision: 1,
+        safeErrorCode,
+      });
+      expect(calls.complete).toEqual([]);
+      expect(calls.fail).toEqual([expect.objectContaining({ safeErrorCode })]);
+
+      const persistedValues = JSON.stringify({
+        result,
+        settlements: calls.fail,
+      });
+      expect(persistedValues).not.toContain(providerSecret);
+      expect(persistedValues).not.toContain(documentSecret);
+    },
+  );
 
   it('does not fail a claim after an indeterminate completion result', async () => {
     const { worker, calls } = createHarness({

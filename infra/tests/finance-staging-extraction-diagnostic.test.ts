@@ -22,46 +22,56 @@ const extractionDiagnostic = (source: string): string => {
 };
 
 describe('Finance staging extraction terminal diagnostic', () => {
-  it('emits only allowlisted persisted failure metadata', async () => {
-    const source = extractionDiagnostic(await readFile(scriptPath, 'utf8'));
-    const directory = await mkdtemp(join(tmpdir(), 'emdo-finance-diagnostic-'));
-    const inputPath = join(directory, 'acceptance.stderr');
-    await writeFile(
-      inputPath,
-      [
-        'content-free compose status',
-        'Staging acceptance failed at stage=document-extraction-terminal.',
-        '',
-      ].join('\n'),
-    );
-    try {
-      const result = spawnSync(
-        'bash',
+  it.each([
+    'worker-provider-network-unavailable',
+    'worker-provider-rate-limited',
+    'worker-provider-server-error',
+    'worker-lease-expired',
+  ])(
+    'accepts the new diagnostic code %s and emits only the fixed line',
+    async (safeErrorCode) => {
+      const source = extractionDiagnostic(await readFile(scriptPath, 'utf8'));
+      const directory = await mkdtemp(
+        join(tmpdir(), 'emdo-finance-diagnostic-'),
+      );
+      const inputPath = join(directory, 'acceptance.stderr');
+      await writeFile(
+        inputPath,
         [
-          '-c',
-          `set -Eeuo pipefail
+          'content-free compose status',
+          'Staging acceptance failed at stage=document-extraction-terminal.',
+          '',
+        ].join('\n'),
+      );
+      try {
+        const result = spawnSync(
+          'bash',
+          [
+            '-c',
+            `set -Eeuo pipefail
 staging_compose() { printf '%s' "$FINANCE_TEST_QUERY_OUTPUT"; }
 ${source}
 finance_extraction_terminal_failure_diagnostic "$1"`,
-          '_',
-          inputPath,
-        ],
-        {
-          encoding: 'utf8',
-          env: {
-            ...process.env,
-            FINANCE_TEST_QUERY_OUTPUT: 'worker-provider-unavailable|2\n',
+            '_',
+            inputPath,
+          ],
+          {
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              FINANCE_TEST_QUERY_OUTPUT: `${safeErrorCode}|2\n`,
+            },
           },
-        },
-      );
-      expect(result.status, result.stderr).toBe(0);
-      expect(result.stderr).toBe(
-        'Staging acceptance failed at stage=document-extraction-terminal outcome=worker-provider-unavailable attempt=2.\n',
-      );
-    } finally {
-      await rm(directory, { force: true, recursive: true });
-    }
-  });
+        );
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stderr).toBe(
+          `Staging acceptance failed at stage=document-extraction-terminal outcome=${safeErrorCode} attempt=2.\n`,
+        );
+      } finally {
+        await rm(directory, { force: true, recursive: true });
+      }
+    },
+  );
 
   it('fails closed without reflecting unallowlisted query values', async () => {
     const source = extractionDiagnostic(await readFile(scriptPath, 'utf8'));
@@ -74,7 +84,12 @@ finance_extraction_terminal_failure_diagnostic "$1"`,
       'Staging acceptance failed at stage=document-extraction-terminal.\n',
     );
     try {
-      for (const queryOutput of [`${secret}|1\n`, 'worker-timeout|3\n']) {
+      for (const queryOutput of [
+        `${secret}|1\n`,
+        'worker-provider-network-unavailable:retrying|1\n',
+        'worker-provider-network-unavailable|1|provider-request-id=secret-request-id\n',
+        'worker-timeout|3\n',
+      ]) {
         const result = spawnSync(
           'bash',
           [

@@ -65,7 +65,7 @@ finance_extraction_terminal_failure_diagnostic() {
   [[ -z "$extra" ]] || return 1
 
   case "$safe_error_code" in
-    worker-completion-rejected | worker-document-metadata-invalid | worker-extraction-failed | worker-extraction-invalid | worker-interrupted | worker-invalid-claim | worker-original-integrity-invalid | worker-original-unavailable | worker-payload-encryption-failed | worker-provider-credential-unavailable | worker-provider-rejected | worker-provider-request-invalid | worker-provider-response-invalid | worker-provider-unavailable | worker-timeout) ;;
+    worker-completion-rejected | worker-document-metadata-invalid | worker-extraction-failed | worker-extraction-invalid | worker-interrupted | worker-invalid-claim | worker-lease-expired | worker-original-integrity-invalid | worker-original-unavailable | worker-payload-encryption-failed | worker-provider-credential-unavailable | worker-provider-network-unavailable | worker-provider-rate-limited | worker-provider-rejected | worker-provider-request-invalid | worker-provider-response-invalid | worker-provider-server-error | worker-provider-unavailable | worker-timeout) ;;
     *) return 1 ;;
   esac
   case "$attempt" in
