@@ -320,6 +320,105 @@ describe('production runtime foundations', () => {
     );
   });
 
+  it('uses a Finance-specific specialist disclosure purpose and rejects unknown specialists', async () => {
+    const ids = {
+      request: '82500000-0000-4000-8000-000000000001',
+      run: '82500000-0000-4000-8000-000000000002',
+      household: '82500000-0000-4000-8000-000000000003',
+      user: '82500000-0000-4000-8000-000000000004',
+      spaceAccessGrant: '82500000-0000-4000-8000-000000000005',
+      privateSpace: '82500000-0000-4000-8000-000000000006',
+      disclosureGrant: '82500000-0000-4000-8000-000000000007',
+    };
+    const issuer = {
+      issue: vi.fn(async (input: { readonly recordAllowlist: unknown }) => ({
+        grant: {
+          id: ids.disclosureGrant,
+          version: 1,
+          recordAllowlist: input.recordAllowlist,
+        },
+      })),
+    };
+    const authorize = vi.fn(
+      async (input: LegacyAuthorizeInput): Promise<LegacyAuthorizeDecision> => {
+        const payload = parseDisclosurePayload(input.payload);
+        return {
+          status: 'authorized' as const,
+          grantId: ids.disclosureGrant,
+          grantVersion: '1.0.0',
+          runId: ids.run,
+          householdId: ids.household,
+          userId: ids.user,
+          agentId: 'finance',
+          phasePurpose: 'specialist-execution' as const,
+          disclosurePurpose: 'Run one finance delegation.',
+          provider: 'openai' as const,
+          expiresAt: '2026-08-15T14:10:00.000Z',
+          records: payload.records.map((record) => ({
+            dataClass: record.dataClass,
+            recordId: record.recordId,
+            fields: Object.keys(record.fields),
+          })),
+          payload: input.payload,
+        };
+      },
+    );
+    const gateway = createPostgresCoreModelDisclosureGateway({
+      issuer,
+      gateway: { authorize },
+      privateSpaceId: ids.privateSpace,
+    });
+    const financeInput = {
+      requestId: ids.request,
+      runId: ids.run,
+      householdId: ids.household,
+      userId: ids.user,
+      authenticatedSessionId: '82500000-0000-4000-8000-000000000008',
+      spaceAccessGrantId: ids.spaceAccessGrant,
+      authorizationScopeFingerprint: testScopeFingerprint,
+      agentId: 'finance',
+      phasePurpose: 'specialist-execution',
+      phaseInvocationId: 'finance-delegation-1',
+      provider: 'openai',
+      sources: [
+        {
+          kind: 'specialist-delegation',
+          delegation: json({
+            id: 'finance-delegation-1',
+            specialistId: 'finance',
+            input: { request: 'Review this Finance document.' },
+            dependsOn: [],
+          }),
+        },
+      ],
+    } as const;
+
+    await expect(gateway.authorize(financeInput)).resolves.toEqual(
+      expect.objectContaining({
+        status: 'authorized',
+        agentId: 'finance',
+        disclosurePurpose: 'Run one finance delegation.',
+      }),
+    );
+    expect(issuer.issue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: 'finance',
+        phasePurpose: 'specialist-execution',
+        disclosurePurpose: 'Run one finance delegation.',
+      }),
+    );
+
+    await expect(
+      gateway.authorize({
+        ...financeInput,
+        agentId: 'shopping',
+        phaseInvocationId: 'shopping-delegation-1',
+      }),
+    ).rejects.toThrow('api-model-disclosure-specialist-agent-invalid');
+    expect(issuer.issue).toHaveBeenCalledTimes(1);
+    expect(authorize).toHaveBeenCalledTimes(1);
+  });
+
   it('returns only the 12 newest valid manager messages in chronological order', async () => {
     const ids = {
       conversation: '83000000-0000-4000-8000-000000000001',

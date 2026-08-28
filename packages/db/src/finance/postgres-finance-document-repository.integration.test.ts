@@ -8,7 +8,50 @@ import { PostgresFinanceDocumentRepository } from './postgres-finance-document-r
 import { PostgresFinanceSpecialistRecordRepository } from './postgres-finance-specialist-record-repository.js';
 
 const databaseUrl = process.env.TEST_FINANCE_DOCUMENT_DATABASE_URL;
+const databaseAttestation =
+  process.env.EMDO_POSTGRES_INTEGRATION_DATABASE_ATTESTATION;
 const describeDatabase = databaseUrl === undefined ? describe.skip : describe;
+const financeDocumentDatabaseNamePattern =
+  /^emdo_ci_finance_document_knowledge_[0-9a-f]{12}$/u;
+const financeDocumentDatabaseAttestationPattern =
+  /^emdo-postgres-suite-v1:finance-document-knowledge:[0-9a-f]{32}$/u;
+
+const assertDisposableFinanceDocumentDatabase = async (
+  admin: Pick<import('pg').Pool, 'query'>,
+): Promise<void> => {
+  if (
+    databaseUrl === undefined ||
+    databaseAttestation === undefined ||
+    !financeDocumentDatabaseAttestationPattern.test(databaseAttestation)
+  ) {
+    throw new Error(
+      'Finance document integration requires the orchestrator database attestation.',
+    );
+  }
+  const expectedDatabaseName = new URL(databaseUrl).pathname.slice(1);
+  if (!financeDocumentDatabaseNamePattern.test(expectedDatabaseName)) {
+    throw new Error(
+      'Finance document integration requires an orchestrator-created disposable database.',
+    );
+  }
+  const result = await admin.query<{
+    attestation: string | null;
+    database_name: string;
+  }>(`select database.datname as database_name,
+             pg_catalog.shobj_description(database.oid, 'pg_database') as attestation
+        from pg_catalog.pg_database as database
+       where database.datname = pg_catalog.current_database()`);
+  const attestedDatabase = result.rows[0];
+  if (
+    result.rows.length !== 1 ||
+    attestedDatabase?.database_name !== expectedDatabaseName ||
+    attestedDatabase.attestation !== databaseAttestation
+  ) {
+    throw new Error(
+      'Finance document integration database attestation was not verified.',
+    );
+  }
+};
 
 const financeDocumentTables = Object.freeze([
   'finance_documents',
@@ -253,7 +296,7 @@ const insertCommittedChunk = async (
 };
 
 describeDatabase(
-  'PostgreSQL 18 finance document knowledge direct SQL contract (requires isolated empty TEST_FINANCE_DOCUMENT_DATABASE_URL)',
+  'PostgreSQL 18 finance document knowledge direct SQL contract (requires disposable TEST_FINANCE_DOCUMENT_DATABASE_URL)',
   () => {
     let admin: import('pg').Pool;
     let app: import('pg').Pool;
@@ -324,6 +367,7 @@ describeDatabase(
         connectionString: databaseUrl,
         max: 1,
       });
+      await assertDisposableFinanceDocumentDatabase(admin);
       const preflight = await admin.query<{
         emdo_schema: string | null;
         is_superuser: boolean;
@@ -340,7 +384,6 @@ describeDatabase(
            from pg_catalog.pg_roles as role
           where role.rolname = current_user`);
       expect(preflight.rows[0]).toMatchObject({
-        emdo_schema: null,
         is_superuser: true,
         vector_available: true,
       });
@@ -352,9 +395,46 @@ describeDatabase(
       );
 
       const migrations = await loadOrderedMigrations();
-      expect(migrations).toHaveLength(20);
-      expect(migrations.at(-1)?.id).toBe('0019_manager_turn_spend_warning');
-      for (const migration of migrations) await admin.query(migration.sql);
+      expect(migrations).toHaveLength(21);
+      expect(migrations.at(-1)?.id).toBe('0020_manager_specialist_disclosure');
+      if (preflight.rows[0]?.emdo_schema === null) {
+        for (const migration of migrations) await admin.query(migration.sql);
+      } else {
+        expect(preflight.rows[0]?.emdo_schema).toBe('emdo');
+        const companion = await admin.query<{
+          companion_seeded: boolean;
+          disclosure_ready: boolean;
+          fixture_available: boolean;
+        }>(
+          `select exists (
+                    select 1
+                      from emdo.finance_documents
+                     where id = $1
+                       and original_owner_user_id = $2
+                  ) as companion_seeded,
+                  pg_catalog.to_regprocedure(
+                    'emdo.issue_model_disclosure_grant(uuid,uuid,uuid,uuid,uuid,text,text,text,text,jsonb)'
+                  ) is not null
+                  and pg_catalog.to_regprocedure(
+                    'emdo.resolve_model_disclosure_grant(uuid,uuid,uuid,uuid,uuid,text,text,text,jsonb)'
+                  ) is not null as disclosure_ready,
+                  not exists (
+                    select 1 from emdo.auth_users where id = $3
+                  ) as fixture_available`,
+          [
+            'f3100000-0000-4000-8000-000000000008',
+            'f3100000-0000-4000-8000-000000000001',
+            ids.owner,
+          ],
+        );
+        expect(companion.rows).toEqual([
+          {
+            companion_seeded: true,
+            disclosure_ready: true,
+            fixture_available: true,
+          },
+        ]);
+      }
 
       await expect(
         admin.query(
@@ -577,7 +657,7 @@ describeDatabase(
       }
     });
 
-    it('applies all seventeen migrations and marks each document relation forced RLS', async () => {
+    it('applies all ordered migrations and marks each document relation forced RLS', async () => {
       const relations = await admin.query<{
         forced: boolean;
         relation: string;

@@ -369,18 +369,22 @@ const canonicalizeSources = (
 };
 
 const disclosurePurpose = (
+  agentId: string,
   phasePurpose: 'manager-plan' | 'specialist-execution' | 'manager-synthesis',
-): string =>
-  phasePurpose === 'manager-plan'
-    ? 'Plan this manager turn.'
-    : phasePurpose === 'manager-synthesis'
-      ? 'Synthesize this manager turn.'
-      : 'Run one scheduler delegation.';
+): string => {
+  if (phasePurpose === 'manager-plan') return 'Plan this manager turn.';
+  if (phasePurpose === 'manager-synthesis') {
+    return 'Synthesize this manager turn.';
+  }
+  if (agentId === 'scheduler') return 'Run one scheduler delegation.';
+  if (agentId === 'finance') return 'Run one finance delegation.';
+  throw new Error('api-model-disclosure-specialist-agent-invalid');
+};
 
 /**
  * Bridges the narrowed core port to the existing durable issuer and resolver.
- * The caller can use only one scheduler delegation per run until the database
- * grant key itself gains a phase-invocation column.
+ * Specialist purposes stay explicit so newly registered agents cannot inherit
+ * another section's durable disclosure metadata.
  */
 export const createPostgresCoreModelDisclosureGateway = (input: {
   readonly issuer: DisclosureGrantIssuer;
@@ -412,7 +416,10 @@ export const createPostgresCoreModelDisclosureGateway = (input: {
         spaceAccessGrantId: inputSnapshot.spaceAccessGrantId,
         agentId: inputSnapshot.agentId,
         phasePurpose: inputSnapshot.phasePurpose,
-        disclosurePurpose: disclosurePurpose(inputSnapshot.phasePurpose),
+        disclosurePurpose: disclosurePurpose(
+          inputSnapshot.agentId,
+          inputSnapshot.phasePurpose,
+        ),
         provider: inputSnapshot.provider,
         recordAllowlist: canonical.recordAllowlist,
       });

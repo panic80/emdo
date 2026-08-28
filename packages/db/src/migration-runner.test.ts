@@ -42,6 +42,7 @@ describe('database migration runner', () => {
       '0017_approval_resume_public_events',
       '0018_finance_guarded_proposal_authority',
       '0019_manager_turn_spend_warning',
+      '0020_manager_specialist_disclosure',
     ]);
     expect(migrations.map(({ index }) => index)).toEqual(
       migrations.map((_, index) => index),
@@ -98,6 +99,9 @@ describe('database migration runner', () => {
     expect(migrations[18]?.sql).toContain('ADD COLUMN "guarded_action" jsonb');
     expect(migrations[19]?.sql).toContain(
       'CREATE OR REPLACE FUNCTION "emdo"."complete_manager_turn"',
+    );
+    expect(migrations[20]?.sql).toContain(
+      'CREATE OR REPLACE FUNCTION "emdo"."resolve_model_disclosure_grant"',
     );
   });
 

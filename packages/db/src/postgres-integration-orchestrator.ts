@@ -48,6 +48,9 @@ const knownProbeEnvironmentNames = Object.freeze([
   'RLS_ATTACK_PROBE_WORKFLOW',
 ]);
 
+export const POSTGRES_INTEGRATION_DATABASE_ATTESTATION_ENVIRONMENT =
+  'EMDO_POSTGRES_INTEGRATION_DATABASE_ATTESTATION';
+
 export const POSTGRES_INTEGRATION_SUITES = Object.freeze([
   Object.freeze({
     id: 'better-auth-claim-bridge',
@@ -102,6 +105,10 @@ export const POSTGRES_INTEGRATION_SUITES = Object.freeze([
   Object.freeze({
     id: 'finance-document-knowledge',
     file: 'packages/db/src/finance/postgres-finance-document-repository.integration.test.ts',
+    files: Object.freeze([
+      'packages/db/src/finance/postgres-finance-document-repository.integration.test.ts',
+      'apps/api/src/production/finance-synthetic-staging-runtime.integration.test.ts',
+    ]),
     databaseEnvironment: 'TEST_FINANCE_DOCUMENT_DATABASE_URL',
   }),
   Object.freeze({
@@ -190,12 +197,14 @@ export interface PostgresIntegrationDependencies {
   }) => Promise<PostgresServerInspection>;
   readonly createDatabase: (input: {
     readonly adminUrl: string;
+    readonly databaseAttestation: string;
     readonly suite: PostgresIntegrationSuite;
   }) => Promise<{
     readonly databaseName: string;
     readonly databaseUrl: string;
   }>;
   readonly runSuite: (input: {
+    readonly databaseAttestation: string;
     readonly databaseName: string;
     readonly databaseUrl: string;
     readonly probeContext: RlsCrossHouseholdProbeContext;
@@ -223,6 +232,22 @@ const quoteGeneratedDatabaseIdentifier = (value: string): string => {
   }
   return `"${value}"`;
 };
+
+const quotePostgresStringLiteral = (value: string): string =>
+  `'${value.replaceAll("'", "''")}'`;
+
+const isPostgresSuiteDatabaseAttestation = (
+  suite: PostgresIntegrationSuite,
+  value: string,
+): boolean =>
+  new RegExp(`^emdo-postgres-suite-v1:${suite.id}:[0-9a-f]{32}$`, 'u').test(
+    value,
+  );
+
+const mintPostgresSuiteDatabaseAttestation = (
+  suite: PostgresIntegrationSuite,
+): string =>
+  `emdo-postgres-suite-v1:${suite.id}:${randomUUID().replaceAll('-', '')}`;
 
 const adminClient = (adminUrl: string) =>
   new Client({
@@ -277,11 +302,16 @@ const inspectServer = async ({
 
 const createDatabase = async ({
   adminUrl,
+  databaseAttestation,
   suite,
 }: {
   readonly adminUrl: string;
+  readonly databaseAttestation: string;
   readonly suite: PostgresIntegrationSuite;
 }) => {
+  if (!isPostgresSuiteDatabaseAttestation(suite, databaseAttestation)) {
+    throw new Error('PostgreSQL integration database attestation is invalid.');
+  }
   const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
   const normalizedSuite = suite.id.replaceAll('-', '_').slice(0, 36);
   const databaseName =
@@ -303,6 +333,9 @@ const createDatabase = async ({
     }
     await client.query(
       `create database ${identifier} template template0 encoding 'UTF8'`,
+    );
+    await client.query(
+      `comment on database ${identifier} is ${quotePostgresStringLiteral(databaseAttestation)}`,
     );
   } finally {
     await client.end();
@@ -509,11 +542,31 @@ const parseAttackProof = (value: unknown): RlsCrossHouseholdAttackProof => {
   return record as unknown as RlsCrossHouseholdAttackProof;
 };
 
+export const buildPostgresSuiteVitestArguments = (
+  suite: PostgresIntegrationSuite,
+  vitestResultPath: string,
+): readonly string[] => {
+  const files = 'files' in suite ? suite.files : [suite.file];
+  return [
+    'exec',
+    'vitest',
+    'run',
+    ...files,
+    '--no-file-parallelism',
+    '--cache=false',
+    '--reporter=verbose',
+    '--reporter=json',
+    `--outputFile.json=${vitestResultPath}`,
+  ];
+};
+
 const runSuite = async ({
+  databaseAttestation,
   databaseUrl,
   probeContext,
   suite,
 }: {
+  readonly databaseAttestation: string;
   readonly databaseName: string;
   readonly databaseUrl: string;
   readonly probeContext: RlsCrossHouseholdProbeContext;
@@ -525,7 +578,10 @@ const runSuite = async ({
   const environment: NodeJS.ProcessEnv = { ...process.env };
   for (const name of knownDatabaseEnvironmentNames) delete environment[name];
   for (const name of knownProbeEnvironmentNames) delete environment[name];
+  delete environment[POSTGRES_INTEGRATION_DATABASE_ATTESTATION_ENVIRONMENT];
   environment[suite.databaseEnvironment] = databaseUrl;
+  environment[POSTGRES_INTEGRATION_DATABASE_ATTESTATION_ENVIRONMENT] =
+    databaseAttestation;
   if (suite.id === 'rls-cross-household-attacks') {
     environment.RLS_ATTACK_PROBE_RESULT_PATH = attackProofPath;
     environment.RLS_ATTACK_PROBE_ENVIRONMENT = probeContext.environment;
@@ -538,17 +594,7 @@ const runSuite = async ({
     try {
       await runCommand(
         process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
-        [
-          'exec',
-          'vitest',
-          'run',
-          suite.file,
-          '--no-file-parallelism',
-          '--cache=false',
-          '--reporter=verbose',
-          '--reporter=json',
-          `--outputFile.json=${vitestResultPath}`,
-        ],
+        buildPostgresSuiteVitestArguments(suite, vitestResultPath),
         environment,
       );
     } catch (cause) {
@@ -771,8 +817,10 @@ export const runPostgresIntegrationSuites = async (input: {
   const databaseNames = new Map<string, string | null>();
   let attackProof: RlsCrossHouseholdAttackProof | undefined;
   for (const suite of POSTGRES_INTEGRATION_SUITES) {
+    const databaseAttestation = mintPostgresSuiteDatabaseAttestation(suite);
     const database = await dependencies.createDatabase({
       adminUrl: input.adminUrl,
+      databaseAttestation,
       suite,
     });
     const canonicalDatabaseName =
@@ -794,6 +842,7 @@ export const runPostgresIntegrationSuites = async (input: {
     try {
       result = await dependencies.runSuite({
         ...database,
+        databaseAttestation,
         probeContext,
         suite,
       });

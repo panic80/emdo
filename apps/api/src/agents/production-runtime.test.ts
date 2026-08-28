@@ -526,6 +526,64 @@ describe('production agent runtime', () => {
     );
   });
 
+  it.each(['finance', 'scheduler'] as const)(
+    'strips the %s structural route hint before the strict model-backed orchestrator',
+    async (routeHint) => {
+      const fullServices = capabilityServices();
+      const executionRunner: OpenAiAgentsRunnerPort = {
+        run: vi.fn(async () => {
+          throw new Error('test-model-runner-must-not-run');
+        }),
+      };
+      const runtime = createFinanceV1ProductionAgentRuntime({
+        ...runtimeDependencies(),
+        capabilityServices: {
+          schedulerDelegation:
+            fullServices.delegations['agent.scheduler.delegate'],
+          financeDelegation: fullServices.delegations['agent.finance.delegate'],
+          calendarEventCreate: calendarCreateBinding(
+            'google-calendar.event.create',
+          ),
+          finance: {
+            readFinanceRecords: fullServices.specialists.readFinanceRecords,
+            writeFinanceRecord: fullServices.specialists.writeFinanceRecord,
+            executeStatementImport:
+              fullServices.specialists.executeStatementImport,
+            loadFinanceBudgetInputs:
+              fullServices.specialists.loadFinanceBudgetInputs,
+            searchFinanceDocuments:
+              fullServices.specialists.searchFinanceDocuments,
+            readFinanceDocument: fullServices.specialists.readFinanceDocument,
+            readFinanceMatches: fullServices.specialists.readFinanceMatches,
+          },
+        },
+        executionRunner,
+      });
+
+      await expect(
+        runtime.orchestrator.runTurn({
+          requestId: ids.request,
+          runId: ids.run,
+          householdId: ids.household,
+          userId: ids.user,
+          authenticatedSessionId: ids.session,
+          conversationId: ids.conversation,
+          spaceAccessGrantId: ids.spaceGrant,
+          authorizationScopeFingerprint: runScopeFingerprint,
+          locale: 'en-CA',
+          message: 'Review this request.',
+          escalationTriggers: [],
+          routeHint,
+          abortSignal: new AbortController().signal,
+        }),
+      ).resolves.toMatchObject({
+        status: 'failed',
+        safeError: { code: 'agent-model-unavailable' },
+      });
+      expect(executionRunner.run).not.toHaveBeenCalled();
+    },
+  );
+
   it('constructs the manager-only and manager-finance startup combinations', () => {
     const fullServices = capabilityServices();
     const dependencies = runtimeDependencies();

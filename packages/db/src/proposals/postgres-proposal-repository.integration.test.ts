@@ -1032,7 +1032,7 @@ describeDatabase(
 
       const proposalMigrations = await loadOrderedMigrations();
       expect(proposalMigrations.at(-1)?.id).toBe(
-        '0019_manager_turn_spend_warning',
+        '0020_manager_specialist_disclosure',
       );
       for (const migration of proposalMigrations) {
         try {
