@@ -2422,8 +2422,8 @@ export class PostgresFinanceDocumentRepository {
            )
            select $5::uuid, document.id, $6, document.household_id, document.space_id,
                   document.original_owner_user_id, $7::uuid, $8::uuid, $9, $10, $11,
-                  $12::jsonb, 'pending', $13, pg_catalog.clock_timestamp(),
-                  pg_catalog.clock_timestamp() + interval '30 minutes'
+                  $12::jsonb, 'pending', $13, pg_catalog.statement_timestamp(),
+                  pg_catalog.statement_timestamp() + interval '30 minutes'
              from emdo.finance_documents as document
             where document.household_id = $1
               and document.space_id = $2
