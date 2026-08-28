@@ -1568,6 +1568,12 @@ describe('staging acceptance CLI', () => {
     },
     {
       failurePath: '/api/v1/finance/documents',
+      failure: { kind: 'problem', status: 418, code: 'private-id' },
+      expectedFailure:
+        'Staging acceptance failed at stage=document-upload outcome=http-problem-unrecognized.\n',
+    },
+    {
+      failurePath: '/api/v1/finance/documents',
       failure: { kind: 'malformed-problem' },
       expectedFailure:
         'Staging acceptance failed at stage=document-upload outcome=http-problem-unrecognized.\n',
