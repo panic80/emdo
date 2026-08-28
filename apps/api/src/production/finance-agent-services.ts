@@ -634,22 +634,26 @@ const durableCommand = (
 /**
  * The guarded proposal materializer and the Finance execution leaf both use
  * this exact, server-owned binding. A UUID alone is never authority: every
- * actor, run, private space, disclosure grant, descriptor, and canonical
- * action is covered by the digest.
+ * durable actor, run, private space, disclosure grant, descriptor, and
+ * canonical action is covered by the digest. The current access-grant ID is
+ * still checked at each live authorization boundary, but is intentionally not
+ * a durable proposal binding so a renewed grant cannot invalidate an otherwise
+ * unchanged approved action.
  */
-export const hashFinanceGuardedActionExecutionBinding = (input: {
-  readonly proposalId: string;
-  readonly scope: Pick<
+export const hashFinanceGuardedActionExecutionBinding = <
+  Scope extends Pick<
     FinanceCapabilityScope,
     | 'runId'
     | 'userId'
     | 'householdId'
     | 'sessionId'
     | 'privateSpaceId'
-    | 'spaceAccessGrantId'
     | 'collectionAuthorizationScopeFingerprint'
     | 'disclosureGrantId'
-  >;
+  >,
+>(input: {
+  readonly proposalId: string;
+  readonly scope: Scope;
   readonly capabilityId: 'finance.records.write' | 'finance.statement.import';
   readonly capabilityVersion: string;
   readonly capabilityFingerprint: string;
@@ -660,14 +664,13 @@ export const hashFinanceGuardedActionExecutionBinding = (input: {
 }): string =>
   hashCanonicalJson({
     schemaVersion: 1,
-    domain: 'emdo.finance-guarded-action-execution-binding.v1',
+    domain: 'emdo.finance-guarded-action-execution-binding.v2',
     proposalId: input.proposalId,
     runId: input.scope.runId,
     householdId: input.scope.householdId,
     userId: input.scope.userId,
     authenticatedSessionId: input.scope.sessionId,
     privateSpaceId: input.scope.privateSpaceId,
-    spaceAccessGrantId: input.scope.spaceAccessGrantId,
     authorizationScopeFingerprint:
       input.scope.collectionAuthorizationScopeFingerprint,
     disclosureGrantId: input.scope.disclosureGrantId,

@@ -68,9 +68,10 @@ import {
 } from './finance-agent-services.js';
 import type { FinancePdfInspector } from './finance-pdf-inspection.js';
 
-const REVIEW_TOKEN_DOMAIN = 'emdo.finance-document.review-token.v1\0';
-const REVIEW_IDEMPOTENCY_DOMAIN =
-  'emdo.finance-document.review-idempotency.v1\0';
+const REVIEW_TOKEN_V2_DOMAIN = 'emdo.finance-document.review-token.v2\0';
+const REVIEW_IDEMPOTENCY_V2_DOMAIN =
+  'emdo.finance-document.review-idempotency.v2\0';
+const LEGACY_REVIEW_TOKEN_V1_DOMAIN = 'emdo.finance-document.review-token.v1\0';
 const CURSOR_DOMAIN = 'emdo.finance-document.cursor.v1\0';
 const REVIEW_ENVELOPE_PREFIX = 'emdo.finance-document.review-envelope.v1:';
 const REVIEW_ENVELOPE_CHUNK_DATA_BYTES = 15_000;
@@ -337,7 +338,8 @@ const hmac = (key: Uint8Array, domain: string, value: unknown): string =>
     .update(stableJson(value), 'utf8')
     .digest('base64url');
 
-const reviewBinding = (input: {
+/** Durable v2 binding for every newly issued review token. */
+const reviewBindingV2 = (input: {
   readonly principal: FinanceDocumentRepositoryPrincipal;
   readonly documentId: string;
   readonly extractionRevision: number;
@@ -347,23 +349,79 @@ const reviewBinding = (input: {
   privateSpaceId: input.principal.privateSpaceId,
   ownerUserId: input.principal.userId,
   sessionId: input.principal.sessionId,
-  spaceAccessGrantId: input.principal.spaceAccessGrantId,
   scopeFingerprint: input.principal.scopeFingerprint,
   documentId: input.documentId,
   extractionRevision: input.extractionRevision,
   payloadHash: input.payloadHash,
 });
 
-const reviewTokenFor = (
+const reviewTokenV2For = (
   key: Uint8Array,
-  input: Parameters<typeof reviewBinding>[0],
-): string => hmac(key, REVIEW_TOKEN_DOMAIN, reviewBinding(input));
+  input: Parameters<typeof reviewBindingV2>[0],
+): string => hmac(key, REVIEW_TOKEN_V2_DOMAIN, reviewBindingV2(input));
 
-const reviewIdempotencyKeyFor = (
+const reviewIdempotencyKeyV2For = (
   key: Uint8Array,
-  input: Parameters<typeof reviewBinding>[0],
+  input: Parameters<typeof reviewBindingV2>[0],
 ): string =>
-  `finance-review:${hmac(key, REVIEW_IDEMPOTENCY_DOMAIN, reviewBinding(input))}`;
+  `finance-review:${hmac(
+    key,
+    REVIEW_IDEMPOTENCY_V2_DOMAIN,
+    reviewBindingV2(input),
+  )}`;
+
+/**
+ * Pre-v2 rows did not carry an explicit token version. These immutable fields
+ * are provenance for reconstructing the former HMAC only; current owner,
+ * session, scope, and RLS checks remain at their normal repository boundaries.
+ */
+const StoredReviewTokenBindingSchema = z.object({
+  documentId: UuidSchema,
+  extractionRevision: z.number().int().positive(),
+  authenticatedSessionId: UuidSchema,
+  spaceAccessGrantId: UuidSchema,
+  scopeFingerprint: EffectiveAuthorizationScopeFingerprintSchema,
+  payloadHash: Sha256Schema,
+  reviewTokenHash: Sha256Schema,
+});
+
+const storedReviewTokenFor = (input: {
+  readonly key: Uint8Array;
+  readonly principal: FinanceDocumentRepositoryPrincipal;
+  readonly stored: StoredFinanceDocumentReviewDraft;
+}): string | undefined => {
+  const stored = StoredReviewTokenBindingSchema.safeParse(input.stored);
+  if (!stored.success) return undefined;
+  if (
+    stored.data.authenticatedSessionId !== input.principal.sessionId ||
+    stored.data.scopeFingerprint !== input.principal.scopeFingerprint
+  ) {
+    return undefined;
+  }
+  const v2 = reviewTokenV2For(input.key, {
+    principal: input.principal,
+    documentId: stored.data.documentId,
+    extractionRevision: stored.data.extractionRevision,
+    payloadHash: stored.data.payloadHash,
+  });
+  if (equalText(sha256(v2), stored.data.reviewTokenHash)) return v2;
+
+  // A legacy token must still be owned by the live authenticated session and
+  // stable authorization scope. Its historical access grant is never compared
+  // to current authority: it is HMAC provenance only, allowing safe renewal.
+  const v1 = hmac(input.key, LEGACY_REVIEW_TOKEN_V1_DOMAIN, {
+    householdId: input.principal.householdId,
+    privateSpaceId: input.principal.privateSpaceId,
+    ownerUserId: input.principal.userId,
+    sessionId: stored.data.authenticatedSessionId,
+    spaceAccessGrantId: stored.data.spaceAccessGrantId,
+    scopeFingerprint: stored.data.scopeFingerprint,
+    documentId: stored.data.documentId,
+    extractionRevision: stored.data.extractionRevision,
+    payloadHash: stored.data.payloadHash,
+  });
+  return equalText(sha256(v1), stored.data.reviewTokenHash) ? v1 : undefined;
+};
 
 const originalAad = (
   principal: FinanceDocumentRepositoryPrincipal,
@@ -1134,14 +1192,12 @@ export const createProductionFinanceDocumentGateway = (
     readonly stored: StoredFinanceDocumentReviewDraft;
     readonly envelope: FinanceDocumentEnvelopeV1;
   }): FinanceDocumentReviewDraft => {
-    const binding = {
+    const reviewToken = storedReviewTokenFor({
+      key: reviewTokenHmacKey,
       principal: input.principal,
-      documentId: input.stored.documentId,
-      extractionRevision: input.stored.extractionRevision,
-      payloadHash: input.stored.payloadHash,
-    };
-    const reviewToken = reviewTokenFor(reviewTokenHmacKey, binding);
-    if (!equalText(sha256(reviewToken), input.stored.reviewTokenHash)) {
+      stored: input.stored,
+    });
+    if (reviewToken === undefined) {
       return error('finance-documents-unavailable');
     }
     return FinanceDocumentReviewDraftSchema.parse({
@@ -1457,13 +1513,12 @@ export const createProductionFinanceDocumentGateway = (
       if (committed === undefined) return error('document-state-conflict');
       return detailFor(input);
     }
-    const reviewToken = reviewTokenFor(reviewTokenHmacKey, {
+    const reviewToken = storedReviewTokenFor({
+      key: reviewTokenHmacKey,
       principal: input.principal,
-      documentId: pending.documentId,
-      extractionRevision: pending.extractionRevision,
-      payloadHash: pending.payloadHash,
+      stored: pending,
     });
-    if (!equalText(sha256(reviewToken), pending.reviewTokenHash)) {
+    if (reviewToken === undefined) {
       return error('finance-documents-unavailable');
     }
     const embeddings = await reviewedEmbeddingsFor({
@@ -1502,20 +1557,18 @@ export const createProductionFinanceDocumentGateway = (
       requestId: input.requestId,
       documentId: match.documentId,
     });
+    const reviewToken =
+      review === undefined
+        ? undefined
+        : storedReviewTokenFor({
+            key: reviewTokenHmacKey,
+            principal: input.principal,
+            stored: review,
+          });
     if (
       review === undefined ||
       review.extractionRevision !== match.extractionRevision ||
-      !equalText(
-        sha256(
-          reviewTokenFor(reviewTokenHmacKey, {
-            principal: input.principal,
-            documentId: review.documentId,
-            extractionRevision: review.extractionRevision,
-            payloadHash: review.payloadHash,
-          }),
-        ),
-        review.reviewTokenHash,
-      )
+      reviewToken === undefined
     ) {
       return error('document-state-conflict');
     }
@@ -2033,14 +2086,17 @@ export const createProductionFinanceDocumentGateway = (
           extractionRevision: extraction.extractionRevision,
           payloadHash,
         };
-        const reviewToken = reviewTokenFor(reviewTokenHmacKey, binding);
+        const reviewToken = reviewTokenV2For(reviewTokenHmacKey, binding);
         const review = await dependencies.repository.replaceCurrentReviewDraft({
           principal,
           requestId: input.requestId,
           documentId: extraction.documentId,
           extractionRevision: extraction.extractionRevision,
           reviewToken,
-          idempotencyKey: reviewIdempotencyKeyFor(reviewTokenHmacKey, binding),
+          idempotencyKey: reviewIdempotencyKeyV2For(
+            reviewTokenHmacKey,
+            binding,
+          ),
           selectedFacts,
         });
         if (!equalText(review.review.payloadHash, payloadHash)) {
@@ -2077,7 +2133,7 @@ export const createProductionFinanceDocumentGateway = (
           extractionRevision: input.expectedExtractionRevision,
           payloadHash,
         };
-        const reviewToken = reviewTokenFor(reviewTokenHmacKey, binding);
+        const reviewToken = reviewTokenV2For(reviewTokenHmacKey, binding);
         const replacement =
           await dependencies.repository.replaceCurrentReviewDraft({
             principal,
@@ -2155,13 +2211,12 @@ export const createProductionFinanceDocumentGateway = (
             reviewToken: input.reviewToken,
           });
         if (review === undefined) return error('review-token-invalid');
-        const expected = reviewTokenFor(reviewTokenHmacKey, {
+        const expected = storedReviewTokenFor({
+          key: reviewTokenHmacKey,
           principal,
-          documentId: review.documentId,
-          extractionRevision: review.extractionRevision,
-          payloadHash: review.payloadHash,
+          stored: review,
         });
-        if (!equalText(expected, input.reviewToken)) {
+        if (expected === undefined || !equalText(expected, input.reviewToken)) {
           return error('review-token-invalid');
         }
         await dependencies.repository.decideMatch({

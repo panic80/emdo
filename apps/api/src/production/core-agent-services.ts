@@ -339,6 +339,98 @@ const FinanceDocumentGuardedTargetSchema = z.strictObject({
   }),
 });
 
+const FinanceDocumentGuardedProposalPreviewSchema = z.strictObject({
+  state: z.string().trim().min(1).max(64),
+  operation: FinanceGuardedActionOperationSchema,
+  documentId: UuidSchema,
+  extractionRevision: z.number().int().positive().nullable(),
+  matchId: UuidSchema.optional(),
+});
+
+/**
+ * The capability runtime owns complete output validation. The presenter adds
+ * the narrower, proposal-specific binding that prevents a valid-looking
+ * Finance result for one mutation from being presented as another mutation's
+ * approved execution. proposalGateway invokes the exact canonical capability
+ * arguments, which binds amount and reason; this presenter validates the
+ * resulting operation-specific durable state.
+ */
+const FinanceSuccessfulRecordWriteOutputSchema = z.object({
+  schemaVersion: z.literal(1),
+  result: z.object({
+    status: z.enum(['applied', 'duplicate']),
+    record: z.object({
+      id: z.string().trim().min(1),
+      recordType: z.literal('transaction'),
+      revision: z.number().int().positive(),
+      status: z.enum(['active', 'reversed']),
+    }),
+  }),
+});
+
+const FinanceSuccessfulStatementImportOutputSchema = z.object({
+  schemaVersion: z.literal(1),
+  result: z.object({
+    status: z.enum(['committed', 'replayed']),
+    receipt: z.object({
+      planId: z.string().trim().min(1),
+      transactionCount: z.number().int().positive(),
+      verified: z.literal(true),
+    }),
+    sourceDeletionAuthorized: z.literal(true),
+  }),
+});
+
+const FinanceDocumentCommittedOutputSchema = z.object({
+  schemaVersion: z.literal(1),
+  result: z.object({
+    status: z.literal('document-committed'),
+    documentId: z.string().trim().min(1),
+    extractionRevision: z.number().int().positive(),
+  }),
+});
+
+const FinanceDocumentMatchAcceptedOutputSchema = z.object({
+  schemaVersion: z.literal(1),
+  result: z.object({
+    status: z.literal('match-accepted'),
+    documentId: z.string().trim().min(1),
+    matchId: z.string().trim().min(1),
+  }),
+});
+
+const FinanceDocumentDeletedOutputSchema = z.object({
+  schemaVersion: z.literal(1),
+  result: z.object({
+    status: z.enum(['document-deleted', 'document-purge-pending']),
+    documentId: z.string().trim().min(1),
+  }),
+});
+
+const FinanceAdjustmentCanonicalArgumentsSchema = z.object({
+  schemaVersion: z.literal(1),
+  mutation: z.object({
+    kind: z.literal('adjust'),
+    transactionId: z.string().trim().min(1),
+  }),
+});
+
+const FinanceReversalCanonicalArgumentsSchema = z.object({
+  schemaVersion: z.literal(1),
+  mutation: z.object({
+    kind: z.literal('reverse'),
+    transactionId: z.string().trim().min(1),
+  }),
+});
+
+const FinanceStatementImportCanonicalArgumentsSchema = z.object({
+  schemaVersion: z.literal(1),
+  request: z.object({
+    kind: z.literal('commit'),
+    planId: z.string().trim().min(1),
+  }),
+});
+
 const documentGuardedIntentFor = (input: {
   readonly operation: string;
   readonly arguments: unknown;
@@ -362,6 +454,147 @@ const documentGuardedIntentFor = (input: {
     return deepFreeze(intent) as FinanceDocumentGuardedActionIntent;
   }
   return undefined;
+};
+
+const financeDocumentPreviewFor = (input: {
+  readonly proposal: z.output<typeof ActionProposalSchema>;
+  readonly operation: z.output<typeof FinanceGuardedActionOperationSchema>;
+}) => {
+  const before = FinanceDocumentGuardedProposalPreviewSchema.safeParse(
+    input.proposal.beforePreview,
+  );
+  const after = FinanceDocumentGuardedProposalPreviewSchema.safeParse(
+    input.proposal.afterPreview,
+  );
+  if (
+    !before.success ||
+    !after.success ||
+    before.data.operation !== input.operation ||
+    after.data.operation !== input.operation ||
+    before.data.documentId !== after.data.documentId ||
+    before.data.extractionRevision !== after.data.extractionRevision ||
+    before.data.matchId !== after.data.matchId
+  ) {
+    return undefined;
+  }
+  return deepFreeze(before.data);
+};
+
+const financeGuardedActionExecutionMatchesProposal = (input: {
+  readonly proposal: z.output<typeof ActionProposalSchema>;
+  readonly capabilityId: z.output<
+    typeof FinanceGuardedActionCapabilityIdSchema
+  >;
+  readonly capabilityOutput: unknown;
+}): boolean => {
+  const classification = classifyFinanceGuardedAction({
+    capabilityId: input.capabilityId,
+    arguments: input.proposal.canonicalArguments,
+  });
+  const operation = FinanceGuardedActionOperationSchema.safeParse(
+    classification?.operation,
+  );
+  if (
+    !operation.success ||
+    input.proposal.guardedAction === undefined ||
+    input.proposal.guardedAction.operation !== operation.data ||
+    input.proposal.guardedAction.actionHash !==
+      hashCanonicalJson(input.proposal.canonicalArguments) ||
+    input.proposal.payloadHash !==
+      hashCanonicalJson(input.proposal.canonicalArguments)
+  ) {
+    return false;
+  }
+
+  if (operation.data === 'finance-adjustment') {
+    const canonical = FinanceAdjustmentCanonicalArgumentsSchema.safeParse(
+      input.proposal.canonicalArguments,
+    );
+    const output = FinanceSuccessfulRecordWriteOutputSchema.safeParse(
+      input.capabilityOutput,
+    );
+    return (
+      canonical.success &&
+      output.success &&
+      output.data.result.record.id === canonical.data.mutation.transactionId &&
+      output.data.result.record.status === 'active'
+    );
+  }
+
+  if (operation.data === 'finance-reversal') {
+    const canonical = FinanceReversalCanonicalArgumentsSchema.safeParse(
+      input.proposal.canonicalArguments,
+    );
+    const output = FinanceSuccessfulRecordWriteOutputSchema.safeParse(
+      input.capabilityOutput,
+    );
+    return (
+      canonical.success &&
+      output.success &&
+      output.data.result.record.id === canonical.data.mutation.transactionId &&
+      output.data.result.record.status === 'reversed'
+    );
+  }
+
+  if (operation.data === 'finance-statement-import-commit') {
+    const canonical = FinanceStatementImportCanonicalArgumentsSchema.safeParse(
+      input.proposal.canonicalArguments,
+    );
+    const output = FinanceSuccessfulStatementImportOutputSchema.safeParse(
+      input.capabilityOutput,
+    );
+    return (
+      canonical.success &&
+      output.success &&
+      output.data.result.receipt.planId === canonical.data.request.planId
+    );
+  }
+
+  const documentIntent = documentGuardedIntentFor({
+    operation: operation.data,
+    arguments: input.proposal.canonicalArguments,
+  });
+  if (documentIntent === undefined) return false;
+  const documentPreview = financeDocumentPreviewFor({
+    proposal: input.proposal,
+    operation: operation.data,
+  });
+  if (documentPreview === undefined) return false;
+
+  if (documentIntent.kind === 'commit-document-review') {
+    const output = FinanceDocumentCommittedOutputSchema.safeParse(
+      input.capabilityOutput,
+    );
+    return (
+      output.success &&
+      documentPreview.documentId === documentIntent.documentId &&
+      documentPreview.extractionRevision !== null &&
+      output.data.result.documentId === documentPreview.documentId &&
+      output.data.result.extractionRevision ===
+        documentPreview.extractionRevision
+    );
+  }
+
+  if (documentIntent.kind === 'accept-document-match') {
+    const output = FinanceDocumentMatchAcceptedOutputSchema.safeParse(
+      input.capabilityOutput,
+    );
+    return (
+      output.success &&
+      documentPreview.matchId === documentIntent.matchId &&
+      output.data.result.documentId === documentPreview.documentId &&
+      output.data.result.matchId === documentPreview.matchId
+    );
+  }
+
+  const output = FinanceDocumentDeletedOutputSchema.safeParse(
+    input.capabilityOutput,
+  );
+  return (
+    output.success &&
+    documentPreview.documentId === documentIntent.documentId &&
+    output.data.result.documentId === documentPreview.documentId
+  );
 };
 
 type FinanceGuardedActionProposalService = Pick<ProposalService, 'create'>;
@@ -559,7 +792,7 @@ const financeGuardedActionMaterial = (input: {
   });
 };
 
-const createFinanceGuardedActionPresenter =
+export const createFinanceGuardedActionPresenter =
   (): TrustedProviderWriteDecisionPresenter =>
     Object.freeze({
       present: async (
@@ -583,14 +816,31 @@ const createFinanceGuardedActionPresenter =
           decision.proposalId !== proposal.id ||
           decision.decision !== expectedDecision ||
           decision.payloadHash !== proposal.payloadHash ||
-          decision.approvalHash !== proposal.approvalHash
+          decision.approvalHash !== proposal.approvalHash ||
+          (rawInput.decision === 'approve' &&
+            !financeGuardedActionExecutionMatchesProposal({
+              proposal,
+              capabilityId: capabilityId.data,
+              capabilityOutput: rawInput.capabilityOutput,
+            }))
         ) {
           throw new Error('api-finance-guarded-action-presentation-invalid');
         }
+        const approvedDeletion =
+          rawInput.decision === 'approve'
+            ? FinanceDocumentDeletedOutputSchema.safeParse(
+                rawInput.capabilityOutput,
+              )
+            : undefined;
+        const deletionFinalizationPending =
+          approvedDeletion?.success === true &&
+          approvedDeletion.data.result.status === 'document-purge-pending';
         return JsonValueSchema.parse({
           summary:
             rawInput.decision === 'approve'
-              ? `Finance action proposal ${proposal.id} was approved and executed.`
+              ? deletionFinalizationPending
+                ? `Finance action proposal ${proposal.id} was approved. Access was revoked, but verified deletion finalization is pending and requires a retry.`
+                : `Finance action proposal ${proposal.id} was approved and executed.`
               : `Finance action proposal ${proposal.id} was rejected.`,
           clarificationQuestion: null,
           evidenceReferences: [],

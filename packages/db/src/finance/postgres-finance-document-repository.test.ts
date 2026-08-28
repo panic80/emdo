@@ -24,6 +24,7 @@ const ids = {
   chunk: 'c3000000-0000-4000-8000-000000000013',
   evidence: 'c3000000-0000-4000-8000-000000000014',
   match: 'c3000000-0000-4000-8000-000000000015',
+  rotatedGrant: 'c3000000-0000-4000-8000-000000000016',
 } as const;
 
 const principal = {
@@ -34,6 +35,11 @@ const principal = {
   emailVerified: true as const,
   spaceAccessGrantId: ids.grant,
   scopeFingerprint: 'f'.repeat(64),
+};
+
+const rotatedGrantPrincipal = {
+  ...principal,
+  spaceAccessGrantId: ids.rotatedGrant,
 };
 
 const sha256 = (value: string) =>
@@ -562,7 +568,7 @@ describe('PostgresFinanceDocumentRepository', () => {
     expect(invalidation).toContain('review.original_owner_user_id = $3');
   });
 
-  it('replays only a hash-, token-, session-, grant-, and scope-bound committed review', async () => {
+  it('replays a hash-, token-, session-, and scope-bound committed review across a rotated grant', async () => {
     const committedReview = reviewRow('CAD');
     const expectedPayloadHash = committedReview.payloadHash;
     const { pool, query } = poolFor((sql, values) => {
@@ -584,7 +590,7 @@ describe('PostgresFinanceDocumentRepository', () => {
     });
     const repository = new PostgresFinanceDocumentRepository(pool);
     const exact = {
-      principal,
+      principal: rotatedGrantPrincipal,
       requestId: ids.request,
       documentId: ids.document,
       extractionRevision: 1,
@@ -603,11 +609,298 @@ describe('PostgresFinanceDocumentRepository', () => {
     await expect(
       repository.commitReview({ ...exact, payloadHash: 'e'.repeat(64) }),
     ).rejects.toMatchObject({ code: 'review-not-found' });
+    const reviewSelect = query.mock.calls.find(
+      ([sql]) =>
+        String(sql).includes('from emdo.finance_document_review_batches') &&
+        String(sql).includes('review.idempotency_key = $11'),
+    );
+    expect(reviewSelect?.[0]).toContain(
+      'review.space_access_grant_id::text as "spaceAccessGrantId"',
+    );
+    expect(reviewSelect?.[0]).not.toContain('review.space_access_grant_id =');
+    expect(reviewSelect?.[1]).toEqual([
+      ids.household,
+      ids.space,
+      ids.user,
+      ids.review,
+      ids.document,
+      1,
+      ids.session,
+      principal.scopeFingerprint,
+      expectedPayloadHash,
+      sha256('A'.repeat(43)),
+      committedReview.idempotencyKey,
+    ]);
+    expect(reviewSelect?.[1]).not.toContain(ids.grant);
+    expect(reviewSelect?.[1]).not.toContain(ids.rotatedGrant);
     expect(
       query.mock.calls.some(([sql]) =>
         String(sql).includes('insert into emdo.finance_document_chunks'),
       ),
     ).toBe(false);
+  });
+
+  it('binds pending, committed, and public review reads to session and scope instead of the current grant', async () => {
+    const pendingReview = reviewRow('CAD', { state: 'pending' });
+    const committedReview = reviewRow('CAD', { state: 'committed' });
+    const { pool, query } = poolFor((sql) => {
+      const lock = lockRows(sql);
+      if (lock !== undefined) return lock;
+      if (sql.includes("review.state = 'pending'")) return [pendingReview];
+      if (sql.includes("review.state = 'committed'")) {
+        return [committedReview];
+      }
+      return [];
+    });
+    const repository = new PostgresFinanceDocumentRepository(pool);
+    const documentInput = {
+      principal: rotatedGrantPrincipal,
+      requestId: ids.request,
+      documentId: ids.document,
+    };
+
+    await expect(
+      repository.getCurrentReviewDraft(documentInput),
+    ).resolves.toMatchObject({
+      id: ids.review,
+      authenticatedSessionId: ids.session,
+      spaceAccessGrantId: ids.grant,
+      scopeFingerprint: principal.scopeFingerprint,
+    });
+    await expect(
+      repository.getCurrentCommittedReview(documentInput),
+    ).resolves.toMatchObject({
+      id: ids.review,
+      authenticatedSessionId: ids.session,
+      spaceAccessGrantId: ids.grant,
+      scopeFingerprint: principal.scopeFingerprint,
+    });
+    await expect(
+      repository.getCommittedReviewAuthorization({
+        ...documentInput,
+        reviewToken: 'A'.repeat(43),
+      }),
+    ).resolves.toMatchObject({
+      id: ids.review,
+      authenticatedSessionId: ids.session,
+      spaceAccessGrantId: ids.grant,
+      scopeFingerprint: principal.scopeFingerprint,
+    });
+
+    const reviewLookups = query.mock.calls.filter(([sql]) =>
+      String(sql).includes('from emdo.finance_document_review_batches'),
+    );
+    expect(reviewLookups).toHaveLength(3);
+    for (const [sql, values] of reviewLookups) {
+      expect(String(sql)).toContain(
+        'review.space_access_grant_id::text as "spaceAccessGrantId"',
+      );
+      expect(String(sql)).not.toContain('review.space_access_grant_id =');
+      expect(values).toContain(ids.session);
+      expect(values).toContain(principal.scopeFingerprint);
+      expect(values).not.toContain(ids.grant);
+      expect(values).not.toContain(ids.rotatedGrant);
+    }
+    const pendingLookup = reviewLookups.find(([sql]) =>
+      String(sql).includes("review.state = 'pending'"),
+    );
+    const currentCommittedLookup = reviewLookups.find(
+      ([sql]) =>
+        String(sql).includes("review.state = 'committed'") &&
+        !String(sql).includes('review.review_token_hash ='),
+    );
+    const publicCommittedLookup = reviewLookups.find(([sql]) =>
+      String(sql).includes('review.review_token_hash = $7'),
+    );
+    expect(pendingLookup?.[1]).toEqual([
+      ids.household,
+      ids.space,
+      ids.user,
+      ids.document,
+      ids.session,
+      principal.scopeFingerprint,
+    ]);
+    expect(currentCommittedLookup?.[1]).toEqual([
+      ids.household,
+      ids.space,
+      ids.user,
+      ids.document,
+      ids.session,
+      principal.scopeFingerprint,
+    ]);
+    expect(publicCommittedLookup?.[1]).toEqual([
+      ids.household,
+      ids.space,
+      ids.user,
+      ids.document,
+      ids.session,
+      principal.scopeFingerprint,
+      sha256('A'.repeat(43)),
+    ]);
+  });
+
+  it('rejects malformed or missing stored review provenance', async () => {
+    const validReview = reviewRow('CAD', { state: 'pending' });
+    const missingScopeReview = { ...validReview };
+    Reflect.deleteProperty(missingScopeReview, 'scopeFingerprint');
+    const invalidRows = [
+      {
+        ...validReview,
+        authenticatedSessionId: 'not-a-uuid',
+      },
+      {
+        ...validReview,
+        spaceAccessGrantId: 'not-a-uuid',
+      },
+      missingScopeReview,
+    ];
+
+    for (const row of invalidRows) {
+      const { pool } = poolFor((sql) => {
+        const lock = lockRows(sql);
+        if (lock !== undefined) return lock;
+        if (sql.includes("review.state = 'pending'")) return [row];
+        return [];
+      });
+      const repository = new PostgresFinanceDocumentRepository(pool);
+
+      await expect(
+        repository.getCurrentReviewDraft({
+          principal: rotatedGrantPrincipal,
+          requestId: ids.request,
+          documentId: ids.document,
+        }),
+      ).rejects.toMatchObject({ code: 'invalid-result' });
+    }
+  });
+
+  it('replays an exact pending draft across a rotated grant', async () => {
+    const pendingReview = reviewRow('CAD', { state: 'pending' });
+    const { pool, query } = poolFor((sql) => {
+      const lock = lockRows(sql);
+      if (lock !== undefined) return lock;
+      if (
+        sql.includes('from emdo.finance_documents') &&
+        sql.includes('for update')
+      ) {
+        return [
+          documentRow({ state: 'awaiting-review', extractionRevision: 1 }),
+        ];
+      }
+      if (
+        sql.includes('from emdo.finance_document_extractions') &&
+        sql.includes('for update')
+      ) {
+        return [
+          {
+            id: ids.extraction,
+            revision: 1,
+            attempt: 1,
+            state: 'awaiting-review',
+          },
+        ];
+      }
+      if (
+        sql.includes('from emdo.finance_document_review_batches') &&
+        sql.includes('review.idempotency_key = $4')
+      ) {
+        return [pendingReview];
+      }
+      return [];
+    });
+    const repository = new PostgresFinanceDocumentRepository(pool);
+
+    await expect(
+      repository.replaceCurrentReviewDraft({
+        principal: rotatedGrantPrincipal,
+        requestId: ids.request,
+        documentId: ids.document,
+        extractionRevision: 1,
+        reviewToken: 'A'.repeat(43),
+        idempotencyKey: pendingReview.idempotencyKey,
+        selectedFacts: pendingReview.selectedFacts,
+      }),
+    ).resolves.toMatchObject({
+      status: 'replayed',
+      review: { id: ids.review },
+    });
+
+    const replayLookup = query.mock.calls.find(
+      ([sql]) =>
+        String(sql).includes('from emdo.finance_document_review_batches') &&
+        String(sql).includes('review.idempotency_key = $4'),
+    );
+    expect(replayLookup?.[0]).toContain(
+      'review.space_access_grant_id::text as "spaceAccessGrantId"',
+    );
+    expect(replayLookup?.[1]).toEqual([
+      ids.household,
+      ids.space,
+      ids.user,
+      pendingReview.idempotencyKey,
+    ]);
+  });
+
+  it('uses the committed review session and scope, not the current grant, for match decisions', async () => {
+    const { pool, query } = poolFor((sql) => {
+      const lock = lockRows(sql);
+      if (lock !== undefined) return lock;
+      if (
+        sql.includes('from emdo.finance_documents') &&
+        sql.includes('for update')
+      ) {
+        return [documentRow({ state: 'committed', extractionRevision: 1 })];
+      }
+      if (
+        sql.includes('from emdo.finance_document_review_batches') &&
+        sql.includes('select review.id::text as "id"')
+      ) {
+        return [{ id: ids.review }];
+      }
+      if (
+        sql.includes('from emdo.finance_document_matches') &&
+        sql.includes('select match.state as "state"')
+      ) {
+        return [{ state: 'suggested', decisionReviewBatchId: null }];
+      }
+      if (sql.includes('update emdo.finance_document_matches')) {
+        return { rows: [], rowCount: 1 };
+      }
+      return [];
+    });
+    const repository = new PostgresFinanceDocumentRepository(pool);
+
+    await expect(
+      repository.decideMatch({
+        principal: rotatedGrantPrincipal,
+        requestId: ids.request,
+        documentId: ids.document,
+        matchId: ids.match,
+        reviewBatchId: ids.review,
+        decision: 'accepted',
+      }),
+    ).resolves.toEqual({ status: 'decided', state: 'accepted' });
+
+    const committedReviewLookup = query.mock.calls.find(
+      ([sql]) =>
+        String(sql).includes('from emdo.finance_document_review_batches') &&
+        String(sql).includes('select review.id::text as "id"'),
+    );
+    expect(committedReviewLookup?.[0]).not.toContain(
+      'review.space_access_grant_id =',
+    );
+    expect(committedReviewLookup?.[1]).toEqual([
+      ids.household,
+      ids.space,
+      ids.user,
+      ids.review,
+      ids.document,
+      1,
+      ids.session,
+      principal.scopeFingerprint,
+    ]);
+    expect(committedReviewLookup?.[1]).not.toContain(ids.grant);
+    expect(committedReviewLookup?.[1]).not.toContain(ids.rotatedGrant);
   });
 
   it('writes only separately supplied semantic vectors in the same review commit transaction', async () => {
@@ -691,7 +984,7 @@ describe('PostgresFinanceDocumentRepository', () => {
 
     await expect(
       repository.commitReview({
-        principal,
+        principal: rotatedGrantPrincipal,
         requestId: ids.request,
         documentId: ids.document,
         extractionRevision: 1,
@@ -702,6 +995,36 @@ describe('PostgresFinanceDocumentRepository', () => {
         embeddings: [{ ordinal: 1, embedding: vector(0.25) }],
       }),
     ).resolves.toMatchObject({ status: 'committed', chunksCommitted: 2 });
+
+    const expectedReviewBinding = [
+      ids.household,
+      ids.space,
+      ids.user,
+      ids.review,
+      ids.document,
+      1,
+      ids.session,
+      principal.scopeFingerprint,
+      pendingReview.payloadHash,
+      sha256('A'.repeat(43)),
+      pendingReview.idempotencyKey,
+    ];
+    const reviewSelect = query.mock.calls.find(
+      ([sql]) =>
+        String(sql).includes('from emdo.finance_document_review_batches') &&
+        String(sql).includes('review.idempotency_key = $11'),
+    );
+    const reviewCommit = query.mock.calls.find(
+      ([sql]) =>
+        String(sql).includes('update emdo.finance_document_review_batches') &&
+        String(sql).includes("set state = 'committed'"),
+    );
+    for (const reviewQuery of [reviewSelect, reviewCommit]) {
+      expect(reviewQuery?.[0]).not.toContain('review.space_access_grant_id =');
+      expect(reviewQuery?.[1]).toEqual(expectedReviewBinding);
+      expect(reviewQuery?.[1]).not.toContain(ids.grant);
+      expect(reviewQuery?.[1]).not.toContain(ids.rotatedGrant);
+    }
 
     const chunkInserts = query.mock.calls.filter(([sql]) =>
       String(sql).includes('insert into emdo.finance_document_chunks'),

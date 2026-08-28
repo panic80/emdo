@@ -58,6 +58,13 @@ const ids = Object.freeze({
   ownerReplaySpaceAccessGrant: 'f2000000-0000-4000-8000-000000000038',
   ownerUploadedDocument: 'f2000000-0000-4000-8000-000000000039',
   ownerUploadedExtraction: 'f2000000-0000-4000-8000-000000000040',
+  ownerRotatedRequest: 'f2000000-0000-4000-8000-000000000041',
+  ownerRotatedSpaceAccessGrant: 'f2000000-0000-4000-8000-000000000042',
+  ownerRotatedDocument: 'f2000000-0000-4000-8000-000000000043',
+  ownerRotatedExtraction: 'f2000000-0000-4000-8000-000000000044',
+  ownerRotatedReviewBatch: 'f2000000-0000-4000-8000-000000000045',
+  ownerRotatedChunk: 'f2000000-0000-4000-8000-000000000046',
+  ownerRotatedMatch: 'f2000000-0000-4000-8000-000000000047',
 });
 
 const sha256 = (character: string): string => character.repeat(64);
@@ -119,6 +126,12 @@ const ownerReplayPrincipal = Object.freeze({
   requestId: ids.ownerReplayRequest,
 } satisfies Principal);
 
+const ownerRotatedPrincipal = Object.freeze({
+  userId: ids.owner,
+  sessionId: ids.ownerSession,
+  requestId: ids.ownerRotatedRequest,
+} satisfies Principal);
+
 const ownerRepositoryPrincipal = Object.freeze({
   userId: ids.owner,
   sessionId: ids.ownerSession,
@@ -127,6 +140,11 @@ const ownerRepositoryPrincipal = Object.freeze({
   emailVerified: true as const,
   spaceAccessGrantId: ids.ownerSpaceAccessGrant,
   scopeFingerprint: sha256('f'),
+});
+
+const ownerRotatedRepositoryPrincipal = Object.freeze({
+  ...ownerRepositoryPrincipal,
+  spaceAccessGrantId: ids.ownerRotatedSpaceAccessGrant,
 });
 
 const loginConnectionString = (role: string, password: string): string => {
@@ -425,6 +443,11 @@ describeDatabase(
       await seedSpaceAccessGrant({
         grantId: ids.ownerReplaySpaceAccessGrant,
         principal: ownerReplayPrincipal,
+        privateSpaceId: ids.ownerPrivateSpace,
+      });
+      await seedSpaceAccessGrant({
+        grantId: ids.ownerRotatedSpaceAccessGrant,
+        principal: ownerRotatedPrincipal,
         privateSpaceId: ids.ownerPrivateSpace,
       });
 
@@ -749,6 +772,388 @@ describeDatabase(
           }),
         ),
       ).rejects.toMatchObject({ code: '42501' });
+    });
+
+    it('keeps a review usable across a same-session grant rotation while denying changed session, scope, and user bindings', async () => {
+      const generatedIds = [
+        ids.ownerRotatedReviewBatch,
+        ids.ownerRotatedChunk,
+        ids.ownerRotatedMatch,
+      ];
+      const repository = new PostgresFinanceDocumentRepository(
+        databasePool(app),
+        {
+          generateUuid: () => {
+            const id = generatedIds.shift();
+            if (id === undefined) throw new Error('unexpected generated UUID');
+            return id;
+          },
+        },
+      );
+      const reviewToken = 'B'.repeat(43);
+      const idempotencyKey = 'finance-review-rotated-grant-0001';
+      const selectedFacts = {
+        documentType: 'receipt' as const,
+        sourceLocale: 'en-CA' as const,
+        currency: 'CAD',
+        chunks: [
+          {
+            ordinal: 0,
+            pageStart: 1,
+            pageEnd: 1,
+            content: 'Reviewed rotated grant receipt total',
+            embedding: null,
+          },
+        ],
+        evidence: [],
+        matchSuggestions: [
+          {
+            recordType: 'transaction' as const,
+            recordId: 'transaction::rotated-grant-0001',
+            scoreBasisPoints: 9000,
+            reasons: ['same-total'],
+          },
+        ],
+      };
+      const changedSessionPrincipal = {
+        ...ownerRepositoryPrincipal,
+        sessionId: ids.ownerReplaySession,
+        spaceAccessGrantId: ids.ownerReplaySpaceAccessGrant,
+      };
+      const changedScopePrincipal = {
+        ...ownerRotatedRepositoryPrincipal,
+        scopeFingerprint: sha256('0'),
+      };
+      const collaboratorRepositoryPrincipal = {
+        userId: ids.collaborator,
+        sessionId: ids.collaboratorSession,
+        householdId: ids.household,
+        privateSpaceId: ids.collaboratorPrivateSpace,
+        emailVerified: true as const,
+        spaceAccessGrantId: ids.collaboratorSpaceAccessGrant,
+        scopeFingerprint: ownerRepositoryPrincipal.scopeFingerprint,
+      };
+
+      try {
+        await withPrincipal(ownerPrincipal, async (client) => {
+          await insertDocument(client, {
+            id: ids.ownerRotatedDocument,
+            ownerUserId: ids.owner,
+            spaceId: ids.ownerPrivateSpace,
+            storageObjectId: 'finance-document-rotated-grant-0001',
+            displayName: 'Rotated grant receipt.pdf',
+            plaintextHash: sha256('7'),
+            ciphertextHash: sha256('8'),
+          });
+          await client.query(
+            `update emdo.finance_documents
+                set state = 'extracting', extraction_revision = 1,
+                    updated_at = pg_catalog.clock_timestamp()
+              where id = $1`,
+            [ids.ownerRotatedDocument],
+          );
+          await client.query(
+            `insert into emdo.finance_document_extractions (
+               id, document_id, household_id, space_id, original_owner_user_id,
+               revision, attempt, state
+             ) values ($1, $2, $3, $4, $5, 1, 1, 'queued')`,
+            [
+              ids.ownerRotatedExtraction,
+              ids.ownerRotatedDocument,
+              ids.household,
+              ids.ownerPrivateSpace,
+              ids.owner,
+            ],
+          );
+          await client.query(
+            `update emdo.finance_document_extractions
+                set state = 'extracting'
+              where id = $1`,
+            [ids.ownerRotatedExtraction],
+          );
+          await client.query(
+            `update emdo.finance_documents
+                set state = 'awaiting-review', updated_at = pg_catalog.clock_timestamp()
+              where id = $1`,
+            [ids.ownerRotatedDocument],
+          );
+          await client.query(
+            `update emdo.finance_document_extractions
+                set state = 'awaiting-review', completed_at = pg_catalog.clock_timestamp()
+              where id = $1`,
+            [ids.ownerRotatedExtraction],
+          );
+        });
+
+        const created = await repository.replaceCurrentReviewDraft({
+          principal: ownerRepositoryPrincipal,
+          requestId: ids.ownerRequest,
+          documentId: ids.ownerRotatedDocument,
+          extractionRevision: 1,
+          reviewToken,
+          idempotencyKey,
+          selectedFacts,
+        });
+        expect(created).toMatchObject({
+          status: 'created',
+          review: { id: ids.ownerRotatedReviewBatch },
+        });
+        const commitInput = {
+          documentId: ids.ownerRotatedDocument,
+          extractionRevision: 1,
+          reviewBatchId: ids.ownerRotatedReviewBatch,
+          reviewToken,
+          payloadHash: created.review.payloadHash,
+          idempotencyKey,
+          embeddings: [
+            {
+              ordinal: 0,
+              embedding: Array.from({ length: 1_536 }, () => 0.5),
+            },
+          ],
+        };
+
+        await expect(
+          repository.getCurrentReviewDraft({
+            principal: ownerRotatedRepositoryPrincipal,
+            requestId: ids.ownerRotatedRequest,
+            documentId: ids.ownerRotatedDocument,
+          }),
+        ).resolves.toMatchObject({
+          id: ids.ownerRotatedReviewBatch,
+          authenticatedSessionId: ids.ownerSession,
+          spaceAccessGrantId: ids.ownerSpaceAccessGrant,
+          scopeFingerprint: ownerRepositoryPrincipal.scopeFingerprint,
+        });
+        await expect(
+          repository.replaceCurrentReviewDraft({
+            principal: ownerRotatedRepositoryPrincipal,
+            requestId: ids.ownerRotatedRequest,
+            documentId: ids.ownerRotatedDocument,
+            extractionRevision: 1,
+            reviewToken,
+            idempotencyKey,
+            selectedFacts,
+          }),
+        ).resolves.toMatchObject({
+          status: 'replayed',
+          review: { id: ids.ownerRotatedReviewBatch },
+        });
+
+        for (const [principal, requestId] of [
+          [changedSessionPrincipal, ids.ownerReplayRequest],
+          [changedScopePrincipal, ids.ownerRotatedRequest],
+          [collaboratorRepositoryPrincipal, ids.collaboratorRequest],
+        ] as const) {
+          await expect(
+            repository.getCurrentReviewDraft({
+              principal,
+              requestId,
+              documentId: ids.ownerRotatedDocument,
+            }),
+          ).resolves.toBeUndefined();
+        }
+
+        for (const [principal, requestId, code] of [
+          [changedSessionPrincipal, ids.ownerReplayRequest, 'review-not-found'],
+          [changedScopePrincipal, ids.ownerRotatedRequest, 'review-not-found'],
+          [
+            collaboratorRepositoryPrincipal,
+            ids.collaboratorRequest,
+            'document-not-found',
+          ],
+        ] as const) {
+          await expect(
+            repository.commitReview({ ...commitInput, principal, requestId }),
+          ).rejects.toMatchObject({ code });
+        }
+        const pendingState = await admin.query<{
+          documentState: string;
+          hasMatch: boolean;
+          reviewState: string;
+        }>(
+          `select document.state as "documentState", review.state as "reviewState",
+                  exists (
+                    select 1
+                      from emdo.finance_document_matches as match
+                     where match.document_id = document.id
+                  ) as "hasMatch"
+             from emdo.finance_documents as document
+             join emdo.finance_document_review_batches as review
+               on review.document_id = document.id
+            where document.id = $1 and review.id = $2`,
+          [ids.ownerRotatedDocument, ids.ownerRotatedReviewBatch],
+        );
+        expect(pendingState.rows).toEqual([
+          {
+            documentState: 'awaiting-review',
+            reviewState: 'pending',
+            hasMatch: false,
+          },
+        ]);
+        await expect(
+          repository.getCurrentReviewDraft({
+            principal: collaboratorRepositoryPrincipal,
+            requestId: ids.collaboratorRequest,
+            documentId: ids.ownerRotatedDocument,
+          }),
+        ).resolves.toBeUndefined();
+
+        await expect(
+          repository.commitReview({
+            ...commitInput,
+            principal: ownerRotatedRepositoryPrincipal,
+            requestId: ids.ownerRotatedRequest,
+          }),
+        ).resolves.toMatchObject({
+          status: 'committed',
+          documentId: ids.ownerRotatedDocument,
+          matchSuggestionsCommitted: 1,
+        });
+        expect(generatedIds).toEqual([]);
+
+        await expect(
+          repository.getCurrentCommittedReview({
+            principal: ownerRotatedRepositoryPrincipal,
+            requestId: ids.ownerRotatedRequest,
+            documentId: ids.ownerRotatedDocument,
+          }),
+        ).resolves.toMatchObject({
+          id: ids.ownerRotatedReviewBatch,
+          authenticatedSessionId: ids.ownerSession,
+          spaceAccessGrantId: ids.ownerSpaceAccessGrant,
+          scopeFingerprint: ownerRepositoryPrincipal.scopeFingerprint,
+        });
+        await expect(
+          repository.getCommittedReviewAuthorization({
+            principal: ownerRotatedRepositoryPrincipal,
+            requestId: ids.ownerRotatedRequest,
+            documentId: ids.ownerRotatedDocument,
+            reviewToken,
+          }),
+        ).resolves.toMatchObject({
+          id: ids.ownerRotatedReviewBatch,
+          authenticatedSessionId: ids.ownerSession,
+          spaceAccessGrantId: ids.ownerSpaceAccessGrant,
+          scopeFingerprint: ownerRepositoryPrincipal.scopeFingerprint,
+        });
+        for (const [principal, requestId, code] of [
+          [
+            changedSessionPrincipal,
+            ids.ownerReplayRequest,
+            'review-unavailable',
+          ],
+          [
+            changedScopePrincipal,
+            ids.ownerRotatedRequest,
+            'review-unavailable',
+          ],
+          [
+            collaboratorRepositoryPrincipal,
+            ids.collaboratorRequest,
+            'document-not-found',
+          ],
+        ] as const) {
+          await expect(
+            repository.decideMatch({
+              principal,
+              requestId,
+              documentId: ids.ownerRotatedDocument,
+              matchId: ids.ownerRotatedMatch,
+              reviewBatchId: ids.ownerRotatedReviewBatch,
+              decision: 'accepted',
+            }),
+          ).rejects.toMatchObject({ code });
+        }
+        const committedState = await admin.query<{
+          documentState: string;
+          matchState: string;
+          reviewState: string;
+        }>(
+          `select document.state as "documentState", review.state as "reviewState",
+                  match.state as "matchState"
+             from emdo.finance_documents as document
+             join emdo.finance_document_review_batches as review
+               on review.document_id = document.id
+             join emdo.finance_document_matches as match
+               on match.document_id = document.id
+            where document.id = $1 and review.id = $2 and match.id = $3`,
+          [
+            ids.ownerRotatedDocument,
+            ids.ownerRotatedReviewBatch,
+            ids.ownerRotatedMatch,
+          ],
+        );
+        expect(committedState.rows).toEqual([
+          {
+            documentState: 'committed',
+            reviewState: 'committed',
+            matchState: 'suggested',
+          },
+        ]);
+        await expect(
+          repository.getMatchById({
+            principal: collaboratorRepositoryPrincipal,
+            requestId: ids.collaboratorRequest,
+            matchId: ids.ownerRotatedMatch,
+          }),
+        ).resolves.toBeUndefined();
+        await expect(
+          repository.decideMatch({
+            principal: ownerRotatedRepositoryPrincipal,
+            requestId: ids.ownerRotatedRequest,
+            documentId: ids.ownerRotatedDocument,
+            matchId: ids.ownerRotatedMatch,
+            reviewBatchId: ids.ownerRotatedReviewBatch,
+            decision: 'accepted',
+          }),
+        ).resolves.toEqual({ status: 'decided', state: 'accepted' });
+
+        for (const [principal, requestId] of [
+          [changedSessionPrincipal, ids.ownerReplayRequest],
+          [changedScopePrincipal, ids.ownerRotatedRequest],
+          [collaboratorRepositoryPrincipal, ids.collaboratorRequest],
+        ] as const) {
+          await expect(
+            repository.getCommittedReviewAuthorization({
+              principal,
+              requestId,
+              documentId: ids.ownerRotatedDocument,
+              reviewToken,
+            }),
+          ).resolves.toBeUndefined();
+        }
+
+        const provenance = await admin.query<{ spaceAccessGrantId: string }>(
+          `select space_access_grant_id::text as "spaceAccessGrantId"
+             from emdo.finance_document_review_batches
+            where id = $1`,
+          [ids.ownerRotatedReviewBatch],
+        );
+        expect(provenance.rows).toEqual([
+          { spaceAccessGrantId: ids.ownerSpaceAccessGrant },
+        ]);
+      } finally {
+        await admin.query(
+          `delete from emdo.finance_document_matches where id = $1`,
+          [ids.ownerRotatedMatch],
+        );
+        await admin.query(
+          `delete from emdo.finance_document_chunks where id = $1`,
+          [ids.ownerRotatedChunk],
+        );
+        await admin.query(
+          `delete from emdo.finance_document_review_batches where id = $1`,
+          [ids.ownerRotatedReviewBatch],
+        );
+        await admin.query(
+          `delete from emdo.finance_document_extractions where id = $1`,
+          [ids.ownerRotatedExtraction],
+        );
+        await admin.query(`delete from emdo.finance_documents where id = $1`, [
+          ids.ownerRotatedDocument,
+        ]);
+      }
     });
 
     it('provisions the exact synthetic Finance account once per owner-private scope and audits only first applies', async () => {

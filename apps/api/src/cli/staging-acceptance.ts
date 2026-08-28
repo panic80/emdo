@@ -1287,8 +1287,7 @@ const approveAndResumeFinanceTurn = async (input: {
     proof.proposalId !== proposal.id ||
     proof.proposalVersion !== proposal.version ||
     proof.payloadHash !== proposal.payloadHash ||
-    proof.approvalHash !== proposal.approvalHash ||
-    proof.replayed
+    proof.approvalHash !== proposal.approvalHash
   ) {
     throw new Error('Finance visual proof is not bound to the proposal');
   }
