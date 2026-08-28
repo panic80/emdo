@@ -35,6 +35,48 @@ assert_staging_secret_manifest "$SECRETS_DIR"
 require_command curl
 require_command node
 
+finance_extraction_terminal_failure_diagnostic() {
+  local acceptance_stderr_path="$1"
+  local acceptance_failure acceptance_failure_found=false
+  local acceptance_stderr_bytes diagnostic safe_error_code attempt extra
+
+  [[ -f "$acceptance_stderr_path" && ! -L "$acceptance_stderr_path" ]] || return 1
+  acceptance_stderr_bytes="$(LC_ALL=C wc -c < "$acceptance_stderr_path")" || return 1
+  [[ "$acceptance_stderr_bytes" =~ ^[[:space:]]*([0-9]+)[[:space:]]*$ ]] || return 1
+  acceptance_stderr_bytes="${BASH_REMATCH[1]}"
+  ((acceptance_stderr_bytes <= 4096)) || return 1
+  while IFS= read -r acceptance_failure || [[ -n "$acceptance_failure" ]]; do
+    if [[ "$acceptance_failure" == 'Staging acceptance failed at stage=document-extraction-terminal.' ]]; then
+      acceptance_failure_found=true
+    fi
+  done < "$acceptance_stderr_path"
+  [[ "$acceptance_failure_found" == true ]] || return 1
+
+  # This compose project and database are created per STAGING_RUN_ID. Select
+  # only persisted terminal metadata, never a document identifier or payload.
+  diagnostic="$(staging_compose exec -T postgres psql \
+    --username postgres --dbname emdo_app --no-psqlrc \
+    --tuples-only --no-align --field-separator '|' --quiet \
+    --set ON_ERROR_STOP=1 \
+    --command "SELECT safe_error_code, attempt FROM emdo.finance_document_extractions WHERE state = 'failed' AND completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 1;" \
+    2>/dev/null)" || return 1
+  [[ "$diagnostic" != *$'\n'* ]] || return 1
+  IFS='|' read -r safe_error_code attempt extra <<<"$diagnostic"
+  [[ -z "$extra" ]] || return 1
+
+  case "$safe_error_code" in
+    worker-completion-rejected | worker-document-metadata-invalid | worker-extraction-failed | worker-extraction-invalid | worker-interrupted | worker-invalid-claim | worker-original-integrity-invalid | worker-original-unavailable | worker-payload-encryption-failed | worker-provider-credential-unavailable | worker-provider-rejected | worker-provider-request-invalid | worker-provider-response-invalid | worker-provider-unavailable | worker-timeout) ;;
+    *) return 1 ;;
+  esac
+  case "$attempt" in
+    1 | 2) ;;
+    *) return 1 ;;
+  esac
+
+  printf 'Staging acceptance failed at stage=document-extraction-terminal outcome=%s attempt=%s.\n' \
+    "$safe_error_code" "$attempt" >&2
+}
+
 assert_compose_healthy staging_compose
 curl --fail --silent --show-error \
   "http://127.0.0.1:$STAGING_HTTP_PORT/healthz" >/dev/null
@@ -42,6 +84,7 @@ curl --fail --silent --show-error \
 if [[ "$EMDO_FINANCE_SYNTHETIC_STAGING" == true ]]; then
   finance_handoff_path="$(finance_staging_restore_verifier_input_path "$state_dir")"
   finance_probe_pending=''
+  finance_acceptance_stderr=''
   finance_document_id=''
   finance_evidence_id=''
 
@@ -51,6 +94,9 @@ if [[ "$EMDO_FINANCE_SYNTHETIC_STAGING" == true ]]; then
     trap - EXIT
     if [[ -n "$finance_probe_pending" && -e "$finance_probe_pending" && ! -L "$finance_probe_pending" ]]; then
       rm -f -- "$finance_probe_pending" || true
+    fi
+    if [[ -n "$finance_acceptance_stderr" && -e "$finance_acceptance_stderr" && ! -L "$finance_acceptance_stderr" ]]; then
+      rm -f -- "$finance_acceptance_stderr" || true
     fi
     # The bind source must remain present until compose teardown, but never
     # retain a partial or unconsumed bearer-bearing write after a failed run.
@@ -73,9 +119,12 @@ if [[ "$EMDO_FINANCE_SYNTHETIC_STAGING" == true ]]; then
   # document and turn contracts, while this shell proves the real sidecar is
   # alive without reading its provider traffic, key, or document contents.
   finance_probe_pending="$(mktemp "$state_dir/.finance-synthetic-staging-probe.XXXXXX")"
+  finance_acceptance_stderr="$(mktemp "$state_dir/.finance-synthetic-staging-acceptance.XXXXXX")"
   chmod 0600 "$finance_probe_pending"
+  chmod 0600 "$finance_acceptance_stderr"
   chown 0:0 "$finance_probe_pending"
-  staging_compose --profile operations run --rm --no-deps \
+  chown 0:0 "$finance_acceptance_stderr"
+  if staging_compose --profile operations run --rm --no-deps \
     --env EMDO_FINANCE_SYNTHETIC_STAGING=true \
     staging-acceptance \
       node \
@@ -84,7 +133,18 @@ if [[ "$EMDO_FINANCE_SYNTHETIC_STAGING" == true ]]; then
       --require-synthetic \
       --forbid-worker-provider-execution \
       --finance-synthetic-document-gates \
-    > "$finance_probe_pending"
+    > "$finance_probe_pending" 2> "$finance_acceptance_stderr"; then
+    rm -f -- "$finance_acceptance_stderr"
+    finance_acceptance_stderr=''
+  else
+    finance_acceptance_status=$?
+    if ! finance_extraction_terminal_failure_diagnostic "$finance_acceptance_stderr"; then
+      printf '%s\n' 'Staging acceptance failed.' >&2
+    fi
+    rm -f -- "$finance_acceptance_stderr"
+    finance_acceptance_stderr=''
+    exit "$finance_acceptance_status"
+  fi
 
   node --input-type=module --eval '
     import { readFile } from "node:fs/promises";
