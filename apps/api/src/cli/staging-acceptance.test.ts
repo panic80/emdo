@@ -684,6 +684,7 @@ describe('staging acceptance CLI', () => {
   it('proves Finance phase 1 through guarded turns, then finalizes only from a receipt-bound root handoff', async () => {
     const requests: Request[] = [];
     const handoffs: unknown[] = [];
+    const phaseOneStages: FinanceAcceptanceStage[] = [];
     let uploaded:
       { readonly bytes: Buffer; readonly sha256: string } | undefined;
     let reviewReads = 0;
@@ -1283,6 +1284,9 @@ describe('staging acceptance CLI', () => {
       fetch,
       now: () => OBSERVED_AT,
       sleep: async () => undefined,
+      financeStageReporter: (stage) => {
+        phaseOneStages.push(stage);
+      },
       financeRestoreVerifierHandoffWriter: async (handoff) => {
         handoffs.push(handoff);
       },
@@ -1304,6 +1308,25 @@ describe('staging acceptance CLI', () => {
       ],
     });
     expect(handoffs).toHaveLength(1);
+    expect(phaseOneStages).toEqual([
+      'configuration',
+      'health-and-contract',
+      'owner-authentication',
+      'member-invitation',
+      'member-token-handoff',
+      'member-redemption',
+      'member-membership-readback',
+      'member-authentication',
+      'document-upload',
+      'document-extraction-terminal',
+      'document-original-readback',
+      'document-review-read-edit',
+      'document-direct-commit-denial',
+      'guarded-review-commit',
+      'guarded-delete-denial',
+      'qna-and-isolation',
+      'safe-write-and-handoff',
+    ]);
     expect(JSON.stringify(phaseOne)).not.toContain('finance-owner-session');
     expect(JSON.stringify(phaseOne)).not.toContain('Synthetic evidence.');
 

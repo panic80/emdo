@@ -151,6 +151,44 @@ const stream = (chunks: readonly Uint8Array[]): AsyncIterable<Uint8Array> => ({
   },
 });
 
+const schemaContainsKeyword = (value: unknown, keyword: string): boolean => {
+  if (Array.isArray(value)) {
+    return value.some((item) => schemaContainsKeyword(item, keyword));
+  }
+  if (value === null || typeof value !== 'object') return false;
+  return Object.entries(value).some(
+    ([key, nested]) =>
+      key === keyword || schemaContainsKeyword(nested, keyword),
+  );
+};
+
+const schemaObjectsRequireEveryProperty = (value: unknown): boolean => {
+  if (Array.isArray(value)) {
+    return value.every(schemaObjectsRequireEveryProperty);
+  }
+  if (value === null || typeof value !== 'object') return true;
+  const schema = value as Record<string, unknown>;
+  if (schema.type === 'object') {
+    if (
+      schema.properties === null ||
+      typeof schema.properties !== 'object' ||
+      Array.isArray(schema.properties) ||
+      !Array.isArray(schema.required)
+    ) {
+      return false;
+    }
+    const properties = Object.keys(schema.properties);
+    const required = schema.required;
+    if (
+      properties.length !== required.length ||
+      properties.some((property) => !required.includes(property))
+    ) {
+      return false;
+    }
+  }
+  return Object.values(schema).every(schemaObjectsRequireEveryProperty);
+};
+
 interface HarnessOptions {
   readonly claim?: unknown;
   readonly chunks?: readonly Uint8Array[];
@@ -269,9 +307,8 @@ const createHarness = (options: HarnessOptions = {}) => {
 
 describe('finance document extraction worker', () => {
   it('uses an OpenAI-compatible root object around the document variants', () => {
-    expect(
-      FINANCE_DOCUMENT_EXTRACTION_OUTPUT_CONTRACT.jsonSchema,
-    ).toMatchObject({
+    const jsonSchema = FINANCE_DOCUMENT_EXTRACTION_OUTPUT_CONTRACT.jsonSchema;
+    expect(jsonSchema).toMatchObject({
       type: 'object',
       properties: {
         envelope: {
@@ -281,15 +318,31 @@ describe('finance document extraction worker', () => {
       required: ['envelope'],
       additionalProperties: false,
     });
-    const serialized = JSON.stringify(
-      FINANCE_DOCUMENT_EXTRACTION_OUTPUT_CONTRACT.jsonSchema,
-    );
-    expect(serialized).not.toContain('"oneOf"');
+    expect(Object.keys(jsonSchema as Record<string, unknown>).sort()).toEqual([
+      'additionalProperties',
+      'properties',
+      'required',
+      'type',
+    ]);
+    const envelopeSchema = (
+      jsonSchema as { properties: { envelope: { anyOf: unknown[] } } }
+    ).properties.envelope;
+    expect(Object.keys(envelopeSchema)).toEqual(['anyOf']);
+    expect(envelopeSchema.anyOf).toHaveLength(10);
+    for (const keyword of ['oneOf', 'minLength', 'maxLength']) {
+      expect(schemaContainsKeyword(jsonSchema, keyword)).toBe(false);
+    }
+    expect(schemaObjectsRequireEveryProperty(jsonSchema)).toBe(true);
     expect(
       FINANCE_DOCUMENT_EXTRACTION_OUTPUT_CONTRACT.parse({ envelope }),
     ).toEqual(envelope);
     expect(() =>
       FINANCE_DOCUMENT_EXTRACTION_OUTPUT_CONTRACT.parse(envelope),
+    ).toThrow();
+    expect(() =>
+      FINANCE_DOCUMENT_EXTRACTION_OUTPUT_CONTRACT.parse({
+        envelope: { ...envelope, summary: 'x'.repeat(2_001) },
+      }),
     ).toThrow();
   });
 
