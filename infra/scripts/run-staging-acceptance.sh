@@ -104,6 +104,11 @@ finance_staging_acceptance_failure_diagnostic() {
     'Staging acceptance failed at stage=document-direct-commit-denial.' | \
     'Staging acceptance failed at stage=guarded-review-commit.' | \
     'Staging acceptance failed at stage=guarded-review-commit:initial-turn.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=turn-post-or-response-invalid.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=turn-acceptance-json-or-schema-invalid.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=initial-sse-request-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=initial-sse-framing-or-sequence-invalid.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=approval-terminal-invalid.' | \
     'Staging acceptance failed at stage=guarded-review-commit:approval-parsing.' | \
     'Staging acceptance failed at stage=guarded-review-commit:proposal-read.' | \
     'Staging acceptance failed at stage=guarded-review-commit:visual-proof.' | \

@@ -283,6 +283,13 @@ describe('Finance staging acceptance failure diagnostic', () => {
     '201-json-or-schema-invalid',
     'synthetic-metadata-or-hash-mismatch',
   ];
+  const initialTurnOutcomes = [
+    'turn-post-or-response-invalid',
+    'turn-acceptance-json-or-schema-invalid',
+    'initial-sse-request-failed',
+    'initial-sse-framing-or-sequence-invalid',
+    'approval-terminal-invalid',
+  ];
   const acceptedFailures = [
     ...stages.map(stagingFailure),
     ...memberInvitationOutcomes.map((outcome) =>
@@ -290,6 +297,9 @@ describe('Finance staging acceptance failure diagnostic', () => {
     ),
     ...documentUploadOutcomes.map((outcome) =>
       stagingFailure(`document-upload outcome=${outcome}`),
+    ),
+    ...initialTurnOutcomes.map((outcome) =>
+      stagingFailure(`guarded-review-commit:initial-turn outcome=${outcome}`),
     ),
   ];
 
@@ -400,6 +410,7 @@ exit 43`,
         `${safeFailure}\n${safeFailure}`,
         `${safeFailure}\n${stagingFailure('configuration')}\n`,
         `${safeFailure} extra=value\n`,
+        `${stagingFailure('guarded-review-commit:initial-turn outcome=unknown-private-outcome')}\n`,
         `${safeFailure}`,
         `${secret}\n`,
         `content-free compose status\n${secret}\n`,
