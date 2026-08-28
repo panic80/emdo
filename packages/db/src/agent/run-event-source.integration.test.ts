@@ -666,7 +666,7 @@ describeDatabase(
 
       const terminal = await admin.query<{
         state: string;
-        terminal_event_sequence: number;
+        terminal_event_sequence: string;
         terminal_result_hash: string;
       }>(
         `select state, terminal_event_sequence, terminal_result_hash
@@ -700,7 +700,7 @@ describeDatabase(
       expect(terminal.rows).toEqual([
         {
           state: 'terminal',
-          terminal_event_sequence: 3,
+          terminal_event_sequence: '3',
           terminal_result_hash: expectedTerminalResultHash,
         },
       ]);
