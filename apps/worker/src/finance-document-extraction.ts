@@ -253,11 +253,49 @@ const providerOutputSchema = z.strictObject({
   envelope: FinanceDocumentEnvelopeV1Schema,
 });
 
+const isJsonSchemaRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null &&
+  typeof value === 'object' &&
+  !Array.isArray(value) &&
+  (Object.getPrototypeOf(value) === Object.prototype ||
+    Object.getPrototypeOf(value) === null);
+
+/**
+ * OpenAI Structured Outputs does not support JSON Schema's string length
+ * keywords. The domain parser below retains those constraints after the
+ * provider returns its otherwise-schema-constrained JSON.
+ */
+const sanitizeProviderJsonSchema = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map(sanitizeProviderJsonSchema));
+  }
+  if (!isJsonSchemaRecord(value)) {
+    if (value !== null && typeof value === 'object') {
+      throw new Error('Finance document provider schema is invalid');
+    }
+    return value;
+  }
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (
+      (key === 'minLength' || key === 'maxLength') &&
+      typeof nested === 'number'
+    ) {
+      continue;
+    }
+    sanitized[key] = sanitizeProviderJsonSchema(nested);
+  }
+  return Object.freeze(sanitized);
+};
+
 const outputJsonSchema = (() => {
   const generated = z.toJSONSchema(FinanceDocumentEnvelopeV1Schema, {
     io: 'input',
     target: 'draft-2020-12',
-  }) as Record<string, unknown>;
+  });
+  if (!isJsonSchemaRecord(generated)) {
+    throw new Error('Finance document provider schema is invalid');
+  }
   const variants = generated.oneOf;
   const unexpectedKeys = Object.keys(generated).filter(
     (key) => key !== '$schema' && key !== 'oneOf',
@@ -269,11 +307,15 @@ const outputJsonSchema = (() => {
   ) {
     throw new Error('Finance document provider schema is invalid');
   }
+  const sanitizedVariants = variants.map(sanitizeProviderJsonSchema);
+  if (sanitizedVariants.some((variant) => !isJsonSchemaRecord(variant))) {
+    throw new Error('Finance document provider schema is invalid');
+  }
   return Object.freeze({
     type: 'object',
     properties: Object.freeze({
       envelope: Object.freeze({
-        anyOf: Object.freeze([...variants]),
+        anyOf: Object.freeze(sanitizedVariants),
       }),
     }),
     required: Object.freeze(['envelope']),

@@ -85,7 +85,11 @@ const FinanceStagingAcceptanceStageSchema = z.enum([
   'member-redemption',
   'member-membership-readback',
   'member-authentication',
-  'document-ingestion-and-review',
+  'document-upload',
+  'document-extraction-terminal',
+  'document-original-readback',
+  'document-review-read-edit',
+  'document-direct-commit-denial',
   'guarded-review-commit',
   'guarded-delete-denial',
   'qna-and-isolation',
@@ -1693,7 +1697,7 @@ const runFinanceStagingAcceptance = async (
     ...cookiesFrom(memberCsrfResponse),
   ].join('; ');
 
-  input.financeStageReporter?.('document-ingestion-and-review');
+  input.financeStageReporter?.('document-upload');
   const form = new FormData();
   const fixtureBytes = new Uint8Array(SYNTHETIC_FINANCE_PDF.byteLength);
   fixtureBytes.set(SYNTHETIC_FINANCE_PDF);
@@ -1727,6 +1731,7 @@ const runFinanceStagingAcceptance = async (
     throw new Error('Finance synthetic document upload readback is invalid');
   }
 
+  input.financeStageReporter?.('document-extraction-terminal');
   await waitForFinanceReview({
     documentId,
     send,
@@ -1735,6 +1740,7 @@ const runFinanceStagingAcceptance = async (
     maxPolls,
   });
 
+  input.financeStageReporter?.('document-original-readback');
   const original = await send(
     `/api/v1/finance/documents/${encodeURIComponent(documentId)}/original`,
     { headers: { cookie: ownerCookie } },
@@ -1756,6 +1762,7 @@ const runFinanceStagingAcceptance = async (
     throw new Error('Finance encrypted original hash readback failed');
   }
 
+  input.financeStageReporter?.('document-review-read-edit');
   const reviewResponse = await send(
     `/api/v1/finance/documents/${encodeURIComponent(documentId)}/review`,
     { headers: { cookie: ownerCookie } },
@@ -1798,6 +1805,7 @@ const runFinanceStagingAcceptance = async (
   ) {
     throw new Error('Finance review edit did not bind a new draft');
   }
+  input.financeStageReporter?.('document-direct-commit-denial');
   const directCommitDenied = await send(
     `/api/v1/finance/documents/${encodeURIComponent(documentId)}/review/commit`,
     {
