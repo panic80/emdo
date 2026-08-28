@@ -289,7 +289,7 @@ ${action}`,
       financeAcceptanceCommand,
     );
     expect(financeAcceptanceInvocations[0]?.[7]).toBe(
-      '> "$finance_probe_pending"',
+      '> "$finance_probe_pending" 2> "$finance_acceptance_stderr"; then',
     );
     expect(financeAcceptanceInvocations[1]?.slice(0, 7)).toEqual(
       financeAcceptanceCommand,
