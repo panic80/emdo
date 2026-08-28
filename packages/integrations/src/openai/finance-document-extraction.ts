@@ -45,6 +45,8 @@ export type OpenAiFinanceDocumentExtractionErrorKind =
   | 'network'
   | 'provider-rejected'
   | 'provider-unavailable'
+  | 'provider-rate-limited'
+  | 'provider-server-error'
   | 'response-too-large'
   | 'response-invalid';
 
@@ -118,7 +120,7 @@ export class OpenAiFinanceDocumentExtractionError extends Error {
   readonly kind: OpenAiFinanceDocumentExtractionErrorKind;
   readonly httpStatus?: number;
   readonly retryable: boolean;
-  readonly providerRequestId?: string;
+  declare readonly providerRequestId?: string;
 
   constructor(input: {
     readonly kind: OpenAiFinanceDocumentExtractionErrorKind;
@@ -131,7 +133,9 @@ export class OpenAiFinanceDocumentExtractionError extends Error {
     this.kind = input.kind;
     this.retryable = input.retryable;
     this.httpStatus = input.httpStatus;
-    this.providerRequestId = input.providerRequestId;
+    if (input.providerRequestId !== undefined) {
+      this.providerRequestId = input.providerRequestId;
+    }
     Object.freeze(this);
   }
 }
@@ -480,21 +484,17 @@ const throwForResponse = async (
     // Error response bodies are intentionally not read, logged, or returned.
   }
   const httpStatus = response.status;
-  const providerRequestId = safeRequestId(response);
   if (deadline.signal.aborted) throw abortError(deadline);
-  if (httpStatus === 408 || httpStatus === 504) {
-    throw transportError('timeout', true, { httpStatus, providerRequestId });
+  if (httpStatus === 408) {
+    throw transportError('timeout', true, { httpStatus });
   }
-  if (httpStatus === 429 || httpStatus >= 500) {
-    throw transportError('provider-unavailable', true, {
-      httpStatus,
-      providerRequestId,
-    });
+  if (httpStatus === 429) {
+    throw transportError('provider-rate-limited', true, { httpStatus });
   }
-  throw transportError('provider-rejected', false, {
-    httpStatus,
-    providerRequestId,
-  });
+  if (httpStatus >= 500 && httpStatus <= 599) {
+    throw transportError('provider-server-error', true, { httpStatus });
+  }
+  throw transportError('provider-rejected', false, { httpStatus });
 };
 
 const toBase64 = (bytes: Uint8Array): string => {
