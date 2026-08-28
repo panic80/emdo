@@ -172,10 +172,23 @@ type FinanceDocumentUploadDiagnostic = z.output<
   typeof FinanceDocumentUploadDiagnosticSchema
 >;
 
+const FinanceInitialGuardedReviewDiagnosticSchema = z.enum([
+  'turn-post-or-response-invalid',
+  'turn-acceptance-json-or-schema-invalid',
+  'initial-sse-request-failed',
+  'initial-sse-framing-or-sequence-invalid',
+  'approval-terminal-invalid',
+]);
+
+type FinanceInitialGuardedReviewDiagnostic = z.output<
+  typeof FinanceInitialGuardedReviewDiagnosticSchema
+>;
+
 type FinanceStagingAcceptanceProgress =
   | FinanceStagingAcceptanceStage
   | FinanceMemberInvitationDiagnostic
-  | FinanceDocumentUploadDiagnostic;
+  | FinanceDocumentUploadDiagnostic
+  | FinanceInitialGuardedReviewDiagnostic;
 
 const FinanceMemberInvitationOutcome = Object.freeze({
   'member-invitation:request-or-network-failed': 'request-or-network-failed',
@@ -215,6 +228,11 @@ export const formatStagingAcceptanceFailure = (
     FinanceDocumentUploadDiagnosticSchema.safeParse(progress);
   if (uploadDiagnostic.success) {
     return `Staging acceptance failed at stage=document-upload outcome=${uploadDiagnostic.data.slice('document-upload:'.length)}.\n`;
+  }
+  const initialGuardedReviewDiagnostic =
+    FinanceInitialGuardedReviewDiagnosticSchema.safeParse(progress);
+  if (initialGuardedReviewDiagnostic.success) {
+    return `Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=${initialGuardedReviewDiagnostic.data}.\n`;
   }
   const stage = FinanceStagingAcceptanceStageSchema.safeParse(progress);
   return stage.success
@@ -1209,12 +1227,14 @@ const financeOutputFromCompletedTerminal = (input: {
 
 type SameOriginSend = (path: string, init?: RequestInit) => Promise<Response>;
 
-const acceptFinanceTurn = async (input: {
+type FinanceTurnSubmissionInput = {
   readonly send: SameOriginSend;
   readonly mutationHeaders: Readonly<Record<string, string>>;
   readonly idempotencyKey: string;
   readonly message: string;
-}) => {
+};
+
+const submitFinanceTurn = async (input: FinanceTurnSubmissionInput) => {
   const response = await input.send('/api/v1/turns', {
     method: 'POST',
     headers: {
@@ -1232,33 +1252,52 @@ const acceptFinanceTurn = async (input: {
   if (response.status !== 202) {
     throw new Error('Finance EMDO turn was not accepted');
   }
+  return response;
+};
+
+const acceptFinanceTurn = async (input: FinanceTurnSubmissionInput) => {
+  const response = await submitFinanceTurn(input);
   return TurnAcceptanceSchema.parse(await requireOkJson(response));
 };
 
-const readFinanceTurnEvents = async (input: {
+type FinanceTurnEventsInput = {
   readonly send: SameOriginSend;
   readonly cookie: string;
   readonly turn: z.output<typeof TurnAcceptanceSchema>;
   readonly afterSequence: number;
   readonly expectedTerminalType: 'approval.required' | 'run.completed';
   readonly allowRunFailedTerminal?: boolean;
-}) =>
+};
+
+const requestFinanceTurnEvents = async (input: FinanceTurnEventsInput) => {
+  return input.send(input.turn.eventsPath, {
+    headers: {
+      cookie: input.cookie,
+      accept: 'text/event-stream',
+      ...(input.afterSequence === 0
+        ? {}
+        : { 'last-event-id': String(input.afterSequence) }),
+    },
+  });
+};
+
+const parseFinanceTurnEvents = async (
+  input: FinanceTurnEventsInput & { readonly response: Response },
+) =>
   readFiniteRunEvents({
-    response: await input.send(input.turn.eventsPath, {
-      headers: {
-        cookie: input.cookie,
-        accept: 'text/event-stream',
-        ...(input.afterSequence === 0
-          ? {}
-          : { 'last-event-id': String(input.afterSequence) }),
-      },
-    }),
+    response: input.response,
     runId: input.turn.runId,
     afterSequence: input.afterSequence,
     expectedTerminalType: input.expectedTerminalType,
     ...(input.allowRunFailedTerminal === undefined
       ? {}
       : { allowRunFailedTerminal: input.allowRunFailedTerminal }),
+  });
+
+const readFinanceTurnEvents = async (input: FinanceTurnEventsInput) =>
+  parseFinanceTurnEvents({
+    ...input,
+    response: await requestFinanceTurnEvents(input),
   });
 
 const approveAndResumeFinanceTurn = async (input: {
@@ -1943,29 +1982,70 @@ const runFinanceStagingAcceptance = async (
 
   input.financeStageReporter?.('guarded-review-commit');
   input.financeStageReporter?.('guarded-review-commit:initial-turn');
-  const guardedCommitTurn = await acceptFinanceTurn({
+  const guardedCommitTurnInput = {
     send,
     mutationHeaders,
     idempotencyKey: 'finance-staging-guarded-review-commit-v1',
     message: formatFinanceSyntheticStagingCommand({
       schemaVersion: 1,
-      action: 'commit-document-review',
+      action: 'commit-document-review' as const,
       documentId,
     }),
-  });
-  const guardedCommitInitialEvents = await readFinanceTurnEvents({
+  };
+  let guardedCommitTurnResponse: Response;
+  try {
+    guardedCommitTurnResponse = await submitFinanceTurn(guardedCommitTurnInput);
+  } catch (error) {
+    input.financeStageReporter?.('turn-post-or-response-invalid');
+    throw error;
+  }
+  let guardedCommitTurn: z.output<typeof TurnAcceptanceSchema>;
+  try {
+    guardedCommitTurn = TurnAcceptanceSchema.parse(
+      await requireOkJson(guardedCommitTurnResponse),
+    );
+  } catch (error) {
+    input.financeStageReporter?.('turn-acceptance-json-or-schema-invalid');
+    throw error;
+  }
+  const guardedCommitInitialEventsInput = {
     send,
     cookie: ownerCookie,
     turn: guardedCommitTurn,
     afterSequence: 0,
-    expectedTerminalType: 'approval.required',
-  });
+    expectedTerminalType: 'approval.required' as const,
+  };
+  let guardedCommitInitialEventsResponse: Response;
+  try {
+    guardedCommitInitialEventsResponse = await requestFinanceTurnEvents(
+      guardedCommitInitialEventsInput,
+    );
+  } catch (error) {
+    input.financeStageReporter?.('initial-sse-request-failed');
+    throw error;
+  }
+  let guardedCommitInitialEvents: readonly ParsedRunEvent[];
+  try {
+    guardedCommitInitialEvents = await parseFinanceTurnEvents({
+      ...guardedCommitInitialEventsInput,
+      response: guardedCommitInitialEventsResponse,
+    });
+  } catch (error) {
+    input.financeStageReporter?.('initial-sse-framing-or-sequence-invalid');
+    throw error;
+  }
   input.financeStageReporter?.('guarded-review-commit:approval-parsing');
-  const guardedCommitApproval = financeApprovalFromTerminal({
-    event: guardedCommitInitialEvents.at(-1),
-    runId: guardedCommitTurn.runId,
-    documentId,
-  });
+  let guardedCommitApproval: ReturnType<typeof financeApprovalFromTerminal>;
+  try {
+    guardedCommitApproval = financeApprovalFromTerminal({
+      event: guardedCommitInitialEvents.at(-1),
+      runId: guardedCommitTurn.runId,
+      documentId,
+    });
+  } catch (error) {
+    input.financeStageReporter?.('approval-terminal-invalid');
+    throw error;
+  }
   if (guardedCommitApproval.interruptionId.length === 0) {
     throw new Error('Finance guarded approval interruption is invalid');
   }

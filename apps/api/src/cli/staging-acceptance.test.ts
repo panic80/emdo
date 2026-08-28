@@ -693,6 +693,16 @@ describe('staging acceptance CLI', () => {
     let manualTransaction = false;
     let commitRunFailed = true;
     let deleteRunFailed = true;
+    let initialTurnFailure:
+      | 'turn-post-or-response-invalid'
+      | 'turn-acceptance-json-or-schema-invalid'
+      | 'initial-sse-request-failed'
+      | 'initial-sse-non-ok-or-non-sse'
+      | 'initial-sse-malformed-framing'
+      | 'initial-sse-sequence-discontinuity'
+      | 'initial-sse-terminal-ambiguous'
+      | 'approval-terminal-invalid'
+      | undefined;
     const reviewEnvelope = {
       schemaVersion: 1,
       sourceLocale: 'en-CA',
@@ -815,6 +825,21 @@ describe('staging acceptance CLI', () => {
                 argumentsPreview: { summary: 'Guarded finance mutation.' },
               },
             ],
+          },
+        },
+      ]);
+    const invalidApprovalEvents = (runId: string) =>
+      sse([
+        {
+          schemaVersion: 1,
+          runId,
+          sequence: 1,
+          type: 'approval.required',
+          occurredAt: '2026-08-12T15:05:01.000Z',
+          data: {
+            status: 'needs-approval',
+            runId,
+            interruptions: [],
           },
         },
       ]);
@@ -1161,8 +1186,24 @@ describe('staging acceptance CLI', () => {
             action: 'commit-document-review',
             documentId: FINANCE_DOCUMENT_ID,
           })
-        )
+        ) {
+          if (initialTurnFailure === 'turn-post-or-response-invalid') {
+            return new Response(
+              'cookie=initial-turn-private-cookie provider-body=initial-turn-private-body',
+              { status: 500, headers: { 'x-request-id': REQUEST_ID } },
+            );
+          }
+          if (initialTurnFailure === 'turn-acceptance-json-or-schema-invalid') {
+            return jsonWithRequestId(
+              {
+                privateValue:
+                  'cookie=initial-turn-private-cookie provider-body=initial-turn-private-body',
+              },
+              { status: 202 },
+            );
+          }
           return accepted(FINANCE_COMMIT_RUN_ID);
+        }
         if (
           body.message ===
           financeCommand({
@@ -1203,7 +1244,60 @@ describe('staging acceptance CLI', () => {
       if (url.pathname.startsWith('/api/v1/runs/')) {
         const runId = url.pathname.split('/')[4];
         const after = request.headers.get('last-event-id');
-        if (runId === FINANCE_COMMIT_RUN_ID)
+        if (runId === FINANCE_COMMIT_RUN_ID) {
+          if (after === null) {
+            if (initialTurnFailure === 'initial-sse-request-failed') {
+              throw new Error(
+                'cookie=initial-turn-private-cookie provider-body=initial-turn-private-body',
+              );
+            }
+            if (initialTurnFailure === 'initial-sse-non-ok-or-non-sse') {
+              return new Response(
+                'cookie=initial-turn-private-cookie provider-body=initial-turn-private-body',
+                {
+                  status: 503,
+                  headers: { 'content-type': 'text/plain' },
+                },
+              );
+            }
+            if (initialTurnFailure === 'initial-sse-malformed-framing') {
+              return new Response(
+                'data: cookie=initial-turn-private-cookie provider-body=initial-turn-private-body\n\n',
+                { headers: { 'content-type': 'text/event-stream' } },
+              );
+            }
+            if (initialTurnFailure === 'initial-sse-sequence-discontinuity') {
+              return sse([
+                {
+                  schemaVersion: 1,
+                  runId,
+                  sequence: 2,
+                  type: 'approval.required',
+                  occurredAt: '2026-08-12T15:05:01.000Z',
+                  data: {
+                    status: 'needs-approval',
+                    runId,
+                    interruptions: [],
+                  },
+                },
+              ]);
+            }
+            if (initialTurnFailure === 'initial-sse-terminal-ambiguous') {
+              return sse([
+                {
+                  schemaVersion: 1,
+                  runId,
+                  sequence: 1,
+                  type: 'run.completed',
+                  occurredAt: '2026-08-12T15:05:01.000Z',
+                  data: { status: 'completed', runId },
+                },
+              ]);
+            }
+            if (initialTurnFailure === 'approval-terminal-invalid') {
+              return invalidApprovalEvents(runId);
+            }
+          }
           return after === null
             ? approvalEvents(runId, FINANCE_COMMIT_PROPOSAL_ID)
             : commitRunFailed
@@ -1216,6 +1310,7 @@ describe('staging acceptance CLI', () => {
                   }),
                   2,
                 );
+        }
         if (runId === FINANCE_DELETE_RUN_ID)
           return after === null
             ? approvalEvents(runId, FINANCE_DELETE_PROPOSAL_ID)
@@ -1307,7 +1402,74 @@ describe('staging acceptance CLI', () => {
       manualTransaction = false;
       requests.length = 0;
       handoffs.length = 0;
+      initialTurnFailure = undefined;
     };
+    for (const { fixtureFailure, outcome } of [
+      {
+        fixtureFailure: 'turn-post-or-response-invalid',
+        outcome: 'turn-post-or-response-invalid',
+      },
+      {
+        fixtureFailure: 'turn-acceptance-json-or-schema-invalid',
+        outcome: 'turn-acceptance-json-or-schema-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-request-failed',
+        outcome: 'initial-sse-request-failed',
+      },
+      {
+        fixtureFailure: 'initial-sse-non-ok-or-non-sse',
+        outcome: 'initial-sse-framing-or-sequence-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-malformed-framing',
+        outcome: 'initial-sse-framing-or-sequence-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-sequence-discontinuity',
+        outcome: 'initial-sse-framing-or-sequence-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-terminal-ambiguous',
+        outcome: 'initial-sse-framing-or-sequence-invalid',
+      },
+      {
+        fixtureFailure: 'approval-terminal-invalid',
+        outcome: 'approval-terminal-invalid',
+      },
+    ] as const) {
+      resetFinanceFixture();
+      initialTurnFailure = fixtureFailure;
+      const initialTurnStages: FinanceAcceptanceStage[] = [];
+      await expect(
+        runStagingAcceptanceCommand({
+          argv: [
+            '--all-mvp-gates',
+            '--require-synthetic',
+            '--forbid-worker-provider-execution',
+            '--finance-synthetic-document-gates',
+          ],
+          environment: financeEnvironment,
+          fetch,
+          now: () => OBSERVED_AT,
+          sleep: async () => undefined,
+          financeStageReporter: (stage) => {
+            initialTurnStages.push(stage);
+          },
+        }),
+      ).rejects.toThrow();
+      const diagnostic = formatStagingAcceptanceFailure(
+        initialTurnStages.at(-1),
+      );
+      expect(diagnostic).toBe(
+        `Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=${outcome}.\n`,
+      );
+      expect(diagnostic).not.toContain('initial-turn-private-cookie');
+      expect(diagnostic).not.toContain('initial-turn-private-body');
+      expect(diagnostic).not.toContain(FINANCE_DOCUMENT_ID);
+      expect(diagnostic).not.toContain(REQUEST_ID);
+    }
+    resetFinanceFixture();
     await expect(
       runStagingAcceptanceCommand({
         argv: [
@@ -1608,6 +1770,9 @@ describe('staging acceptance CLI', () => {
       formatStagingAcceptanceFailure(
         'member-invitation:http-503-private-content' as never,
       ),
+    ).toBe('Staging acceptance failed.\n');
+    expect(
+      formatStagingAcceptanceFailure('initial-sse-private-content' as never),
     ).toBe('Staging acceptance failed.\n');
   });
 
