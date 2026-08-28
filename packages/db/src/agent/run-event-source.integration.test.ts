@@ -623,7 +623,7 @@ describeDatabase(
       );
 
       const storedEvents = await admin.query<{
-        sequence: number;
+        sequence: string;
         event_type: string;
         payload: unknown;
       }>(
@@ -639,7 +639,7 @@ describeDatabase(
         ),
       ).toEqual([
         {
-          sequence: 3,
+          sequence: '3',
           event_type: 'run.completed',
           payload: approvalResumeResult,
         },
