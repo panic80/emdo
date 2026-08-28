@@ -166,7 +166,7 @@ export interface CoreProductionAgentRuntimeDependencies extends Omit<
 }
 
 export interface CoreProductionAgentRuntime {
-  readonly orchestrator: AgentOrchestrator;
+  readonly orchestrator: ProductionRuntimeOrchestrator;
   readonly agentIds: readonly ['manager', 'scheduler'];
   readonly capabilityIds: readonly [
     'agent.scheduler.delegate',
@@ -186,7 +186,7 @@ export interface FinanceV1ProductionAgentRuntimeDependencies extends Omit<
 }
 
 export interface FinanceV1ProductionAgentRuntime {
-  readonly orchestrator: AgentOrchestrator;
+  readonly orchestrator: ProductionRuntimeOrchestrator;
   readonly agentIds: readonly ['manager', 'scheduler', 'finance'];
   readonly capabilityIds: typeof FINANCE_V1_CAPABILITY_IDS;
   readonly agentGraphHash: string;
@@ -202,7 +202,7 @@ export interface FinanceOnlyProductionAgentRuntimeDependencies extends Omit<
 }
 
 export interface FinanceOnlyProductionAgentRuntime {
-  readonly orchestrator: AgentOrchestrator;
+  readonly orchestrator: ProductionRuntimeOrchestrator;
   readonly agentIds: readonly ['manager', 'finance'];
   readonly capabilityIds: typeof FINANCE_ONLY_CAPABILITY_IDS;
   readonly agentGraphHash: string;
@@ -217,7 +217,7 @@ export interface ManagerOnlyProductionAgentRuntimeDependencies extends Omit<
 }
 
 export interface ManagerOnlyProductionAgentRuntime {
-  readonly orchestrator: AgentOrchestrator;
+  readonly orchestrator: ProductionRuntimeOrchestrator;
   readonly agentIds: readonly ['manager'];
   readonly capabilityIds: readonly [];
   readonly agentGraphHash: string;
@@ -230,6 +230,24 @@ const graphDefinitions = Object.freeze([
   financeAgentDefinition,
   shoppingAgentDefinition,
 ] as const);
+
+/**
+ * Section hints belong to the API's structural request envelope. The real
+ * model-backed orchestrator owns routing from the disclosed user request and
+ * deliberately receives the strict agent-core TurnInput only. The separate
+ * provider-free runtime continues to receive its allowlisted shopping hint.
+ */
+const withoutStructuralRouteHint = (
+  orchestrator: AgentOrchestrator,
+): ProductionRuntimeOrchestrator =>
+  Object.freeze({
+    runTurn: (input: ProductionRuntimeTurnInput) => {
+      const { routeHint, ...turn } = input;
+      void routeHint;
+      return orchestrator.runTurn(turn);
+    },
+    resumeTurn: (input: ResumeTurnInput) => orchestrator.resumeTurn(input),
+  });
 
 const coreManagerManifest = AgentManifestSchema.parse({
   ...managerAgentDefinition.manifest,
@@ -425,7 +443,7 @@ export const createProductionAgentRuntime = (
     sdkVersion: SDK_VERSION,
   });
   return Object.freeze({
-    orchestrator,
+    orchestrator: withoutStructuralRouteHint(orchestrator),
     agentIds: Object.freeze([
       'manager',
       'scheduler',
@@ -509,7 +527,7 @@ export const createCoreProductionAgentRuntime = (
     sdkVersion: SDK_VERSION,
   });
   return Object.freeze({
-    orchestrator,
+    orchestrator: withoutStructuralRouteHint(orchestrator),
     agentIds: Object.freeze(['manager', 'scheduler'] as const),
     capabilityIds: Object.freeze([...CORE_MVP_CAPABILITY_IDS] as const),
     agentGraphHash,
@@ -573,7 +591,7 @@ export const createManagerOnlyProductionAgentRuntime = (
     sdkVersion: SDK_VERSION,
   });
   return Object.freeze({
-    orchestrator,
+    orchestrator: withoutStructuralRouteHint(orchestrator),
     agentIds: Object.freeze(['manager'] as const),
     capabilityIds: Object.freeze([] as const),
     agentGraphHash,
@@ -644,7 +662,7 @@ export const createFinanceOnlyProductionAgentRuntime = (
     sdkVersion: SDK_VERSION,
   });
   return Object.freeze({
-    orchestrator,
+    orchestrator: withoutStructuralRouteHint(orchestrator),
     agentIds: Object.freeze(['manager', 'finance'] as const),
     capabilityIds: FINANCE_ONLY_CAPABILITY_IDS,
     agentGraphHash,
@@ -725,7 +743,7 @@ export const createFinanceV1ProductionAgentRuntime = (
     sdkVersion: SDK_VERSION,
   });
   return Object.freeze({
-    orchestrator,
+    orchestrator: withoutStructuralRouteHint(orchestrator),
     agentIds: Object.freeze(['manager', 'scheduler', 'finance'] as const),
     capabilityIds: FINANCE_V1_CAPABILITY_IDS,
     agentGraphHash,
