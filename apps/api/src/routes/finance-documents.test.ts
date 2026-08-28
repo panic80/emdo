@@ -326,6 +326,35 @@ describe('finance document HTTP boundary', () => {
     await app.close();
   });
 
+  it('maps finance document gateway unavailability to a content-free problem response', async () => {
+    const { services, financeDocuments } = buildServices();
+    financeDocuments.upload.mockRejectedValueOnce(
+      Object.assign(
+        new Error('storage endpoint timeout: internal bucket and raw bytes'),
+        { code: 'finance-documents-unavailable' },
+      ),
+    );
+    const app = await createApp({ services });
+    const response = await injectUpload(app, {
+      body: '%PDF private-statement',
+    });
+
+    expect(response.statusCode, response.body).toBe(503);
+    expect(response.headers['content-type']).toContain(
+      'application/problem+json',
+    );
+    expect(response.json()).toMatchObject({
+      code: 'finance-documents-unavailable',
+      title: 'Finance documents unavailable',
+      detail: 'The finance document operation could not be completed safely.',
+      status: 503,
+    });
+    expect(response.body).not.toContain('storage endpoint timeout');
+    expect(response.body).not.toContain('internal bucket');
+    expect(response.body).not.toContain('private-statement');
+    await app.close();
+  });
+
   it('rejects missing mutation proof and a wrong upload field before dispatch', async () => {
     const { services, financeDocuments } = buildServices();
     const app = await createApp({ services });

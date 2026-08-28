@@ -1544,8 +1544,48 @@ describe('staging acceptance CLI', () => {
       expectedFailure:
         'Staging acceptance failed at stage=member-membership-readback.\n',
     },
+    {
+      failurePath: '/api/v1/finance/documents',
+      failure: { kind: 'throw' },
+      expectedFailure:
+        'Staging acceptance failed at stage=document-upload outcome=request-or-network-failed.\n',
+    },
+    {
+      failurePath: '/api/v1/finance/documents',
+      failure: { kind: 'problem', status: 500, code: 'internal-error' },
+      expectedFailure:
+        'Staging acceptance failed at stage=document-upload outcome=http-500-internal-error.\n',
+    },
+    {
+      failurePath: '/api/v1/finance/documents',
+      failure: {
+        kind: 'problem',
+        status: 503,
+        code: 'finance-documents-unavailable',
+      },
+      expectedFailure:
+        'Staging acceptance failed at stage=document-upload outcome=http-503-finance-documents-unavailable.\n',
+    },
+    {
+      failurePath: '/api/v1/finance/documents',
+      failure: { kind: 'malformed-problem' },
+      expectedFailure:
+        'Staging acceptance failed at stage=document-upload outcome=http-problem-unrecognized.\n',
+    },
+    {
+      failurePath: '/api/v1/finance/documents',
+      failure: { kind: 'invalid-upload-readback' },
+      expectedFailure:
+        'Staging acceptance failed at stage=document-upload outcome=201-json-or-schema-invalid.\n',
+    },
+    {
+      failurePath: '/api/v1/finance/documents',
+      failure: { kind: 'upload-metadata-mismatch' },
+      expectedFailure:
+        'Staging acceptance failed at stage=document-upload outcome=synthetic-metadata-or-hash-mismatch.\n',
+    },
   ] as const)(
-    'reports only a fixed member provisioning failure outcome',
+    'reports only a fixed member provisioning or document upload failure outcome',
     async ({ failurePath, failure, expectedFailure }) => {
       const sensitiveFailure =
         'cookie=owner-secret token=invitation-secret member=private-id';
@@ -1588,6 +1628,32 @@ describe('staging acceptance CLI', () => {
               },
             );
           }
+          if (failure.kind === 'invalid-upload-readback') {
+            return jsonWithRequestId(
+              { privateDocumentContent: sensitiveFailure },
+              { status: 201 },
+            );
+          }
+          if (failure.kind === 'upload-metadata-mismatch') {
+            return jsonWithRequestId(
+              {
+                schemaVersion: 1,
+                id: FINANCE_DOCUMENT_ID,
+                documentType: null,
+                sourceLocale: null,
+                currency: null,
+                state: 'uploaded',
+                displayName: 'private-statement.pdf',
+                mimeType: 'application/pdf',
+                byteSize: 1,
+                plaintextSha256: 'e'.repeat(64),
+                extractionRevision: null,
+                createdAt: '2026-08-12T15:00:00.000Z',
+                updatedAt: '2026-08-12T15:00:00.000Z',
+              },
+              { status: 201 },
+            );
+          }
           return jsonWithRequestId(
             {
               schemaVersion: 1,
@@ -1612,31 +1678,48 @@ describe('staging acceptance CLI', () => {
             openapi: '3.1.0',
             paths: financeMemberOpenApiSurface,
           });
-        if (path === '/api/auth/sign-in/email')
+        if (path === '/api/auth/sign-in/email') {
+          const body = (await request.json()) as { email: string };
+          const member = body.email === FINANCE_MEMBER_EMAIL;
           return new Response('{"ok":true}', {
             status: 200,
             headers: {
               'content-type': 'application/json',
-              'set-cookie':
-                '__Secure-emdo.session_token=finance-owner-session; Path=/; Secure; HttpOnly',
+              'set-cookie': `__Secure-emdo.session_token=${member ? 'finance-member-session' : 'finance-owner-session'}; Path=/; Secure; HttpOnly`,
             },
           });
-        if (path === '/api/auth/get-session')
-          return Response.json({ user: { id: USER_ID } });
-        if (path === '/api/v1/auth/csrf')
+        }
+        if (path === '/api/auth/get-session') {
+          const member =
+            request.headers
+              .get('cookie')
+              ?.includes('finance-member-session') === true;
+          return Response.json({
+            user: { id: member ? FINANCE_MEMBER_USER_ID : USER_ID },
+          });
+        }
+        if (path === '/api/v1/auth/csrf') {
+          const member =
+            request.headers
+              .get('cookie')
+              ?.includes('finance-member-session') === true;
+          const token = member
+            ? 'finance-member-csrf-token-0123456789'
+            : 'finance-owner-csrf-token-01234567890123456789';
           return new Response(
             JSON.stringify({
               schemaVersion: 1,
-              token: 'finance-owner-csrf-token-01234567890123456789',
+              token,
             }),
             {
               headers: {
                 'content-type': 'application/json',
-                'set-cookie':
-                  'emdo.csrf_token=finance-owner-csrf-token-01234567890123456789; Path=/api/; Secure; HttpOnly',
+                'set-cookie': `emdo.csrf_token=${token}; Path=/api/; Secure; HttpOnly`,
+                'x-request-id': REQUEST_ID,
               },
             },
           );
+        }
         if (path === '/api/v1/household/invitations')
           return jsonWithRequestId(
             {
@@ -1727,6 +1810,8 @@ describe('staging acceptance CLI', () => {
       expect(message).not.toContain('owner-secret');
       expect(message).not.toContain('invitation-secret');
       expect(message).not.toContain('private-id');
+      expect(message).not.toContain('private-statement');
+      expect(message).not.toContain(REQUEST_ID);
     },
   );
 
