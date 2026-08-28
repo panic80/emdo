@@ -699,6 +699,7 @@ describe('staging acceptance CLI', () => {
       | 'initial-sse-request-failed'
       | 'initial-sse-non-ok'
       | 'initial-sse-non-sse'
+      | 'initial-sse-invalid-media-type-suffix'
       | 'initial-sse-declared-oversized'
       | 'initial-sse-body-oversized'
       | 'initial-sse-reader-error'
@@ -1278,6 +1279,26 @@ describe('staging acceptance CLI', () => {
                 { headers: { 'content-type': 'text/plain' } },
               );
             }
+            if (
+              initialTurnFailure === 'initial-sse-invalid-media-type-suffix'
+            ) {
+              const response = sse([
+                {
+                  schemaVersion: 1,
+                  runId,
+                  sequence: 1,
+                  type: 'approval.required',
+                  occurredAt: '2026-08-12T15:05:01.000Z',
+                  data: {
+                    status: 'needs-approval',
+                    runId,
+                    interruptions: [],
+                  },
+                },
+              ]);
+              response.headers.set('content-type', 'text/event-stream-bogus');
+              return response;
+            }
             if (initialTurnFailure === 'initial-sse-declared-oversized') {
               return new Response(
                 'id: 1\nevent: approval.required\ndata: {}\n\n',
@@ -1568,6 +1589,10 @@ describe('staging acceptance CLI', () => {
       },
       {
         fixtureFailure: 'initial-sse-non-sse',
+        outcome: 'initial-sse-http-or-content-type-invalid',
+      },
+      {
+        fixtureFailure: 'initial-sse-invalid-media-type-suffix',
         outcome: 'initial-sse-http-or-content-type-invalid',
       },
       {

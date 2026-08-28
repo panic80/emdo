@@ -728,10 +728,16 @@ const readBoundedSseText = async (input: {
   readonly initialSseDiagnostic?: boolean;
 }): Promise<string> => {
   const { response } = input;
+  const responseMediaType = response.headers
+    .get('content-type')
+    ?.split(';', 1)
+    .at(0)
+    ?.trim()
+    .toLowerCase();
   if (
     !response.ok ||
     response.redirected ||
-    !response.headers.get('content-type')?.startsWith('text/event-stream')
+    responseMediaType !== 'text/event-stream'
   ) {
     throwSseFailure(
       input.initialSseDiagnostic,
