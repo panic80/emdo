@@ -621,6 +621,27 @@ describe('finance document extraction worker', () => {
 
   it.each([
     ['network', 'worker-provider-network-unavailable'],
+    [
+      'provider-credit-balance-exhausted',
+      'worker-provider-credit-balance-exhausted',
+    ],
+    [
+      'provider-organization-spend-limit-exceeded',
+      'worker-provider-organization-spend-limit-exceeded',
+    ],
+    [
+      'provider-organization-usage-limit-exceeded',
+      'worker-provider-organization-usage-limit-exceeded',
+    ],
+    [
+      'provider-project-spend-limit-exceeded',
+      'worker-provider-project-spend-limit-exceeded',
+    ],
+    ['provider-quota-exhausted', 'worker-provider-quota-exhausted'],
+    [
+      'provider-rate-limit-unclassified',
+      'worker-provider-rate-limit-unclassified',
+    ],
     ['provider-rate-limited', 'worker-provider-rate-limited'],
     ['provider-rejected', 'worker-provider-rejected'],
     ['provider-server-error', 'worker-provider-server-error'],
@@ -628,14 +649,17 @@ describe('finance document extraction worker', () => {
   ] as const)(
     'maps provider failure %s to %s, settles once, and retains no sensitive detail',
     async (kind, safeErrorCode) => {
-      const providerSecret = 'req_private_provider_detail';
+      const providerSecret = 'provider_private_detail';
       const documentSecret = 'document_private_detail';
+      const requestSecret = 'request_private_detail';
+      const bodySecret = 'body_private_detail';
+      const arbitraryCodeSecret = 'arbitrary_private_code';
       const { worker, calls } = createHarness({
         extraction: async () => {
           throw new OpenAiFinanceDocumentExtractionError({
             kind,
             retryable: false,
-            providerRequestId: providerSecret,
+            providerRequestId: `${providerSecret}:${requestSecret}:${bodySecret}:${arbitraryCodeSecret}`,
           });
         },
       });
@@ -659,6 +683,9 @@ describe('finance document extraction worker', () => {
       });
       expect(persistedValues).not.toContain(providerSecret);
       expect(persistedValues).not.toContain(documentSecret);
+      expect(persistedValues).not.toContain(requestSecret);
+      expect(persistedValues).not.toContain(bodySecret);
+      expect(persistedValues).not.toContain(arbitraryCodeSecret);
     },
   );
 

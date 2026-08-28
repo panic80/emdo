@@ -110,6 +110,30 @@ const completedResponse = (extraction: unknown, requestId = 'req_safe_1') =>
     },
   );
 
+const byteResponse = (body: string, init: ResponseInit): Response => {
+  const bytes = new TextEncoder().encode(body);
+  let offset = 0;
+  const source: UnderlyingByteSource = {
+    type: 'bytes',
+    pull(controller) {
+      const request = controller.byobRequest;
+      if (request === null || !(request.view instanceof Uint8Array)) {
+        controller.error(new Error('expected-byte-oriented-reader'));
+        return;
+      }
+      const length = Math.min(
+        request.view.byteLength,
+        bytes.byteLength - offset,
+      );
+      request.view.set(bytes.subarray(offset, offset + length));
+      offset += length;
+      request.respond(length);
+      if (offset === bytes.byteLength) controller.close();
+    },
+  };
+  return new Response(new ReadableStream(source, { highWaterMark: 0 }), init);
+};
+
 const extractionRequest = (
   signal = new AbortController().signal,
 ): Parameters<OpenAiFetchFinanceDocumentExtractionTransport['extract']>[0] => ({
@@ -387,7 +411,10 @@ describe('OpenAiFetchFinanceDocumentExtractionTransport', () => {
       await expect(
         transport.extract(extractionRequest()),
       ).rejects.toMatchObject({
-        kind: status === 401 ? 'provider-rejected' : 'provider-rate-limited',
+        kind:
+          status === 401
+            ? 'provider-rejected'
+            : 'provider-rate-limit-unclassified',
       });
       expect(calls).toBe(1);
     }
@@ -421,11 +448,11 @@ describe('OpenAiFetchFinanceDocumentExtractionTransport', () => {
         expected: { kind: 'network', retryable: true },
       },
       {
-        name: 'rate limit',
+        name: 'non-JSON rate limit',
         status: 429,
         expected: {
-          kind: 'provider-rate-limited',
-          retryable: true,
+          kind: 'provider-rate-limit-unclassified',
+          retryable: false,
         },
       },
       {
@@ -510,6 +537,352 @@ describe('OpenAiFetchFinanceDocumentExtractionTransport', () => {
         expect(responses, testCase.name).toHaveLength(1);
         expect(responses[0]?.bodyUsed, testCase.name).toBe(true);
       }
+    }
+  });
+
+  it('classifies OpenAI 429 JSON codes without retaining provider data', async () => {
+    const privateDetail = 'private household tax document detail';
+    const privateRequestId = 'req_private_provider_detail';
+    const arbitraryCode = 'private-unrecognized-provider-code';
+    const cases = [
+      {
+        name: 'credit balance exhausted',
+        body: {
+          error: {
+            code: 'credit_balance_exhausted',
+            message: privateDetail,
+          },
+        },
+        headers: { 'retry-after': '60' },
+        expected: {
+          kind: 'provider-credit-balance-exhausted',
+          retryable: false,
+        },
+      },
+      {
+        name: 'organization spend limit exhausted',
+        body: {
+          error: {
+            code: 'organization_spend_limit_exceeded',
+            message: privateDetail,
+          },
+        },
+        expected: {
+          kind: 'provider-organization-spend-limit-exceeded',
+          retryable: false,
+        },
+      },
+      {
+        name: 'project spend limit exhausted',
+        body: {
+          error: {
+            code: 'project_spend_limit_exceeded',
+            message: privateDetail,
+          },
+        },
+        expected: {
+          kind: 'provider-project-spend-limit-exceeded',
+          retryable: false,
+        },
+      },
+      {
+        name: 'organization usage limit exhausted',
+        body: {
+          error: {
+            code: 'organization_usage_limit_exceeded',
+            message: privateDetail,
+          },
+        },
+        expected: {
+          kind: 'provider-organization-usage-limit-exceeded',
+          retryable: false,
+        },
+      },
+      {
+        name: 'legacy insufficient quota code',
+        body: {
+          error: { code: 'insufficient_quota', message: privateDetail },
+        },
+        expected: { kind: 'provider-quota-exhausted', retryable: false },
+      },
+      {
+        name: 'legacy insufficient quota type',
+        body: {
+          error: {
+            code: null,
+            message: privateDetail,
+            type: 'insufficient_quota',
+          },
+        },
+        expected: { kind: 'provider-quota-exhausted', retryable: false },
+      },
+      {
+        name: 'ordinary rate limit code',
+        body: {
+          error: { code: 'rate_limit_exceeded', message: privateDetail },
+        },
+        expected: { kind: 'provider-rate-limited', retryable: true },
+      },
+      {
+        name: 'safe Retry-After rate limit',
+        body: { error: { code: arbitraryCode, message: privateDetail } },
+        headers: { 'retry-after': '1' },
+        expected: { kind: 'provider-rate-limited', retryable: true },
+      },
+      {
+        name: 'unclassified rate limit',
+        body: { error: { code: arbitraryCode, message: privateDetail } },
+        expected: {
+          kind: 'provider-rate-limit-unclassified',
+          retryable: false,
+        },
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      let calls = 0;
+      let dispatches = 0;
+      const transport = new OpenAiFetchFinanceDocumentExtractionTransport({
+        fetch: async () => {
+          calls += 1;
+          return byteResponse(JSON.stringify(testCase.body), {
+            status: 429,
+            headers: {
+              'content-type': 'application/json; charset=utf-8',
+              'x-request-id': privateRequestId,
+              ...('headers' in testCase ? testCase.headers : {}),
+            },
+          });
+        },
+        getApiKey: () => apiKey,
+      });
+
+      const failure = await transport
+        .extract({
+          ...extractionRequest(),
+          onDispatch: async () => {
+            dispatches += 1;
+          },
+        })
+        .catch((error: unknown) => error);
+
+      expect(failure, testCase.name).toBeInstanceOf(
+        OpenAiFinanceDocumentExtractionError,
+      );
+      expect(failure, testCase.name).toMatchObject({
+        ...testCase.expected,
+        httpStatus: 429,
+      });
+      expect(failure, testCase.name).not.toHaveProperty('providerRequestId');
+      const serializedFailure = JSON.stringify(failure);
+      const errorDetails = Object.getOwnPropertyNames(failure as object)
+        .map((name) => String((failure as Record<string, unknown>)[name]))
+        .join(' ');
+      for (const secret of [
+        apiKey,
+        privateDetail,
+        privateRequestId,
+        arbitraryCode,
+      ]) {
+        expect(String(failure), testCase.name).not.toContain(secret);
+        expect(serializedFailure, testCase.name).not.toContain(secret);
+        expect(errorDetails, testCase.name).not.toContain(secret);
+      }
+      expect(calls, testCase.name).toBe(1);
+      expect(dispatches, testCase.name).toBe(1);
+    }
+  });
+
+  it('bounds and rejects malformed, non-JSON, and oversized 429 bodies', async () => {
+    const privateDetail = 'private household tax document detail';
+    const privateRequestId = 'req_private_provider_detail';
+    const malformedCases = [
+      {
+        name: 'malformed JSON',
+        response: () =>
+          byteResponse(`{"error":{"message":"${privateDetail}"`, {
+            status: 429,
+            headers: {
+              'content-type': 'application/json',
+              'retry-after': '1',
+              'x-request-id': privateRequestId,
+            },
+          }),
+      },
+      {
+        name: 'non-JSON',
+        response: () =>
+          new Response(privateDetail, {
+            status: 429,
+            headers: {
+              'content-type': 'text/plain',
+              'retry-after': '1',
+              'x-request-id': privateRequestId,
+            },
+          }),
+      },
+      {
+        name: 'declared oversized JSON',
+        response: () =>
+          new Response(JSON.stringify({ error: { message: privateDetail } }), {
+            status: 429,
+            headers: {
+              'content-length': '16385',
+              'content-type': 'application/json',
+              'x-request-id': privateRequestId,
+            },
+          }),
+      },
+    ] as const;
+
+    for (const testCase of malformedCases) {
+      let calls = 0;
+      let dispatches = 0;
+      const responses: Response[] = [];
+      const transport = new OpenAiFetchFinanceDocumentExtractionTransport({
+        fetch: async () => {
+          calls += 1;
+          const response = testCase.response();
+          responses.push(response);
+          return response;
+        },
+        getApiKey: () => apiKey,
+      });
+      const failure = await transport
+        .extract({
+          ...extractionRequest(),
+          onDispatch: async () => {
+            dispatches += 1;
+          },
+        })
+        .catch((error: unknown) => error);
+
+      expect(failure, testCase.name).toMatchObject({
+        kind: 'provider-rate-limit-unclassified',
+        retryable: false,
+        httpStatus: 429,
+      });
+      expect(failure, testCase.name).not.toHaveProperty('providerRequestId');
+      const details = Object.getOwnPropertyNames(failure as object)
+        .map((name) => String((failure as Record<string, unknown>)[name]))
+        .join(' ');
+      for (const secret of [apiKey, privateDetail, privateRequestId]) {
+        expect(String(failure), testCase.name).not.toContain(secret);
+        expect(JSON.stringify(failure), testCase.name).not.toContain(secret);
+        expect(details, testCase.name).not.toContain(secret);
+      }
+      expect(calls, testCase.name).toBe(1);
+      expect(dispatches, testCase.name).toBe(1);
+      expect(responses[0]?.bodyUsed, testCase.name).toBe(true);
+    }
+
+    const firstChunk = new Uint8Array(16 * 1024 + 1).fill(120);
+    let pulls = 0;
+    let cancelled = false;
+    const response = new Response(
+      new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            pulls += 1;
+            if (pulls === 1) controller.enqueue(firstChunk);
+            else controller.enqueue(new Uint8Array([121]));
+          },
+          cancel() {
+            cancelled = true;
+          },
+        },
+        { highWaterMark: 0 },
+      ),
+      {
+        status: 429,
+        headers: {
+          'content-type': 'application/json',
+          'x-request-id': privateRequestId,
+        },
+      },
+    );
+    const transport = new OpenAiFetchFinanceDocumentExtractionTransport({
+      fetch: async () => response,
+      getApiKey: () => apiKey,
+    });
+
+    const failure = await transport
+      .extract(extractionRequest())
+      .catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      kind: 'provider-rate-limit-unclassified',
+      retryable: false,
+      httpStatus: 429,
+    });
+    expect(failure).not.toHaveProperty('providerRequestId');
+    expect(String(failure)).not.toContain(privateRequestId);
+    expect(JSON.stringify(failure)).not.toContain(privateRequestId);
+    expect(pulls).toBe(0);
+    expect(cancelled).toBe(true);
+    expect(firstChunk).toEqual(new Uint8Array(16 * 1024 + 1).fill(120));
+    expect(response.bodyUsed).toBe(true);
+
+    for (const [name, sourceBytes] of [
+      ['exact cap', new Uint8Array(16 * 1024).fill(120)],
+      ['oversized', new Uint8Array(16 * 1024 + 1).fill(120)],
+    ] as const) {
+      const viewsRequested: number[] = [];
+      let applicationVisibleBytes = 0;
+      let byteStreamCancelled = false;
+      let offset = 0;
+      const source: UnderlyingByteSource = {
+        type: 'bytes',
+        pull(controller) {
+          const request = controller.byobRequest;
+          if (request === null || !(request.view instanceof Uint8Array)) {
+            controller.error(new Error('expected-byte-oriented-reader'));
+            return;
+          }
+          viewsRequested.push(request.view.byteLength);
+          const length = Math.min(
+            request.view.byteLength,
+            sourceBytes.byteLength - offset,
+          );
+          request.view.set(sourceBytes.subarray(offset, offset + length));
+          offset += length;
+          applicationVisibleBytes += length;
+          request.respond(length);
+        },
+        cancel() {
+          byteStreamCancelled = true;
+        },
+      };
+      const byteResponse429 = new Response(
+        new ReadableStream(source, { highWaterMark: 0 }),
+        {
+          status: 429,
+          headers: {
+            'content-type': 'application/json',
+            'x-request-id': privateRequestId,
+          },
+        },
+      );
+      const byteTransport = new OpenAiFetchFinanceDocumentExtractionTransport({
+        fetch: async () => byteResponse429,
+        getApiKey: () => apiKey,
+      });
+      const byteFailure = await byteTransport
+        .extract(extractionRequest())
+        .catch((error: unknown) => error);
+
+      expect(byteFailure, name).toMatchObject({
+        kind: 'provider-rate-limit-unclassified',
+        retryable: false,
+        httpStatus: 429,
+      });
+      expect(byteFailure, name).not.toHaveProperty('providerRequestId');
+      expect(String(byteFailure), name).not.toContain(privateRequestId);
+      expect(JSON.stringify(byteFailure), name).not.toContain(privateRequestId);
+      expect(viewsRequested, name).toHaveLength(1);
+      expect(Math.max(...viewsRequested), name).toBeLessThanOrEqual(16 * 1024);
+      expect(applicationVisibleBytes, name).toBeLessThanOrEqual(16 * 1024);
+      expect(byteStreamCancelled, name).toBe(true);
+      expect(byteResponse429.bodyUsed, name).toBe(true);
     }
   });
 

@@ -58,7 +58,13 @@ export type FinanceDocumentExtractionSafeErrorCode =
   | 'worker-original-unavailable'
   | 'worker-payload-encryption-failed'
   | 'worker-provider-credential-unavailable'
+  | 'worker-provider-credit-balance-exhausted'
   | 'worker-provider-network-unavailable'
+  | 'worker-provider-organization-spend-limit-exceeded'
+  | 'worker-provider-organization-usage-limit-exceeded'
+  | 'worker-provider-project-spend-limit-exceeded'
+  | 'worker-provider-quota-exhausted'
+  | 'worker-provider-rate-limit-unclassified'
   | 'worker-provider-rate-limited'
   | 'worker-provider-rejected'
   | 'worker-provider-request-invalid'
@@ -1107,6 +1113,18 @@ const codeForError = (
         return 'worker-provider-rejected';
       case 'network':
         return 'worker-provider-network-unavailable';
+      case 'provider-credit-balance-exhausted':
+        return 'worker-provider-credit-balance-exhausted';
+      case 'provider-organization-spend-limit-exceeded':
+        return 'worker-provider-organization-spend-limit-exceeded';
+      case 'provider-organization-usage-limit-exceeded':
+        return 'worker-provider-organization-usage-limit-exceeded';
+      case 'provider-project-spend-limit-exceeded':
+        return 'worker-provider-project-spend-limit-exceeded';
+      case 'provider-quota-exhausted':
+        return 'worker-provider-quota-exhausted';
+      case 'provider-rate-limit-unclassified':
+        return 'worker-provider-rate-limit-unclassified';
       case 'provider-rate-limited':
         return 'worker-provider-rate-limited';
       case 'provider-server-error':

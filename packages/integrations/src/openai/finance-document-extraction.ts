@@ -13,6 +13,7 @@ const MAX_OUTPUT_TEXT_BYTES = 768 * 1024;
 const MAX_SCHEMA_BYTES = 256 * 1024;
 const MAX_USAGE_TOKENS = 100_000_000;
 const LOW_CONFIDENCE_THRESHOLD = 0.7;
+const MAX_429_ERROR_RESPONSE_BYTES = 16 * 1024;
 
 export const OPENAI_FINANCE_DOCUMENT_EXTRACTION_MODEL =
   'gpt-5.6-terra' as const;
@@ -46,6 +47,12 @@ export type OpenAiFinanceDocumentExtractionErrorKind =
   | 'provider-rejected'
   | 'provider-unavailable'
   | 'provider-rate-limited'
+  | 'provider-credit-balance-exhausted'
+  | 'provider-organization-spend-limit-exceeded'
+  | 'provider-project-spend-limit-exceeded'
+  | 'provider-organization-usage-limit-exceeded'
+  | 'provider-quota-exhausted'
+  | 'provider-rate-limit-unclassified'
   | 'provider-server-error'
   | 'response-too-large'
   | 'response-invalid';
@@ -410,6 +417,7 @@ const readBoundedBody = async (
       if (result.done) break;
       total += result.value.byteLength;
       if (total > MAX_RESPONSE_BYTES) {
+        result.value.fill(0);
         await awaitWithAbortSignal(deadline.signal, () => reader.cancel());
         throw transportError('response-too-large', false);
       }
@@ -425,6 +433,117 @@ const readBoundedBody = async (
     return body;
   } catch (error) {
     for (const chunk of chunks) chunk.fill(0);
+    if (deadline.signal.aborted) void reader.cancel().catch(() => undefined);
+    if (error instanceof OpenAiFinanceDocumentExtractionError) throw error;
+    throw transportError('network', true);
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // A late native read may retain the lock until it resolves.
+    }
+  }
+};
+
+const zeroByteArray = (value: Uint8Array | undefined): void => {
+  try {
+    value?.fill(0);
+  } catch {
+    // A BYOB read may detach the supplied view before cleanup.
+  }
+};
+
+const discardResponseBody = async (
+  response: Response,
+  deadline: Deadline,
+): Promise<void> => {
+  try {
+    if (response.body !== null) {
+      await awaitWithAbortSignal(deadline.signal, () =>
+        response.body!.cancel(),
+      );
+    }
+  } catch {
+    // Provider bodies are discarded even when cancellation is interrupted.
+  }
+};
+
+const readBounded429Body = async (
+  response: Response,
+  deadline: Deadline,
+): Promise<Uint8Array> => {
+  const rawContentLength = response.headers.get('content-length');
+  if (rawContentLength !== null) {
+    const contentLength = Number(rawContentLength);
+    if (
+      !Number.isSafeInteger(contentLength) ||
+      contentLength < 0 ||
+      contentLength >= MAX_429_ERROR_RESPONSE_BYTES
+    ) {
+      await discardResponseBody(response, deadline);
+      throw transportError('response-too-large', false);
+    }
+  }
+  if (response.body === null) return new Uint8Array();
+
+  let reader: ReadableStreamBYOBReader;
+  try {
+    reader = response.body.getReader({ mode: 'byob' });
+  } catch {
+    await discardResponseBody(response, deadline);
+    throw transportError('response-too-large', false);
+  }
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const requested = new Uint8Array(MAX_429_ERROR_RESPONSE_BYTES - total);
+      try {
+        const result = await awaitWithAbortSignal(
+          deadline.signal,
+          () => reader.read(requested),
+          (value) => {
+            zeroLateReadChunk(value);
+            zeroByteArray(requested);
+          },
+        );
+        if (result.done) {
+          zeroByteArray(result.value);
+          break;
+        }
+        const value = result.value;
+        if (
+          !isNormalUint8Array(value) ||
+          value.byteLength === 0 ||
+          value.byteLength > MAX_429_ERROR_RESPONSE_BYTES - total
+        ) {
+          zeroByteArray(value);
+          await awaitWithAbortSignal(deadline.signal, () => reader.cancel());
+          throw transportError('response-too-large', false);
+        }
+        const ownedChunk = new Uint8Array(value);
+        zeroByteArray(value);
+        chunks.push(ownedChunk);
+        total += ownedChunk.byteLength;
+        if (total === MAX_429_ERROR_RESPONSE_BYTES) {
+          await awaitWithAbortSignal(deadline.signal, () => reader.cancel());
+          throw transportError('response-too-large', false);
+        }
+      } finally {
+        zeroByteArray(requested);
+      }
+    }
+    const body = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      body.set(chunk, offset);
+      offset += chunk.byteLength;
+      zeroByteArray(chunk);
+    }
+    return body;
+  } catch (error) {
+    for (const chunk of chunks) zeroByteArray(chunk);
     if (deadline.signal.aborted) void reader.cancel().catch(() => undefined);
     if (error instanceof OpenAiFinanceDocumentExtractionError) throw error;
     throw transportError('network', true);
@@ -470,10 +589,82 @@ const parseBoundedJson = async (
   }
 };
 
+const hasApplicationJsonContentType = (response: Response): boolean =>
+  response.headers
+    .get('content-type')
+    ?.split(';', 1)[0]
+    ?.trim()
+    .toLowerCase() === 'application/json';
+
+const hasSafeRetryAfter = (response: Response): boolean => {
+  const value = response.headers.get('retry-after');
+  return typeof value === 'string' && /^(?:0|[1-9][0-9]{0,5})$/u.test(value);
+};
+
+const classifyOpenAi429Error = (
+  body: unknown,
+  retryAfter: boolean,
+): OpenAiFinanceDocumentExtractionErrorKind => {
+  const error = asPlainRecord(asPlainRecord(body)?.error);
+  const code = typeof error?.code === 'string' ? error.code : undefined;
+  const type = typeof error?.type === 'string' ? error.type : undefined;
+  switch (code) {
+    case 'credit_balance_exhausted':
+      return 'provider-credit-balance-exhausted';
+    case 'organization_spend_limit_exceeded':
+      return 'provider-organization-spend-limit-exceeded';
+    case 'project_spend_limit_exceeded':
+      return 'provider-project-spend-limit-exceeded';
+    case 'organization_usage_limit_exceeded':
+      return 'provider-organization-usage-limit-exceeded';
+    case 'insufficient_quota':
+      return 'provider-quota-exhausted';
+    case 'rate_limit_exceeded':
+      return 'provider-rate-limited';
+    default:
+      if (type === 'insufficient_quota') return 'provider-quota-exhausted';
+      return retryAfter
+        ? 'provider-rate-limited'
+        : 'provider-rate-limit-unclassified';
+  }
+};
+
+const classify429Response = async (
+  response: Response,
+  deadline: Deadline,
+): Promise<OpenAiFinanceDocumentExtractionErrorKind> => {
+  if (!hasApplicationJsonContentType(response)) {
+    await discardResponseBody(response, deadline);
+    if (deadline.signal.aborted) throw abortError(deadline);
+    return 'provider-rate-limit-unclassified';
+  }
+
+  let bytes: Uint8Array | undefined;
+  try {
+    bytes = await readBounded429Body(response, deadline);
+    const body = JSON.parse(
+      new TextDecoder('utf-8', { fatal: true }).decode(bytes),
+    ) as unknown;
+    return classifyOpenAi429Error(body, hasSafeRetryAfter(response));
+  } catch {
+    if (deadline.signal.aborted) throw abortError(deadline);
+    return 'provider-rate-limit-unclassified';
+  } finally {
+    bytes?.fill(0);
+  }
+};
+
 const throwForResponse = async (
   response: Response,
   deadline: Deadline,
 ): Promise<never> => {
+  const httpStatus = response.status;
+  if (httpStatus === 429) {
+    const kind = await classify429Response(response, deadline);
+    throw transportError(kind, kind === 'provider-rate-limited', {
+      httpStatus,
+    });
+  }
   try {
     if (response.body !== null) {
       await awaitWithAbortSignal(deadline.signal, () =>
@@ -483,13 +674,9 @@ const throwForResponse = async (
   } catch {
     // Error response bodies are intentionally not read, logged, or returned.
   }
-  const httpStatus = response.status;
   if (deadline.signal.aborted) throw abortError(deadline);
   if (httpStatus === 408) {
     throw transportError('timeout', true, { httpStatus });
-  }
-  if (httpStatus === 429) {
-    throw transportError('provider-rate-limited', true, { httpStatus });
   }
   if (httpStatus >= 500 && httpStatus <= 599) {
     throw transportError('provider-server-error', true, { httpStatus });
