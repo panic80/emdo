@@ -26,6 +26,10 @@ describe('single-household session activation migration', () => {
       id: '0016_finance_document_knowledge',
       index: 16,
     });
+    expect(migrations.at(17)).toMatchObject({
+      id: '0017_approval_resume_public_events',
+      index: 17,
+    });
   });
 
   it('derives only an exact single active membership behind a private owner boundary', async () => {

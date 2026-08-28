@@ -1,10 +1,14 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { PostgresSpaceAccessGrantService } from '../auth/space-access-grants.js';
 import { createDatabaseClient, type EmdoDatabaseClient } from '../client.js';
+import {
+  firstResultRow,
+  withClaimedTransaction,
+} from '../durable/scoped-transaction.js';
 import { loadOrderedMigrations } from '../migrations.js';
 import { PostgresManagerTurnStore } from './manager-turn-store.js';
 import { PostgresRunEventSource } from './run-event-source.js';
@@ -20,10 +24,30 @@ const ids = Object.freeze({
   household: '84900000-0000-4000-8000-000000000005',
   membership: '84900000-0000-4000-8000-000000000006',
   space: '84900000-0000-4000-8000-000000000007',
+  disclosure: '84900000-0000-4000-8000-000000000008',
+  proposal: '84900000-0000-4000-8000-000000000009',
+  decision: '84900000-0000-4000-8000-00000000000a',
+  checkpoint: '84900000-0000-4000-8000-00000000000b',
+  approvalResumeJob: '84900000-0000-4000-8000-00000000000c',
+  approvalResumeClaim: '84900000-0000-4000-8000-00000000000d',
 });
 
 const loginRole = 'emdo_run_event_integration_login';
 const loginPassword = `emdo-test-${randomUUID()}`;
+const approvalResumeOwnershipToken =
+  'run-event-approval-resume-ownership-token-0001';
+const hash = (input: string): string =>
+  createHash('sha256').update(input).digest('hex');
+const approvalResumeOwnershipTokenDigest = createHash('sha256')
+  .update('emdo.approval-resume-owner.v1')
+  .update('\0')
+  .update(approvalResumeOwnershipToken)
+  .digest('hex');
+const approvalAuthorizationScopeFingerprint = hash(
+  'run-event-approval-resume-operation-scope',
+);
+const approvalPayloadHash = hash('run-event-approval-resume-payload');
+const approvalHash = hash('run-event-approval-resume-approval');
 
 const collect = async <Value>(
   input: AsyncIterable<Value>,
@@ -32,6 +56,30 @@ const collect = async <Value>(
   for await (const value of input) values.push(value);
   return values;
 };
+
+const completedTurnResult = (runId: string, localTraceReference: string) =>
+  Object.freeze({
+    status: 'completed',
+    runId,
+    localTraceReference,
+    output: {
+      message: 'The approved calendar action was completed.',
+      mutation: { created: 1 },
+    },
+    specialistOutcomes: [],
+    hasPartialFailures: false,
+    usage: {
+      inputTokens: 7,
+      outputTokens: 11,
+      modelCostCadMinor: 13,
+    },
+    modelResolution: {
+      status: 'resolved',
+      requestedModel: 'gpt-5.6-terra',
+      resolvedModel: 'gpt-5.6-terra',
+      reason: 'default',
+    },
+  });
 
 describeDatabase(
   'PostgreSQL 18 grant-bound manager run replay (isolated database only)',
@@ -51,6 +99,30 @@ describeDatabase(
     }>;
     let secondPrincipal: typeof firstPrincipal;
     let runId: string;
+    let approvalResumeRunId: string;
+    let approvalResumeResult: ReturnType<typeof completedTurnResult>;
+    let legacyCompletedResult: ReturnType<typeof completedTurnResult>;
+    let legacyCompletedWrapper: Readonly<Record<string, unknown>>;
+
+    const settleApprovalResume = async (result: unknown): Promise<unknown> =>
+      withClaimedTransaction(
+        runtime.scopedPool,
+        {
+          userId: secondPrincipal.userId,
+          sessionId: secondPrincipal.sessionId,
+          requestId: ids.secondRequest,
+          householdId: secondPrincipal.householdId,
+        },
+        async (client) =>
+          firstResultRow(
+            await client.query(
+              `select emdo.settle_approval_resume_job(
+                 $1::uuid, $2::text, 'complete', null, $3::jsonb
+               ) as settle_result`,
+              [ids.approvalResumeClaim, approvalResumeOwnershipToken, result],
+            ),
+          )?.settle_result,
+      );
 
     beforeAll(async () => {
       const { Client } = await import('pg');
@@ -182,6 +254,30 @@ describeDatabase(
         }),
       ).resolves.toMatchObject({ status: 'completed' });
 
+      legacyCompletedResult = completedTurnResult(
+        runId,
+        'run-event-legacy-completed-trace',
+      );
+      legacyCompletedWrapper = Object.freeze({
+        schemaVersion: 1,
+        runId,
+        proposalId: ids.proposal,
+        approvalDecisionId: ids.decision,
+        status: 'completed',
+        result: legacyCompletedResult,
+      });
+      await admin.query(
+        `insert into emdo.agent_run_events(
+           household_id, space_id, original_owner_user_id, run_id,
+           sequence, event_type, payload, occurred_at, retain_until
+         ) values (
+           $1, $2, $3, $4, 3, 'agent.turn.completed', $5::jsonb,
+           pg_catalog.clock_timestamp(),
+           pg_catalog.clock_timestamp() + interval '89 days'
+         )`,
+        [ids.household, ids.space, ids.user, runId, legacyCompletedWrapper],
+      );
+
       const secondScope = await grants.resolveActivePrincipalScope({
         activeMembershipId: ids.membership,
         householdId: ids.household,
@@ -202,6 +298,194 @@ describeDatabase(
             secondScope.collectionAuthorizationScopeFingerprint,
           ),
       });
+
+      const approvalResumeClaim = await store.claim({
+        request: {
+          schemaVersion: 1,
+          message: 'Finish the approved calendar action.',
+          routeHint: 'scheduler',
+        },
+        principal: secondPrincipal,
+        requestId: ids.secondRequest,
+        idempotencyKey: 'run-event-integration-claim-0002',
+      });
+      if (approvalResumeClaim.status !== 'claimed') {
+        throw new Error(
+          'Second manager turn was not claimed in the isolated database',
+        );
+      }
+      approvalResumeRunId = approvalResumeClaim.runId;
+      approvalResumeResult = completedTurnResult(
+        approvalResumeRunId,
+        'run-event-approval-resume-completed-trace',
+      );
+
+      await admin.query(
+        `insert into emdo.disclosure_grants(
+           id, schema_version, version, household_id, space_id, user_id,
+           run_id, agent_id, purpose, phase_purpose, provider,
+           record_allowlist, grant_hash, created_at, expires_at, one_run_only
+         ) values (
+           $1, 1, 1, $2, $3, $4, $5, 'scheduler',
+           'Resume one approved calendar action.', 'specialist-execution',
+           'openai', '[]'::jsonb, $6,
+           pg_catalog.clock_timestamp() - interval '1 second',
+           pg_catalog.clock_timestamp() + interval '5 minutes', true
+         )`,
+        [
+          ids.disclosure,
+          ids.household,
+          ids.space,
+          ids.user,
+          approvalResumeRunId,
+          hash('run-event-approval-resume-disclosure'),
+        ],
+      );
+      await admin.query(
+        `insert into emdo.action_proposals(
+           id, schema_version, household_id, space_id, original_owner_user_id,
+           run_id, disclosure_grant_id, authorization_scope_fingerprint,
+           provider_authority_binding_hash, provider_sdk_call_id,
+           disclosure_grant, capability_id, capability_fingerprint,
+           canonical_arguments, targets, before_preview, after_preview,
+           approval_display, provider_preconditions, payload_hash, approval_hash,
+           idempotency_key, created_at, expires_at
+         ) values (
+           $1, 1, $2, $3, $4, $5, $6, $7, $8,
+           'run-event-approval-resume-calendar-write',
+           pg_catalog.jsonb_build_object(
+             'id', $6::uuid, 'runId', $5::uuid,
+             'householdId', $2::uuid, 'userId', $4::uuid
+           ),
+           'scheduler.calendar.write', $9,
+           '{}'::jsonb, '[]'::jsonb, '{}'::jsonb, '{}'::jsonb,
+           '{"schemaVersion":1,"title":"Review calendar action","summary":"Review the approved calendar action.","beforeSummary":"","afterSummary":"","fields":[]}'::jsonb,
+           '{}'::jsonb, $10, $11,
+           'run-event-approval-resume-proposal-0001',
+           pg_catalog.clock_timestamp() - interval '1 second',
+           pg_catalog.clock_timestamp() + interval '5 minutes'
+         )`,
+        [
+          ids.proposal,
+          ids.household,
+          ids.space,
+          ids.user,
+          approvalResumeRunId,
+          ids.disclosure,
+          approvalAuthorizationScopeFingerprint,
+          hash('run-event-approval-resume-provider-authority'),
+          hash('run-event-approval-resume-capability'),
+          approvalPayloadHash,
+          approvalHash,
+        ],
+      );
+      await admin.query(
+        `insert into emdo.action_decisions(
+           id, schema_version, proposal_id, household_id, space_id,
+           original_owner_user_id, authenticated_session_id, payload_hash,
+           approval_hash, decision, channel, decided_at, idempotency_key
+         ) values (
+           $1, 1, $2, $3, $4, $5, $6, $7, $8, 'approved',
+           'authenticated-visual', pg_catalog.clock_timestamp() - interval '1 second',
+           'run-event-approval-resume-decision-0001'
+         )`,
+        [
+          ids.decision,
+          ids.proposal,
+          ids.household,
+          ids.space,
+          ids.user,
+          ids.session,
+          approvalPayloadHash,
+          approvalHash,
+        ],
+      );
+      await admin.query(
+        `insert into emdo.approval_checkpoints(
+           checkpoint_id, household_id, space_id, user_id, run_id,
+           format_version, revision, state, agent_graph_hash, sdk_version,
+           sealed_state, created_at, expires_at, updated_at, retain_until
+         ) values (
+           $1, $2, $3, $4, $5, 1, 1, 'pending', $6,
+           'run-event-integration', 'sealed approval checkpoint',
+           pg_catalog.clock_timestamp() - interval '1 second',
+           pg_catalog.clock_timestamp() + interval '5 minutes',
+           pg_catalog.clock_timestamp() - interval '1 second',
+           pg_catalog.clock_timestamp() + interval '89 days'
+         )`,
+        [
+          ids.checkpoint,
+          ids.household,
+          ids.space,
+          ids.user,
+          approvalResumeRunId,
+          hash('run-event-approval-resume-graph'),
+        ],
+      );
+      await admin.query(
+        `insert into emdo.agent_run_events(
+           household_id, space_id, original_owner_user_id, run_id,
+           sequence, event_type, payload, occurred_at, retain_until
+         ) values (
+           $1, $2, $3, $4, 2, 'approval.required',
+           pg_catalog.jsonb_build_object(
+             'status', 'needs-approval', 'runId', $4::uuid
+           ),
+           pg_catalog.clock_timestamp() - interval '1 second',
+           pg_catalog.clock_timestamp() + interval '89 days'
+         )`,
+        [ids.household, ids.space, ids.user, approvalResumeRunId],
+      );
+      await admin.query(
+        `insert into emdo.approval_resume_jobs(
+           job_id, household_id, space_id, user_id, run_id, conversation_id,
+           checkpoint_id, interruption_id, proposal_id, capability_id,
+           origin_session_id, origin_turn_request_id,
+           origin_space_access_grant_id, authorization_scope_fingerprint,
+           disclosure_grant_id, disclosure_grant_version,
+           disclosure_policy_version, payload_hash, approval_hash,
+           approval_event_sequence, state, revision, claim_id,
+           ownership_token_digest, decision_id, decision_type,
+           authenticated_session_id, resume_request_id,
+           resume_space_access_grant_id,
+           collection_authorization_scope_fingerprint, claimed_at,
+           claim_expires_at, created_at, updated_at, expires_at, retain_until
+         ) values (
+           $1, $2, $3, $4, $5, $6, $7,
+           'run-event-approval-resume', $8, 'scheduler.calendar.write',
+           $9, $10, $11, $12, $13, 1, '1.0.0', $14, $15,
+           2, 'claimed', 3, $16, $17, $18, 'approved', $9, $19, $20,
+           $21, pg_catalog.clock_timestamp() - interval '1 second',
+           pg_catalog.clock_timestamp() + interval '5 minutes',
+           pg_catalog.clock_timestamp() - interval '2 minutes',
+           pg_catalog.clock_timestamp() - interval '1 second',
+           pg_catalog.clock_timestamp() + interval '5 minutes',
+           pg_catalog.clock_timestamp() + interval '89 days'
+         )`,
+        [
+          ids.approvalResumeJob,
+          ids.household,
+          ids.space,
+          ids.user,
+          approvalResumeRunId,
+          approvalResumeClaim.conversationId,
+          ids.checkpoint,
+          ids.proposal,
+          ids.session,
+          ids.firstRequest,
+          firstPrincipal.spaceAccessGrantId,
+          approvalAuthorizationScopeFingerprint,
+          ids.disclosure,
+          approvalPayloadHash,
+          approvalHash,
+          ids.approvalResumeClaim,
+          approvalResumeOwnershipTokenDigest,
+          ids.decision,
+          ids.secondRequest,
+          secondPrincipal.spaceAccessGrantId,
+          secondPrincipal.collectionAuthorizationScopeFingerprint,
+        ],
+      );
     }, 30_000);
 
     afterAll(async () => {
@@ -219,7 +503,7 @@ describeDatabase(
       }
     });
 
-    it('replays persisted events with a rotated fresh grant but denies the stale request grant', async () => {
+    it('replays canonical and legacy persisted events with a rotated fresh grant but denies the stale request grant', async () => {
       const source = new PostgresRunEventSource(runtime.scopedPool);
       const current = await collect(
         await source.open({
@@ -234,9 +518,27 @@ describeDatabase(
         [
           { sequence: 1, type: 'run.accepted' },
           { sequence: 2, type: 'run.failed' },
+          { sequence: 3, type: 'run.completed' },
         ],
       );
+      expect(current[2]?.data).toEqual(legacyCompletedResult);
       expect(current.every((event) => !('id' in event))).toBe(true);
+
+      const rawLegacy = await admin.query<{
+        event_type: string;
+        payload: unknown;
+      }>(
+        `select event_type, payload
+           from emdo.agent_run_events
+          where run_id = $1 and sequence = 3`,
+        [runId],
+      );
+      expect(rawLegacy.rows).toEqual([
+        {
+          event_type: 'agent.turn.completed',
+          payload: legacyCompletedWrapper,
+        },
+      ]);
 
       await expect(
         collect(
@@ -251,7 +553,174 @@ describeDatabase(
       ).rejects.toMatchObject({ code: 'authorization-revoked' });
     });
 
-    it('keeps the helper private and grants only the bounded aggregate', async () => {
+    it('rejects malformed approvals, then appends and replays one direct completed terminal event', async () => {
+      const malformedUsage = {
+        ...approvalResumeResult,
+        usage: {
+          inputTokens: -1,
+          outputTokens: 11.5,
+          modelCostCadMinor: 13,
+        },
+      };
+      const incompleteModelResolution = {
+        ...approvalResumeResult,
+        modelResolution: { status: 'resolved' },
+      };
+      const nullSpecialistStatus = {
+        ...approvalResumeResult,
+        specialistOutcomes: [
+          {
+            delegationId: 'scheduler-delegation-1',
+            specialistId: 'scheduler',
+            status: null,
+            usage: {
+              inputTokens: 0,
+              outputTokens: 0,
+              modelCostCadMinor: 0,
+            },
+          },
+        ],
+      };
+
+      await expect(settleApprovalResume(malformedUsage)).resolves.toEqual({
+        status: 'conflict',
+      });
+      await expect(
+        settleApprovalResume(incompleteModelResolution),
+      ).resolves.toEqual({ status: 'conflict' });
+      await expect(settleApprovalResume(nullSpecialistStatus)).resolves.toEqual(
+        { status: 'conflict' },
+      );
+
+      const beforeValidSettlement = await admin.query<{
+        state: string;
+        terminal_event_sequence: number | null;
+        terminal_result_hash: string | null;
+        event_count: string;
+      }>(
+        `select resume.state, resume.terminal_event_sequence,
+                resume.terminal_result_hash,
+                (select count(*)::text from emdo.agent_run_events
+                  where run_id = $2) as event_count
+           from emdo.approval_resume_jobs as resume
+          where resume.job_id = $1`,
+        [ids.approvalResumeJob, approvalResumeRunId],
+      );
+      expect(beforeValidSettlement.rows).toEqual([
+        {
+          state: 'claimed',
+          terminal_event_sequence: null,
+          terminal_result_hash: null,
+          event_count: '2',
+        },
+      ]);
+
+      await expect(settleApprovalResume(approvalResumeResult)).resolves.toEqual(
+        {
+          status: 'completed',
+          terminalEventSequence: 3,
+        },
+      );
+
+      const storedEvents = await admin.query<{
+        sequence: string;
+        event_type: string;
+        payload: unknown;
+      }>(
+        `select sequence, event_type, payload
+           from emdo.agent_run_events
+          where run_id = $1
+          order by sequence`,
+        [approvalResumeRunId],
+      );
+      expect(
+        storedEvents.rows.filter(
+          (event) => event.event_type === 'run.completed',
+        ),
+      ).toEqual([
+        {
+          sequence: '3',
+          event_type: 'run.completed',
+          payload: approvalResumeResult,
+        },
+      ]);
+
+      const source = new PostgresRunEventSource(runtime.scopedPool);
+      const replayed = await collect(
+        await source.open({
+          runId: approvalResumeRunId,
+          afterSequence: 0,
+          principal: secondPrincipal,
+          requestId: ids.secondRequest,
+          abortSignal: new AbortController().signal,
+        }),
+      );
+      expect(
+        replayed.map(({ sequence, type }) => ({ sequence, type })),
+      ).toEqual([
+        { sequence: 1, type: 'run.accepted' },
+        { sequence: 2, type: 'approval.required' },
+        { sequence: 3, type: 'run.completed' },
+      ]);
+      expect(replayed[2]?.data).toEqual(approvalResumeResult);
+
+      const terminal = await admin.query<{
+        state: string;
+        terminal_event_sequence: string;
+        terminal_result_hash: string;
+      }>(
+        `select state, terminal_event_sequence, terminal_result_hash
+           from emdo.approval_resume_jobs
+          where job_id = $1`,
+        [ids.approvalResumeJob],
+      );
+      const auditEnvelope = await admin.query<{ payload: string }>(
+        `select pg_catalog.jsonb_strip_nulls(
+           pg_catalog.jsonb_build_object(
+             'schemaVersion', 1,
+             'runId', $1::uuid,
+             'proposalId', $2::uuid,
+             'approvalDecisionId', $3::uuid,
+             'status', 'completed',
+             'reasonCode', null,
+             'result', $4::jsonb
+           )
+         )::text as payload`,
+        [approvalResumeRunId, ids.proposal, ids.decision, approvalResumeResult],
+      );
+      const auditPayload = auditEnvelope.rows[0]?.payload;
+      if (auditPayload === undefined) {
+        throw new Error('Approval-resume audit envelope was not rendered');
+      }
+      const expectedTerminalResultHash = createHash('sha256')
+        .update('emdo.approval-resume-terminal.v1')
+        .update('\0')
+        .update(auditPayload)
+        .digest('hex');
+      expect(terminal.rows).toEqual([
+        {
+          state: 'terminal',
+          terminal_event_sequence: '3',
+          terminal_result_hash: expectedTerminalResultHash,
+        },
+      ]);
+
+      await expect(settleApprovalResume(approvalResumeResult)).resolves.toEqual(
+        {
+          status: 'replay',
+          terminalEventSequence: 3,
+        },
+      );
+      const terminalEventCount = await admin.query<{ count: string }>(
+        `select count(*)::text as count
+           from emdo.agent_run_events
+          where run_id = $1 and event_type = 'run.completed'`,
+        [approvalResumeRunId],
+      );
+      expect(terminalEventCount.rows).toEqual([{ count: '1' }]);
+    });
+
+    it('keeps the helpers private and grants only the bounded aggregates', async () => {
       const privileges = await admin.query(
         `select
            pg_catalog.has_function_privilege(
@@ -259,14 +728,23 @@ describeDatabase(
              'EXECUTE'
            ) as can_read,
            pg_catalog.has_function_privilege(
+             $1, 'emdo.settle_approval_resume_job(uuid,text,text,text,jsonb)',
+             'EXECUTE'
+           ) as can_settle,
+           pg_catalog.has_function_privilege(
              $1, 'emdo.lock_current_authorization_scope(uuid,uuid,uuid)',
              'EXECUTE'
-           ) as can_lock_scope`,
+           ) as can_lock_scope,
+           pg_catalog.has_table_privilege(
+             $1, 'emdo.approval_resume_jobs', 'SELECT'
+           ) as can_read_resume_jobs`,
         [loginRole],
       );
       expect(privileges.rows[0]).toEqual({
         can_read: true,
+        can_settle: true,
         can_lock_scope: false,
+        can_read_resume_jobs: false,
       });
     });
   },

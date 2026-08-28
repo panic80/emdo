@@ -3,6 +3,7 @@ import {
   ActionDecisionSchema,
   EffectiveAuthorizationScopeFingerprintSchema,
   JsonValueSchema,
+  ModelResolutionSchema,
   OpaqueReferenceSchema,
   Sha256Schema,
   UuidSchema,
@@ -89,28 +90,65 @@ const CompletionResultSchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('conflict') }),
 ]);
 
-const TurnResultSchema = z
-  .record(z.string(), JsonValueSchema)
+const AgentUsageSchema = z.strictObject({
+  inputTokens: z.number().int().nonnegative().safe(),
+  outputTokens: z.number().int().nonnegative().safe(),
+  modelCostCadMinor: z.number().int().nonnegative().safe(),
+  spendWarning: z.literal(true).optional(),
+});
+
+const SafeAgentErrorSchema = z.strictObject({
+  code: z.string().trim().min(1).max(256),
+  message: z.string().trim().min(1).max(4_096),
+  retryable: z.boolean(),
+});
+
+const SpecialistOutcomeSchema = z
+  .strictObject({
+    delegationId: OpaqueReferenceSchema,
+    specialistId: OpaqueReferenceSchema,
+    status: z.enum(['completed', 'failed', 'blocked']),
+    output: JsonValueSchema.optional(),
+    safeError: SafeAgentErrorSchema.optional(),
+    usage: AgentUsageSchema,
+  })
   .superRefine((value, context) => {
-    if (!UuidSchema.safeParse(value.runId).success) {
+    if (value.status === 'failed' && value.safeError === undefined) {
       context.addIssue({
         code: 'custom',
-        path: ['runId'],
-        message: 'Turn result run ID is invalid',
-      });
-    }
-    if (
-      value.status !== 'completed' &&
-      value.status !== 'needs-approval' &&
-      value.status !== 'failed'
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['status'],
-        message: 'Turn result status is invalid',
+        path: ['safeError'],
+        message: 'Failed specialist outcomes require a safe error',
       });
     }
   });
+
+const ResolvedModelResolutionSchema = ModelResolutionSchema.refine(
+  (value) => value.status === 'resolved',
+  'Completed approval resumes require a resolved model',
+);
+
+const TurnResultBaseShape = {
+  runId: UuidSchema,
+  localTraceReference: OpaqueReferenceSchema,
+  specialistOutcomes: z.array(SpecialistOutcomeSchema).max(128),
+  usage: AgentUsageSchema,
+} as const;
+
+const TurnResultSchema = z.discriminatedUnion('status', [
+  z.strictObject({
+    ...TurnResultBaseShape,
+    status: z.literal('completed'),
+    output: JsonValueSchema,
+    hasPartialFailures: z.boolean(),
+    modelResolution: ResolvedModelResolutionSchema,
+  }),
+  z.strictObject({
+    ...TurnResultBaseShape,
+    status: z.literal('failed'),
+    safeError: SafeAgentErrorSchema,
+    modelResolution: ModelResolutionSchema.optional(),
+  }),
+]);
 
 const DecisionLinkResultSchema = z.discriminatedUnion('status', [
   z.strictObject({

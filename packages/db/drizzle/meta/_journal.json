@@ -120,6 +120,13 @@
       "when": 1787777439433,
       "tag": "0016_finance_document_knowledge",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787924391000,
+      "tag": "0017_approval_resume_public_events",
+      "breakpoints": true
     }
   ]
 }
