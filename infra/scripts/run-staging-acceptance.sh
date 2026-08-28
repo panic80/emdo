@@ -103,6 +103,16 @@ finance_staging_acceptance_failure_diagnostic() {
     'Staging acceptance failed at stage=document-review-read-edit.' | \
     'Staging acceptance failed at stage=document-direct-commit-denial.' | \
     'Staging acceptance failed at stage=guarded-review-commit.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:initial-turn.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:approval-parsing.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:proposal-read.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:visual-proof.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:decision-receipt.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-completed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:commit-readback.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:quota-readback.' | \
     'Staging acceptance failed at stage=guarded-delete-denial.' | \
     'Staging acceptance failed at stage=qna-and-isolation.' | \
     'Staging acceptance failed at stage=safe-write-and-handoff.' | \

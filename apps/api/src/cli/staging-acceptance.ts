@@ -91,6 +91,16 @@ const FinanceStagingAcceptanceStageSchema = z.enum([
   'document-review-read-edit',
   'document-direct-commit-denial',
   'guarded-review-commit',
+  'guarded-review-commit:initial-turn',
+  'guarded-review-commit:approval-parsing',
+  'guarded-review-commit:proposal-read',
+  'guarded-review-commit:visual-proof',
+  'guarded-review-commit:decision-receipt',
+  'guarded-review-commit:resumed-run',
+  'guarded-review-commit:resumed-run-failed',
+  'guarded-review-commit:resumed-run-completed',
+  'guarded-review-commit:commit-readback',
+  'guarded-review-commit:quota-readback',
   'guarded-delete-denial',
   'qna-and-isolation',
   'safe-write-and-handoff',
@@ -689,6 +699,8 @@ const readFiniteRunEvents = async (input: {
   readonly runId: string;
   readonly afterSequence: number;
   readonly expectedTerminalType: 'approval.required' | 'run.completed';
+  /** Guarded-review diagnostics may distinguish only the static failed type. */
+  readonly allowRunFailedTerminal?: boolean;
 }): Promise<readonly ParsedRunEvent[]> => {
   if (!Number.isSafeInteger(input.afterSequence) || input.afterSequence < 0) {
     throw new Error('Acceptance run event cursor is invalid');
@@ -753,7 +765,12 @@ const readFiniteRunEvents = async (input: {
   if (
     terminals.length !== 1 ||
     terminal === undefined ||
-    terminal.type !== input.expectedTerminalType ||
+    (terminal.type !== input.expectedTerminalType &&
+      !(
+        input.allowRunFailedTerminal === true &&
+        input.expectedTerminalType === 'run.completed' &&
+        terminal.type === 'run.failed'
+      )) ||
     terminal !== events.at(-1)
   ) {
     throw new Error('Acceptance run terminal event is ambiguous');
@@ -1224,6 +1241,7 @@ const readFinanceTurnEvents = async (input: {
   readonly turn: z.output<typeof TurnAcceptanceSchema>;
   readonly afterSequence: number;
   readonly expectedTerminalType: 'approval.required' | 'run.completed';
+  readonly allowRunFailedTerminal?: boolean;
 }) =>
   readFiniteRunEvents({
     response: await input.send(input.turn.eventsPath, {
@@ -1238,6 +1256,9 @@ const readFinanceTurnEvents = async (input: {
     runId: input.turn.runId,
     afterSequence: input.afterSequence,
     expectedTerminalType: input.expectedTerminalType,
+    ...(input.allowRunFailedTerminal === undefined
+      ? {}
+      : { allowRunFailedTerminal: input.allowRunFailedTerminal }),
   });
 
 const approveAndResumeFinanceTurn = async (input: {
@@ -1248,11 +1269,16 @@ const approveAndResumeFinanceTurn = async (input: {
   readonly initialEvents: readonly ParsedRunEvent[];
   readonly proposalId: string;
   readonly decisionIdempotencyKey: string;
+  readonly allowRunFailedTerminal?: boolean;
+  readonly guardedReviewStageReporter?: (
+    stage: FinanceStagingAcceptanceStage,
+  ) => void;
 }) => {
   const initialTerminal = input.initialEvents.at(-1);
   if (initialTerminal === undefined) {
     throw new Error('Finance guarded turn did not produce a terminal event');
   }
+  input.guardedReviewStageReporter?.('guarded-review-commit:proposal-read');
   const proposalResponse = await input.send(
     `/api/v1/proposals/${encodeURIComponent(input.proposalId)}`,
     { headers: { cookie: input.cookie } },
@@ -1264,6 +1290,7 @@ const approveAndResumeFinanceTurn = async (input: {
   if (proposal.id !== input.proposalId || proposal.state !== 'pending') {
     throw new Error('Finance proposal approval view is invalid');
   }
+  input.guardedReviewStageReporter?.('guarded-review-commit:visual-proof');
   const proofResponse = await input.send(
     `/api/v1/proposals/${encodeURIComponent(input.proposalId)}/visual-proof`,
     {
@@ -1291,6 +1318,7 @@ const approveAndResumeFinanceTurn = async (input: {
   ) {
     throw new Error('Finance visual proof is not bound to the proposal');
   }
+  input.guardedReviewStageReporter?.('guarded-review-commit:decision-receipt');
   const decisionResponse = await input.send(
     `/api/v1/proposals/${encodeURIComponent(input.proposalId)}/decision`,
     {
@@ -1325,13 +1353,24 @@ const approveAndResumeFinanceTurn = async (input: {
   ) {
     throw new Error('Finance visual approval decision is invalid');
   }
-  return readFinanceTurnEvents({
+  input.guardedReviewStageReporter?.('guarded-review-commit:resumed-run');
+  const resumedEvents = await readFinanceTurnEvents({
     send: input.send,
     cookie: input.cookie,
     turn: input.turn,
     afterSequence: initialTerminal.sequence,
     expectedTerminalType: 'run.completed',
+    ...(input.allowRunFailedTerminal === undefined
+      ? {}
+      : { allowRunFailedTerminal: input.allowRunFailedTerminal }),
   });
+  if (resumedEvents.at(-1)?.type === 'run.failed') {
+    input.guardedReviewStageReporter?.(
+      'guarded-review-commit:resumed-run-failed',
+    );
+    throw new Error('Finance guarded turn failed after approval');
+  }
+  return resumedEvents;
 };
 
 const financeDocumentDetailFor = async (input: {
@@ -1903,6 +1942,7 @@ const runFinanceStagingAcceptance = async (
   }
 
   input.financeStageReporter?.('guarded-review-commit');
+  input.financeStageReporter?.('guarded-review-commit:initial-turn');
   const guardedCommitTurn = await acceptFinanceTurn({
     send,
     mutationHeaders,
@@ -1920,6 +1960,7 @@ const runFinanceStagingAcceptance = async (
     afterSequence: 0,
     expectedTerminalType: 'approval.required',
   });
+  input.financeStageReporter?.('guarded-review-commit:approval-parsing');
   const guardedCommitApproval = financeApprovalFromTerminal({
     event: guardedCommitInitialEvents.at(-1),
     runId: guardedCommitTurn.runId,
@@ -1936,11 +1977,17 @@ const runFinanceStagingAcceptance = async (
     initialEvents: guardedCommitInitialEvents,
     proposalId: guardedCommitApproval.proposalId,
     decisionIdempotencyKey: 'finance-staging-guarded-review-commit-decision-v1',
+    allowRunFailedTerminal: true,
+    ...(input.financeStageReporter === undefined
+      ? {}
+      : { guardedReviewStageReporter: input.financeStageReporter }),
   });
   financeCompletedFromTerminal({
     event: guardedCommitResumedEvents.at(-1),
     runId: guardedCommitTurn.runId,
   });
+  input.financeStageReporter?.('guarded-review-commit:resumed-run-completed');
+  input.financeStageReporter?.('guarded-review-commit:commit-readback');
   const committed = await financeDocumentDetailFor({
     documentId,
     send,
@@ -1954,6 +2001,7 @@ const runFinanceStagingAcceptance = async (
     throw new Error('Finance guarded review commit readback is invalid');
   }
 
+  input.financeStageReporter?.('guarded-review-commit:quota-readback');
   const experienceResponse = await send('/api/v1/experience/finance', {
     headers: { cookie: ownerCookie },
   });

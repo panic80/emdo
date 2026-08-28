@@ -217,6 +217,16 @@ describe('Finance staging acceptance failure diagnostic', () => {
     'document-review-read-edit',
     'document-direct-commit-denial',
     'guarded-review-commit',
+    'guarded-review-commit:initial-turn',
+    'guarded-review-commit:approval-parsing',
+    'guarded-review-commit:proposal-read',
+    'guarded-review-commit:visual-proof',
+    'guarded-review-commit:decision-receipt',
+    'guarded-review-commit:resumed-run',
+    'guarded-review-commit:resumed-run-failed',
+    'guarded-review-commit:resumed-run-completed',
+    'guarded-review-commit:commit-readback',
+    'guarded-review-commit:quota-readback',
     'guarded-delete-denial',
     'qna-and-isolation',
     'safe-write-and-handoff',
@@ -347,7 +357,9 @@ exit 43`,
       join(tmpdir(), 'emdo-finance-acceptance-diagnostic-'),
     );
     const inputPath = join(directory, 'acceptance.stderr');
-    const safeFailure = stagingFailure('member-invitation');
+    const safeFailure = stagingFailure(
+      'guarded-review-commit:resumed-run-failed',
+    );
     const secret =
       'cookie=secret-cookie request-id=secret-request document-id=secret-document provider-body=secret-body arbitrary-code=secret-code';
     try {
