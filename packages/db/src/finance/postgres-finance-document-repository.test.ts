@@ -127,7 +127,12 @@ const payload = (currency: string | null = 'CAD') => ({
       sourceLocale: 'en-CA' as const,
     },
   ],
-  matchSuggestions: [],
+  matchSuggestions: [] as Array<{
+    recordType: 'transaction';
+    recordId: string;
+    scoreBasisPoints: number;
+    reasons: string[];
+  }>,
 });
 
 const committedReviewedPayload = (
@@ -932,6 +937,14 @@ describe('PostgresFinanceDocumentRepository', () => {
           sourceLocale: 'en-CA' as const,
         },
       ],
+      matchSuggestions: [
+        {
+          recordType: 'transaction' as const,
+          recordId: 'transaction::reviewed-match-0001',
+          scoreBasisPoints: 9_000,
+          reasons: ['same-total'],
+        },
+      ],
     };
     const pendingReview = reviewRow('CAD', {
       selectedFacts,
@@ -970,6 +983,9 @@ describe('PostgresFinanceDocumentRepository', () => {
       if (sql.includes('insert into emdo.finance_document_chunks')) {
         return [{ id: ids.chunk, ordinal: values[6] }];
       }
+      if (sql.includes('insert into emdo.finance_document_matches')) {
+        return { rows: [], rowCount: 1 };
+      }
       if (
         sql.includes('insert into emdo.finance_document_evidence') ||
         sql.includes('update emdo.finance_document_review_batches') ||
@@ -994,7 +1010,11 @@ describe('PostgresFinanceDocumentRepository', () => {
         idempotencyKey: pendingReview.idempotencyKey,
         embeddings: [{ ordinal: 1, embedding: vector(0.25) }],
       }),
-    ).resolves.toMatchObject({ status: 'committed', chunksCommitted: 2 });
+    ).resolves.toMatchObject({
+      status: 'committed',
+      chunksCommitted: 2,
+      matchSuggestionsCommitted: 1,
+    });
 
     const expectedReviewBinding = [
       ids.household,
@@ -1040,6 +1060,10 @@ describe('PostgresFinanceDocumentRepository', () => {
     expect(typeof semanticValues?.[11]).toBe('string');
     expect(String(semanticValues?.[11]).split(',')).toHaveLength(1_536);
     expect(String(semanticValues?.[11])).toMatch(/^\[0.25,/u);
+    const matchInsert = query.mock.calls.find(([sql]) =>
+      String(sql).includes('insert into emdo.finance_document_matches'),
+    );
+    expect(matchInsert?.[1]?.[9]).toBe('["same-total"]');
     const statements = query.mock.calls.map(([sql]) => String(sql));
     expect(
       statements.findIndex((sql) =>

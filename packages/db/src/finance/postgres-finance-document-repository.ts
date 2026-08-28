@@ -2752,7 +2752,7 @@ export class PostgresFinanceDocumentRepository {
               suggestion.recordType,
               suggestion.recordId,
               suggestion.scoreBasisPoints,
-              suggestion.reasons,
+              stableJson(suggestion.reasons),
             ],
           );
           if (row.rowCount !== 1) {
