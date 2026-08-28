@@ -692,6 +692,7 @@ describe('staging acceptance CLI', () => {
     let deleted = false;
     let manualTransaction = false;
     let commitRunFailed = true;
+    let deleteRunFailed = true;
     const reviewEnvelope = {
       schemaVersion: 1,
       sourceLocale: 'en-CA',
@@ -1218,14 +1219,16 @@ describe('staging acceptance CLI', () => {
         if (runId === FINANCE_DELETE_RUN_ID)
           return after === null
             ? approvalEvents(runId, FINANCE_DELETE_PROPOSAL_ID)
-            : completedEvents(
-                runId,
-                financeOutput({
-                  summary: 'The document was deleted.',
-                  actionProposalReferences: [FINANCE_DELETE_PROPOSAL_ID],
-                }),
-                2,
-              );
+            : deleteRunFailed
+              ? failedEvents(runId, 2)
+              : completedEvents(
+                  runId,
+                  financeOutput({
+                    summary: 'The document was deleted.',
+                    actionProposalReferences: [FINANCE_DELETE_PROPOSAL_ID],
+                  }),
+                  2,
+                );
         if (runId === FINANCE_QNA_RUN_ID)
           return completedEvents(
             runId,
@@ -1422,6 +1425,38 @@ describe('staging acceptance CLI', () => {
     ]);
     expect(JSON.stringify(phaseOne)).not.toContain('finance-owner-session');
     expect(JSON.stringify(phaseOne)).not.toContain('Synthetic evidence.');
+
+    const requestsBeforeGuardedDeleteFailure = requests.length;
+    const failedDeleteStages: FinanceAcceptanceStage[] = [];
+    await expect(
+      runStagingAcceptanceCommand({
+        argv: [
+          '--all-mvp-gates',
+          '--require-synthetic',
+          '--forbid-worker-provider-execution',
+          '--finance-synthetic-document-gates',
+          '--finance-synthetic-document-finalize',
+        ],
+        environment: financeEnvironment,
+        fetch,
+        now: () => OBSERVED_AT,
+        financeStageReporter: (stage) => {
+          failedDeleteStages.push(stage);
+        },
+        financePhase2RootAttestationReader: async () => ({
+          sourceSha: SOURCE_SHA,
+          workflowRunId: WORKFLOW_RUN_ID,
+          documentId: FINANCE_DOCUMENT_ID,
+          evidenceId: FINANCE_EVIDENCE_ID,
+          backupRestoreReceiptSha256: 'f'.repeat(64),
+        }),
+      }),
+    ).rejects.toThrow('Acceptance run terminal event is ambiguous');
+    expect(failedDeleteStages.at(-1)).toBe('finalize-guarded-delete');
+    expect(failedDeleteStages).not.toContain('finalize-purge-and-revocation');
+    deleted = false;
+    deleteRunFailed = false;
+    requests.length = requestsBeforeGuardedDeleteFailure;
 
     const phaseTwo = await runStagingAcceptanceCommand({
       argv: [
