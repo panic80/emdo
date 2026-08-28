@@ -110,6 +110,58 @@ const ids = Object.freeze({
     lease: '97000000-0000-4000-8000-000000000023',
     membership: '97000000-0000-4000-8000-000000000024',
   }),
+  c: Object.freeze({
+    user: '98000000-0000-4000-8000-000000000001',
+    session: '98000000-0000-4000-8000-000000000002',
+    otherSession: '98000000-0000-4000-8000-000000000003',
+    request: '98000000-0000-4000-8000-000000000004',
+    rotatedRequest: '98000000-0000-4000-8000-000000000005',
+    otherSessionRequest: '98000000-0000-4000-8000-000000000006',
+    household: '98000000-0000-4000-8000-000000000007',
+    space: '98000000-0000-4000-8000-000000000008',
+    run: '98000000-0000-4000-8000-000000000009',
+    grant: '98000000-0000-4000-8000-000000000010',
+    rotatedGrant: '98000000-0000-4000-8000-000000000011',
+    otherSessionGrant: '98000000-0000-4000-8000-000000000012',
+    disclosure: '98000000-0000-4000-8000-000000000013',
+    proposal: '98000000-0000-4000-8000-000000000014',
+    attackProposal: '98000000-0000-4000-8000-000000000015',
+    decision: '98000000-0000-4000-8000-000000000016',
+    attackDecision: '98000000-0000-4000-8000-000000000017',
+    attempt: '98000000-0000-4000-8000-000000000018',
+    attackAttempt: '98000000-0000-4000-8000-000000000019',
+    outbox: '98000000-0000-4000-8000-000000000020',
+    execution: '98000000-0000-4000-8000-000000000021',
+    queue: '98000000-0000-4000-8000-000000000022',
+    lease: '98000000-0000-4000-8000-000000000023',
+    membership: '98000000-0000-4000-8000-000000000024',
+  }),
+  d: Object.freeze({
+    user: '99000000-0000-4000-8000-000000000001',
+    session: '99000000-0000-4000-8000-000000000002',
+    otherSession: '99000000-0000-4000-8000-000000000003',
+    request: '99000000-0000-4000-8000-000000000004',
+    rotatedRequest: '99000000-0000-4000-8000-000000000005',
+    otherSessionRequest: '99000000-0000-4000-8000-000000000006',
+    household: '99000000-0000-4000-8000-000000000007',
+    space: '99000000-0000-4000-8000-000000000008',
+    run: '99000000-0000-4000-8000-000000000009',
+    grant: '99000000-0000-4000-8000-000000000010',
+    rotatedGrant: '99000000-0000-4000-8000-000000000011',
+    otherSessionGrant: '99000000-0000-4000-8000-000000000012',
+    disclosure: '99000000-0000-4000-8000-000000000013',
+    proposal: '99000000-0000-4000-8000-000000000014',
+    attackProposal: '99000000-0000-4000-8000-000000000015',
+    decision: '99000000-0000-4000-8000-000000000016',
+    attackDecision: '99000000-0000-4000-8000-000000000017',
+    attempt: '99000000-0000-4000-8000-000000000018',
+    attackAttempt: '99000000-0000-4000-8000-000000000019',
+    outbox: '99000000-0000-4000-8000-000000000020',
+    execution: '99000000-0000-4000-8000-000000000021',
+    queue: '99000000-0000-4000-8000-000000000022',
+    lease: '99000000-0000-4000-8000-000000000023',
+    membership: '99000000-0000-4000-8000-000000000024',
+  }),
 });
 
 type ActorIds = (typeof ids)[keyof typeof ids];
@@ -129,6 +181,7 @@ interface Fixture {
     providerGrantReference: string;
     authorizationEpoch: number;
   }>;
+  readonly collectionAuthorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
   readonly providerAuthorityBindingHash: string;
   readonly proposal: ActionProposal;
   readonly preparation: Readonly<{
@@ -309,6 +362,199 @@ const buildFixture = (
     disclosureHash: hashCanonicalJson(disclosure),
     providerGrantReference,
     authorityBinding,
+    collectionAuthorizationScopeFingerprint: authorizationScopeFingerprint,
+    providerAuthorityBindingHash,
+    proposal,
+    preparation: Object.freeze({
+      binding,
+      bindingHash: hashCanonicalJson({
+        domain: 'emdo.provider-proposal-preparation.v1',
+        binding,
+      }),
+    }),
+  });
+};
+
+const buildFinanceFixture = (
+  actor: ActorIds,
+  options: Readonly<{
+    proposalId?: string;
+    sdkCallSuffix?: string;
+  }> = {},
+): Fixture => {
+  const disclosureCreatedAt = isoOffset(-60_000);
+  const proposalCreatedAt = isoOffset(-1_000);
+  const expiresAt = isoOffset(8 * 60_000);
+  const proposalId = options.proposalId ?? actor.proposal;
+  const authorizationScopeFingerprint =
+    EffectiveAuthorizationScopeFingerprintSchema.parse(
+      hashCanonicalJson({
+        domain: 'emdo.authorization-scope.v1',
+        householdId: actor.household,
+        userId: actor.user,
+        sessionId: actor.session,
+        membershipId: actor.membership,
+        membershipAdministrationVersion: 1,
+        role: 'owner',
+        privateSpaceId: actor.space,
+        proposalSpaceId: actor.space,
+        writableSpaceIds: [actor.space],
+      }),
+    );
+  const collectionAuthorizationScopeFingerprint =
+    EffectiveAuthorizationScopeFingerprintSchema.parse(
+      hashCanonicalJson({
+        domain: 'emdo.authorization-scope.v1',
+        householdId: actor.household,
+        userId: actor.user,
+        sessionId: actor.session,
+        membershipId: actor.membership,
+        membershipAdministrationVersion: 1,
+        role: 'owner',
+        privateSpaceId: actor.space,
+        proposalSpaceId: null,
+        writableSpaceIds: [actor.space],
+      }),
+    );
+  const canonicalArguments = {
+    schemaVersion: 1,
+    action: 'delete-document',
+    documentId: `finance-document:${actor.proposal}`,
+  } as const;
+  const payloadHash = hashCanonicalJson(canonicalArguments);
+  const capabilityFingerprint = hashCanonicalJson({
+    schemaVersion: 1,
+    capabilityId: 'finance.records.write',
+    version: '1.0.0',
+  });
+  const targetBindingHash = hashCanonicalJson({
+    schemaVersion: 1,
+    domain: 'emdo.finance-document-target-binding.v1',
+    documentId: canonicalArguments.documentId,
+    expectedVersion: 'current',
+  });
+  const providerAuthorityBindingHash = hashCanonicalJson({
+    schemaVersion: 1,
+    domain: 'emdo.finance-guarded-action-execution-binding.v2',
+    proposalId,
+    runId: actor.run,
+    householdId: actor.household,
+    userId: actor.user,
+    authenticatedSessionId: actor.session,
+    privateSpaceId: actor.space,
+    authorizationScopeFingerprint: collectionAuthorizationScopeFingerprint,
+    disclosureGrantId: actor.disclosure,
+    capabilityId: 'finance.records.write',
+    capabilityVersion: '1.0.0',
+    capabilityFingerprint,
+    operation: 'finance-document-delete',
+    actionHash: payloadHash,
+    targetBindingHash,
+  });
+  const guardedAction = {
+    capabilityVersion: '1.0.0',
+    operation: 'finance-document-delete',
+    actionHash: payloadHash,
+    executionBindingHash: providerAuthorityBindingHash,
+    targetBindingHash,
+  } as const;
+  const disclosure = Object.freeze({
+    schemaVersion: 1 as const,
+    id: actor.disclosure,
+    version: 1,
+    userId: actor.user,
+    householdId: actor.household,
+    agentId: 'finance',
+    purpose: 'Delete one visually approved Finance document',
+    runId: actor.run,
+    recordAllowlist: [
+      {
+        dataClass: 'finance.document',
+        recordId: canonicalArguments.documentId,
+        fields: ['status'],
+      },
+    ],
+    provider: 'openai',
+    createdAt: disclosureCreatedAt,
+    expiresAt,
+    oneRunOnly: true,
+  });
+  const proposalWithoutApproval = {
+    schemaVersion: 1 as const,
+    id: proposalId,
+    version: 1,
+    runId: actor.run,
+    capabilityId: 'finance.records.write',
+    capabilityFingerprint,
+    authorizationScopeFingerprint,
+    canonicalArguments,
+    targets: [
+      {
+        kind: 'finance.document',
+        id: canonicalArguments.documentId,
+        expectedVersion: 'current',
+      },
+    ],
+    beforePreview: { status: 'ready' },
+    afterPreview: { status: 'deleted' },
+    approvalDisplay: {
+      schemaVersion: 1 as const,
+      title: 'Delete Finance document',
+      summary: 'Delete one manually uploaded Finance document.',
+      beforeSummary: 'The document remains available.',
+      afterSummary: 'The document is deleted.',
+      fields: [{ label: 'Document', value: canonicalArguments.documentId }],
+    },
+    providerPreconditions: [
+      {
+        kind: 'finance.document',
+        targetId: canonicalArguments.documentId,
+        expectedValue: 'current',
+      },
+    ],
+    providerAuthorityBindingHash,
+    providerSdkCallId: `sdk-finance-delete-${options.sdkCallSuffix ?? 'main'}-${actor.user}`,
+    guardedAction,
+    payloadHash,
+    disclosureGrant: disclosure,
+    createdAt: proposalCreatedAt,
+    expiresAt,
+    idempotencyKey: `proposal:finance:${options.sdkCallSuffix ?? 'main'}:${actor.user}`,
+    state: 'pending' as const,
+  };
+  const proposal = ActionProposalSchema.parse({
+    ...proposalWithoutApproval,
+    approvalHash: hashActionProposalApproval(proposalWithoutApproval),
+  });
+  const binding = ProposalPreparationBindingSchema.parse({
+    proposalId: proposal.id,
+    originRequestId: actor.request,
+    originSpaceAccessGrantId: actor.grant,
+    originSessionId: actor.session,
+    runId: actor.run,
+    householdId: actor.household,
+    userId: actor.user,
+    agentId: disclosure.agentId,
+    disclosureGrantId: actor.disclosure,
+    disclosurePolicyVersion: '1.0.0',
+    capabilityId: proposal.capabilityId,
+    sdkCallId: proposal.providerSdkCallId,
+    providerAuthorityBindingHash,
+  });
+  return Object.freeze({
+    actor,
+    disclosure,
+    disclosureHash: hashCanonicalJson(disclosure),
+    providerGrantReference: `unused-finance-grant-${actor.user}`,
+    authorityBinding: Object.freeze({
+      kind: 'google-calendar-grant-v2' as const,
+      householdId: actor.household,
+      privateSpaceId: actor.space,
+      authorizationScopeFingerprint: collectionAuthorizationScopeFingerprint,
+      providerGrantReference: `unused-finance-grant-${actor.user}`,
+      authorizationEpoch: 0,
+    }),
+    collectionAuthorizationScopeFingerprint,
     providerAuthorityBindingHash,
     proposal,
     preparation: Object.freeze({
@@ -500,10 +746,14 @@ describeDatabase(
       emailVerified: true as const,
       spaceAccessGrantId: options.spaceAccessGrantId ?? fixture.actor.grant,
       collectionAuthorizationScopeFingerprint:
-        fixture.authorityBinding.authorizationScopeFingerprint,
+        fixture.collectionAuthorizationScopeFingerprint,
     });
 
-    const seedActor = async (fixture: Fixture, label: string) => {
+    const seedActor = async (
+      fixture: Fixture,
+      label: string,
+      options: Readonly<{ includeGoogle?: boolean }> = {},
+    ) => {
       const actor = fixture.actor;
       await admin.query(
         `insert into emdo.auth_users (id, name, email, email_verified)
@@ -554,9 +804,15 @@ describeDatabase(
         `insert into emdo.agent_runs
            (id, household_id, space_id, original_owner_user_id, agent_id,
             agent_version, requested_model, status)
-         values ($1, $2, $3, $4, 'scheduler', '1.0.0',
+         values ($1, $2, $3, $4, $5, '1.0.0',
                  'gpt-5.6-luna', 'running')`,
-        [actor.run, actor.household, actor.space, actor.user],
+        [
+          actor.run,
+          actor.household,
+          actor.space,
+          actor.user,
+          fixture.disclosure.agentId,
+        ],
       );
       await admin.query(
         `insert into emdo.space_access_grants
@@ -592,39 +848,43 @@ describeDatabase(
           actor.user,
         ],
       );
-      await admin.query(
-        `insert into emdo.google_oauth_authorization_epochs
-           (household_id, private_space_id, original_owner_user_id,
-            authorization_epoch, created_at, updated_at)
-         values ($1, $2, $3, 0, pg_catalog.clock_timestamp(),
-                 pg_catalog.clock_timestamp())`,
-        [actor.household, actor.space, actor.user],
-      );
-      await admin.query(
-        `insert into emdo.encrypted_google_calendar_grants
-           (record_id, household_id, private_space_id, original_owner_user_id,
-            provider, grant_type, revision, authorization_epoch,
-            provider_grant_reference, encrypted_payload, created_at, updated_at)
-         values ($1, $2, $3, $4, 'google', 'calendar-authorization', 1, 0,
-                 $5, $6::jsonb, pg_catalog.clock_timestamp(),
-                 pg_catalog.clock_timestamp())`,
-        [
-          `google-calendar-oauth-v1-${hashCanonicalJson({ label })}`,
-          actor.household,
-          actor.space,
-          actor.user,
-          fixture.providerGrantReference,
-          {
-            algorithm: 'aes-256-gcm',
-            aadVersion: 1,
-            ciphertext: Buffer.from(`proposal-${label}`).toString('base64url'),
-            nonce: Buffer.alloc(12, 1).toString('base64url'),
-            authenticationTag: Buffer.alloc(16, 2).toString('base64url'),
-            wrappedKey: Buffer.alloc(60, 3).toString('base64url'),
-            keyVersion: 'proposal-integration-key-v1',
-          },
-        ],
-      );
+      if (options.includeGoogle !== false) {
+        await admin.query(
+          `insert into emdo.google_oauth_authorization_epochs
+             (household_id, private_space_id, original_owner_user_id,
+              authorization_epoch, created_at, updated_at)
+           values ($1, $2, $3, 0, pg_catalog.clock_timestamp(),
+                   pg_catalog.clock_timestamp())`,
+          [actor.household, actor.space, actor.user],
+        );
+        await admin.query(
+          `insert into emdo.encrypted_google_calendar_grants
+             (record_id, household_id, private_space_id, original_owner_user_id,
+              provider, grant_type, revision, authorization_epoch,
+              provider_grant_reference, encrypted_payload, created_at, updated_at)
+           values ($1, $2, $3, $4, 'google', 'calendar-authorization', 1, 0,
+                   $5, $6::jsonb, pg_catalog.clock_timestamp(),
+                   pg_catalog.clock_timestamp())`,
+          [
+            `google-calendar-oauth-v1-${hashCanonicalJson({ label })}`,
+            actor.household,
+            actor.space,
+            actor.user,
+            fixture.providerGrantReference,
+            {
+              algorithm: 'aes-256-gcm',
+              aadVersion: 1,
+              ciphertext: Buffer.from(`proposal-${label}`).toString(
+                'base64url',
+              ),
+              nonce: Buffer.alloc(12, 1).toString('base64url'),
+              authenticationTag: Buffer.alloc(16, 2).toString('base64url'),
+              wrappedKey: Buffer.alloc(60, 3).toString('base64url'),
+              keyVersion: 'proposal-integration-key-v1',
+            },
+          ],
+        );
+      }
       await admin.query(
         `insert into emdo.disclosure_grants
            (id, version, household_id, space_id, user_id, run_id, agent_id,
@@ -733,10 +993,10 @@ describeDatabase(
       );
 
       const proposalMigrations = (await loadOrderedMigrations()).filter(
-        ({ index }) => index <= 3,
+        ({ index }) => index <= 3 || index === 18,
       );
       expect(proposalMigrations.at(-1)?.id).toBe(
-        '0003_durable_runtime_repositories',
+        '0018_finance_guarded_proposal_authority',
       );
       for (const migration of proposalMigrations) {
         try {
@@ -977,6 +1237,7 @@ describeDatabase(
       pending: ActionProposal,
       proofToken: string,
       marker: string,
+      decisionOperationId: string = operationId(`decision_${marker}`),
     ): Promise<ApprovedLifecycle> => {
       const decidedAt = new Date().toISOString();
       const decision: ActionDecision = {
@@ -994,10 +1255,7 @@ describeDatabase(
       };
       const approved = transition(pending, 'approved');
       const scope = scopeFor(fixture, 'visual-decision', decidedAt);
-      const result = await repositoryFor(
-        fixture,
-        operationId(`decision_${marker}`),
-      )
+      const result = await repositoryFor(fixture, decisionOperationId)
         .withVisualDecisionProof(proofToken, fixture.actor.grant)
         .transaction((transaction) =>
           transaction.commitDecision({
@@ -1258,6 +1516,332 @@ describeDatabase(
           decisionClient.end(),
         ]);
       }
+    });
+
+    it('accepts guarded Finance create and visual decision without Google, but rejects forged Finance and Calendar without Google', async () => {
+      const financeFixture = buildFinanceFixture(ids.c);
+      await seedActor(financeFixture, 'finance-no-google', {
+        includeGoogle: false,
+      });
+
+      const createOperation = operationId('finance_no_google_create');
+      const createInput = {
+        proposal: financeFixture.proposal,
+        preparation: financeFixture.preparation,
+        scope: scopeFor(
+          financeFixture,
+          'proposal-create',
+          new Date().toISOString(),
+        ),
+        event: createdEventFor(financeFixture),
+      } as const;
+      await expect(
+        repositoryFor(financeFixture, createOperation).transaction(
+          (transaction) => transaction.insertProposal(createInput),
+        ),
+      ).resolves.toBe('created');
+      await expect(
+        repositoryFor(financeFixture, createOperation).transaction(
+          (transaction) => transaction.insertProposal(createInput),
+        ),
+      ).resolves.toBe('duplicate');
+      const alteredScopeOperation = operationId('finance_altered_scope');
+      await expect(
+        directWorkflowCommit(
+          'commit_provider_proposal_create',
+          alteredScopeOperation,
+          {
+            ...createInput,
+            scope: {
+              ...createInput.scope,
+              authorizationScopeFingerprint: 'e'.repeat(64),
+            },
+          },
+        ),
+      ).resolves.toBe('conflict');
+      await expectUnclaimed(alteredScopeOperation);
+      await expect(
+        repositoryFor(
+          financeFixture,
+          operationId('finance_no_google_read'),
+        ).getProposal(financeFixture.proposal.id),
+      ).resolves.toEqual(financeFixture.proposal);
+
+      await stageApprovalResume(financeFixture, financeFixture.proposal);
+      const issuedProof = await proofStore().issue({
+        proposalId: financeFixture.proposal.id,
+        expectedProposalVersion: financeFixture.proposal.version,
+        expectedPayloadHash: financeFixture.proposal.payloadHash,
+        expectedApprovalHash: financeFixture.proposal.approvalHash,
+        principal: visualPrincipal(financeFixture),
+        requestId: financeFixture.actor.request,
+        idempotencyKey: `visual-proof:finance-no-google:${financeFixture.proposal.id}`,
+      });
+      expect(issuedProof.status).toBe('issued');
+      if (issuedProof.status !== 'issued') {
+        throw new Error('expected Finance visual proof issuance');
+      }
+      const visualDecisionOperation = operationId('finance_no_google_decision');
+      const approved = await commitApprovedDecision(
+        financeFixture,
+        financeFixture.proposal,
+        issuedProof.proof.proofToken,
+        'finance-no-google',
+        visualDecisionOperation,
+      );
+      await expect(
+        repositoryFor(financeFixture, visualDecisionOperation)
+          .withVisualDecisionProof(
+            issuedProof.proof.proofToken,
+            financeFixture.actor.grant,
+          )
+          .transaction((transaction) =>
+            transaction.commitDecision({
+              expected: expectedRevision(financeFixture.proposal),
+              next: approved.proposal,
+              decision: approved.decision,
+              scope: scopeFor(
+                financeFixture,
+                'visual-decision',
+                approved.decision.decidedAt,
+              ),
+              event: {
+                proposalId: approved.proposal.id,
+                eventType: 'proposal.approved',
+                occurredAt: approved.decision.decidedAt,
+                decisionId: approved.decision.id,
+                actorUserId: approved.decision.userId,
+                authenticatedSessionId:
+                  approved.decision.authenticatedSessionId,
+                approvalHash: approved.decision.approvalHash,
+                decisionIdempotencyKey: approved.decision.idempotencyKey,
+              },
+            }),
+          ),
+      ).resolves.toBe('duplicate');
+      await expect(
+        repositoryFor(
+          financeFixture,
+          operationId('finance_no_google_approved_read'),
+        ).getProposal(approved.proposal.id),
+      ).resolves.toEqual(approved.proposal);
+
+      const rejectedIssuedAt = new Date().toISOString();
+      const rejectedAuthorization = authorizationFor(
+        approved,
+        rejectedIssuedAt,
+        financeFixture.actor.attackAttempt,
+      );
+      const rejectedPrepared = transition(approved.proposal, 'prepared');
+      const prepareOperation = operationId('finance_prepare_rejected');
+      await expect(
+        directWorkflowCommit(
+          'commit_provider_proposal_prepare',
+          prepareOperation,
+          {
+            expected: expectedRevision(approved.proposal),
+            next: rejectedPrepared,
+            decisionId: approved.decision.id,
+            bindingHash: rejectedAuthorization.approvalBindingHash,
+            authorization: rejectedAuthorization,
+            approvalBinding: rejectedAuthorization.approvalBinding,
+            scope: scopeFor(
+              financeFixture,
+              'provider-write-prepare',
+              rejectedIssuedAt,
+            ),
+            event: {
+              proposalId: approved.proposal.id,
+              eventType: 'proposal.prepared',
+              occurredAt: rejectedIssuedAt,
+              decisionId: approved.decision.id,
+              actorUserId: approved.decision.userId,
+              authenticatedSessionId: approved.decision.authenticatedSessionId,
+              approvalHash: approved.decision.approvalHash,
+              decisionIdempotencyKey: approved.decision.idempotencyKey,
+              providerIdempotencyKey:
+                rejectedAuthorization.providerIdempotencyKey,
+              attemptId: rejectedAuthorization.attemptId,
+              attemptVersion: rejectedAuthorization.attemptVersion,
+            },
+          },
+        ),
+      ).resolves.toBe('conflict');
+      await expectUnclaimed(prepareOperation);
+
+      const rejectedDispatchedAt = new Date().toISOString();
+      const dispatchOperation = operationId('finance_dispatch_rejected');
+      await expect(
+        directWorkflowCommit(
+          'commit_provider_proposal_dispatch',
+          dispatchOperation,
+          {
+            expected: expectedRevision(approved.proposal),
+            next: transition(approved.proposal, 'executing'),
+            decisionId: approved.decision.id,
+            bindingHash: rejectedAuthorization.approvalBindingHash,
+            attemptId: rejectedAuthorization.attemptId,
+            dispatchedAt: rejectedDispatchedAt,
+            scope: scopeFor(
+              financeFixture,
+              'provider-write-dispatch',
+              rejectedDispatchedAt,
+            ),
+            event: {
+              proposalId: approved.proposal.id,
+              eventType: 'proposal.executing',
+              occurredAt: rejectedDispatchedAt,
+              decisionId: approved.decision.id,
+              actorUserId: approved.decision.userId,
+              authenticatedSessionId: approved.decision.authenticatedSessionId,
+              approvalHash: approved.decision.approvalHash,
+              decisionIdempotencyKey: approved.decision.idempotencyKey,
+              providerIdempotencyKey:
+                rejectedAuthorization.providerIdempotencyKey,
+              attemptId: rejectedAuthorization.attemptId,
+              attemptVersion: rejectedAuthorization.attemptVersion,
+            },
+          },
+        ),
+      ).resolves.toBe('conflict');
+      await expectUnclaimed(dispatchOperation);
+      await expect(
+        repositoryFor(
+          financeFixture,
+          operationId('finance_provider_reject_read'),
+        ).getProposal(approved.proposal.id),
+      ).resolves.toEqual(approved.proposal);
+
+      const financeClaims = await admin.query<{
+        phase: string;
+        finance_guarded_authority: {
+          schemaVersion: number;
+          capabilityId: string;
+          capabilityFingerprint: string;
+          guardedAction: unknown;
+        } | null;
+      }>(
+        `select phase, finance_guarded_authority
+           from emdo.workflow_operation_claims
+          where proposal_id = $1
+          order by phase`,
+        [financeFixture.proposal.id],
+      );
+      expect(financeClaims.rows).toHaveLength(2);
+      for (const claim of financeClaims.rows) {
+        expect(claim.finance_guarded_authority).toEqual({
+          schemaVersion: 1,
+          capabilityId: financeFixture.proposal.capabilityId,
+          capabilityFingerprint: financeFixture.proposal.capabilityFingerprint,
+          guardedAction: financeFixture.proposal.guardedAction,
+        });
+      }
+      await expect(
+        admin.query(
+          `update emdo.workflow_operation_claims
+              set finance_guarded_authority = null
+            where proposal_id = $1 and phase = 'proposal-create'`,
+          [financeFixture.proposal.id],
+        ),
+      ).rejects.toMatchObject({ code: '55000' });
+
+      const forgedFixture = buildFinanceFixture(ids.c, {
+        proposalId: ids.c.attackProposal,
+        sdkCallSuffix: 'forged-binding',
+      });
+      const forgedBindingHash = 'f'.repeat(64);
+      const forgedProposal = ActionProposalSchema.parse({
+        ...forgedFixture.proposal,
+        providerAuthorityBindingHash: forgedBindingHash,
+        guardedAction: {
+          ...forgedFixture.proposal.guardedAction,
+          executionBindingHash: forgedBindingHash,
+        },
+      });
+      const forgedOperation = operationId('finance_forged_binding');
+      await expect(
+        directWorkflowCommit(
+          'commit_provider_proposal_create',
+          forgedOperation,
+          {
+            proposal: forgedProposal,
+            preparation: forgedFixture.preparation,
+            scope: scopeFor(
+              forgedFixture,
+              'proposal-create',
+              new Date().toISOString(),
+            ),
+            event: createdEventFor(forgedFixture),
+          },
+        ),
+      ).resolves.toBe('conflict');
+      await expectUnclaimed(forgedOperation);
+
+      const targetSubstitutionFixture = buildFinanceFixture(ids.c, {
+        proposalId: randomUUID(),
+        sdkCallSuffix: 'substituted-target',
+      });
+      const targetSubstitutionProposal = ActionProposalSchema.parse({
+        ...targetSubstitutionFixture.proposal,
+        guardedAction: {
+          ...targetSubstitutionFixture.proposal.guardedAction,
+          targetBindingHash: 'd'.repeat(64),
+        },
+      });
+      const targetSubstitutionOperation = operationId(
+        'finance_substituted_target',
+      );
+      await expect(
+        directWorkflowCommit(
+          'commit_provider_proposal_create',
+          targetSubstitutionOperation,
+          {
+            proposal: targetSubstitutionProposal,
+            preparation: targetSubstitutionFixture.preparation,
+            scope: scopeFor(
+              targetSubstitutionFixture,
+              'proposal-create',
+              new Date().toISOString(),
+            ),
+            event: createdEventFor(targetSubstitutionFixture),
+          },
+        ),
+      ).resolves.toBe('conflict');
+      await expectUnclaimed(targetSubstitutionOperation);
+
+      const calendarWithoutGoogle = buildFixture(ids.d);
+      await seedActor(calendarWithoutGoogle, 'calendar-no-google', {
+        includeGoogle: false,
+      });
+      const calendarOperation = operationId('calendar_no_google');
+      await expect(
+        directWorkflowCommit(
+          'commit_provider_proposal_create',
+          calendarOperation,
+          {
+            proposal: calendarWithoutGoogle.proposal,
+            preparation: calendarWithoutGoogle.preparation,
+            scope: scopeFor(
+              calendarWithoutGoogle,
+              'proposal-create',
+              new Date().toISOString(),
+            ),
+            event: createdEventFor(calendarWithoutGoogle),
+          },
+        ),
+      ).resolves.toBe('conflict');
+      await expectUnclaimed(calendarOperation);
+
+      await createPending(fixtureA, 'calendar-null-guarded-authority');
+      const calendarClaim = await admin.query<{
+        finance_guarded_authority: unknown;
+      }>(
+        `select finance_guarded_authority
+           from emdo.workflow_operation_claims
+          where proposal_id = $1 and phase = 'proposal-create'`,
+        [fixtureA.proposal.id],
+      );
+      expect(calendarClaim.rows).toEqual([{ finance_guarded_authority: null }]);
     });
 
     it('denies direct claim issuance and aggregate access while app reads remain household scoped', async () => {

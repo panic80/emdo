@@ -30,6 +30,10 @@ describe('single-household session activation migration', () => {
       id: '0017_approval_resume_public_events',
       index: 17,
     });
+    expect(migrations.at(18)).toMatchObject({
+      id: '0018_finance_guarded_proposal_authority',
+      index: 18,
+    });
   });
 
   it('derives only an exact single active membership behind a private owner boundary', async () => {

@@ -713,6 +713,33 @@ describe('ProposalService', () => {
     );
   });
 
+  it('includes guarded local-action and target bindings in immutable approval material', () => {
+    const guarded = {
+      ...proposalInput,
+      guardedAction: {
+        capabilityVersion: '1.0.0',
+        operation: 'finance-document-review-commit',
+        actionHash: proposalInput.payloadHash,
+        executionBindingHash: proposalInput.providerAuthorityBindingHash,
+        targetBindingHash: '8'.repeat(64),
+      },
+    } as const;
+    const changedTarget = {
+      ...guarded,
+      guardedAction: {
+        ...guarded.guardedAction,
+        targetBindingHash: '7'.repeat(64),
+      },
+    } as const;
+
+    expect(hashActionProposalApproval(guarded)).not.toBe(
+      hashActionProposalApproval(proposalInput),
+    );
+    expect(hashActionProposalApproval(changedTarget)).not.toBe(
+      hashActionProposalApproval(guarded),
+    );
+  });
+
   it('creates, visually approves, binds preconditions, and reaches one terminal state', async () => {
     const service = new ProposalService(
       materializer,

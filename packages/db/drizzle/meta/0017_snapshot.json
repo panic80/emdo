@@ -4463,30 +4463,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "deletion_proposal_id": {
-          "name": "deletion_proposal_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deletion_decision_id": {
-          "name": "deletion_decision_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deletion_target_binding_hash": {
-          "name": "deletion_target_binding_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deletion_execution_binding_hash": {
-          "name": "deletion_execution_binding_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -5613,6 +5589,30 @@
         "deleted_at": {
           "name": "deleted_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deletion_proposal_id": {
+          "name": "deletion_proposal_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deletion_decision_id": {
+          "name": "deletion_decision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deletion_target_binding_hash": {
+          "name": "deletion_target_binding_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deletion_execution_binding_hash": {
+          "name": "deletion_execution_binding_hash",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         }

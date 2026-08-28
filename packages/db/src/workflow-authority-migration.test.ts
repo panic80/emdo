@@ -235,9 +235,12 @@ describe('workflow authority migration', () => {
     const issuerGrants = issuerStatements.filter((statement) =>
       statement.includes('grant execute on function'),
     );
-    expect(issuerGrants).toHaveLength(1);
-    expect(issuerGrants[0]).toMatch(/to\s+emdo_workflow_executor\s*$/);
-    expect(issuerGrants[0]).not.toMatch(/emdo_app|emdo_workflow_login|public/);
+    expect(sql).toContain('rename to issue_workflow_operation_claim_calendar');
+    expect(issuerGrants).toHaveLength(2);
+    for (const grant of issuerGrants) {
+      expect(grant).toMatch(/to\s+emdo_workflow_executor\s*$/);
+      expect(grant).not.toMatch(/emdo_app|emdo_workflow_login|public/);
+    }
     expect(sql).toMatch(
       /lock_current_google_calendar_authority\(uuid, uuid, uuid, text, text\)/,
     );
@@ -385,9 +388,12 @@ describe('workflow authority migration', () => {
       /revoke all on function[\s\S]+emdo\.claim_workflow_operation_scope\(text\)[\s\S]+from[\s\S]+public[\s\S]+emdo_workflow/,
     );
     expect(sql).toMatch(/grant usage on schema emdo to emdo_workflow_login/);
-    expect(grants).toHaveLength(1);
-    expect(grants[0]).toMatch(/to\s+emdo_workflow_executor\s*$/);
-    expect(grants[0]).not.toMatch(/public|emdo_workflow_login/);
+    expect(sql).toContain('rename to claim_workflow_operation_scope_calendar');
+    expect(grants).toHaveLength(2);
+    for (const grant of grants) {
+      expect(grant).toMatch(/to\s+emdo_workflow_executor\s*$/);
+      expect(grant).not.toMatch(/public|emdo_workflow_login/);
+    }
     expect(sql).not.toMatch(
       /grant execute on function\s+emdo\.claim_workflow_operation_scope\(text\)[^;]+to\s+emdo_workflow_login/,
     );

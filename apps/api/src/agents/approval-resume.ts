@@ -177,6 +177,7 @@ export interface ProductionApprovalResumeRuntimeFactory {
     readonly requestId: string;
     readonly runId: string;
     readonly conversationId: string;
+    readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
     readonly approvalResume: Readonly<{
       checkpointId: string;
       proposalId: string;
@@ -349,6 +350,7 @@ export const createProductionApprovalResumeBinding = (dependencies: {
           requestId: binding.turnRequestId,
           runId: binding.runId,
           conversationId: binding.conversationId,
+          authorizationScopeFingerprint: binding.authorizationScopeFingerprint,
           approvalResume: {
             checkpointId: binding.checkpointId,
             proposalId: binding.proposalId,

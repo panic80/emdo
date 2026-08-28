@@ -154,10 +154,14 @@ import {
   DataDisclosureGrantSchema,
   EffectiveAuthorizationScopeFingerprintSchema,
 } from '@emdo/contracts';
-import { hashCanonicalJson } from '@emdo/toolbox';
+import {
+  hashCanonicalJson,
+  hashCapabilityDescriptorBinding,
+} from '@emdo/toolbox';
 
 import { parseProductionProviderWriteCapabilityId } from '../agents/capability-runtime.js';
 import type { ProductionOpenAiAgentServiceBundle } from './core-openai-services.js';
+import { hashFinanceGuardedActionExecutionBinding } from './finance-agent-services.js';
 import {
   createRequestScopedCoreAgentRuntimeFactory,
   createRequestScopedCoreCalendarProposalAdapter,
@@ -185,6 +189,8 @@ const ids = Object.freeze({
 
 const authorizationScopeFingerprint =
   EffectiveAuthorizationScopeFingerprintSchema.parse('a'.repeat(64));
+const operationAuthorizationScopeFingerprint =
+  EffectiveAuthorizationScopeFingerprintSchema.parse('b'.repeat(64));
 const capabilityId = parseProductionProviderWriteCapabilityId(
   'google-calendar.event.create',
 );
@@ -486,6 +492,7 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
         principal,
         requestId: ids.request,
         runId: ids.run,
+        authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
         readPool: { connect: vi.fn() } as never,
         workflowPool: { connect: vi.fn() } as never,
         ...(input.target === undefined
@@ -523,7 +530,7 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
         userId: ids.user,
         authenticatedSessionId: ids.session,
         spaceAccessGrantId: ids.spaceGrant,
-        authorizationScopeFingerprint,
+        authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
         disclosureGrantId: ids.disclosureGrant,
         disclosureGrantVersion: '7.2.5',
         sdkCallId: `finance-presentation-${input.operation}`,
@@ -585,6 +592,7 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
         principal,
         requestId: ids.request,
         runId: ids.run,
+        authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
         readPool,
         workflowPool,
       },
@@ -605,6 +613,27 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
         reason: 'Correct the receipt total.',
       },
     };
+    const capabilityFingerprint = hashCapabilityDescriptorBinding(
+      financeWriteDescriptor,
+    );
+    const actionHash = hashCanonicalJson(argumentsValue);
+    const executionBindingHash = hashFinanceGuardedActionExecutionBinding({
+      proposalId: ids.proposal,
+      scope: {
+        runId: ids.run,
+        householdId: ids.household,
+        userId: ids.user,
+        sessionId: ids.session,
+        privateSpaceId: ids.privateSpace,
+        collectionAuthorizationScopeFingerprint: authorizationScopeFingerprint,
+        disclosureGrantId: ids.disclosureGrant,
+      },
+      capabilityId: 'finance.records.write',
+      capabilityVersion: '1.0.0',
+      capabilityFingerprint,
+      operation: 'finance-adjustment',
+      actionHash,
+    });
 
     const materialized = await adapter.materializeProposal({
       capabilityId: 'finance.records.write',
@@ -618,7 +647,7 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
         userId: ids.user,
         authenticatedSessionId: ids.session,
         spaceAccessGrantId: ids.spaceGrant,
-        authorizationScopeFingerprint,
+        authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
         disclosureGrantId: ids.disclosureGrant,
         disclosureGrantVersion: '7.2.5',
         sdkCallId: 'finance-sdk-call-1',
@@ -626,6 +655,9 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
         abortSignal: new AbortController().signal,
       },
     });
+    if (materialized === undefined) {
+      throw new Error('test-finance-materialization-missing');
+    }
 
     expect(resolve).toHaveBeenCalledWith(ids.disclosureGrant);
     expect(create).toHaveBeenCalledWith(
@@ -634,11 +666,31 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
         runId: ids.run,
         capabilityId: 'finance.records.write',
         canonicalArguments: argumentsValue,
+        authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
         disclosureGrant: financeDisclosureGrant,
+        providerAuthorityBindingHash: executionBindingHash,
         guardedAction: expect.objectContaining({
           capabilityVersion: '1.0.0',
           operation: 'finance-adjustment',
-          actionHash: hashCanonicalJson(argumentsValue),
+          actionHash,
+          executionBindingHash,
+        }),
+        idempotencyKey: hashCanonicalJson({
+          domain: 'emdo.finance-guarded-action-proposal.v1',
+          requestId: ids.request,
+          runId: ids.run,
+          sdkCallId: 'finance-sdk-call-1',
+          householdId: ids.household,
+          userId: ids.user,
+          authenticatedSessionId: ids.session,
+          spaceAccessGrantId: ids.spaceGrant,
+          authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
+          disclosureGrantId: ids.disclosureGrant,
+          capabilityId: 'finance.records.write',
+          capabilityVersion: '1.0.0',
+          capabilityFingerprint,
+          operation: 'finance-adjustment',
+          actionHash,
         }),
         expiresAt: '2026-08-15T12:10:00.000Z',
         state: 'pending',
@@ -658,11 +710,15 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
       sdkCallId: 'finance-sdk-call-1',
       proposal: {
         id: ids.proposal,
+        authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
         guardedAction: {
           operation: 'finance-adjustment',
         },
       },
     });
+    expect(materialized.proposal.guardedAction).not.toHaveProperty(
+      'targetBindingHash',
+    );
     expect(createProposalRepository).toHaveBeenCalledWith({
       readPool,
       workflowPool,
@@ -786,6 +842,9 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
         documentId: ids.document,
         afterState: 'deleted',
       }),
+    });
+    expect(committed.guardedAction).toMatchObject({
+      targetBindingHash: 'b'.repeat(64),
     });
 
     await expect(
@@ -1072,6 +1131,7 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
         principal,
         requestId: ids.request,
         runId: ids.run,
+        authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
         readPool: { connect: vi.fn() } as never,
         workflowPool: { connect: vi.fn() } as never,
       },
@@ -1106,7 +1166,7 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
           userId: ids.user,
           authenticatedSessionId: ids.session,
           spaceAccessGrantId: ids.spaceGrant,
-          authorizationScopeFingerprint,
+          authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
           disclosureGrantId: ids.disclosureGrant,
           disclosureGrantVersion: '7.2.5',
           sdkCallId: 'finance-sdk-call-2',
@@ -1139,6 +1199,7 @@ describe('request-scoped core agent runtime factory', () => {
       requestId: ids.request,
       runId: ids.run,
       conversationId: ids.conversation,
+      authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
       readPool,
       workflowPool,
       google: { createProposalTargetReader, createConditionalGateway },
@@ -1161,6 +1222,7 @@ describe('request-scoped core agent runtime factory', () => {
       requestId: ids.request,
       runId: ids.run,
       conversationId: ids.conversation,
+      authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
     });
     expect(factory?.runtime.agentIds).toEqual(['manager', 'scheduler']);
     expect(factory?.runtime.capabilityIds).toEqual([
@@ -1222,6 +1284,7 @@ describe('request-scoped core agent runtime factory', () => {
       requestId: ids.request,
       runId: ids.run,
       conversationId: ids.conversation,
+      authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
       readPool,
       openAi,
       checkpointCipher: {
@@ -1285,6 +1348,7 @@ describe('request-scoped core agent runtime factory', () => {
       requestId: ids.request,
       runId: ids.run,
       conversationId: ids.conversation,
+      authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
       readPool,
       openAi: {
         modelAvailability: { isAvailable },
@@ -1319,6 +1383,7 @@ describe('request-scoped core agent runtime factory', () => {
       requestId: ids.request,
       runId: ids.run,
       conversationId: ids.conversation,
+      authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
       readPool,
       workflowPool: { connect: vi.fn() } as never,
       google: {
@@ -1368,6 +1433,7 @@ describe('request-scoped core agent runtime factory', () => {
       requestId: ids.request,
       runId: ids.run,
       conversationId: ids.conversation,
+      authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
       readPool: pool,
       workflowPool: pool,
       google: {

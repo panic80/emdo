@@ -40,6 +40,7 @@ describe('database migration runner', () => {
       '0015_single_household_session_activation',
       '0016_finance_document_knowledge',
       '0017_approval_resume_public_events',
+      '0018_finance_guarded_proposal_authority',
     ]);
     expect(migrations.map(({ index }) => index)).toEqual(
       migrations.map((_, index) => index),
@@ -93,6 +94,7 @@ describe('database migration runner', () => {
     expect(migrations[17]?.sql).toContain(
       'CREATE OR REPLACE FUNCTION "emdo"."settle_approval_resume_job"',
     );
+    expect(migrations[18]?.sql).toContain('ADD COLUMN "guarded_action" jsonb');
   });
 
   it('holds one session-level advisory lock around the tracked migrator and always unlocks', async () => {

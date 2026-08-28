@@ -1118,6 +1118,7 @@ const verifiedGuardedActionPermit = (input: {
     permit.data.actionHash !== hashCanonicalJson(input.arguments) ||
     (input.targetBindingHash !== undefined &&
       !Sha256Schema.safeParse(input.targetBindingHash).success) ||
+    permit.data.targetBindingHash !== input.targetBindingHash ||
     context.data.approvalDecisionId !== permit.data.decisionId ||
     context.data.requestId !== input.scope.requestId ||
     context.data.runId !== input.scope.runId ||

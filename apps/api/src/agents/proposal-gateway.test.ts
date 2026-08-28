@@ -632,12 +632,11 @@ describe('production provider proposal gateway', () => {
     const financeArguments = Object.freeze({
       schemaVersion: 1 as const,
       mutation: {
-        kind: 'adjust' as const,
-        transactionId: 'transaction-1',
-        amountCadMinor: 50,
-        reason: 'Correct the receipt total.',
+        kind: 'commit-document-review' as const,
+        documentId: 'document-1',
       },
     });
+    const financeTargetBindingHash = '6'.repeat(64);
     const financeActionHash = hashCanonicalJson(financeArguments);
     const financeExecutionBindingHash = hashCanonicalJson({
       domain: 'test.finance.execution-binding',
@@ -665,7 +664,7 @@ describe('production provider proposal gateway', () => {
         summary: 'EMDO needs approval before applying this Finance action.',
         beforeSummary: 'No Finance change has been applied.',
         afterSummary: 'EMDO will apply the approved action.',
-        fields: [{ label: 'Action', value: 'finance-adjustment' }],
+        fields: [{ label: 'Action', value: 'finance-document-review-commit' }],
       },
       providerPreconditions: [
         {
@@ -678,9 +677,10 @@ describe('production provider proposal gateway', () => {
       providerSdkCallId: 'finance-sdk-call-1',
       guardedAction: {
         capabilityVersion: '1.0.0',
-        operation: 'finance-adjustment',
+        operation: 'finance-document-review-commit',
         actionHash: financeActionHash,
         executionBindingHash: financeExecutionBindingHash,
+        targetBindingHash: financeTargetBindingHash,
       },
       payloadHash: financeActionHash,
       disclosureGrant: {
@@ -811,9 +811,10 @@ describe('production provider proposal gateway', () => {
           capabilityId: financeCapabilityId,
           capabilityVersion: '1.0.0',
           capabilityFingerprint: financeProposal.capabilityFingerprint,
-          operation: 'finance-adjustment',
+          operation: 'finance-document-review-commit',
           actionHash: financeActionHash,
           executionBindingHash: financeExecutionBindingHash,
+          targetBindingHash: financeTargetBindingHash,
         },
       }),
     );

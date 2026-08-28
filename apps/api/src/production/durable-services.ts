@@ -757,6 +757,7 @@ export const createProductionDurableServiceBindings = async (
             requestId: input.requestId,
             runId: input.runId,
             conversationId: input.conversationId,
+            authorizationScopeFingerprint: input.authorizationScopeFingerprint,
             readPool: database.scopedPool,
             workflowPool: workflowDatabase.scopedPool,
             google: {
@@ -894,6 +895,7 @@ export const createProductionDurableServiceBindings = async (
             requestId: input.requestId,
             runId: input.runId,
             conversationId: input.conversationId,
+            authorizationScopeFingerprint: input.authorizationScopeFingerprint,
             readPool: database.scopedPool,
             workflowPool: configuredWorkflowDatabase.scopedPool,
             openAi: configuredOpenAi,
@@ -990,6 +992,7 @@ export const createProductionDurableServiceBindings = async (
             requestId: input.requestId,
             runId: input.runId,
             conversationId: input.conversationId,
+            authorizationScopeFingerprint: input.authorizationScopeFingerprint,
             readPool: database.scopedPool,
             openAi: configuredOpenAi,
             checkpointCipher: configuredCheckpointCipher,

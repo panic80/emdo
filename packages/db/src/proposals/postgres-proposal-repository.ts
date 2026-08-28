@@ -448,7 +448,11 @@ const proposalSelect = `select pg_catalog.jsonb_build_object(
          'expiresAt', proposal.expires_at,
          'idempotencyKey', proposal.idempotency_key,
          'state', state.state
-       ) as proposal
+       ) || case when proposal.guarded_action is null then '{}'::jsonb
+                else pg_catalog.jsonb_build_object(
+                  'guardedAction', proposal.guarded_action
+                )
+           end as proposal
   from emdo.action_proposals as proposal
   join emdo.proposal_states as state on state.proposal_id = proposal.id`;
 

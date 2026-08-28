@@ -19,7 +19,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import type { JsonValue } from '@emdo/contracts';
+import type { GuardedActionBinding, JsonValue } from '@emdo/contracts';
 
 export const emdoSchema = pgSchema('emdo');
 
@@ -704,6 +704,7 @@ export const actionProposals = emdoSchema.table(
     providerPreconditions: jsonb('provider_preconditions')
       .$type<JsonValue>()
       .notNull(),
+    guardedAction: jsonb('guarded_action').$type<GuardedActionBinding>(),
     providerAuthorityBindingHash: text(
       'provider_authority_binding_hash',
     ).notNull(),
@@ -812,6 +813,10 @@ export const actionProposals = emdoSchema.table(
     check(
       'action_proposals_provider_authority_binding_hash_check',
       sql`${table.providerAuthorityBindingHash} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'action_proposals_guarded_action_check',
+      sql`${table.guardedAction} is null or (pg_catalog.jsonb_typeof(${table.guardedAction}) = 'object' and pg_catalog.octet_length(${table.guardedAction}::text) <= 2048 and ${table.capabilityId} in ('finance.records.write','finance.statement.import') and emdo.jsonb_object_has_exact_keys(${table.guardedAction}, case when ${table.guardedAction} ? 'targetBindingHash' then array['capabilityVersion','operation','actionHash','executionBindingHash','targetBindingHash']::text[] else array['capabilityVersion','operation','actionHash','executionBindingHash']::text[] end) and pg_catalog.jsonb_typeof(${table.guardedAction} -> 'capabilityVersion') = 'string' and ${table.guardedAction} ->> 'capabilityVersion' = '1.0.0' and pg_catalog.jsonb_typeof(${table.guardedAction} -> 'operation') = 'string' and ${table.guardedAction} ->> 'operation' ~ '^[a-z0-9]+([._:-][a-z0-9]+)*$' and pg_catalog.jsonb_typeof(${table.guardedAction} -> 'actionHash') = 'string' and ${table.guardedAction} ->> 'actionHash' ~ '^[a-f0-9]{64}$' and pg_catalog.jsonb_typeof(${table.guardedAction} -> 'executionBindingHash') = 'string' and ${table.guardedAction} ->> 'executionBindingHash' ~ '^[a-f0-9]{64}$' and ${table.guardedAction} ->> 'actionHash' = ${table.payloadHash} and ${table.payloadHash} = emdo.canonical_json_hash(${table.canonicalArguments}) and ${table.guardedAction} ->> 'executionBindingHash' = ${table.providerAuthorityBindingHash} and ((${table.capabilityId} = 'finance.records.write' and ${table.guardedAction} ->> 'operation' in ('finance-adjustment','finance-reversal','finance-document-review-commit','finance-document-match-accept','finance-document-delete')) or (${table.capabilityId} = 'finance.statement.import' and ${table.guardedAction} ->> 'operation' = 'finance-statement-import-commit')) and (((${table.guardedAction} ->> 'operation') in ('finance-document-review-commit','finance-document-match-accept','finance-document-delete') and ${table.guardedAction} ? 'targetBindingHash' and pg_catalog.jsonb_typeof(${table.guardedAction} -> 'targetBindingHash') = 'string' and ${table.guardedAction} ->> 'targetBindingHash' ~ '^[a-f0-9]{64}$') or ((${table.guardedAction} ->> 'operation') not in ('finance-document-review-commit','finance-document-match-accept','finance-document-delete') and not (${table.guardedAction} ? 'targetBindingHash')))`,
     ),
     check(
       'action_proposals_authorization_scope_fingerprint_check',

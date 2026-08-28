@@ -276,6 +276,7 @@ const executeGuardedDocumentAction = async (
       capabilityFingerprint,
       operation: input.operation,
       actionHash,
+      targetBindingHash: target.targetBindingHash,
       executionBindingHash,
     },
     capabilityFingerprint,
@@ -963,6 +964,7 @@ describe('production Finance document gateway', () => {
       capabilityFingerprint,
       operation: input.operation,
       actionHash,
+      targetBindingHash,
       executionBindingHash: hashFinanceGuardedActionExecutionBinding({
         proposalId: IDS.proposal,
         scope: guardedScope,

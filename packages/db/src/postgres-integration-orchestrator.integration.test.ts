@@ -9,7 +9,7 @@ const event = process.env.POSTGRES_INTEGRATION_EVENT_NAME;
 const describePostgres = adminUrl === undefined ? describe.skip : describe;
 
 describePostgres(
-  'sequential isolated PostgreSQL 18 integration suites (requires POSTGRES_INTEGRATION_ADMIN_URL)',
+  'sequential isolated 17-suite PostgreSQL 18 integration matrix (requires POSTGRES_INTEGRATION_ADMIN_URL)',
   () => {
     it(
       'executes every live suite and emits only a non-release raw probe',

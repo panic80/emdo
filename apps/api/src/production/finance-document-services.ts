@@ -1729,6 +1729,7 @@ export const createProductionFinanceDocumentGateway = (
             permit.capabilityFingerprint !== capabilityFingerprint ||
             permit.operation !== operation ||
             permit.actionHash !== actionHash ||
+            permit.targetBindingHash !== target.targetBindingHash ||
             permit.executionBindingHash !== expectedExecutionBindingHash
           ) {
             return error('authorization-revoked');

@@ -690,6 +690,9 @@ export const createProductionProviderProposalComposition = (input: {
                   operation: guardedAction.operation,
                   actionHash: guardedAction.actionHash,
                   executionBindingHash: guardedAction.executionBindingHash,
+                  ...(guardedAction.targetBindingHash === undefined
+                    ? {}
+                    : { targetBindingHash: guardedAction.targetBindingHash }),
                 });
               })();
         if (rawInput.decision === 'approve') {

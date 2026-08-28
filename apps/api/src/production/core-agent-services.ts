@@ -16,6 +16,7 @@ import {
   SemanticVersionSchema,
   UuidSchema,
   deepFreeze,
+  type EffectiveAuthorizationScopeFingerprint,
 } from '@emdo/contracts';
 import {
   CanonicalRecordEnvelopeDisclosureFilter,
@@ -884,6 +885,8 @@ export const createRequestScopedFinanceGuardedActionProposalAdapter = (
     readonly principal: unknown;
     readonly requestId: unknown;
     readonly runId: unknown;
+    /** The durable turn's proposal/run-operation scope, not collection scope. */
+    readonly authorizationScopeFingerprint: unknown;
     readonly readPool: DatabasePool;
     readonly workflowPool: DatabasePool;
     /** Internal only; absent means document mutations cannot materialize. */
@@ -896,10 +899,15 @@ export const createRequestScopedFinanceGuardedActionProposalAdapter = (
   );
   const requestId = UuidSchema.safeParse(rawInput.requestId);
   const runId = UuidSchema.safeParse(rawInput.runId);
+  const authorizationScopeFingerprint =
+    EffectiveAuthorizationScopeFingerprintSchema.safeParse(
+      rawInput.authorizationScopeFingerprint,
+    );
   if (
     !principal.success ||
     !requestId.success ||
     !runId.success ||
+    !authorizationScopeFingerprint.success ||
     rawInput.readPool === rawInput.workflowPool ||
     typeof rawInput.readPool?.connect !== 'function' ||
     typeof rawInput.workflowPool?.connect !== 'function' ||
@@ -919,6 +927,7 @@ export const createRequestScopedFinanceGuardedActionProposalAdapter = (
   const fixedPrincipal = deepFreeze(principal.data);
   const fixedRequestId = requestId.data;
   const fixedRunId = runId.data;
+  const fixedAuthorizationScopeFingerprint = authorizationScopeFingerprint.data;
   const durablePrincipal = durablePrincipalFor(fixedPrincipal, fixedRequestId);
   const disclosureGrantResolver = dependencies.createDisclosureGrantResolver({
     pool: rawInput.readPool,
@@ -971,7 +980,7 @@ export const createRequestScopedFinanceGuardedActionProposalAdapter = (
         context.authenticatedSessionId !== fixedPrincipal.sessionId ||
         context.spaceAccessGrantId !== fixedPrincipal.spaceAccessGrantId ||
         context.authorizationScopeFingerprint !==
-          fixedPrincipal.collectionAuthorizationScopeFingerprint ||
+          fixedAuthorizationScopeFingerprint ||
         descriptor.id !== capabilityId ||
         descriptor.capabilityKind === 'provider-write' ||
         (descriptor.capabilityKind !== 'local-write' &&
@@ -1089,8 +1098,7 @@ export const createRequestScopedFinanceGuardedActionProposalAdapter = (
         runId: fixedRunId,
         capabilityId,
         capabilityFingerprint,
-        authorizationScopeFingerprint:
-          fixedPrincipal.collectionAuthorizationScopeFingerprint,
+        authorizationScopeFingerprint: fixedAuthorizationScopeFingerprint,
         canonicalArguments: argumentsValue,
         ...material,
         providerSdkCallId: context.sdkCallId,
@@ -1099,6 +1107,9 @@ export const createRequestScopedFinanceGuardedActionProposalAdapter = (
           operation: classification.operation,
           actionHash,
           executionBindingHash,
+          ...(documentTarget === undefined
+            ? {}
+            : { targetBindingHash: documentTarget.targetBindingHash }),
         },
         payloadHash: actionHash,
         disclosureGrant,
@@ -1113,8 +1124,7 @@ export const createRequestScopedFinanceGuardedActionProposalAdapter = (
           userId: fixedPrincipal.userId,
           authenticatedSessionId: fixedPrincipal.sessionId,
           spaceAccessGrantId: fixedPrincipal.spaceAccessGrantId,
-          authorizationScopeFingerprint:
-            fixedPrincipal.collectionAuthorizationScopeFingerprint,
+          authorizationScopeFingerprint: fixedAuthorizationScopeFingerprint,
           disclosureGrantId: disclosureGrant.id,
           capabilityId,
           capabilityVersion: descriptor.version,
@@ -1425,6 +1435,7 @@ export interface RequestScopedCoreAgentRuntimeFactory {
     readonly requestId: string;
     readonly runId: string;
     readonly conversationId: string;
+    readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
   }>;
   readonly runtime:
     CoreProductionAgentRuntime | FinanceV1ProductionAgentRuntime;
@@ -1479,6 +1490,8 @@ export const createRequestScopedCoreAgentRuntimeFactory = (
     readonly requestId: unknown;
     readonly runId: unknown;
     readonly conversationId: unknown;
+    /** The durable turn's proposal/run-operation scope, not collection scope. */
+    readonly authorizationScopeFingerprint: unknown;
     readonly readPool: DatabasePool;
     readonly workflowPool: DatabasePool;
     readonly google: RequestScopedGoogleCalendarCoreFactory;
@@ -1494,11 +1507,16 @@ export const createRequestScopedCoreAgentRuntimeFactory = (
   const requestId = UuidSchema.safeParse(rawInput.requestId);
   const runId = UuidSchema.safeParse(rawInput.runId);
   const conversationId = UuidSchema.safeParse(rawInput.conversationId);
+  const authorizationScopeFingerprint =
+    EffectiveAuthorizationScopeFingerprintSchema.safeParse(
+      rawInput.authorizationScopeFingerprint,
+    );
   if (
     !principal.success ||
     !requestId.success ||
     !runId.success ||
     !conversationId.success ||
+    !authorizationScopeFingerprint.success ||
     rawInput.readPool === rawInput.workflowPool ||
     typeof rawInput.readPool?.connect !== 'function' ||
     typeof rawInput.workflowPool?.connect !== 'function' ||
@@ -1518,6 +1536,8 @@ export const createRequestScopedCoreAgentRuntimeFactory = (
     const fixedPrincipal = deepFreeze(principal.data);
     const fixedRequestId = requestId.data;
     const fixedRunId = runId.data;
+    const fixedAuthorizationScopeFingerprint =
+      authorizationScopeFingerprint.data;
     const durablePrincipal = durablePrincipalFor(
       fixedPrincipal,
       fixedRequestId,
@@ -1594,6 +1614,7 @@ export const createRequestScopedCoreAgentRuntimeFactory = (
               principal: fixedPrincipal,
               requestId: fixedRequestId,
               runId: fixedRunId,
+              authorizationScopeFingerprint: fixedAuthorizationScopeFingerprint,
               readPool: rawInput.readPool,
               workflowPool: rawInput.workflowPool,
               ...(rawInput.finance.guardedDocumentActions === undefined
@@ -1773,6 +1794,7 @@ export const createRequestScopedCoreAgentRuntimeFactory = (
         requestId: fixedRequestId,
         runId: fixedRunId,
         conversationId: conversationId.data,
+        authorizationScopeFingerprint: fixedAuthorizationScopeFingerprint,
       }),
       runtime,
       check,
@@ -1800,6 +1822,8 @@ export const createRequestScopedManagerFinanceAgentRuntimeFactory = (
     readonly requestId: unknown;
     readonly runId: unknown;
     readonly conversationId: unknown;
+    /** The durable turn's proposal/run-operation scope, not collection scope. */
+    readonly authorizationScopeFingerprint: unknown;
     readonly readPool: DatabasePool;
     readonly workflowPool?: DatabasePool;
     readonly openAi: ProductionOpenAiAgentServiceBundle;
@@ -1814,11 +1838,16 @@ export const createRequestScopedManagerFinanceAgentRuntimeFactory = (
   const requestId = UuidSchema.safeParse(rawInput.requestId);
   const runId = UuidSchema.safeParse(rawInput.runId);
   const conversationId = UuidSchema.safeParse(rawInput.conversationId);
+  const authorizationScopeFingerprint =
+    EffectiveAuthorizationScopeFingerprintSchema.safeParse(
+      rawInput.authorizationScopeFingerprint,
+    );
   if (
     !principal.success ||
     !requestId.success ||
     !runId.success ||
     !conversationId.success ||
+    !authorizationScopeFingerprint.success ||
     (rawInput.workflowPool !== undefined &&
       (rawInput.workflowPool === rawInput.readPool ||
         typeof rawInput.workflowPool.connect !== 'function')) ||
@@ -1838,6 +1867,8 @@ export const createRequestScopedManagerFinanceAgentRuntimeFactory = (
     const fixedPrincipal = deepFreeze(principal.data);
     const fixedRequestId = requestId.data;
     const fixedRunId = runId.data;
+    const fixedAuthorizationScopeFingerprint =
+      authorizationScopeFingerprint.data;
     const durablePrincipal = durablePrincipalFor(
       fixedPrincipal,
       fixedRequestId,
@@ -1874,6 +1905,7 @@ export const createRequestScopedManagerFinanceAgentRuntimeFactory = (
               principal: fixedPrincipal,
               requestId: fixedRequestId,
               runId: fixedRunId,
+              authorizationScopeFingerprint: fixedAuthorizationScopeFingerprint,
               readPool: rawInput.readPool,
               workflowPool: rawInput.workflowPool!,
               ...(rawInput.finance.guardedDocumentActions === undefined
@@ -2019,6 +2051,7 @@ export const createRequestScopedManagerFinanceAgentRuntimeFactory = (
         requestId: fixedRequestId,
         runId: fixedRunId,
         conversationId: conversationId.data,
+        authorizationScopeFingerprint: fixedAuthorizationScopeFingerprint,
       }),
       runtime,
       check,

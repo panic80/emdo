@@ -1,6 +1,6 @@
 {
-  "id": "05b4ceb3-d859-436d-8ca4-258d2c0ec9ac",
-  "prevId": "3bbd95c5-4613-46b6-a7b8-7811bc5db23c",
+  "id": "f9071d35-5aaf-471c-92f4-9c33797ddf60",
+  "prevId": "8ca2f7d0-b06c-475d-8b1a-31ef089c0eaa",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -273,6 +273,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "guarded_action": {
+          "name": "guarded_action",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "provider_authority_binding_hash": {
           "name": "provider_authority_binding_hash",
           "type": "text",
@@ -480,6 +486,10 @@
         "action_proposals_provider_authority_binding_hash_check": {
           "name": "action_proposals_provider_authority_binding_hash_check",
           "value": "\"emdo\".\"action_proposals\".\"provider_authority_binding_hash\" ~ '^[a-f0-9]{64}$'"
+        },
+        "action_proposals_guarded_action_check": {
+          "name": "action_proposals_guarded_action_check",
+          "value": "\"emdo\".\"action_proposals\".\"guarded_action\" IS NULL OR ( pg_catalog.jsonb_typeof(\"emdo\".\"action_proposals\".\"guarded_action\") = 'object' AND pg_catalog.octet_length(\"emdo\".\"action_proposals\".\"guarded_action\"::text) <= 2048 AND \"emdo\".\"action_proposals\".\"capability_id\" IN ( 'finance.records.write', 'finance.statement.import' ) AND emdo.jsonb_object_has_exact_keys( \"emdo\".\"action_proposals\".\"guarded_action\", CASE WHEN \"emdo\".\"action_proposals\".\"guarded_action\" ? 'targetBindingHash' THEN ARRAY[ 'capabilityVersion', 'operation', 'actionHash', 'executionBindingHash', 'targetBindingHash' ]::text[] ELSE ARRAY[ 'capabilityVersion', 'operation', 'actionHash', 'executionBindingHash' ]::text[] END ) AND pg_catalog.jsonb_typeof( \"emdo\".\"action_proposals\".\"guarded_action\" -> 'capabilityVersion' ) = 'string' AND \"emdo\".\"action_proposals\".\"guarded_action\" ->> 'capabilityVersion' = '1.0.0' AND pg_catalog.jsonb_typeof( \"emdo\".\"action_proposals\".\"guarded_action\" -> 'operation' ) = 'string' AND \"emdo\".\"action_proposals\".\"guarded_action\" ->> 'operation' ~ '^[a-z0-9]+([._:-][a-z0-9]+)*$' AND pg_catalog.jsonb_typeof( \"emdo\".\"action_proposals\".\"guarded_action\" -> 'actionHash' ) = 'string' AND \"emdo\".\"action_proposals\".\"guarded_action\" ->> 'actionHash' ~ '^[a-f0-9]{64}$' AND pg_catalog.jsonb_typeof( \"emdo\".\"action_proposals\".\"guarded_action\" -> 'executionBindingHash' ) = 'string' AND \"emdo\".\"action_proposals\".\"guarded_action\" ->> 'executionBindingHash' ~ '^[a-f0-9]{64}$' AND \"emdo\".\"action_proposals\".\"guarded_action\" ->> 'actionHash' = \"emdo\".\"action_proposals\".\"payload_hash\" AND \"emdo\".\"action_proposals\".\"payload_hash\" = emdo.canonical_json_hash( \"emdo\".\"action_proposals\".\"canonical_arguments\" ) AND \"emdo\".\"action_proposals\".\"guarded_action\" ->> 'executionBindingHash' = \"emdo\".\"action_proposals\".\"provider_authority_binding_hash\" AND ( (\"emdo\".\"action_proposals\".\"capability_id\" = 'finance.records.write' AND \"emdo\".\"action_proposals\".\"guarded_action\" ->> 'operation' IN ( 'finance-adjustment', 'finance-reversal', 'finance-document-review-commit', 'finance-document-match-accept', 'finance-document-delete' )) OR (\"emdo\".\"action_proposals\".\"capability_id\" = 'finance.statement.import' AND \"emdo\".\"action_proposals\".\"guarded_action\" ->> 'operation' = 'finance-statement-import-commit') ) AND ( (\"emdo\".\"action_proposals\".\"guarded_action\" ->> 'operation' IN ( 'finance-document-review-commit', 'finance-document-match-accept', 'finance-document-delete' ) AND \"emdo\".\"action_proposals\".\"guarded_action\" ? 'targetBindingHash' AND pg_catalog.jsonb_typeof( \"emdo\".\"action_proposals\".\"guarded_action\" -> 'targetBindingHash' ) = 'string' AND \"emdo\".\"action_proposals\".\"guarded_action\" ->> 'targetBindingHash' ~ '^[a-f0-9]{64}$') OR (\"emdo\".\"action_proposals\".\"guarded_action\" ->> 'operation' NOT IN ( 'finance-document-review-commit', 'finance-document-match-accept', 'finance-document-delete' ) AND NOT (\"emdo\".\"action_proposals\".\"guarded_action\" ? 'targetBindingHash')) ) )"
         },
         "action_proposals_authorization_scope_fingerprint_check": {
           "name": "action_proposals_authorization_scope_fingerprint_check",
