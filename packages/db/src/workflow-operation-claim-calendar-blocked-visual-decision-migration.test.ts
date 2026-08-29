@@ -43,6 +43,8 @@ const approvalResumeRunUpdatePolicyPattern =
   /CREATE POLICY approval_resume_agent_runs_executor_update[\s\S]+?\n\t\);/u;
 const legacyApprovalResumeRunProjectionPattern =
   /WITH canonical_legacy_terminal_resume_events AS \([\s\S]+?\n\tAND run\.completed_at IS NULL;/u;
+const approvalResumeTransitionTriggerPattern =
+  /CREATE OR REPLACE FUNCTION "emdo"\."enforce_approval_resume_job_transition"\(\)[\s\S]+?\$function\$;/u;
 
 const extract = (sql: string, pattern: RegExp): string => {
   const match = sql.match(pattern);
@@ -612,24 +614,94 @@ describe('blocked visual-decision workflow claim migration', () => {
       'event.original_owner_user_id = resume.user_id',
       "pg_catalog.jsonb_typeof(event.payload) = 'object'",
       "event.payload ->> 'runId' = resume.run_id::text",
+      "'emdo.approval-resume-terminal.v1'",
+      'resume.terminal_result_hash = pg_catalog.encode(',
+      'FROM emdo.approval_resume_jobs AS sibling',
+      'sibling.run_id = resume.run_id',
+      "sibling.state IN ('terminal', 'indeterminate')",
+      'emdo.approval_resume_turn_result_is_valid(event.payload)',
+      'IS TRUE',
       "event.event_type = 'run.completed'",
       "event.payload ->> 'status' = 'completed'",
       "event.event_type = 'run.failed'",
-      "event.payload ->> 'status' IN (\n\t\t\t\t\t\t\t'failed', 'needs-approval'\n\t\t\t\t\t\t)",
+      "event.payload ->> 'status' = 'failed'",
+      "resume.terminal_reason_code =\n\t\t\t\t\t'approval-resume-binding-invalid'",
       "resume.terminal_reason_code = 'approval-resume-failed'",
+      "'approval-resume-terminalized-before-dispatch'",
+      "'approval-resume-indeterminate'",
+      "'The approved action could not be resumed safely.'",
+      "'The approved action could not be completed safely.'",
       "run.agent_id = 'manager'",
       "run.status = 'blocked'",
       'run.completed_at IS NULL',
       'GROUP BY run_id, household_id, space_id, user_id',
       'HAVING pg_catalog.count(*) = 1',
       'pg_catalog.count(DISTINCT status) = 1',
+      'pg_catalog.count(DISTINCT projection_mode) = 1',
       'pg_catalog.count(DISTINCT occurred_at) = 1',
+      "resolved_model = CASE WHEN legacy.projection_mode = 'complete'",
+      "THEN legacy.terminal_payload #>> '{modelResolution,resolvedModel}'",
+      "model_reason = CASE WHEN legacy.projection_mode = 'complete'",
+      "legacy.terminal_payload #>> '{modelResolution,reason}'",
+      "legacy.terminal_payload #>> '{executionResolution,reason}'",
+      "legacy.terminal_payload ->> 'localTraceReference'",
+      "safe_error = legacy.terminal_payload -> 'safeError'",
+      "usage = CASE WHEN legacy.projection_mode = 'complete'",
+      "THEN legacy.terminal_payload -> 'usage' ELSE run.usage END",
     ]) {
       expect(projection).toContain(predicate);
     }
     expect(projection).toContain("WHEN 'run.completed' THEN 'completed'");
     expect(projection).toContain("WHEN 'run.failed' THEN 'failed'");
     expect(projection).not.toContain('INSERT INTO emdo.agent_run_events');
+    expect(projection).not.toContain("'needs-approval'");
+  });
+
+  it('bounds and serializes the legacy settlement window before projecting queued terminal transitions', async () => {
+    const migrationSql = await readFile(migrationUrl, 'utf8');
+    const transitionTrigger = extract(
+      migrationSql,
+      approvalResumeTransitionTriggerPattern,
+    );
+    const lockTimeout = "SET LOCAL lock_timeout = '30s';";
+    const statementTimeout = "SET LOCAL statement_timeout = '30s';";
+    const lock = 'LOCK TABLE emdo.approval_resume_jobs IN EXCLUSIVE MODE;';
+
+    expect(migrationSql.indexOf(lockTimeout)).toBeLessThan(
+      migrationSql.indexOf(statementTimeout),
+    );
+    expect(migrationSql.indexOf(statementTimeout)).toBeLessThan(
+      migrationSql.indexOf(lock),
+    );
+    expect(migrationSql.indexOf(lock)).toBeLessThan(
+      migrationSql.indexOf(transitionTrigger),
+    );
+    expect(migrationSql.indexOf(transitionTrigger)).toBeLessThan(
+      migrationSql.search(legacyApprovalResumeRunProjectionPattern),
+    );
+    for (const invariant of [
+      "OLD.state = 'claimed' AND NEW.state IN ('terminal', 'indeterminate')",
+      'event.sequence = NEW.terminal_event_sequence',
+      'event.original_owner_user_id = NEW.user_id',
+      "'emdo.approval-resume-terminal.v1'",
+      'NEW.terminal_result_hash IS DISTINCT FROM v_expected_hash',
+      'emdo.approval_resume_turn_result_is_valid(',
+      "v_event.payload ->> 'status' = 'completed'",
+      "v_event.payload ->> 'status' = 'failed'",
+      "'approval-resume-terminalized-before-dispatch'",
+      "'approval-resume-indeterminate'",
+      'UPDATE emdo.agent_runs AS run',
+      "run.agent_id = 'manager'",
+      "run.status = 'blocked'",
+      'run.completed_at IS NULL',
+      'v_run.status IS DISTINCT FROM v_expected_status',
+      'v_run.completed_at IS DISTINCT FROM v_event.occurred_at',
+    ]) {
+      expect(transitionTrigger).toContain(invariant);
+    }
+    expect(migrationSql).not.toContain(
+      'LOCK TABLE emdo.approval_resume_jobs IN SHARE ROW EXCLUSIVE MODE;',
+    );
   });
 
   it('grants the approval-resume executor only an exact claimed-resume run projection', async () => {

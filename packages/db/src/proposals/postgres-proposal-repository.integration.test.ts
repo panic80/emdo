@@ -11,9 +11,12 @@ import {
 } from '@emdo/contracts';
 import {
   ProposalPreparationBindingSchema,
+  ProposalService,
   hashActionProposalApproval,
   type ProposalActivityEvent,
   type ProposalOperationScopeAssertion,
+  type ProposalRepository,
+  type ProposalRepositoryTransaction as DomainProposalRepositoryTransaction,
   type StoredProviderWriteCompletion,
 } from '@emdo/domains/server/provider-proposals';
 import {
@@ -2091,6 +2094,193 @@ describeDatabase(
         [fixtureA.proposal.id],
       );
       expect(calendarClaim.rows).toEqual([{ finance_guarded_authority: null }]);
+    });
+
+    it('converges overlapping exact visual decisions after a PostgreSQL commit conflict', async () => {
+      const pending = await createPending(
+        fixtureA,
+        'concurrent-exact-decision',
+      );
+      const issued = await proofStore().issue({
+        proposalId: pending.id,
+        expectedProposalVersion: pending.version,
+        expectedPayloadHash: pending.payloadHash,
+        expectedApprovalHash: pending.approvalHash,
+        principal: visualPrincipal(fixtureA),
+        requestId: fixtureA.actor.request,
+        idempotencyKey: `visual-proof:concurrent:${pending.id}`,
+      });
+      if (issued.status !== 'issued') {
+        throw new Error('expected concurrent visual proof');
+      }
+
+      let absentReplayReads = 0;
+      let decisionCommits = 0;
+      const decisionCommitResults: Array<
+        Awaited<
+          ReturnType<DomainProposalRepositoryTransaction['commitDecision']>
+        >
+      > = [];
+      let releaseAbsentReplayReads!: () => void;
+      let releaseDecisionCommits!: () => void;
+      const bothAbsentReplayReads = new Promise<void>((resolve) => {
+        releaseAbsentReplayReads = resolve;
+      });
+      const bothDecisionCommits = new Promise<void>((resolve) => {
+        releaseDecisionCommits = resolve;
+      });
+      const wrapForConcurrentDecision = (
+        repository: ProposalRepository,
+      ): ProposalRepository => ({
+        getProposal: (id) => repository.getProposal(id),
+        listEvents: () => repository.listEvents(),
+        transaction: async <Result>(
+          work: (
+            transaction: DomainProposalRepositoryTransaction,
+          ) => Promise<Result>,
+        ): Promise<Result> => {
+          let observedAbsentReplay = false;
+          const result = await repository.transaction((transaction) =>
+            work(
+              Object.freeze({
+                ...transaction,
+                findDecisionByIdempotencyKey: async (
+                  lookup: Parameters<
+                    DomainProposalRepositoryTransaction['findDecisionByIdempotencyKey']
+                  >[0],
+                ) => {
+                  const stored =
+                    await transaction.findDecisionByIdempotencyKey(lookup);
+                  if (stored === undefined) observedAbsentReplay = true;
+                  return stored;
+                },
+                commitDecision: async (
+                  input: Parameters<
+                    DomainProposalRepositoryTransaction['commitDecision']
+                  >[0],
+                ) => {
+                  decisionCommits += 1;
+                  if (decisionCommits === 2) releaseDecisionCommits();
+                  await bothDecisionCommits;
+                  const commitResult = await transaction.commitDecision(input);
+                  decisionCommitResults.push(commitResult);
+                  return commitResult;
+                },
+              }),
+            ),
+          );
+          if (observedAbsentReplay && absentReplayReads < 2) {
+            absentReplayReads += 1;
+            if (absentReplayReads === 2) releaseAbsentReplayReads();
+            await bothAbsentReplayReads;
+          }
+          return result;
+        },
+      });
+      const repositoryA = wrapForConcurrentDecision(
+        repositoryFor(
+          fixtureA,
+          operationId('concurrent_exact_decision_a'),
+        ).withVisualDecisionProof(
+          issued.proof.proofToken,
+          fixtureA.actor.grant,
+        ),
+      );
+      const repositoryB = wrapForConcurrentDecision(
+        repositoryFor(
+          fixtureA,
+          operationId('concurrent_exact_decision_b'),
+        ).withVisualDecisionProof(
+          issued.proof.proofToken,
+          fixtureA.actor.grant,
+        ),
+      );
+      const unusedMaterializer = {
+        materialize: async () => {
+          throw new Error('concurrent decision must not materialize');
+        },
+      };
+      const unusedDisclosureResolver = {
+        resolve: async () => undefined,
+      };
+      const serviceA = new ProposalService(
+        unusedMaterializer,
+        unusedDisclosureResolver,
+        repositoryA,
+        () => new Date(),
+      );
+      const serviceB = new ProposalService(
+        unusedMaterializer,
+        unusedDisclosureResolver,
+        repositoryB,
+        () => new Date(),
+      );
+      const idempotencyKey = `decision:concurrent:${pending.id}`;
+      const decisionRequest = {
+        schemaVersion: 1 as const,
+        proposalId: pending.id,
+        payloadHash: pending.payloadHash,
+        approvalHash: pending.approvalHash,
+        decision: 'approved' as const,
+        idempotencyKey,
+      };
+      const operationScope = {
+        requestId: fixtureA.actor.request,
+        sessionId: fixtureA.actor.session,
+        householdId: fixtureA.actor.household,
+        userId: fixtureA.actor.user,
+        spaceAccessGrantId: fixtureA.actor.grant,
+        authorizationScopeFingerprint: pending.authorizationScopeFingerprint,
+      };
+      const firstDecisionId = randomUUID();
+      const secondDecisionId = randomUUID();
+      const [first, second] = await Promise.all([
+        serviceA.decide(decisionRequest, {
+          decisionId: firstDecisionId,
+          operationScope,
+          channel: 'authenticated-visual',
+          now: new Date(),
+        }),
+        serviceB.decide(decisionRequest, {
+          decisionId: secondDecisionId,
+          operationScope,
+          channel: 'authenticated-visual',
+          now: new Date(Date.now() + 1),
+        }),
+      ]);
+
+      expect(second).toEqual(first);
+      expect([firstDecisionId, secondDecisionId]).toContain(first.id);
+      expect(absentReplayReads).toBe(2);
+      expect(decisionCommits).toBe(2);
+      expect([...decisionCommitResults].sort()).toEqual([
+        'conflict',
+        'created',
+      ]);
+      const persisted = await admin.query<{
+        decision_count: string;
+        approval_event_count: string;
+        proposal_state: string;
+      }>(
+        `select
+           (select pg_catalog.count(*)::text
+              from emdo.action_decisions where proposal_id = $1)
+             as decision_count,
+           (select pg_catalog.count(*)::text
+              from emdo.proposal_events
+             where proposal_id = $1 and event_type = 'proposal.approved')
+             as approval_event_count,
+           (select state from emdo.proposal_states where proposal_id = $1)
+             as proposal_state`,
+        [pending.id],
+      );
+      expect(persisted.rows).toEqual([
+        {
+          decision_count: '1',
+          approval_event_count: '1',
+          proposal_state: 'approved',
+        },
+      ]);
     });
 
     it('denies direct claim issuance and aggregate access while app reads remain household scoped', async () => {

@@ -1812,16 +1812,269 @@ CREATE POLICY disclosure_approval_resume_jobs_select
 	);
 
 --> statement-breakpoint
+-- Serialize the one-shot legacy projection against the 0017 settlement
+-- update. EXCLUSIVE conflicts with both SELECT ... FOR UPDATE and UPDATE but
+-- still permits ordinary reads. An in-flight legacy settlement completes
+-- before this migration proceeds; a queued caller resumes after commit and
+-- reaches the replacement transition trigger below. Fail the deployment
+-- instead of waiting indefinitely on a stale writer.
+SET LOCAL lock_timeout = '30s';
+
+--> statement-breakpoint
+SET LOCAL statement_timeout = '30s';
+
+--> statement-breakpoint
+LOCK TABLE emdo.approval_resume_jobs IN EXCLUSIVE MODE;
+
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "emdo"."enforce_approval_resume_job_transition"()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog
+AS $function$
+DECLARE
+	v_event emdo.agent_run_events%ROWTYPE;
+	v_run emdo.agent_runs%ROWTYPE;
+	v_expected_hash text;
+	v_expected_status text;
+	v_projection_mode text;
+BEGIN
+	IF TG_OP = 'DELETE' THEN
+		RAISE EXCEPTION USING
+			ERRCODE = '55000',
+			MESSAGE = 'approval resume jobs are append-preserving';
+	END IF;
+	IF (pg_catalog.to_jsonb(NEW)
+		- 'state' - 'revision' - 'decision_id' - 'decision_type'
+		- 'authenticated_session_id' - 'claim_id' - 'ownership_token_digest'
+		- 'resume_request_id' - 'resume_space_access_grant_id'
+		- 'collection_authorization_scope_fingerprint' - 'claimed_at'
+		- 'claim_expires_at' - 'terminal_event_sequence'
+		- 'terminal_reason_code' - 'terminal_result_hash' - 'updated_at')
+		IS DISTINCT FROM
+		(pg_catalog.to_jsonb(OLD)
+		- 'state' - 'revision' - 'decision_id' - 'decision_type'
+		- 'authenticated_session_id' - 'claim_id' - 'ownership_token_digest'
+		- 'resume_request_id' - 'resume_space_access_grant_id'
+		- 'collection_authorization_scope_fingerprint' - 'claimed_at'
+		- 'claim_expires_at' - 'terminal_event_sequence'
+		- 'terminal_reason_code' - 'terminal_result_hash' - 'updated_at')
+		OR NEW.revision <> OLD.revision + 1
+		OR NOT (
+			(OLD.state = 'awaiting-decision' AND NEW.state = 'ready')
+			OR (OLD.state = 'ready' AND NEW.state = 'claimed')
+			OR (
+				OLD.state = 'claimed'
+				AND NEW.state IN ('terminal', 'indeterminate')
+			)
+		)
+	THEN
+		RAISE EXCEPTION USING
+			ERRCODE = '55000',
+			MESSAGE = 'invalid approval resume job transition';
+	END IF;
+
+	IF OLD.state = 'claimed' AND NEW.state IN ('terminal', 'indeterminate') THEN
+		SELECT event.* INTO v_event
+		FROM emdo.agent_run_events AS event
+		WHERE event.run_id = NEW.run_id
+			AND event.sequence = NEW.terminal_event_sequence
+			AND event.household_id = NEW.household_id
+			AND event.space_id = NEW.space_id
+			AND event.original_owner_user_id = NEW.user_id;
+		IF NOT FOUND THEN
+			RAISE EXCEPTION USING
+				ERRCODE = '55000',
+				MESSAGE = 'approval resume terminal event is invalid';
+		END IF;
+
+		v_expected_status := CASE v_event.event_type
+			WHEN 'run.completed' THEN 'completed'
+			WHEN 'run.failed' THEN 'failed'
+		END;
+		v_projection_mode := CASE WHEN NEW.terminal_reason_code IS NULL
+			THEN 'complete' ELSE 'synthetic' END;
+		v_expected_hash := pg_catalog.encode(
+			pg_catalog.sha256(
+				pg_catalog.convert_to(
+					'emdo.approval-resume-terminal.v1', 'UTF8'
+				)
+					|| pg_catalog.decode('00', 'hex')
+					|| pg_catalog.convert_to(
+						pg_catalog.jsonb_strip_nulls(
+							pg_catalog.jsonb_build_object(
+								'schemaVersion', 1,
+								'runId', NEW.run_id,
+								'proposalId', NEW.proposal_id,
+								'approvalDecisionId', NEW.decision_id,
+								'status', CASE
+									WHEN NEW.terminal_reason_code IS NULL
+										THEN 'completed'
+									WHEN NEW.state = 'terminal'
+										THEN 'terminalized'
+									ELSE 'indeterminate'
+								END,
+								'reasonCode', NEW.terminal_reason_code,
+								'result', CASE
+									WHEN NEW.terminal_reason_code IS NULL
+										THEN v_event.payload
+									ELSE NULL::jsonb
+								END
+							)
+						)::text,
+						'UTF8'
+					)
+			),
+			'hex'
+		);
+		IF NEW.terminal_result_hash IS DISTINCT FROM v_expected_hash
+			OR NOT (
+				(
+					NEW.state = 'terminal'
+					AND NEW.terminal_reason_code IS NULL
+					AND emdo.approval_resume_turn_result_is_valid(
+						v_event.payload
+					) IS TRUE
+					AND (
+						(
+							v_event.event_type = 'run.completed'
+							AND v_event.payload ->> 'status' = 'completed'
+						)
+						OR (
+							v_event.event_type = 'run.failed'
+							AND v_event.payload ->> 'status' = 'failed'
+						)
+					)
+				)
+				OR (
+					NEW.state = 'terminal'
+					AND NEW.terminal_reason_code =
+						'approval-resume-binding-invalid'
+					AND v_event.event_type = 'run.failed'
+					AND v_event.payload = pg_catalog.jsonb_build_object(
+						'status', 'failed',
+						'runId', NEW.run_id,
+						'localTraceReference',
+							'approval-resume-terminalized-before-dispatch',
+						'safeError', pg_catalog.jsonb_build_object(
+							'code', 'approval-resume-binding-invalid',
+							'message',
+								'The approved action could not be resumed safely.',
+							'retryable', false
+						),
+						'specialistOutcomes', '[]'::jsonb,
+						'usage', pg_catalog.jsonb_build_object(
+							'inputTokens', 0,
+							'outputTokens', 0,
+							'modelCostCadMinor', 0
+						)
+					)
+				)
+				OR (
+					NEW.state = 'indeterminate'
+					AND NEW.terminal_reason_code = 'approval-resume-failed'
+					AND v_event.event_type = 'run.failed'
+					AND v_event.payload = pg_catalog.jsonb_build_object(
+						'status', 'failed',
+						'runId', NEW.run_id,
+						'localTraceReference', 'approval-resume-indeterminate',
+						'safeError', pg_catalog.jsonb_build_object(
+							'code', 'approval-resume-failed',
+							'message',
+								'The approved action could not be completed safely.',
+							'retryable', false
+						),
+						'specialistOutcomes', '[]'::jsonb,
+						'usage', pg_catalog.jsonb_build_object(
+							'inputTokens', 0,
+							'outputTokens', 0,
+							'modelCostCadMinor', 0
+						)
+					)
+				)
+			)
+		THEN
+			RAISE EXCEPTION USING
+				ERRCODE = '55000',
+				MESSAGE = 'approval resume terminal evidence is invalid';
+		END IF;
+
+		UPDATE emdo.agent_runs AS run
+		SET status = v_expected_status,
+			resolved_model = CASE WHEN v_projection_mode = 'complete'
+				THEN v_event.payload #>> '{modelResolution,resolvedModel}'
+				ELSE run.resolved_model END,
+			model_reason = CASE WHEN v_projection_mode = 'complete'
+				THEN COALESCE(
+					v_event.payload #>> '{modelResolution,reason}',
+					v_event.payload #>> '{executionResolution,reason}'
+				) ELSE run.model_reason END,
+			local_trace_reference =
+				v_event.payload ->> 'localTraceReference',
+			safe_error = v_event.payload -> 'safeError',
+			usage = CASE WHEN v_projection_mode = 'complete'
+				THEN v_event.payload -> 'usage' ELSE run.usage END,
+			completed_at = v_event.occurred_at
+		WHERE run.id = NEW.run_id
+			AND run.household_id = NEW.household_id
+			AND run.space_id = NEW.space_id
+			AND run.original_owner_user_id = NEW.user_id
+			AND run.agent_id = 'manager'
+			AND run.status = 'blocked'
+			AND run.completed_at IS NULL;
+		IF NOT FOUND THEN
+			SELECT run.* INTO v_run
+			FROM emdo.agent_runs AS run
+			WHERE run.id = NEW.run_id
+				AND run.household_id = NEW.household_id
+				AND run.space_id = NEW.space_id
+				AND run.original_owner_user_id = NEW.user_id
+				AND run.agent_id = 'manager';
+			IF NOT FOUND
+				OR v_run.status IS DISTINCT FROM v_expected_status
+				OR v_run.completed_at IS DISTINCT FROM v_event.occurred_at
+				OR v_run.local_trace_reference IS DISTINCT FROM
+					v_event.payload ->> 'localTraceReference'
+				OR v_run.safe_error IS DISTINCT FROM
+					v_event.payload -> 'safeError'
+				OR (
+					v_projection_mode = 'complete'
+					AND (
+						v_run.resolved_model IS DISTINCT FROM
+							v_event.payload #>> '{modelResolution,resolvedModel}'
+						OR v_run.model_reason IS DISTINCT FROM COALESCE(
+							v_event.payload #>> '{modelResolution,reason}',
+							v_event.payload #>> '{executionResolution,reason}'
+						)
+						OR v_run.usage IS DISTINCT FROM v_event.payload -> 'usage'
+					)
+				)
+			THEN
+				RAISE EXCEPTION USING
+					ERRCODE = '55000',
+					MESSAGE = 'approval resume run projection is invalid';
+			END IF;
+		END IF;
+	END IF;
+
+	NEW.updated_at := pg_catalog.clock_timestamp();
+	RETURN NEW;
+END
+$function$;
+
+--> statement-breakpoint
 -- 0017 terminalized the resume row and event but left the manager run blocked.
 -- Project only canonical terminal evidence; malformed or ambiguous legacy rows
 -- remain blocked for explicit investigation.
 WITH canonical_legacy_terminal_resume_events AS (
 	SELECT resume.run_id, resume.household_id, resume.space_id,
-		resume.user_id, event.occurred_at,
+		resume.user_id, event.occurred_at, event.payload AS terminal_payload,
 		CASE event.event_type
 			WHEN 'run.completed' THEN 'completed'
 			WHEN 'run.failed' THEN 'failed'
-		END AS status
+		END AS status,
+		CASE WHEN resume.terminal_reason_code IS NULL
+			THEN 'complete' ELSE 'synthetic' END AS projection_mode
 	FROM emdo.approval_resume_jobs AS resume
 	JOIN emdo.agent_run_events AS event
 		ON event.run_id = resume.run_id
@@ -1833,9 +2086,55 @@ WITH canonical_legacy_terminal_resume_events AS (
 		AND resume.terminal_event_sequence IS NOT NULL
 		AND pg_catalog.jsonb_typeof(event.payload) = 'object'
 		AND event.payload ->> 'runId' = resume.run_id::text
+		AND resume.terminal_result_hash = pg_catalog.encode(
+			pg_catalog.sha256(
+				pg_catalog.convert_to(
+					'emdo.approval-resume-terminal.v1', 'UTF8'
+				)
+					|| pg_catalog.decode('00', 'hex')
+					|| pg_catalog.convert_to(
+						pg_catalog.jsonb_strip_nulls(
+							pg_catalog.jsonb_build_object(
+								'schemaVersion', 1,
+								'runId', resume.run_id,
+								'proposalId', resume.proposal_id,
+								'approvalDecisionId', resume.decision_id,
+								'status', CASE
+									WHEN resume.terminal_reason_code IS NULL
+										THEN 'completed'
+									WHEN resume.state = 'terminal'
+										THEN 'terminalized'
+									ELSE 'indeterminate'
+								END,
+								'reasonCode', resume.terminal_reason_code,
+								'result', CASE
+									WHEN resume.terminal_reason_code IS NULL
+										THEN event.payload
+									ELSE NULL::jsonb
+								END
+							)
+						)::text,
+						'UTF8'
+					)
+			),
+			'hex'
+		)
+		AND NOT EXISTS (
+			SELECT 1
+			FROM emdo.approval_resume_jobs AS sibling
+			WHERE sibling.run_id = resume.run_id
+				AND sibling.household_id = resume.household_id
+				AND sibling.space_id = resume.space_id
+				AND sibling.user_id = resume.user_id
+				AND sibling.job_id <> resume.job_id
+				AND sibling.state IN ('terminal', 'indeterminate')
+		)
 		AND (
 			(
 				resume.state = 'terminal'
+				AND resume.terminal_reason_code IS NULL
+				AND emdo.approval_resume_turn_result_is_valid(event.payload)
+					IS TRUE
 				AND (
 					(
 						event.event_type = 'run.completed'
@@ -1843,9 +2142,31 @@ WITH canonical_legacy_terminal_resume_events AS (
 					)
 					OR (
 						event.event_type = 'run.failed'
-						AND event.payload ->> 'status' IN (
-							'failed', 'needs-approval'
-						)
+						AND event.payload ->> 'status' = 'failed'
+					)
+				)
+			)
+			OR (
+				resume.state = 'terminal'
+				AND resume.terminal_reason_code =
+					'approval-resume-binding-invalid'
+				AND event.event_type = 'run.failed'
+				AND event.payload = pg_catalog.jsonb_build_object(
+					'status', 'failed',
+					'runId', resume.run_id,
+					'localTraceReference',
+						'approval-resume-terminalized-before-dispatch',
+					'safeError', pg_catalog.jsonb_build_object(
+						'code', 'approval-resume-binding-invalid',
+						'message',
+							'The approved action could not be resumed safely.',
+						'retryable', false
+					),
+					'specialistOutcomes', '[]'::jsonb,
+					'usage', pg_catalog.jsonb_build_object(
+						'inputTokens', 0,
+						'outputTokens', 0,
+						'modelCostCadMinor', 0
 					)
 				)
 			)
@@ -1853,21 +2174,56 @@ WITH canonical_legacy_terminal_resume_events AS (
 				resume.state = 'indeterminate'
 				AND resume.terminal_reason_code = 'approval-resume-failed'
 				AND event.event_type = 'run.failed'
-				AND event.payload ->> 'status' = 'failed'
+				AND event.payload = pg_catalog.jsonb_build_object(
+					'status', 'failed',
+					'runId', resume.run_id,
+					'localTraceReference', 'approval-resume-indeterminate',
+					'safeError', pg_catalog.jsonb_build_object(
+						'code', 'approval-resume-failed',
+						'message',
+							'The approved action could not be completed safely.',
+						'retryable', false
+					),
+					'specialistOutcomes', '[]'::jsonb,
+					'usage', pg_catalog.jsonb_build_object(
+						'inputTokens', 0,
+						'outputTokens', 0,
+						'modelCostCadMinor', 0
+					)
+				)
 			)
 		)
 ), legacy_terminal_resume_projection AS (
 	SELECT run_id, household_id, space_id, user_id,
 		pg_catalog.min(occurred_at) AS occurred_at,
-		pg_catalog.min(status) AS status
+		pg_catalog.min(status) AS status,
+		pg_catalog.min(projection_mode) AS projection_mode,
+		(pg_catalog.jsonb_agg(terminal_payload ORDER BY occurred_at) -> 0)
+			AS terminal_payload
 	FROM canonical_legacy_terminal_resume_events
 	GROUP BY run_id, household_id, space_id, user_id
 	HAVING pg_catalog.count(*) = 1
 		AND pg_catalog.count(DISTINCT status) = 1
+		AND pg_catalog.count(DISTINCT projection_mode) = 1
 		AND pg_catalog.count(DISTINCT occurred_at) = 1
 )
 UPDATE emdo.agent_runs AS run
-SET status = legacy.status, completed_at = legacy.occurred_at
+SET status = legacy.status,
+	resolved_model = CASE WHEN legacy.projection_mode = 'complete'
+		THEN legacy.terminal_payload #>> '{modelResolution,resolvedModel}'
+		ELSE run.resolved_model END,
+	model_reason = CASE WHEN legacy.projection_mode = 'complete'
+		THEN COALESCE(
+			legacy.terminal_payload #>> '{modelResolution,reason}',
+			legacy.terminal_payload #>> '{executionResolution,reason}'
+		)
+		ELSE run.model_reason END,
+	local_trace_reference =
+		legacy.terminal_payload ->> 'localTraceReference',
+	safe_error = legacy.terminal_payload -> 'safeError',
+	usage = CASE WHEN legacy.projection_mode = 'complete'
+		THEN legacy.terminal_payload -> 'usage' ELSE run.usage END,
+	completed_at = legacy.occurred_at
 FROM legacy_terminal_resume_projection AS legacy
 WHERE run.id = legacy.run_id
 	AND run.household_id = legacy.household_id

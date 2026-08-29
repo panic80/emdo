@@ -2422,13 +2422,16 @@ export class ProposalService {
       channel: context.channel,
       decidedAt: context.now.toISOString(),
     });
-    // Replay resolution re-locks the request-current authorization scope. Keep
-    // that read in a short transaction so its locks are released before the
-    // decision-only pool enters the atomic visual-decision aggregate.
-    const replay = await repository.transaction((transaction) =>
-      transaction.findDecisionByIdempotencyKey(decisionLookupFor(decision)),
-    );
-    if (replay !== undefined) {
+    const readDecisionReplay = async (): Promise<
+      ActionDecision | undefined
+    > => {
+      // Replay resolution re-locks the request-current authorization scope.
+      // Keep each read short so its locks are released before the decision-only
+      // pool enters the atomic visual-decision aggregate.
+      const replay = await repository.transaction((transaction) =>
+        transaction.findDecisionByIdempotencyKey(decisionLookupFor(decision)),
+      );
+      if (replay === undefined) return undefined;
       if (isSameDecisionReplay(replay.decision, decision)) {
         return replay.decision;
       }
@@ -2436,7 +2439,9 @@ export class ProposalService {
         'proposal-decision-conflict',
         'Proposal decision conflicted with persisted state',
       );
-    }
+    };
+    const replay = await readDecisionReplay();
+    if (replay !== undefined) return replay;
 
     const outcome = await repository.transaction(async (transaction) => {
       const proposal = await transaction.getProposal(decision.proposalId);
@@ -2513,16 +2518,16 @@ export class ProposalService {
       return { kind: 'conflict' } as const;
     });
 
+    if (
+      outcome.kind === 'duplicate' ||
+      outcome.kind === 'not-pending' ||
+      outcome.kind === 'conflict'
+    ) {
+      const persisted = await readDecisionReplay();
+      if (persisted !== undefined) return persisted;
+    }
+
     if (outcome.kind === 'duplicate') {
-      const persisted = await repository.transaction((transaction) =>
-        transaction.findDecisionByIdempotencyKey(decisionLookupFor(decision)),
-      );
-      if (
-        persisted !== undefined &&
-        isSameDecisionReplay(persisted.decision, decision)
-      ) {
-        return persisted.decision;
-      }
       throw new ProposalError(
         'proposal-decision-conflict',
         'Proposal decision conflicted with persisted state',
