@@ -806,11 +806,17 @@ const reviewedPayloadFor = (input: {
     sourceLocale: FinanceDocumentEnvelopeV1['sourceLocale'];
   }>;
   const evidenceChunks = FINANCE_DOCUMENT_LIMITS.maximumPdfPages;
+  const persistedEvidenceIdentities = new Set<string>();
   for (const fact of envelope.facts) {
     for (const sourceEvidence of fact.evidence) {
-      if (evidence.length >= 512) break;
       const excerpt = finiteText(sourceEvidence.excerpt);
       if (excerpt === undefined) continue;
+      // Match finance_document_evidence_source_unique exactly: the repository
+      // hashes the normalized excerpt as UTF-8 before it persists the locator.
+      const identity = `${sourceEvidence.page}\u0000${sha256(excerpt)}`;
+      if (persistedEvidenceIdentities.has(identity)) continue;
+      if (evidence.length >= 512) break;
+      persistedEvidenceIdentities.add(identity);
       const canMaterializeChunk =
         chunks.length < 128 && evidence.length < evidenceChunks;
       const ordinal = canMaterializeChunk ? chunks.length : null;
