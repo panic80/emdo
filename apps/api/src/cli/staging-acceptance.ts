@@ -342,7 +342,9 @@ export const formatStagingAcceptanceFailure = (
 };
 
 const FINANCE_DOCUMENT_FILENAME = 'emdo-synthetic-staging.pdf';
-const FINANCE_REVIEW_ISSUER = 'EMDO synthetic staged review';
+const FINANCE_REVIEW_ISSUER = 'Boreal Quasar Ledger';
+const FINANCE_REVIEW_EVIDENCE_FIELD = 'synthetic-source-proof';
+const FINANCE_REVIEW_EVIDENCE_EXCERPT = 'Cobalt Lantern Receipt';
 const FINANCE_SYNTHETIC_MEMBER_EMAIL = 'finance-staging-member@emdo.invalid';
 const FINANCE_SYNTHETIC_MEMBER_NAME = 'Finance Staging Member';
 const FINANCE_EXTRACTION_MAX_POLLS = 90;
@@ -586,7 +588,7 @@ const buildSyntheticFinancePdf = (): Buffer => {
     'BT',
     '/F1 12 Tf',
     '72 720 Td',
-    '(EMDO synthetic staging document) Tj',
+    '(Cobalt Lantern Receipt) Tj',
     '0 -20 Td',
     '(No real financial data) Tj',
     '0 -20 Td',
@@ -2222,6 +2224,21 @@ const runFinanceStagingAcceptance = async (
   const editedEnvelope = {
     ...review.envelope,
     issuer: FINANCE_REVIEW_ISSUER,
+    facts: [
+      {
+        field: FINANCE_REVIEW_EVIDENCE_FIELD,
+        confidence: 1,
+        evidence: [
+          {
+            page: 1,
+            excerpt: FINANCE_REVIEW_EVIDENCE_EXCERPT,
+            characterStart: null,
+            characterEnd: null,
+          },
+        ],
+      },
+      ...review.envelope.facts.slice(0, 511),
+    ],
   };
   const reviewUpdateResponse = await send(
     `/api/v1/finance/documents/${encodeURIComponent(documentId)}/review`,
@@ -2246,6 +2263,15 @@ const runFinanceStagingAcceptance = async (
   if (
     updatedReview.documentId !== documentId ||
     updatedReview.envelope.issuer !== FINANCE_REVIEW_ISSUER ||
+    !updatedReview.envelope.facts.some(
+      (fact) =>
+        fact.field === FINANCE_REVIEW_EVIDENCE_FIELD &&
+        fact.evidence.some(
+          (evidence) =>
+            evidence.page === 1 &&
+            evidence.excerpt === FINANCE_REVIEW_EVIDENCE_EXCERPT,
+        ),
+    ) ||
     updatedReview.payloadHash === review.payloadHash
   ) {
     throw new Error('Finance review edit did not bind a new draft');
@@ -2466,7 +2492,11 @@ const runFinanceStagingAcceptance = async (
   if (
     ownerEvidence.items.length !== 1 ||
     ownerEvidence.items[0]?.id !== evidenceId.data ||
-    ownerEvidence.items[0]?.documentId !== documentId
+    ownerEvidence.items[0]?.documentId !== documentId ||
+    ownerEvidence.items[0]?.extractionRevision !==
+      updatedReview.extractionRevision ||
+    ownerEvidence.items[0]?.page !== 1 ||
+    ownerEvidence.items[0]?.excerpt !== FINANCE_REVIEW_EVIDENCE_EXCERPT
   ) {
     throw new Error('Finance cited evidence readback is invalid');
   }
@@ -2826,7 +2856,11 @@ const runFinanceStagingFinalize = async (
   if (
     evidence.items.length !== 1 ||
     evidence.items[0]?.id !== attestation.evidenceId ||
-    evidence.items[0]?.documentId !== attestation.documentId
+    evidence.items[0]?.documentId !== attestation.documentId ||
+    evidence.items[0]?.extractionRevision !==
+      committed.document.extractionRevision ||
+    evidence.items[0]?.page !== 1 ||
+    evidence.items[0]?.excerpt !== FINANCE_REVIEW_EVIDENCE_EXCERPT
   ) {
     throw new Error('Finance finalization evidence binding is invalid');
   }

@@ -694,6 +694,7 @@ describe('staging acceptance CLI', () => {
     let commitRunFailed = true;
     let commitRunFailureData: unknown;
     let deleteRunFailed = true;
+    let evidenceExcerpt = 'Cobalt Lantern Receipt';
     let initialTurnFailure:
       | 'turn-post-or-response-invalid'
       | 'turn-acceptance-json-or-schema-invalid'
@@ -1107,7 +1108,23 @@ describe('staging acceptance CLI', () => {
         expect(await request.json()).toMatchObject({
           schemaVersion: 1,
           expectedExtractionRevision: 1,
-          envelope: { issuer: 'EMDO synthetic staged review' },
+          envelope: {
+            issuer: 'Boreal Quasar Ledger',
+            facts: [
+              {
+                field: 'synthetic-source-proof',
+                confidence: 1,
+                evidence: [
+                  {
+                    page: 1,
+                    excerpt: 'Cobalt Lantern Receipt',
+                    characterStart: null,
+                    characterEnd: null,
+                  },
+                ],
+              },
+            ],
+          },
         });
         return jsonWithRequestId({
           schemaVersion: 1,
@@ -1115,7 +1132,21 @@ describe('staging acceptance CLI', () => {
           extractionRevision: 1,
           envelope: {
             ...reviewEnvelope,
-            issuer: 'EMDO synthetic staged review',
+            issuer: 'Boreal Quasar Ledger',
+            facts: [
+              {
+                field: 'synthetic-source-proof',
+                confidence: 1,
+                evidence: [
+                  {
+                    page: 1,
+                    excerpt: 'Cobalt Lantern Receipt',
+                    characterStart: null,
+                    characterEnd: null,
+                  },
+                ],
+              },
+            ],
           },
           payloadHash: '2'.repeat(64),
           reviewToken: 'b'.repeat(43),
@@ -1146,7 +1177,7 @@ describe('staging acceptance CLI', () => {
                   documentId: FINANCE_DOCUMENT_ID,
                   extractionRevision: 1,
                   page: 1,
-                  excerpt: 'Synthetic evidence.',
+                  excerpt: evidenceExcerpt,
                   sourceLocale: 'en-CA',
                   locator: { page: 1 },
                 },
@@ -1227,7 +1258,7 @@ describe('staging acceptance CLI', () => {
           financeCommand({
             schemaVersion: 1,
             action: 'search-document',
-            query: 'EMDO synthetic staged review',
+            query: 'Boreal Quasar Ledger',
           })
         )
           return accepted(FINANCE_QNA_RUN_ID);
@@ -1575,6 +1606,7 @@ describe('staging acceptance CLI', () => {
       handoffs.length = 0;
       initialTurnFailure = undefined;
       commitRunFailureData = undefined;
+      evidenceExcerpt = 'Cobalt Lantern Receipt';
     };
     for (const { fixtureFailure, outcome } of [
       {
@@ -1874,6 +1906,23 @@ describe('staging acceptance CLI', () => {
     resetFinanceFixture();
     commitRunFailed = false;
 
+    evidenceExcerpt = 'Unrelated same-document evidence';
+    await expect(
+      runStagingAcceptanceCommand({
+        argv: [
+          '--all-mvp-gates',
+          '--require-synthetic',
+          '--forbid-worker-provider-execution',
+          '--finance-synthetic-document-gates',
+        ],
+        environment: financeEnvironment,
+        fetch,
+        now: () => OBSERVED_AT,
+        sleep: async () => undefined,
+      }),
+    ).rejects.toThrow('Finance cited evidence readback is invalid');
+    resetFinanceFixture();
+
     const phaseOne = await runStagingAcceptanceCommand({
       argv: [
         '--all-mvp-gates',
@@ -1939,7 +1988,7 @@ describe('staging acceptance CLI', () => {
       'safe-write-and-handoff',
     ]);
     expect(JSON.stringify(phaseOne)).not.toContain('finance-owner-session');
-    expect(JSON.stringify(phaseOne)).not.toContain('Synthetic evidence.');
+    expect(JSON.stringify(phaseOne)).not.toContain('Cobalt Lantern Receipt');
 
     const requestsBeforeGuardedDeleteFailure = requests.length;
     const failedDeleteStages: FinanceAcceptanceStage[] = [];
