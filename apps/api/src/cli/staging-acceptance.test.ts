@@ -23,6 +23,8 @@ const FINANCE_DOCUMENT_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f94';
 const FINANCE_MEMBER_USER_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f95';
 const FINANCE_MEMBER_EMAIL = 'finance-staging-member@emdo.invalid';
 const FINANCE_EVIDENCE_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f99';
+const FINANCE_UNRELATED_EVIDENCE_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f9a';
+const FINANCE_TRAILING_EVIDENCE_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f9b';
 const FINANCE_COMMIT_RUN_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5fa2';
 const FINANCE_QNA_RUN_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5fa3';
 const FINANCE_WRITE_RUN_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5fa4';
@@ -694,6 +696,7 @@ describe('staging acceptance CLI', () => {
     let commitRunFailed = true;
     let commitRunFailureData: unknown;
     let deleteRunFailed = true;
+    let evidenceExcerpt = 'Cobalt Lantern Receipt';
     let initialTurnFailure:
       | 'turn-post-or-response-invalid'
       | 'turn-acceptance-json-or-schema-invalid'
@@ -1107,7 +1110,23 @@ describe('staging acceptance CLI', () => {
         expect(await request.json()).toMatchObject({
           schemaVersion: 1,
           expectedExtractionRevision: 1,
-          envelope: { issuer: 'EMDO synthetic staged review' },
+          envelope: {
+            issuer: 'Boreal Quasar Ledger',
+            facts: [
+              {
+                field: 'synthetic-source-proof',
+                confidence: 1,
+                evidence: [
+                  {
+                    page: 1,
+                    excerpt: 'Cobalt Lantern Receipt',
+                    characterStart: null,
+                    characterEnd: null,
+                  },
+                ],
+              },
+            ],
+          },
         });
         return jsonWithRequestId({
           schemaVersion: 1,
@@ -1115,7 +1134,21 @@ describe('staging acceptance CLI', () => {
           extractionRevision: 1,
           envelope: {
             ...reviewEnvelope,
-            issuer: 'EMDO synthetic staged review',
+            issuer: 'Boreal Quasar Ledger',
+            facts: [
+              {
+                field: 'synthetic-source-proof',
+                confidence: 1,
+                evidence: [
+                  {
+                    page: 1,
+                    excerpt: 'Cobalt Lantern Receipt',
+                    characterStart: null,
+                    characterEnd: null,
+                  },
+                ],
+              },
+            ],
           },
           payloadHash: '2'.repeat(64),
           reviewToken: 'b'.repeat(43),
@@ -1146,7 +1179,49 @@ describe('staging acceptance CLI', () => {
                   documentId: FINANCE_DOCUMENT_ID,
                   extractionRevision: 1,
                   page: 1,
-                  excerpt: 'Synthetic evidence.',
+                  excerpt: evidenceExcerpt,
+                  sourceLocale: 'en-CA',
+                  locator: { page: 1 },
+                },
+              ],
+            });
+      if (
+        url.pathname ===
+        `/api/v1/finance/evidence/${FINANCE_UNRELATED_EVIDENCE_ID}`
+      )
+        return member || deleted
+          ? problem(404, 'evidence-not-found')
+          : jsonWithRequestId({
+              schemaVersion: 1,
+              items: [
+                {
+                  schemaVersion: 1,
+                  id: FINANCE_UNRELATED_EVIDENCE_ID,
+                  documentId: FINANCE_DOCUMENT_ID,
+                  extractionRevision: 1,
+                  page: 1,
+                  excerpt: 'Unrelated same-document evidence',
+                  sourceLocale: 'en-CA',
+                  locator: { page: 1 },
+                },
+              ],
+            });
+      if (
+        url.pathname ===
+        `/api/v1/finance/evidence/${FINANCE_TRAILING_EVIDENCE_ID}`
+      )
+        return member || deleted
+          ? problem(404, 'evidence-not-found')
+          : jsonWithRequestId({
+              schemaVersion: 1,
+              items: [
+                {
+                  schemaVersion: 1,
+                  id: FINANCE_TRAILING_EVIDENCE_ID,
+                  documentId: FINANCE_DOCUMENT_ID,
+                  extractionRevision: 1,
+                  page: 1,
+                  excerpt: 'Trailing same-document evidence',
                   sourceLocale: 'en-CA',
                   locator: { page: 1 },
                 },
@@ -1227,7 +1302,7 @@ describe('staging acceptance CLI', () => {
           financeCommand({
             schemaVersion: 1,
             action: 'search-document',
-            query: 'EMDO synthetic staged review',
+            query: 'Boreal Quasar Ledger',
           })
         )
           return accepted(FINANCE_QNA_RUN_ID);
@@ -1500,7 +1575,11 @@ describe('staging acceptance CLI', () => {
             runId,
             financeOutput({
               summary: 'Found one reviewed finance document result.',
-              evidenceReferences: [FINANCE_EVIDENCE_ID],
+              evidenceReferences: [
+                FINANCE_UNRELATED_EVIDENCE_ID,
+                FINANCE_EVIDENCE_ID,
+                FINANCE_TRAILING_EVIDENCE_ID,
+              ],
             }),
           );
         if (runId === FINANCE_WRITE_RUN_ID) {
@@ -1575,6 +1654,7 @@ describe('staging acceptance CLI', () => {
       handoffs.length = 0;
       initialTurnFailure = undefined;
       commitRunFailureData = undefined;
+      evidenceExcerpt = 'Cobalt Lantern Receipt';
     };
     for (const { fixtureFailure, outcome } of [
       {
@@ -1874,6 +1954,23 @@ describe('staging acceptance CLI', () => {
     resetFinanceFixture();
     commitRunFailed = false;
 
+    evidenceExcerpt = 'Unrelated same-document evidence';
+    await expect(
+      runStagingAcceptanceCommand({
+        argv: [
+          '--all-mvp-gates',
+          '--require-synthetic',
+          '--forbid-worker-provider-execution',
+          '--finance-synthetic-document-gates',
+        ],
+        environment: financeEnvironment,
+        fetch,
+        now: () => OBSERVED_AT,
+        sleep: async () => undefined,
+      }),
+    ).rejects.toThrow('Finance cited evidence readback is invalid');
+    resetFinanceFixture();
+
     const phaseOne = await runStagingAcceptanceCommand({
       argv: [
         '--all-mvp-gates',
@@ -1909,6 +2006,20 @@ describe('staging acceptance CLI', () => {
       ],
     });
     expect(handoffs).toHaveLength(1);
+    expect(handoffs[0]).toMatchObject({
+      documentId: FINANCE_DOCUMENT_ID,
+      evidenceId: FINANCE_EVIDENCE_ID,
+    });
+    const evidenceRequestPaths = requests
+      .map((request) => new URL(request.url).pathname)
+      .filter((path) => path.startsWith('/api/v1/finance/evidence/'));
+    expect(evidenceRequestPaths).toEqual(
+      expect.arrayContaining([
+        `/api/v1/finance/evidence/${FINANCE_UNRELATED_EVIDENCE_ID}`,
+        `/api/v1/finance/evidence/${FINANCE_EVIDENCE_ID}`,
+        `/api/v1/finance/evidence/${FINANCE_TRAILING_EVIDENCE_ID}`,
+      ]),
+    );
     expect(committed).toBe(true);
     expect(phaseOneStages).toEqual([
       'configuration',
@@ -1939,7 +2050,7 @@ describe('staging acceptance CLI', () => {
       'safe-write-and-handoff',
     ]);
     expect(JSON.stringify(phaseOne)).not.toContain('finance-owner-session');
-    expect(JSON.stringify(phaseOne)).not.toContain('Synthetic evidence.');
+    expect(JSON.stringify(phaseOne)).not.toContain('Cobalt Lantern Receipt');
 
     const requestsBeforeGuardedDeleteFailure = requests.length;
     const failedDeleteStages: FinanceAcceptanceStage[] = [];

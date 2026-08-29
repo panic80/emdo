@@ -19,6 +19,10 @@ const ids = Object.freeze({
   evidenceOne: '72000000-0000-4000-8000-000000000010',
   evidenceTwo: '72000000-0000-4000-8000-000000000011',
   match: '72000000-0000-4000-8000-000000000012',
+  summaryChunk: '72000000-0000-4000-8000-000000000013',
+  documentTwo: '72000000-0000-4000-8000-000000000014',
+  summaryChunkTwo: '72000000-0000-4000-8000-000000000015',
+  exactEvidence: '72000000-0000-4000-8000-000000000099',
 });
 
 const owner = Object.freeze({
@@ -90,25 +94,33 @@ const evidence = Object.freeze([
 
 const createRepository = () => {
   const repository = {
-    search: vi.fn(async () => ({
-      structured: [{ ...document, structuredRank: 1 }],
-      fullText: [
-        {
-          id: ids.chunk,
-          documentId: ids.document,
-          extractionRevision: 2,
-          documentType: 'receipt',
-          currency: 'CAD' as string,
-          pageStart: 1,
-          pageEnd: 1,
-          fullTextRank: 1 as number | null,
-          vectorRank: 1 as number | null,
-        },
-      ],
-    })),
-    getMetadata: vi.fn(async () => document),
-    getCommittedProjection: vi.fn(async () => committedProjection),
-    listEvidence: vi.fn(async () => evidence),
+    search: vi.fn<FinanceSpecialistCommittedDocumentRepository['search']>(
+      async () => ({
+        structured: [{ ...document, structuredRank: 1 }],
+        fullText: [
+          {
+            id: ids.chunk,
+            documentId: ids.document,
+            extractionRevision: 2,
+            documentType: 'receipt',
+            currency: 'CAD' as string,
+            pageStart: 1,
+            pageEnd: 1,
+            fullTextRank: 1 as number | null,
+            vectorRank: 1 as number | null,
+          },
+        ],
+      }),
+    ),
+    getMetadata: vi.fn<
+      FinanceSpecialistCommittedDocumentRepository['getMetadata']
+    >(async () => document),
+    getCommittedProjection: vi.fn<
+      FinanceSpecialistCommittedDocumentRepository['getCommittedProjection']
+    >(async () => committedProjection),
+    listEvidence: vi.fn<
+      FinanceSpecialistCommittedDocumentRepository['listEvidence']
+    >(async () => evidence),
     getEvidenceById: vi.fn(async (input: { evidenceId: string }) =>
       evidence.find((item) => item.id === input.evidenceId),
     ),
@@ -223,8 +235,235 @@ describe('createProductionFinanceSpecialistDocumentPort', () => {
     ).resolves.toEqual([
       expect.objectContaining({
         documentId: ids.document,
-        evidence: [expect.objectContaining({ evidenceId: ids.evidenceOne })],
+        evidence: expect.arrayContaining([
+          expect.objectContaining({ evidenceId: ids.evidenceOne }),
+        ]),
       }),
+    ]);
+  });
+
+  it('uses same-document search ranks when a matched summary chunk has no evidence', async () => {
+    const repository = createRepository();
+    repository.search.mockResolvedValueOnce({
+      structured: [],
+      fullText: [
+        {
+          id: ids.summaryChunk,
+          documentId: ids.document,
+          extractionRevision: 2,
+          documentType: 'receipt',
+          currency: 'CAD',
+          pageStart: 1,
+          pageEnd: 1,
+          fullTextRank: 1,
+          vectorRank: null,
+        },
+      ],
+    });
+    const port = createProductionFinanceSpecialistDocumentPort({
+      owner,
+      repository,
+    });
+
+    await expect(
+      port.searchCommitted({
+        scope,
+        query: 'Example Market issuer',
+        limit: 1,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        documentId: ids.document,
+        evidence: [
+          expect.objectContaining({ evidenceId: ids.evidenceOne }),
+          expect.objectContaining({ evidenceId: ids.evidenceTwo }),
+        ],
+      }),
+    ]);
+  });
+
+  it('selects matching documents before bounded evidence and prioritizes exact chunk ranks', async () => {
+    const repository = createRepository();
+    const secondDocument = {
+      ...document,
+      id: ids.documentTwo,
+      displayName: 'Second Market receipt',
+    };
+    const secondProjection = {
+      ...committedProjection,
+      id: ids.documentTwo,
+    };
+    const fallbackEvidence = Array.from({ length: 17 }, (_, index) => ({
+      ...evidence[0],
+      id: `72000000-0000-4000-8000-${String(index + 20).padStart(12, '0')}`,
+      chunkId: null,
+    }));
+    const exactEvidence = {
+      ...evidence[0],
+      id: ids.exactEvidence,
+      chunkId: ids.chunk,
+    };
+    const secondEvidence = [
+      {
+        ...evidence[1],
+        documentId: ids.documentTwo,
+      },
+    ];
+    repository.search.mockResolvedValueOnce({
+      structured: [],
+      fullText: [
+        {
+          id: ids.summaryChunk,
+          documentId: ids.document,
+          extractionRevision: 2,
+          documentType: 'receipt',
+          currency: 'CAD',
+          pageStart: 1,
+          pageEnd: 1,
+          fullTextRank: 1,
+          vectorRank: null,
+        },
+        {
+          id: ids.chunk,
+          documentId: ids.document,
+          extractionRevision: 2,
+          documentType: 'receipt',
+          currency: 'CAD',
+          pageStart: 1,
+          pageEnd: 1,
+          fullTextRank: 25,
+          vectorRank: null,
+        },
+        {
+          id: ids.summaryChunkTwo,
+          documentId: ids.documentTwo,
+          extractionRevision: 2,
+          documentType: 'receipt',
+          currency: 'CAD',
+          pageStart: 1,
+          pageEnd: 1,
+          fullTextRank: 2,
+          vectorRank: null,
+        },
+      ],
+    });
+    repository.getMetadata.mockImplementation(async ({ documentId }) =>
+      documentId === ids.document
+        ? document
+        : documentId === ids.documentTwo
+          ? secondDocument
+          : undefined,
+    );
+    repository.getCommittedProjection.mockImplementation(
+      async ({ documentId }) =>
+        documentId === ids.document
+          ? committedProjection
+          : documentId === ids.documentTwo
+            ? secondProjection
+            : undefined,
+    );
+    repository.listEvidence.mockImplementation(async ({ documentId }) =>
+      documentId === ids.document
+        ? [...fallbackEvidence, exactEvidence]
+        : documentId === ids.documentTwo
+          ? secondEvidence
+          : [],
+    );
+    const port = createProductionFinanceSpecialistDocumentPort({
+      owner,
+      repository,
+    });
+
+    const hits = await port.searchCommitted({
+      scope,
+      query: 'Market',
+      limit: 2,
+    });
+
+    expect(hits.map((hit) => hit.documentId)).toEqual([
+      ids.document,
+      ids.documentTwo,
+    ]);
+    expect(hits[0]?.evidence).toHaveLength(8);
+    expect(hits[1]?.evidence).toHaveLength(1);
+    expect(hits[0]?.evidence[0]).toMatchObject({
+      evidenceId: ids.exactEvidence,
+    });
+  });
+
+  it('does not let an uncitable document consume the document result limit', async () => {
+    const repository = createRepository();
+    const secondDocument = {
+      ...document,
+      id: ids.documentTwo,
+      displayName: 'Second Market receipt',
+    };
+    const secondProjection = {
+      ...committedProjection,
+      id: ids.documentTwo,
+    };
+    repository.search.mockResolvedValueOnce({
+      structured: [],
+      fullText: [
+        {
+          id: ids.summaryChunk,
+          documentId: ids.document,
+          extractionRevision: 2,
+          documentType: 'receipt',
+          currency: 'CAD',
+          pageStart: 1,
+          pageEnd: 1,
+          fullTextRank: 1,
+          vectorRank: null,
+        },
+        {
+          id: ids.summaryChunkTwo,
+          documentId: ids.documentTwo,
+          extractionRevision: 2,
+          documentType: 'receipt',
+          currency: 'CAD',
+          pageStart: 1,
+          pageEnd: 1,
+          fullTextRank: 2,
+          vectorRank: null,
+        },
+      ],
+    });
+    repository.getMetadata.mockImplementation(async ({ documentId }) =>
+      documentId === ids.document
+        ? document
+        : documentId === ids.documentTwo
+          ? secondDocument
+          : undefined,
+    );
+    repository.getCommittedProjection.mockImplementation(
+      async ({ documentId }) =>
+        documentId === ids.document
+          ? committedProjection
+          : documentId === ids.documentTwo
+            ? secondProjection
+            : undefined,
+    );
+    repository.listEvidence.mockImplementation(async ({ documentId }) =>
+      documentId === ids.document
+        ? []
+        : documentId === ids.documentTwo
+          ? [{ ...evidence[0], documentId: ids.documentTwo }]
+          : [],
+    );
+    const port = createProductionFinanceSpecialistDocumentPort({
+      owner,
+      repository,
+    });
+
+    await expect(
+      port.searchCommitted({
+        scope,
+        query: 'Market',
+        limit: 1,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({ documentId: ids.documentTwo }),
     ]);
   });
 

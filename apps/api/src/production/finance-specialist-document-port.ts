@@ -124,8 +124,18 @@ const FullTextSearchResultSchema = z
     currency: CurrencySchema.nullable(),
     pageStart: z.number().int().positive().max(250),
     pageEnd: z.number().int().positive().max(250),
-    fullTextRank: z.number().int().positive().nullable(),
-    vectorRank: z.number().int().positive().nullable(),
+    fullTextRank: z
+      .number()
+      .int()
+      .positive()
+      .max(MAXIMUM_SEARCH_RESULTS)
+      .nullable(),
+    vectorRank: z
+      .number()
+      .int()
+      .positive()
+      .max(MAXIMUM_SEARCH_RESULTS)
+      .nullable(),
   })
   .refine(
     (row) => row.fullTextRank !== null || row.vectorRank !== null,
@@ -333,6 +343,9 @@ const minimumRank = (
   right: number | null,
 ): number | null =>
   left === null ? right : right === null ? left : Math.min(left, right);
+
+const fallbackRank = (rank: number | null): number | null =>
+  rank === null ? null : MAXIMUM_SEARCH_RESULTS + rank;
 
 const bindScope = (
   owner: FixedOwner,
@@ -585,6 +598,10 @@ export const createProductionFinanceSpecialistDocumentPort = (
         string,
         Readonly<{ fullTextRank: number | null; vectorRank: number | null }>
       >();
+      const ranksByDocumentId = new Map<
+        string,
+        Readonly<{ fullTextRank: number | null; vectorRank: number | null }>
+      >();
       for (const fullText of search.data.fullText) {
         const document = documents.get(fullText.documentId);
         if (
@@ -605,6 +622,20 @@ export const createProductionFinanceSpecialistDocumentPort = (
             ),
             vectorRank: minimumRank(
               previous?.vectorRank ?? null,
+              fullText.vectorRank,
+            ),
+          }),
+        );
+        const documentRanks = ranksByDocumentId.get(fullText.documentId);
+        ranksByDocumentId.set(
+          fullText.documentId,
+          deepFreeze({
+            fullTextRank: minimumRank(
+              documentRanks?.fullTextRank ?? null,
+              fullText.fullTextRank,
+            ),
+            vectorRank: minimumRank(
+              documentRanks?.vectorRank ?? null,
               fullText.vectorRank,
             ),
           }),
@@ -643,71 +674,85 @@ export const createProductionFinanceSpecialistDocumentPort = (
       );
       if (scope.abortSignal.aborted) throw unavailable();
 
-      const rankedEvidence = fuseFinanceEvidenceRanks({
-        candidates: [...evidenceById.values()].map((evidence) => {
-          const chunkRanks =
-            evidence.chunkId === null
-              ? undefined
-              : ranksByChunkId.get(evidence.chunkId);
-          return {
-            evidenceId: evidence.id,
-            structuredRank: structuredRanks.get(evidence.documentId) ?? null,
-            fullTextRank: chunkRanks?.fullTextRank ?? null,
-            vectorRank: chunkRanks?.vectorRank ?? null,
-          };
-        }),
-        limit: Math.min(
-          request.data.limit * MAXIMUM_EVIDENCE_PER_SEARCH_HIT,
-          50,
-        ),
+      const evidenceDocumentIds = new Set(
+        [...evidenceById.values()].map((evidence) => evidence.documentId),
+      );
+      const rankedDocuments = fuseFinanceEvidenceRanks({
+        candidates: [...documents.values()]
+          .filter((document) => evidenceDocumentIds.has(document.id))
+          .map((document) => {
+            const documentRanks = ranksByDocumentId.get(document.id);
+            return {
+              evidenceId: document.id,
+              structuredRank: structuredRanks.get(document.id) ?? null,
+              fullTextRank: documentRanks?.fullTextRank ?? null,
+              vectorRank: documentRanks?.vectorRank ?? null,
+            };
+          }),
+        limit: request.data.limit,
       });
-
-      const hitsByDocument = new Map<
-        string,
-        { scoreMillionths: number; evidence: PublicEvidence[] }
-      >();
-      for (const rank of rankedEvidence) {
-        const evidence = evidenceById.get(rank.evidenceId);
-        if (evidence === undefined) throw unavailable();
-        const document = documents.get(evidence.documentId);
-        if (document === undefined) throw unavailable();
-        const publicEvidence = evidenceFor(
-          evidence,
-          document,
-          displayNameFor(document),
-        );
-        if (publicEvidence === undefined) throw unavailable();
-        const hit = hitsByDocument.get(document.id);
-        if (hit === undefined) {
-          hitsByDocument.set(document.id, {
-            scoreMillionths: rank.scoreMillionths,
-            evidence: [publicEvidence],
-          });
-        } else if (hit.evidence.length < MAXIMUM_EVIDENCE_PER_SEARCH_HIT) {
-          hit.evidence.push(publicEvidence);
-        }
-      }
+      const selectedDocuments = new Map(
+        rankedDocuments.flatMap((rank) => {
+          const document = documents.get(rank.evidenceId);
+          return document === undefined
+            ? []
+            : [[document.id, document] as const];
+        }),
+      );
 
       return deepFreeze(
-        [...hitsByDocument.entries()]
-          .map(([documentId, hit]) => {
-            const document = documents.get(documentId);
-            if (
-              document === undefined ||
-              document.documentType === null ||
-              hit.evidence.some((evidence) => evidence === undefined)
-            ) {
+        rankedDocuments
+          .flatMap((documentRank) => {
+            const document = selectedDocuments.get(documentRank.evidenceId);
+            if (document === undefined || document.documentType === null) {
               throw unavailable();
             }
+            const rankedEvidence = fuseFinanceEvidenceRanks({
+              candidates: [...evidenceById.values()]
+                .filter((evidence) => evidence.documentId === document.id)
+                .map((evidence) => {
+                  const chunkRanks =
+                    evidence.chunkId === null
+                      ? undefined
+                      : ranksByChunkId.get(evidence.chunkId);
+                  const documentRanks = ranksByDocumentId.get(
+                    evidence.documentId,
+                  );
+                  return {
+                    evidenceId: evidence.id,
+                    structuredRank:
+                      structuredRanks.get(evidence.documentId) ?? null,
+                    fullTextRank:
+                      chunkRanks?.fullTextRank ??
+                      fallbackRank(documentRanks?.fullTextRank ?? null),
+                    vectorRank:
+                      chunkRanks?.vectorRank ??
+                      fallbackRank(documentRanks?.vectorRank ?? null),
+                  };
+                }),
+              limit: MAXIMUM_EVIDENCE_PER_SEARCH_HIT,
+            });
+            const publicEvidence = rankedEvidence.map((rank) => {
+              const evidence = evidenceById.get(rank.evidenceId);
+              if (evidence === undefined) throw unavailable();
+              const result = evidenceFor(
+                evidence,
+                document,
+                displayNameFor(document),
+              );
+              if (result === undefined) throw unavailable();
+              return result;
+            });
+            if (publicEvidence.length === 0) return [];
             return {
-              documentId,
+              documentId: document.id,
               documentType: document.documentType,
               displayName: displayNameFor(document),
               occurredOn: document.occurredOn,
               currency: document.currency,
               amountMinor: document.amountMinor,
-              score: hit.scoreMillionths / 1_000_000,
-              evidence: hit.evidence,
+              score: documentRank.scoreMillionths / 1_000_000,
+              evidence: publicEvidence,
             };
           })
           .sort(
