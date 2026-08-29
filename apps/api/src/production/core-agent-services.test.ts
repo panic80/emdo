@@ -731,6 +731,90 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
     });
   });
 
+  it('uses an immutable document-materialization scope without freezing the live abort signal', async () => {
+    const controller = new AbortController();
+    let materializedScope: { readonly abortSignal: AbortSignal } | undefined;
+    const documentTarget = {
+      targetBindingHash: 'a'.repeat(64),
+      preview: {
+        documentId: ids.document,
+        beforeState: 'awaiting-review',
+        afterState: 'committed',
+        extractionRevision: 1,
+      },
+    };
+    const materializeTarget = vi.fn(
+      async ({
+        scope,
+      }: {
+        readonly scope: { readonly abortSignal: AbortSignal };
+      }) => {
+        materializedScope = scope;
+        return documentTarget;
+      },
+    );
+    const adapter = createRequestScopedFinanceGuardedActionProposalAdapter(
+      {
+        principal,
+        requestId: ids.request,
+        runId: ids.run,
+        authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
+        readPool: { connect: vi.fn() } as never,
+        workflowPool: { connect: vi.fn() } as never,
+        guardedDocumentActions: {
+          materializeTarget,
+          executeApproved: async () => {
+            throw new Error('test-document-execution-must-not-run');
+          },
+        },
+      },
+      {
+        createDisclosureGrantResolver: () => ({
+          resolve: vi.fn(async () => financeDisclosureGrant),
+        }),
+        createProposalRepository: () => ({ transaction: vi.fn() }) as never,
+        createProposalService: () => ({
+          create: async (proposal) => proposal,
+        }),
+        createProposalId: () => ids.proposal,
+        now: () => new Date('2026-08-15T12:05:00.000Z'),
+      },
+    );
+
+    await adapter.materializeProposal({
+      capabilityId: 'finance.records.write',
+      descriptor: financeWriteDescriptor,
+      arguments: {
+        schemaVersion: 1,
+        mutation: { kind: 'commit-document-review', documentId: ids.document },
+      },
+      operation: 'finance-document-review-commit',
+      context: {
+        requestId: ids.request,
+        runId: ids.run,
+        householdId: ids.household,
+        userId: ids.user,
+        authenticatedSessionId: ids.session,
+        spaceAccessGrantId: ids.spaceGrant,
+        authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
+        disclosureGrantId: ids.disclosureGrant,
+        disclosureGrantVersion: '7.2.5',
+        sdkCallId: 'finance-document-abort-signal-regression',
+        agentId: 'finance',
+        abortSignal: controller.signal,
+      },
+    });
+
+    expect(materializeTarget).toHaveBeenCalledOnce();
+    expect(materializedScope).toBeDefined();
+    expect(Object.isFrozen(materializedScope)).toBe(true);
+    expect(materializedScope?.abortSignal).toBe(controller.signal);
+    expect(Object.isFrozen(controller.signal)).toBe(false);
+    expect(() =>
+      AbortSignal.any([controller.signal, new AbortController().signal]),
+    ).not.toThrow();
+  });
+
   it('presents approved Finance guarded actions only when their successful output matches the canonical mutation', async () => {
     const recordOutput = (
       transactionId: string,

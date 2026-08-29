@@ -236,7 +236,19 @@ describe('workflow authority migration', () => {
       statement.includes('grant execute on function'),
     );
     expect(sql).toContain('rename to issue_workflow_operation_claim_calendar');
-    expect(issuerGrants).toHaveLength(2);
+    expect(issuerGrants).toHaveLength(3);
+    expect(
+      issuerGrants.filter((grant) =>
+        grant.includes('issue_workflow_operation_claim_calendar'),
+      ),
+    ).toHaveLength(1);
+    expect(
+      issuerGrants.filter(
+        (grant) =>
+          grant.includes('issue_workflow_operation_claim(') &&
+          !grant.includes('issue_workflow_operation_claim_calendar'),
+      ),
+    ).toHaveLength(2);
     for (const grant of issuerGrants) {
       expect(grant).toMatch(/to\s+emdo_workflow_executor\s*$/);
       expect(grant).not.toMatch(/emdo_app|emdo_workflow_login|public/);

@@ -1036,7 +1036,7 @@ export const createRequestScopedFinanceGuardedActionProposalAdapter = (
         }
         documentTarget = FinanceDocumentGuardedTargetSchema.parse(
           await rawInput.guardedDocumentActions.materializeTarget({
-            scope: deepFreeze({
+            scope: Object.freeze({
               requestId: fixedRequestId,
               runId: fixedRunId,
               userId: fixedPrincipal.userId,

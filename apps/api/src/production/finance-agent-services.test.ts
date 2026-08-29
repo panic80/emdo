@@ -294,6 +294,29 @@ const createDependencies = () => {
 };
 
 describe('request-scoped Finance specialist services', () => {
+  it('forwards a frozen scope without freezing its live abort signal', async () => {
+    const { dependencies, documents } = createDependencies();
+    const abortController = new AbortController();
+    const services = createRequestScopedFinanceSpecialistServices({
+      principal,
+      dependencies,
+    });
+
+    await services.readFinanceDocument(
+      { documentId: 'document-1', evidenceIds: ['evidence-1'] },
+      { ...context, abortSignal: abortController.signal },
+    );
+
+    const forwardedScope = documents.readCommitted.mock.calls[0]?.[0]?.scope;
+    expect(forwardedScope).toBeDefined();
+    expect(Object.isFrozen(forwardedScope)).toBe(true);
+    expect(forwardedScope?.abortSignal).toBe(abortController.signal);
+    expect(Object.isFrozen(abortController.signal)).toBe(false);
+    expect(() =>
+      AbortSignal.any([abortController.signal, new AbortController().signal]),
+    ).not.toThrow();
+  });
+
   it('mints owner-bound deterministic commands for an exact manual transaction only', async () => {
     const { dependencies, records } = createDependencies();
     records.createManualTransaction

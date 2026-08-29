@@ -148,6 +148,13 @@
       "when": 1787955923514,
       "tag": "0020_manager_specialist_disclosure",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1787965050339,
+      "tag": "0021_blocked_visual_decision_claim",
+      "breakpoints": true
     }
   ]
 }

@@ -27,6 +27,7 @@ const ids = Object.freeze({
   decisionSpaceGrant: '018f1f5e-3000-7000-8000-00000000000b',
   disclosureGrant: '018f1f5e-3000-7000-8000-00000000000c',
   resumeSpaceGrant: '018f1f5e-3000-7000-8000-00000000000d',
+  privateSpace: '018f1f5e-3000-7000-8000-00000000000e',
 });
 
 const payloadHash = 'a'.repeat(64);
@@ -237,6 +238,40 @@ describe('production approval resume binding', () => {
     expect(ids.resumeSpaceGrant).not.toBe(ids.decisionSpaceGrant);
     expect(collectionScopeFingerprint).not.toBe(
       principal.collectionAuthorizationScopeFingerprint,
+    );
+  });
+
+  it('projects private-space metadata out of strict durable boundaries while preserving it for the resumed runtime', async () => {
+    const configured = setup();
+    const privatePrincipal: AuthenticatedPrincipal = Object.freeze({
+      ...principal,
+      privateSpaceId: ids.privateSpace,
+    });
+
+    await expect(
+      configured.binding.service.decideWithVisualProof({
+        ...request,
+        principal: privatePrincipal,
+      }),
+    ).resolves.toEqual({ status: 'decided', decision });
+
+    expect(configured.decideAndLink).toHaveBeenCalledWith({
+      ...request,
+      principal,
+    });
+    expect(configured.claim).toHaveBeenCalledWith({
+      decision,
+      principal,
+      decisionRequestId: ids.decisionRequest,
+    });
+    expect(configured.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        principal: {
+          ...privatePrincipal,
+          spaceAccessGrantId: ids.resumeSpaceGrant,
+          collectionAuthorizationScopeFingerprint: collectionScopeFingerprint,
+        },
+      }),
     );
   });
 

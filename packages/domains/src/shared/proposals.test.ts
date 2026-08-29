@@ -245,6 +245,58 @@ class ClockAdvancingProposalRepository extends InMemoryProposalRepository {
   }
 }
 
+class CountingDecisionCommitRepository extends InMemoryProposalRepository {
+  decisionCommitCount = 0;
+
+  override async transaction<Result>(
+    work: (transaction: ProposalRepositoryTransaction) => Promise<Result>,
+  ): Promise<Result> {
+    return super.transaction((transaction) =>
+      work(
+        Object.freeze({
+          ...transaction,
+          commitDecision: async (
+            input: Parameters<
+              ProposalRepositoryTransaction['commitDecision']
+            >[0],
+          ) => {
+            this.decisionCommitCount += 1;
+            return transaction.commitDecision(input);
+          },
+        }),
+      ),
+    );
+  }
+}
+
+class DuplicateDecisionCommitRepository extends CountingDecisionCommitRepository {
+  private reportDuplicateOnce = true;
+
+  override async transaction<Result>(
+    work: (transaction: ProposalRepositoryTransaction) => Promise<Result>,
+  ): Promise<Result> {
+    return super.transaction((transaction) =>
+      work(
+        Object.freeze({
+          ...transaction,
+          commitDecision: async (
+            input: Parameters<
+              ProposalRepositoryTransaction['commitDecision']
+            >[0],
+          ) => {
+            const result = await transaction.commitDecision(input);
+            if (this.reportDuplicateOnce && result === 'created') {
+              this.reportDuplicateOnce = false;
+              return 'duplicate';
+            }
+            return result;
+          },
+        }),
+      ),
+    );
+  }
+}
+
 describe('ProposalService', () => {
   it('provides the exact approval lifecycle and abandonment operations without a materializer', async () => {
     const now = () => new Date('2026-08-09T16:02:00.000Z');
@@ -425,6 +477,49 @@ describe('ProposalService', () => {
         }),
       ),
     ).resolves.toBe('conflict');
+  });
+
+  it('returns the persisted decision on an exact second visual-decision request without another commit', async () => {
+    const repository = new CountingDecisionCommitRepository();
+    const service = new ProposalService(
+      materializer,
+      disclosureGrantResolver,
+      repository,
+      () => new Date('2026-08-09T16:02:00.000Z'),
+    );
+    await service.create(proposal, preparationBinding);
+
+    const first = await service.decide(decisionRequest, decisionContext);
+    const replay = await service.decide(decisionRequest, {
+      ...decisionContext,
+      decisionId: ids.otherProposal,
+      now: new Date('2026-08-09T16:02:30.000Z'),
+    });
+
+    expect(replay).toEqual(first);
+    expect(repository.decisionCommitCount).toBe(1);
+    expect((await repository.getProposal(proposal.id))?.state).toBe('approved');
+  });
+
+  it('recovers the persisted decision when the commit transaction reports an exact duplicate', async () => {
+    const repository = new DuplicateDecisionCommitRepository();
+    const service = new ProposalService(
+      materializer,
+      disclosureGrantResolver,
+      repository,
+      () => new Date('2026-08-09T16:02:00.000Z'),
+    );
+    await service.create(proposal, preparationBinding);
+
+    const decision = await service.decide(decisionRequest, decisionContext);
+
+    expect(decision).toMatchObject({
+      id: ids.decision,
+      proposalId: proposal.id,
+      decision: 'approved',
+    });
+    expect(repository.decisionCommitCount).toBe(1);
+    expect((await repository.getProposal(proposal.id))?.state).toBe('approved');
   });
 
   it('rejects direct repository abandonment after visual approval', async () => {

@@ -1,23 +1,24 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 
 import {
+  CanonicalRecordEnvelopeDisclosureFilter,
   PostgresFinanceDocumentRepository,
   PostgresManagerTurnStore,
+  PostgresModelDisclosureGateway,
   PostgresProposalQueryRepository,
-  PostgresRunEventSource,
+  PostgresVisualDecisionProofStore,
   ProposalQueryCursorCodec,
+  VisualDecisionProofTokenCodec,
   checkPostgresProposalWorkflowReadiness,
 } from '@emdo/db/api';
 import { loadOrderedMigrations } from '@emdo/db/migrations';
 import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
 import { hashCanonicalJson } from '@emdo/toolbox';
-import { Client, Pool } from 'pg';
+import { Client, Pool, type PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import {
-  createProductionAgentServiceBindingsFromDependencies,
-  type ProductionAgentRuntimeFactory,
-} from '../agents/production-runtime.js';
+import { createProductionAgentPersistence } from '../agents/production-persistence.js';
+import type { ProductionAgentRuntimeFactory } from '../agents/production-runtime.js';
 import { createProductionApprovalCheckpointCipher } from './approval-checkpoint-keyring.js';
 import { createRequestScopedManagerFinanceAgentRuntimeFactory } from './core-agent-services.js';
 import { createProductionFinanceDocumentGateway } from './finance-document-services.js';
@@ -26,6 +27,8 @@ import {
   formatFinanceSyntheticStagingCommand,
 } from './finance-synthetic-staging-agent.js';
 import { createProductionFinanceSpecialistComposition } from './finance-specialist-production-composition.js';
+import { createSyntheticFinanceDocumentEmbeddings } from './synthetic-finance-document-embeddings.js';
+import { PostgresVisualProposalDecisionGateway } from './visual-approval-services.js';
 
 const databaseUrl = process.env.TEST_FINANCE_DOCUMENT_DATABASE_URL;
 const databaseAttestation =
@@ -34,8 +37,10 @@ const describeDatabase = databaseUrl === undefined ? describe.skip : describe;
 
 const API_LOGIN = 'emdo_api_login';
 const WORKFLOW_LOGIN = 'emdo_workflow_login';
+const VISUAL_DECISION_LOGIN = 'emdo_visual_decision_login';
 const apiPassword = `finance-runtime-api-${randomUUID()}`;
 const workflowPassword = `finance-runtime-workflow-${randomUUID()}`;
+const visualDecisionPassword = `finance-runtime-visual-${randomUUID()}`;
 const financeDocumentDatabaseNamePattern =
   /^emdo_ci_finance_document_knowledge_[0-9a-f]{12}$/u;
 const financeDocumentDatabaseAttestationPattern =
@@ -91,6 +96,10 @@ const ids = Object.freeze({
   review: 'f3100000-0000-4000-8000-000000000010',
   proposalReadGrant: 'f3100000-0000-4000-8000-000000000011',
   proposalReadRequest: 'f3100000-0000-4000-8000-000000000012',
+  visualProofGrant: 'f3100000-0000-4000-8000-000000000013',
+  visualProofRequest: 'f3100000-0000-4000-8000-000000000014',
+  visualDecisionGrant: 'f3100000-0000-4000-8000-000000000015',
+  visualDecisionRequest: 'f3100000-0000-4000-8000-000000000016',
 });
 
 const sha256 = (value: string): string =>
@@ -110,6 +119,25 @@ const collectionScopeFingerprint =
       writableSpaceIds: [ids.privateSpace],
     }),
   );
+const reviewTokenHash = (payloadHash: string): string => {
+  const token = createHmac('sha256', Buffer.alloc(32, 62))
+    .update('emdo.finance-document.review-token.v2\0', 'utf8')
+    .update(
+      JSON.stringify({
+        documentId: ids.document,
+        extractionRevision: 1,
+        householdId: ids.household,
+        ownerUserId: ids.user,
+        payloadHash,
+        privateSpaceId: ids.privateSpace,
+        scopeFingerprint: collectionScopeFingerprint,
+        sessionId: ids.session,
+      }),
+      'utf8',
+    )
+    .digest('base64url');
+  return sha256(token);
+};
 
 const reviewedFacts = Object.freeze({
   documentType: 'receipt' as const,
@@ -173,16 +201,48 @@ const unavailable = async (): Promise<never> => {
   throw new Error('finance-synthetic-runtime-test-unreachable');
 };
 
+const withRequestScopedAppTransaction = async <Result>(
+  pool: Pool,
+  principal: Readonly<{
+    userId: string;
+    sessionId: string;
+    requestId: string;
+  }>,
+  work: (client: PoolClient) => Promise<Result>,
+): Promise<Result> => {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    await client.query('set local row_security = on');
+    await client.query(
+      `select set_config('emdo.user_id', $1, true),
+              set_config('emdo.session_id', $2, true),
+              set_config('emdo.request_id', $3, true)`,
+      [principal.userId, principal.sessionId, principal.requestId],
+    );
+    const result = await work(client);
+    await client.query('commit');
+    return result;
+  } catch (error) {
+    await client.query('rollback').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 describeDatabase(
-  'Finance synthetic staging guarded review initial turn (requires disposable TEST_FINANCE_DOCUMENT_DATABASE_URL)',
+  'Finance synthetic staging guarded review approval (requires disposable TEST_FINANCE_DOCUMENT_DATABASE_URL)',
   () => {
     let admin: Client;
     let appPool: Pool;
     let workflowPool: Pool;
+    let visualDecisionPool: Pool;
     let createdApiLogin = false;
     let grantedApiMembership = false;
     let apiLoginPasswordBefore: string | null | undefined;
     let workflowLoginPasswordBefore: string | null | undefined;
+    let visualDecisionLoginPasswordBefore: string | null | undefined;
 
     const restoreFixedLoginPasswords = async (): Promise<void> => {
       const restorations: Promise<unknown>[] = [];
@@ -197,6 +257,13 @@ describeDatabase(
         restorations.push(
           admin.query(
             `alter role ${WORKFLOW_LOGIN} password ${passwordLiteral(workflowLoginPasswordBefore)}`,
+          ),
+        );
+      }
+      if (visualDecisionLoginPasswordBefore !== undefined) {
+        restorations.push(
+          admin.query(
+            `alter role ${VISUAL_DECISION_LOGIN} password ${passwordLiteral(visualDecisionLoginPasswordBefore)}`,
           ),
         );
       }
@@ -346,7 +413,7 @@ describeDatabase(
           ids.grant,
           collectionScopeFingerprint,
           hashCanonicalJson(reviewedFacts),
-          sha256('finance-runtime-review-token'),
+          reviewTokenHash(hashCanonicalJson(reviewedFacts)),
           JSON.stringify(reviewedFacts),
         ],
       );
@@ -423,7 +490,7 @@ describeDatabase(
           `select role.rolname as "roleName", role.rolpassword as password
              from pg_catalog.pg_authid as role
             where role.rolname = any($1::text[])`,
-          [[API_LOGIN, WORKFLOW_LOGIN]],
+          [[API_LOGIN, WORKFLOW_LOGIN, VISUAL_DECISION_LOGIN]],
         );
         const passwordByRole = new Map(
           loginPasswords.rows.map(({ password, roleName }) => [
@@ -433,6 +500,9 @@ describeDatabase(
         );
         apiLoginPasswordBefore = passwordByRole.get(API_LOGIN);
         workflowLoginPasswordBefore = passwordByRole.get(WORKFLOW_LOGIN);
+        visualDecisionLoginPasswordBefore = passwordByRole.get(
+          VISUAL_DECISION_LOGIN,
+        );
         if (apiLoginPasswordBefore === undefined) {
           await admin.query(`create role ${API_LOGIN} login inherit nosuperuser
             nocreatedb nocreaterole nobypassrls noreplication`);
@@ -441,6 +511,9 @@ describeDatabase(
         }
         if (workflowLoginPasswordBefore === undefined) {
           throw new Error('Finance workflow login role is unavailable.');
+        }
+        if (visualDecisionLoginPasswordBefore === undefined) {
+          throw new Error('Finance visual-decision login role is unavailable.');
         }
         const apiMembership = await admin.query<{ member: boolean }>(
           `select pg_catalog.pg_has_role($1, 'emdo_app', 'member') as member`,
@@ -453,6 +526,9 @@ describeDatabase(
         await admin.query(`alter role ${API_LOGIN} password '${apiPassword}'`);
         await admin.query(
           `alter role ${WORKFLOW_LOGIN} password '${workflowPassword}'`,
+        );
+        await admin.query(
+          `alter role ${VISUAL_DECISION_LOGIN} password '${visualDecisionPassword}'`,
         );
 
         appPool = new Pool({
@@ -470,17 +546,34 @@ describeDatabase(
           ),
           max: 2,
         });
+        visualDecisionPool = new Pool({
+          allowExitOnIdle: true,
+          application_name: 'emdo-finance-synthetic-runtime-visual-decision',
+          connectionString: loginConnectionString(
+            VISUAL_DECISION_LOGIN,
+            visualDecisionPassword,
+          ),
+          max: 2,
+        });
 
         await seedDocumentReview();
       } catch (error) {
-        await Promise.allSettled([appPool?.end(), workflowPool?.end()]);
+        await Promise.allSettled([
+          appPool?.end(),
+          workflowPool?.end(),
+          visualDecisionPool?.end(),
+        ]);
         await restoreFixedLoginPasswords();
         throw error;
       }
     }, 60_000);
 
     afterAll(async () => {
-      await Promise.allSettled([appPool?.end(), workflowPool?.end()]);
+      await Promise.allSettled([
+        appPool?.end(),
+        workflowPool?.end(),
+        visualDecisionPool?.end(),
+      ]);
       if (admin !== undefined) {
         try {
           await restoreFixedLoginPasswords();
@@ -500,13 +593,18 @@ describeDatabase(
       }
     });
 
-    it('persists approval.required from the real Finance synthetic runner without becoming indeterminate', async () => {
+    it('persists approval.required and resumes through a proof-bound visual decision', async () => {
       let observedRunTurnResult: unknown;
       let observedRunTurnError: string | undefined;
       let observedRunTurnFailureCode: string | undefined;
+      let observedResumeTurnResult: unknown;
+      let observedResumeTurnError: string | undefined;
+      let observedGuardedActionResult: unknown;
+      let observedGuardedActionError: string | undefined;
       const documents = new PostgresFinanceDocumentRepository(
         databasePool(appPool),
       );
+      const syntheticEmbeddings = createSyntheticFinanceDocumentEmbeddings();
       await expect(
         documents.getCurrentReviewDraft({
           principal: {
@@ -532,7 +630,7 @@ describeDatabase(
           list: unavailable,
           readSnapshot: unavailable,
         } as never,
-        embeddings: { embed: unavailable } as never,
+        embeddings: syntheticEmbeddings.embeddings,
         reviewTokenHmacKey: Buffer.alloc(32, 62),
         payloadCrypto: { decrypt: unavailable } as never,
         pdfInspector: { inspect: unavailable } as never,
@@ -550,11 +648,66 @@ describeDatabase(
           checkReady: async () => true,
           commit: unavailable,
         },
-        documentGateway,
+        documentGateway: {
+          checkReady: () => documentGateway.checkReady(),
+          createGuardedActionPort: (principalInput) => {
+            const guarded =
+              documentGateway.createGuardedActionPort(principalInput);
+            return Object.freeze({
+              materializeTarget: guarded.materializeTarget.bind(guarded),
+              executeApproved: async (
+                input: Parameters<typeof guarded.executeApproved>[0],
+              ) => {
+                try {
+                  const result = await guarded.executeApproved(input);
+                  observedGuardedActionResult = result;
+                  return result;
+                } catch (error) {
+                  observedGuardedActionError =
+                    error instanceof Error ? error.message : 'non-error';
+                  throw error;
+                }
+              },
+            });
+          },
+        },
       });
-      const openAi =
+      const syntheticOpenAi =
         createFinanceSyntheticStagingAgentServiceBundle(environment);
-      if (openAi === undefined) throw new Error('synthetic runner unavailable');
+      if (syntheticOpenAi === undefined) {
+        throw new Error('synthetic runner unavailable');
+      }
+      const observedSyntheticRunnerErrors: string[] = [];
+      const observedSyntheticRunnerResults: Array<{
+        readonly agentName: string;
+        readonly isManagerSynthesis: boolean;
+      }> = [];
+      const openAi = Object.freeze({
+        ...syntheticOpenAi,
+        runner: Object.freeze({
+          run: async (
+            ...args: Parameters<typeof syntheticOpenAi.runner.run>
+          ) => {
+            try {
+              const result = await syntheticOpenAi.runner.run(...args);
+              observedSyntheticRunnerResults.push({
+                agentName: args[0].name,
+                isManagerSynthesis:
+                  typeof args[0].instructions === 'string' &&
+                  args[0].instructions.includes(
+                    'Write the final EMDO synthesis in en-CA.',
+                  ),
+              });
+              return result;
+            } catch (error) {
+              observedSyntheticRunnerErrors.push(
+                error instanceof Error ? error.message : 'non-error',
+              );
+              throw error;
+            }
+          },
+        }),
+      });
       const checkpointCipher =
         createProductionApprovalCheckpointCipher(checkpointKeyring);
       try {
@@ -598,7 +751,17 @@ describeDatabase(
                     throw error;
                   }
                 },
-                resumeTurn: orchestrator.resumeTurn.bind(orchestrator),
+                resumeTurn: async (resumeInput) => {
+                  try {
+                    const result = await orchestrator.resumeTurn(resumeInput);
+                    observedResumeTurnResult = result;
+                    return result;
+                  } catch (error) {
+                    observedResumeTurnError =
+                      error instanceof Error ? error.message : 'non-error';
+                    throw error;
+                  }
+                },
               },
             };
           },
@@ -607,10 +770,14 @@ describeDatabase(
               databasePool(workflowPool),
             )) && (await finance.checkReady()),
         };
-        const services = createProductionAgentServiceBindingsFromDependencies({
-          turns: new PostgresManagerTurnStore(databasePool(appPool)),
-          runEvents: new PostgresRunEventSource(databasePool(appPool)),
+        const visualDecisions = new PostgresVisualProposalDecisionGateway({
+          readPool: databasePool(appPool),
+          decisionPool: databasePool(visualDecisionPool),
+        });
+        const services = createProductionAgentPersistence({
+          pool: databasePool(appPool),
           runtimeFactory,
+          visualDecisions,
         });
 
         await expect(services.bindings.managerTurns.check()).resolves.toBe(
@@ -755,6 +922,9 @@ describeDatabase(
           principal: proposalReadPrincipal,
           requestId: ids.proposalReadRequest,
         });
+        if (proposalDetail === undefined) {
+          throw new Error('Finance pending proposal was not readable.');
+        }
         expect(proposalDetail).toMatchObject({
           schemaVersion: 1,
           id: persistedProposal.proposalId,
@@ -833,6 +1003,325 @@ describeDatabase(
         expect(resumeJob.rows).toEqual([
           { capabilityId: 'finance.records.write', state: 'awaiting-decision' },
         ]);
+        const pausedRun = await admin.query<{ status: string }>(
+          `select status from emdo.agent_runs where id = $1`,
+          [accepted.runId],
+        );
+        expect(pausedRun.rows).toEqual([{ status: 'blocked' }]);
+
+        for (const [grantId, requestId] of [
+          [ids.visualProofGrant, ids.visualProofRequest],
+          [ids.visualDecisionGrant, ids.visualDecisionRequest],
+        ] as const) {
+          await admin.query(
+            `insert into emdo.space_access_grants
+               (grant_id, household_id, original_owner_user_id, session_id,
+                request_id, membership_id, role, private_space_id,
+                writable_space_ids, issued_at, expires_at, retain_until)
+             values ($1, $2, $3, $4, $5, $6, 'owner', $7, array[$7::uuid],
+                     pg_catalog.clock_timestamp() - interval '1 second',
+                     pg_catalog.clock_timestamp() + interval '10 minutes',
+                     pg_catalog.clock_timestamp() + interval '89 days')`,
+            [
+              grantId,
+              ids.household,
+              ids.user,
+              ids.session,
+              requestId,
+              ids.membership,
+              ids.privateSpace,
+            ],
+          );
+        }
+        const visualProofs = new PostgresVisualDecisionProofStore(
+          databasePool(appPool),
+          new VisualDecisionProofTokenCodec({
+            current: {
+              keyId: 'finance-runtime-visual-proof-v1',
+              secret: new Uint8Array(32).fill(64),
+            },
+            previous: [],
+          }),
+        );
+        const visualProof = await visualProofs.issue({
+          proposalId: proposalDetail.id,
+          expectedProposalVersion: proposalDetail.version,
+          expectedPayloadHash: proposalDetail.payloadHash,
+          expectedApprovalHash: proposalDetail.approvalHash,
+          principal: {
+            ...principal,
+            spaceAccessGrantId: ids.visualProofGrant,
+          },
+          requestId: ids.visualProofRequest,
+          idempotencyKey: 'finance-runtime-visual-proof-v1',
+        });
+        expect(visualProof.status).toBe('issued');
+        if (visualProof.status !== 'issued') {
+          throw new Error('Finance visual proof was not issued.');
+        }
+        const decisionIdempotencyKey = 'finance-runtime-visual-decision-v1';
+        const proposalDecisions = services.bindings.proposals;
+        if (proposalDecisions === undefined) {
+          throw new Error('Finance visual decision binding is unavailable.');
+        }
+        await expect(proposalDecisions.check()).resolves.toBe(true);
+        const runnerCallsBeforeDecision = observedSyntheticRunnerResults.length;
+        const runnerErrorsBeforeDecision = observedSyntheticRunnerErrors.length;
+        const decisionOutcome =
+          await proposalDecisions.service.decideWithVisualProof({
+            request: {
+              schemaVersion: 1,
+              proposalId: proposalDetail.id,
+              payloadHash: proposalDetail.payloadHash,
+              approvalHash: proposalDetail.approvalHash,
+              decision: 'approved',
+              idempotencyKey: decisionIdempotencyKey,
+            },
+            visualProofToken: visualProof.proof.proofToken,
+            principal: {
+              ...principal,
+              spaceAccessGrantId: ids.visualDecisionGrant,
+            },
+            requestId: ids.visualDecisionRequest,
+          });
+        expect(decisionOutcome).toMatchObject({
+          status: 'decided',
+          decision: {
+            proposalId: proposalDetail.id,
+            userId: ids.user,
+            authenticatedSessionId: ids.session,
+            payloadHash: proposalDetail.payloadHash,
+            approvalHash: proposalDetail.approvalHash,
+            decision: 'approved',
+            channel: 'authenticated-visual',
+            idempotencyKey: decisionIdempotencyKey,
+          },
+        });
+        if (decisionOutcome.status !== 'decided') {
+          throw new Error('Finance visual decision did not complete.');
+        }
+        expect(observedResumeTurnError).toBeUndefined();
+        expect(observedGuardedActionError).toBeUndefined();
+        expect(observedGuardedActionResult).toMatchObject({
+          status: 'document-committed',
+          documentId: ids.document,
+          extractionRevision: 1,
+        });
+        expect(observedSyntheticRunnerErrors).toHaveLength(
+          runnerErrorsBeforeDecision,
+        );
+        expect(
+          observedSyntheticRunnerResults.slice(runnerCallsBeforeDecision),
+        ).toEqual([{ agentName: 'manager', isManagerSynthesis: true }]);
+        expect(observedResumeTurnResult).toMatchObject({ status: 'completed' });
+        const committedState = await admin.query<{
+          documentState: string;
+          proofConsumed: boolean;
+          proofVersion: number;
+          proposalState: string;
+          proposalVersion: number;
+          resumeState: string;
+          runStatus: string;
+        }>(
+          `select document.state as "documentState",
+                  proof.consumed_at is not null as "proofConsumed",
+                  proof.row_version::integer as "proofVersion",
+                  proposal_state.state as "proposalState",
+                  proposal_state.version::integer as "proposalVersion",
+                  resume.state as "resumeState",
+                  run.status as "runStatus"
+             from emdo.finance_documents as document
+             join emdo.action_proposals as proposal on proposal.id = $1
+             join emdo.proposal_states as proposal_state
+               on proposal_state.proposal_id = proposal.id
+             join emdo.visual_decision_proofs as proof
+               on proof.proposal_id = proposal.id
+             join emdo.approval_resume_jobs as resume
+               on resume.proposal_id = proposal.id
+             join emdo.agent_runs as run on run.id = proposal.run_id
+            where document.id = $2
+              and proof.decision_id = $3`,
+          [proposalDetail.id, ids.document, decisionOutcome.decision.id],
+        );
+        expect(committedState.rows).toEqual([
+          {
+            documentState: 'committed',
+            proofConsumed: true,
+            proofVersion: 2,
+            proposalState: 'approved',
+            proposalVersion: 2,
+            resumeState: 'terminal',
+            runStatus: 'completed',
+          },
+        ]);
+        const synthesisAudit = await admin.query<{
+          eventType: string;
+        }>(
+          `select audit.event_type as "eventType"
+             from emdo.audit_events as audit
+             join emdo.approval_resume_jobs as resume
+               on resume.resume_request_id = audit.request_id
+            where resume.proposal_id = $1
+              and audit.run_id = resume.run_id
+              and audit.event_type in (
+                'model.disclosure.granted', 'model.disclosure.sent'
+              )
+              and audit.payload ->> 'agentId' = 'manager'
+              and audit.payload ->> 'phasePurpose' = 'manager-synthesis'
+            order by audit.occurred_at`,
+          [proposalDetail.id],
+        );
+        expect(synthesisAudit.rows).toEqual([
+          { eventType: 'model.disclosure.granted' },
+          { eventType: 'model.disclosure.sent' },
+        ]);
+
+        const terminalDisclosureGrants = await admin.query<{
+          agentId: 'finance' | 'manager';
+          commitRecords: unknown;
+          grantHash: string;
+          grantId: string;
+          phasePurpose:
+            'manager-plan' | 'specialist-execution' | 'manager-synthesis';
+          requestId: string;
+          spaceAccessGrantId: string;
+          version: number;
+        }>(
+          `select disclosure.id::text as "grantId",
+                  disclosure.version::integer as version,
+                  disclosure.grant_hash as "grantHash",
+                  disclosure.agent_id as "agentId",
+                  disclosure.phase_purpose as "phasePurpose",
+                  disclosure.record_allowlist as "commitRecords",
+                  granted.request_id::text as "requestId",
+                  scope.grant_id::text as "spaceAccessGrantId"
+             from emdo.disclosure_grants as disclosure
+             join emdo.audit_events as granted
+               on granted.run_id = disclosure.run_id
+              and granted.event_type = 'model.disclosure.granted'
+              and granted.payload ->> 'grantId' = disclosure.id::text
+             join emdo.space_access_grants as scope
+               on scope.household_id = disclosure.household_id
+              and scope.original_owner_user_id = disclosure.user_id
+              and scope.session_id = granted.session_id
+              and scope.request_id = granted.request_id
+              and disclosure.space_id = any(scope.writable_space_ids)
+              and scope.expires_at > pg_catalog.clock_timestamp()
+            where disclosure.run_id = $1
+              and (
+                (disclosure.agent_id = 'manager'
+                  and disclosure.phase_purpose in (
+                    'manager-plan', 'manager-synthesis'
+                  ))
+                or (disclosure.agent_id = 'finance'
+                  and disclosure.phase_purpose = 'specialist-execution')
+              )
+            order by case disclosure.phase_purpose
+              when 'manager-plan' then 1
+              when 'specialist-execution' then 2
+              when 'manager-synthesis' then 3
+            end`,
+          [accepted.runId],
+        );
+        expect(
+          terminalDisclosureGrants.rows.map(({ agentId, phasePurpose }) => ({
+            agentId,
+            phasePurpose,
+          })),
+        ).toEqual([
+          { agentId: 'manager', phasePurpose: 'manager-plan' },
+          { agentId: 'finance', phasePurpose: 'specialist-execution' },
+          { agentId: 'manager', phasePurpose: 'manager-synthesis' },
+        ]);
+
+        for (const disclosure of terminalDisclosureGrants.rows) {
+          const gateway = new PostgresModelDisclosureGateway(
+            databasePool(appPool),
+            {
+              userId: ids.user,
+              sessionId: ids.session,
+              requestId: disclosure.requestId,
+              householdId: ids.household,
+            },
+            new CanonicalRecordEnvelopeDisclosureFilter(),
+          );
+          await expect(
+            gateway.authorize({
+              requestId: disclosure.requestId,
+              runId: accepted.runId,
+              householdId: ids.household,
+              userId: ids.user,
+              spaceAccessGrantId: disclosure.spaceAccessGrantId,
+              agentId: disclosure.agentId,
+              phasePurpose: disclosure.phasePurpose,
+              provider: 'openai',
+              requestedGrantId: disclosure.grantId,
+              requestedDataClasses: [],
+              payload: { schemaVersion: 1, records: [] },
+            }),
+          ).resolves.toMatchObject({
+            status: 'denied',
+            grantId: disclosure.grantId,
+            reason: 'grant-run-mismatch',
+          });
+        }
+
+        const inspectTerminalDisclosureState = () =>
+          admin.query<{
+            consumedAt: Date | null;
+            grantId: string;
+            sentAuditCount: number;
+          }>(
+            `select disclosure.id::text as "grantId",
+                    disclosure.consumed_at as "consumedAt",
+                    count(audit.id) filter (
+                      where audit.event_type = 'model.disclosure.sent'
+                        and audit.payload ->> 'grantId' = disclosure.id::text
+                    )::integer as "sentAuditCount"
+               from emdo.disclosure_grants as disclosure
+               left join emdo.audit_events as audit
+                 on audit.run_id = disclosure.run_id
+              where disclosure.id = any($1::uuid[])
+              group by disclosure.id, disclosure.consumed_at
+              order by disclosure.id`,
+            [terminalDisclosureGrants.rows.map(({ grantId }) => grantId)],
+          );
+        const terminalDisclosureStateBefore =
+          await inspectTerminalDisclosureState();
+
+        for (const disclosure of terminalDisclosureGrants.rows) {
+          const commit = await withRequestScopedAppTransaction(
+            appPool,
+            {
+              userId: ids.user,
+              sessionId: ids.session,
+              requestId: disclosure.requestId,
+            },
+            (client) =>
+              client.query<{ committed: boolean }>(
+                `select committed
+                   from emdo.commit_model_disclosure_authorization(
+                     $1::uuid, $2::integer, $3::text, $4::uuid, $5::text,
+                     $6::jsonb
+                   )`,
+                [
+                  disclosure.grantId,
+                  disclosure.version,
+                  disclosure.grantHash,
+                  disclosure.spaceAccessGrantId,
+                  disclosure.phasePurpose,
+                  JSON.stringify(disclosure.commitRecords),
+                ],
+              ),
+          );
+          expect(commit.rows).not.toContainEqual(
+            expect.objectContaining({ committed: true }),
+          );
+        }
+
+        await expect(inspectTerminalDisclosureState()).resolves.toEqual(
+          terminalDisclosureStateBefore,
+        );
       } finally {
         documentGateway.dispose();
         checkpointCipher.dispose();

@@ -1032,7 +1032,7 @@ describeDatabase(
 
       const proposalMigrations = await loadOrderedMigrations();
       expect(proposalMigrations.at(-1)?.id).toBe(
-        '0020_manager_specialist_disclosure',
+        '0021_blocked_visual_decision_claim',
       );
       for (const migration of proposalMigrations) {
         try {
