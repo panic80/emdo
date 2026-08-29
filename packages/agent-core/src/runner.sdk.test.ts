@@ -349,7 +349,17 @@ describe('OpenAI Agents SDK boundary', () => {
   });
 
   it('materializes real SDK agents and strict approval-aware function tools', async () => {
-    const execute = vi.fn(async () => ({ ok: true }));
+    const execute = vi.fn(
+      async (input: unknown, capabilityContext: unknown) => {
+        void input;
+        void capabilityContext;
+        return { ok: true };
+      },
+    );
+    const executionContext: AgentExecutionContext = Object.freeze({
+      ...context,
+      approvalDecisionId: '018f1f5e-1000-7000-8000-000000000009',
+    });
     const facade = createOpenAiAgentsSdkFacade();
     const parameters = z.strictObject({ request: z.string().min(1) });
     const toolOutputSchema = z.strictObject({ ok: z.boolean() });
@@ -393,10 +403,33 @@ describe('OpenAI Agents SDK boundary', () => {
     );
     await expect(
       functionTool.invoke(
-        new RunContext(context),
+        new RunContext(executionContext),
         JSON.stringify({ request: 'appointments' }),
       ),
     ).resolves.toEqual({ ok: true });
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledWith(
+      { request: 'appointments' },
+      {
+        requestId: executionContext.requestId,
+        runId: executionContext.runId,
+        userId: executionContext.userId,
+        householdId: executionContext.householdId,
+        sessionId: executionContext.authenticatedSessionId,
+        agentId: executionContext.agentId,
+        spaceAccessGrantId: executionContext.spaceAccessGrantId,
+        locale: executionContext.locale,
+        disclosureGrantId: executionContext.disclosureGrantId,
+        approvalDecisionId: executionContext.approvalDecisionId,
+        abortSignal: executionContext.abortSignal,
+      },
+    );
+    const capabilityContext = execute.mock.calls[0]?.[1];
+    expect(capabilityContext).not.toHaveProperty('authenticatedSessionId');
+    expect(capabilityContext).not.toHaveProperty(
+      'authorizationScopeFingerprint',
+    );
+    expect(capabilityContext).not.toHaveProperty('disclosureGrantVersion');
   });
 
   it('rejects capability results that violate the SDK-facing output schema', async () => {
