@@ -251,6 +251,10 @@ const EntityRowSchema = z.strictObject({
 });
 const FinanceEntityRowSchema = EntityRowSchema.extend({
   entity_type: z.enum(['finance.transaction', 'finance.budget']),
+  space_id: OpaqueReferenceSchema,
+});
+const FinancePageCategoryRowSchema = EntityRowSchema.extend({
+  space_id: OpaqueReferenceSchema,
 });
 
 const FinanceSnapshotEntityRowSchema = z.strictObject({
@@ -537,6 +541,7 @@ const modernFinancePageRecord = (input: {
     validated.status !== 'accepted' ||
     validated.record.recordType !== input.expectedType ||
     validated.record.id !== input.row.entity_id ||
+    validated.record.spaceId !== input.row.space_id ||
     validated.record.ownerUserId !== input.principal.userId
   ) {
     return invalidResult(
@@ -546,24 +551,74 @@ const modernFinancePageRecord = (input: {
   return validated.record;
 };
 
+const financePageCategoryReference = (
+  spaceId: string,
+  categoryId: string,
+): string => `${spaceId.length}:${spaceId}${categoryId}`;
+
+const modernFinancePageCategoryNames = (input: {
+  readonly rows: readonly z.output<typeof FinancePageCategoryRowSchema>[];
+  readonly principal: z.output<typeof ApiPrincipalSchema>;
+}): ReadonlyMap<string, string> => {
+  if (input.rows.length > FINANCE_EXPERIENCE_LIMITS.maximumCategoryTotals) {
+    return invalidResult(
+      'Finance category scope exceeded the bounded page limit',
+    );
+  }
+  const names = new Map<string, string>();
+  for (const row of input.rows) {
+    const validated = validateFinanceRecord(row.payload);
+    if (
+      validated.status !== 'accepted' ||
+      validated.record.recordType !== 'category' ||
+      validated.record.id !== row.entity_id ||
+      validated.record.ownerUserId !== input.principal.userId ||
+      validated.record.spaceId !== row.space_id ||
+      names.has(financePageCategoryReference(row.space_id, validated.record.id))
+    ) {
+      return invalidResult(
+        'Database returned malformed owner-scoped Finance categories',
+      );
+    }
+    names.set(
+      financePageCategoryReference(row.space_id, validated.record.id),
+      validated.record.name,
+    );
+  }
+  return names;
+};
+
 const financePageCategory = (
+  spaceId: string,
   categoryId: string | null,
+  categoryNames: ReadonlyMap<string, string>,
 ): Readonly<{ readonly key: string; readonly label: string }> => {
   if (categoryId === null) {
     return { key: 'uncategorized', label: 'uncategorized' };
   }
+  const name = categoryNames.get(
+    financePageCategoryReference(spaceId, categoryId),
+  );
+  if (name === undefined) {
+    return invalidResult(
+      'Database returned a Finance record with a missing category reference',
+    );
+  }
   return {
     key: `category-${createHash('sha256').update(categoryId, 'utf8').digest('hex')}`,
-    label:
-      categoryId.length <= 80 ? categoryId : categoryId.slice(0, 80).trimEnd(),
+    label: financePageCategoryLabel(name),
   };
 };
 
 const financePageDescription = (description: string): string =>
   description.length <= 160 ? description : description.slice(0, 160).trimEnd();
 
+const financePageCategoryLabel = (name: string): string =>
+  name.length <= 80 ? name : name.slice(0, 80).trimEnd();
+
 const modernFinancePageBudgetAllocations = (
   record: Extract<FinanceRecord, { readonly recordType: 'budget' }>,
+  categoryNames: ReadonlyMap<string, string>,
 ): Record<string, number> => {
   if (record.allocations.length > 100) {
     return invalidResult(
@@ -572,7 +627,11 @@ const modernFinancePageBudgetAllocations = (
   }
   const allocations = new Map<string, number>();
   for (const allocation of record.allocations) {
-    const category = financePageCategory(allocation.categoryId);
+    const category = financePageCategory(
+      record.spaceId,
+      allocation.categoryId,
+      categoryNames,
+    );
     if (allocations.has(category.key)) {
       return invalidResult(
         'Database returned a Finance budget with duplicate category allocations',
@@ -1398,7 +1457,7 @@ const createFinanceRead = (
     return withHouseholdScope(pool, parsed, async (client) => {
       const result = await client.query(
         `/* experience_finance_entities */
-         select entity_type, entity_id, payload, updated_at
+         select entity_type, entity_id, payload, updated_at, space_id
            from emdo.sync_entities
           where household_id = $1
             and entity_type in ('finance.transaction', 'finance.budget')
@@ -1422,6 +1481,26 @@ const createFinanceRead = (
         result.rows,
         'Database returned malformed finance rows',
       );
+      const categoryResult = await client.query(
+        `/* experience_finance_page_categories */
+         select entity_id, payload, updated_at, space_id
+           from emdo.sync_entities
+          where household_id = $1
+            and original_owner_user_id = $2
+            and entity_type = 'finance.category'
+            and tombstoned_at is null
+          order by id asc
+          limit 1001`,
+        [parsed.principal.householdId, parsed.principal.userId],
+      );
+      const categoryNames = modernFinancePageCategoryNames({
+        rows: parseRows(
+          FinancePageCategoryRowSchema,
+          categoryResult.rows,
+          'Database returned malformed Finance category rows',
+        ),
+        principal: parsed.principal,
+      });
       const page = rows.slice(0, parsed.limit).map((row) => {
         if (row.entity_type === 'finance.transaction') {
           const legacy = CanonicalFinanceTransactionSchema.safeParse(
@@ -1467,7 +1546,11 @@ const createFinanceRead = (
               recordType: 'transaction' as const,
               id: transaction.id,
               description: financePageDescription(transaction.description),
-              category: financePageCategory(transaction.categoryId).label,
+              category: financePageCategory(
+                transaction.spaceId,
+                transaction.categoryId,
+                categoryNames,
+              ).label,
               postedOn: transaction.postedOn,
               currency: transaction.currency,
               amountCadMinor: transaction.effectiveAmountCadMinor,
@@ -1509,7 +1592,10 @@ const createFinanceRead = (
             recordType: 'budget' as const,
             id: budget.id,
             currency: budget.currency,
-            allocationsCadMinor: modernFinancePageBudgetAllocations(budget),
+            allocationsCadMinor: modernFinancePageBudgetAllocations(
+              budget,
+              categoryNames,
+            ),
           },
         };
       });

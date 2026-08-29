@@ -970,23 +970,49 @@ describe('PostgreSQL experience read gateways', () => {
     }
   });
 
-  it('projects safe-written modern Finance transactions and budgets', async () => {
+  it('resolves opaque modern Finance category IDs to bounded display names while retaining distinct hashed page keys', async () => {
     const reversalOperationId = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f70';
-    const opaqueCategoryId = 'Food & Dining';
+    const opaqueCategoryId = 'category-opaque-1';
+    const displayCategoryName = `Food & Dining ${'x'.repeat(100)}`;
     const derivedCategoryId = `category-${createHash('sha256')
       .update(opaqueCategoryId, 'utf8')
       .digest('hex')}`;
     const derivedCategoryProjection = `category-${createHash('sha256')
       .update(derivedCategoryId, 'utf8')
       .digest('hex')}`;
+    const category = (id: string, name: string) => ({
+      entity_id: id,
+      space_id: privateFinancePrincipal.privateSpaceId,
+      payload: {
+        schemaVersion: 1,
+        id,
+        spaceId: privateFinancePrincipal.privateSpaceId,
+        ownerUserId: principal.userId,
+        createdAt: '2026-08-01T12:00:00.000Z',
+        updatedAt: '2026-08-01T12:00:00.000Z',
+        recordType: 'category',
+        name,
+        categoryKind: 'expense',
+        parentCategoryId: null,
+        active: true,
+      },
+      updated_at: new Date('2026-08-01T12:00:00.000Z'),
+    });
     const { pool } = poolFor((sql) => {
       if (sql.includes('lock_active_request_scope'))
         return [{ authorized: true }];
+      if (sql.includes('experience_finance_page_categories')) {
+        return [
+          category(opaqueCategoryId, displayCategoryName),
+          category(derivedCategoryId, 'Derived category'),
+        ];
+      }
       if (!sql.includes('experience_finance_entities')) return [];
       return [
         {
           entity_type: 'finance.transaction',
           entity_id: 'transaction-modern-1',
+          space_id: privateFinancePrincipal.privateSpaceId,
           payload: {
             schemaVersion: 1,
             id: 'transaction-modern-1',
@@ -1014,6 +1040,7 @@ describe('PostgreSQL experience read gateways', () => {
         {
           entity_type: 'finance.budget',
           entity_id: 'budget-modern-1',
+          space_id: privateFinancePrincipal.privateSpaceId,
           payload: {
             schemaVersion: 1,
             id: 'budget-modern-1',
@@ -1047,7 +1074,7 @@ describe('PostgreSQL experience read gateways', () => {
           recordType: 'transaction',
           id: 'transaction-modern-1',
           description: 'x'.repeat(160),
-          category: 'Food & Dining',
+          category: displayCategoryName.slice(0, 80).trimEnd(),
           amountCadMinor: 0,
           state: 'reversed',
         },
@@ -1063,48 +1090,157 @@ describe('PostgreSQL experience read gateways', () => {
     });
   });
 
-  it('fails closed when a modern Finance page record is owned by another user', async () => {
-    const { pool } = poolFor((sql) => {
-      if (sql.includes('lock_active_request_scope'))
-        return [{ authorized: true }];
-      if (!sql.includes('experience_finance_entities')) return [];
-      return [
-        {
-          entity_type: 'finance.transaction',
-          entity_id: 'transaction-modern-other-owner',
-          payload: {
-            schemaVersion: 1,
-            id: 'transaction-modern-other-owner',
-            spaceId: privateFinancePrincipal.privateSpaceId,
-            ownerUserId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f71',
-            createdAt: '2026-08-10T12:00:00.000Z',
-            updatedAt: '2026-08-10T12:00:00.000Z',
-            recordType: 'transaction',
-            accountId: 'account-1',
-            categoryId: null,
-            postedOn: '2026-08-10',
-            description: 'Other owner',
-            currency: 'CAD',
-            originalAmountCadMinor: -1,
-            effectiveAmountCadMinor: -1,
-            adjustments: [],
-            reversal: null,
-            appliedOperationIds: [],
-            source: { kind: 'manual' },
-            revision: 0,
-          },
-          updated_at: new Date('2026-08-10T12:00:00.000Z'),
-        },
-      ];
+  it('fails closed when modern Finance page categories are missing, foreign, malformed, space-mismatched, duplicate, or overbound', async () => {
+    const categoryId = 'category-required';
+    const transaction = {
+      entity_type: 'finance.transaction',
+      entity_id: 'transaction-required-category',
+      space_id: privateFinancePrincipal.privateSpaceId,
+      payload: {
+        schemaVersion: 1,
+        id: 'transaction-required-category',
+        spaceId: privateFinancePrincipal.privateSpaceId,
+        ownerUserId: principal.userId,
+        createdAt: '2026-08-10T12:00:00.000Z',
+        updatedAt: '2026-08-10T12:00:00.000Z',
+        recordType: 'transaction',
+        accountId: 'account-1',
+        categoryId,
+        postedOn: '2026-08-10',
+        description: 'Required category',
+        annotation: null,
+        currency: 'CAD',
+        originalAmountCadMinor: -1,
+        effectiveAmountCadMinor: -1,
+        adjustments: [],
+        reversal: null,
+        appliedOperationIds: [],
+        source: { kind: 'manual' },
+        revision: 0,
+      },
+      updated_at: new Date('2026-08-10T12:00:00.000Z'),
+    };
+    const category = (id: string, ownerUserId = principal.userId) => ({
+      entity_id: id,
+      space_id: privateFinancePrincipal.privateSpaceId,
+      payload: {
+        schemaVersion: 1,
+        id,
+        spaceId: privateFinancePrincipal.privateSpaceId,
+        ownerUserId,
+        createdAt: '2026-08-01T12:00:00.000Z',
+        updatedAt: '2026-08-01T12:00:00.000Z',
+        recordType: 'category',
+        name: 'Required category',
+        categoryKind: 'expense',
+        parentCategoryId: null,
+        active: true,
+      },
+      updated_at: new Date('2026-08-01T12:00:00.000Z'),
     });
+    const malformed = {
+      entity_id: categoryId,
+      space_id: privateFinancePrincipal.privateSpaceId,
+      payload: { recordType: 'category' },
+      updated_at: new Date('2026-08-01T12:00:00.000Z'),
+    };
+    const overbound = Array.from({ length: 1_001 }, (_value, index) =>
+      category(`category-overbound-${String(index).padStart(4, '0')}`),
+    );
+    const duplicateWithinSpace = [category(categoryId), category(categoryId)];
+    const categoryFromAnotherSpace = {
+      ...category(categoryId),
+      space_id: 'space-other-category',
+      payload: {
+        ...category(categoryId).payload,
+        spaceId: 'space-other-category',
+      },
+    };
 
-    await expect(
-      gatewaysFor(pool).financeRead.list({
-        limit: 25,
-        principal,
-        requestId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f64',
-      }),
-    ).rejects.toMatchObject({ code: 'invalid-result' });
+    for (const categories of [
+      [],
+      [category(categoryId, '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f71')],
+      [malformed],
+      [{ ...category(categoryId), space_id: 'space-payload-mismatch' }],
+      [categoryFromAnotherSpace],
+      duplicateWithinSpace,
+      overbound,
+    ]) {
+      const { pool } = poolFor((sql) => {
+        if (sql.includes('lock_active_request_scope')) {
+          return [{ authorized: true }];
+        }
+        if (sql.includes('experience_finance_entities')) return [transaction];
+        if (sql.includes('experience_finance_page_categories'))
+          return categories;
+        return [];
+      });
+
+      await expect(
+        gatewaysFor(pool).financeRead.list({
+          limit: 25,
+          principal,
+          requestId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f64',
+        }),
+      ).rejects.toMatchObject({ code: 'invalid-result' });
+    }
+  });
+
+  it('fails closed when a modern Finance page record has a foreign owner or mismatched row space', async () => {
+    const record = {
+      entity_type: 'finance.transaction',
+      entity_id: 'transaction-modern-scope-mismatch',
+      space_id: privateFinancePrincipal.privateSpaceId,
+      payload: {
+        schemaVersion: 1,
+        id: 'transaction-modern-scope-mismatch',
+        spaceId: privateFinancePrincipal.privateSpaceId,
+        ownerUserId: principal.userId,
+        createdAt: '2026-08-10T12:00:00.000Z',
+        updatedAt: '2026-08-10T12:00:00.000Z',
+        recordType: 'transaction',
+        accountId: 'account-1',
+        categoryId: null,
+        postedOn: '2026-08-10',
+        description: 'Scope mismatch',
+        annotation: null,
+        currency: 'CAD',
+        originalAmountCadMinor: -1,
+        effectiveAmountCadMinor: -1,
+        adjustments: [],
+        reversal: null,
+        appliedOperationIds: [],
+        source: { kind: 'manual' },
+        revision: 0,
+      },
+      updated_at: new Date('2026-08-10T12:00:00.000Z'),
+    };
+
+    for (const malformedRecord of [
+      {
+        ...record,
+        payload: {
+          ...record.payload,
+          ownerUserId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f71',
+        },
+      },
+      { ...record, space_id: 'space-row-payload-mismatch' },
+    ]) {
+      const { pool } = poolFor((sql) => {
+        if (sql.includes('lock_active_request_scope'))
+          return [{ authorized: true }];
+        if (!sql.includes('experience_finance_entities')) return [];
+        return [malformedRecord];
+      });
+
+      await expect(
+        gatewaysFor(pool).financeRead.list({
+          limit: 25,
+          principal,
+          requestId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f64',
+        }),
+      ).rejects.toMatchObject({ code: 'invalid-result' });
+    }
   });
 
   it('fails closed for malformed modern Finance page payloads', async () => {
@@ -1116,6 +1252,7 @@ describe('PostgreSQL experience read gateways', () => {
         {
           entity_type: 'finance.budget',
           entity_id: 'budget-modern-malformed',
+          space_id: privateFinancePrincipal.privateSpaceId,
           payload: {
             schemaVersion: 1,
             id: 'budget-modern-malformed',
@@ -1159,6 +1296,7 @@ describe('PostgreSQL experience read gateways', () => {
         {
           entity_type: 'finance.budget',
           entity_id: 'budget-modern-unbounded',
+          space_id: privateFinancePrincipal.privateSpaceId,
           payload: {
             schemaVersion: 1,
             id: 'budget-modern-unbounded',
@@ -1195,6 +1333,7 @@ describe('PostgreSQL experience read gateways', () => {
           {
             entity_type: 'finance.transaction',
             entity_id: 'transaction-1',
+            space_id: privateFinancePrincipal.privateSpaceId,
             payload: {
               recordType: 'transaction',
               description: 'Farm Boy',
@@ -1215,6 +1354,7 @@ describe('PostgreSQL experience read gateways', () => {
           {
             entity_type: 'finance.budget',
             entity_id: 'budget-1',
+            space_id: privateFinancePrincipal.privateSpaceId,
             payload: {
               id: 'budget-1',
               currency: 'CAD',
