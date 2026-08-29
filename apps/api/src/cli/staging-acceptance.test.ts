@@ -692,6 +692,7 @@ describe('staging acceptance CLI', () => {
     let deleted = false;
     let manualTransaction = false;
     let commitRunFailed = true;
+    let commitRunFailureData: unknown;
     let deleteRunFailed = true;
     let initialTurnFailure:
       | 'turn-post-or-response-invalid'
@@ -879,7 +880,20 @@ describe('staging acceptance CLI', () => {
           data: { status: 'completed', runId, output },
         },
       ]);
-    const failedEvents = (runId: string, after: number) =>
+    const failedEvents = (
+      runId: string,
+      after: number,
+      data: unknown = {
+        status: 'failed',
+        runId,
+        safeError: {
+          code: 'fixture-private-code',
+          message:
+            'cookie=fixture-private-cookie provider-body=fixture-private-body',
+          retryable: false,
+        },
+      },
+    ) =>
       sse([
         {
           schemaVersion: 1,
@@ -887,16 +901,7 @@ describe('staging acceptance CLI', () => {
           sequence: after + 1,
           type: 'run.failed',
           occurredAt: '2026-08-12T15:05:03.000Z',
-          data: {
-            status: 'failed',
-            runId,
-            safeError: {
-              code: 'fixture-private-code',
-              message:
-                'cookie=fixture-private-cookie provider-body=fixture-private-body',
-              retryable: false,
-            },
-          },
+          data,
         },
       ]);
     const fetch = vi.fn(async (request: Request) => {
@@ -1467,7 +1472,7 @@ describe('staging acceptance CLI', () => {
           return after === null
             ? approvalEvents(runId, FINANCE_COMMIT_PROPOSAL_ID)
             : commitRunFailed
-              ? failedEvents(runId, 2)
+              ? failedEvents(runId, 2, commitRunFailureData)
               : completedEvents(
                   runId,
                   financeOutput({
@@ -1569,6 +1574,7 @@ describe('staging acceptance CLI', () => {
       requests.length = 0;
       handoffs.length = 0;
       initialTurnFailure = undefined;
+      commitRunFailureData = undefined;
     };
     for (const { fixtureFailure, outcome } of [
       {
@@ -1728,18 +1734,142 @@ describe('staging acceptance CLI', () => {
       }),
     ).rejects.toThrow('Finance guarded turn failed after approval');
     expect(failedStages.at(-1)).toBe(
-      'guarded-review-commit:resumed-run-failed',
+      'guarded-review-commit:resumed-run-failed outcome=unrecognized',
     );
     const safeGuardedFailure = formatStagingAcceptanceFailure(
       failedStages.at(-1),
     );
     expect(safeGuardedFailure).toBe(
-      'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed.\n',
+      'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=unrecognized.\n',
     );
     expect(safeGuardedFailure).not.toContain('fixture-private-cookie');
     expect(safeGuardedFailure).not.toContain('fixture-private-body');
     expect(safeGuardedFailure).not.toContain(FINANCE_DOCUMENT_ID);
     expect(safeGuardedFailure).not.toContain(FINANCE_COMMIT_PROPOSAL_ID);
+
+    const resumedRunSecret =
+      'cookie=resumed-run-private-cookie provider-body=resumed-run-private-body request-id=resumed-run-private-request';
+    const runnerSafeErrorCodes = [
+      'agent-capability-budget-exceeded',
+      'agent-model-escalation-not-allowed',
+      'agent-model-fallback-not-allowed',
+      'agent-model-unavailable',
+      'agent-token-budget-exceeded',
+      'approval-checkpoint-already-consumed',
+      'approval-checkpoint-expired',
+      'approval-checkpoint-invalid',
+      'approval-checkpoint-mismatch',
+      'approval-checkpoint-not-found',
+      'approval-checkpoint-persistence-failed',
+      'approval-interruption-audit-failed',
+      'approval-rejected',
+      'approval-rejection-failed',
+      'approval-rejection-result-invalid',
+      'approved-action-outcome-unknown',
+      'approved-action-result-invalid',
+      'conversation-memory-unavailable',
+      'conversation-persistence-failed',
+      'invalid-approval-channel',
+      'invalid-manager-input',
+      'invalid-manager-plan',
+      'invalid-provider-write-approval-interruption',
+      'invalid-resume-turn-input',
+      'manager-execution-failed',
+      'manager-output-validation-failed',
+      'manager-synthesis-failed',
+      'model-disclosure-denied',
+      'model-routing-failed',
+      'model-spend-authorization-failed',
+      'monthly-ai-spend-limit-reached',
+      'multiple-provider-writes-require-separate-turns',
+      'provider-write-proposal-finalization-pending',
+      'required-agent-model-unavailable',
+      'specialist-dependency-failed',
+      'specialist-execution-failed',
+      'specialist-output-validation-failed',
+      'specialist-result-processing-failed',
+    ] as const;
+    for (const { data, outcome } of [
+      {
+        data: {
+          safeError: {
+            code: 'approval-resume-binding-invalid',
+            message: resumedRunSecret,
+            retryable: false,
+          },
+        },
+        outcome: 'approval-resume-binding-invalid',
+      },
+      {
+        data: {
+          safeError: {
+            code: 'approval-resume-failed',
+            message: resumedRunSecret,
+            retryable: false,
+          },
+        },
+        outcome: 'approval-resume-failed',
+      },
+      ...runnerSafeErrorCodes.map((code) => ({
+        data: {
+          safeError: {
+            code,
+            message: resumedRunSecret,
+            retryable: false,
+          },
+        },
+        outcome: `runner-${code}`,
+      })),
+      {
+        data: {
+          safeError: {
+            code: 'fixture-private-code',
+            message: resumedRunSecret,
+            retryable: false,
+          },
+        },
+        outcome: 'unrecognized',
+      },
+      {
+        data: {
+          safeError: { code: 42, message: resumedRunSecret },
+        },
+        outcome: 'invalid',
+      },
+      { data: { message: resumedRunSecret }, outcome: 'invalid' },
+      { data: null, outcome: 'invalid' },
+    ] as const) {
+      resetFinanceFixture();
+      commitRunFailureData = data;
+      const resumedRunStages: FinanceAcceptanceStage[] = [];
+      await expect(
+        runStagingAcceptanceCommand({
+          argv: [
+            '--all-mvp-gates',
+            '--require-synthetic',
+            '--forbid-worker-provider-execution',
+            '--finance-synthetic-document-gates',
+          ],
+          environment: financeEnvironment,
+          fetch,
+          now: () => OBSERVED_AT,
+          sleep: async () => undefined,
+          financeStageReporter: (stage) => {
+            resumedRunStages.push(stage);
+          },
+        }),
+      ).rejects.toThrow('Finance guarded turn failed after approval');
+      const diagnostic = formatStagingAcceptanceFailure(
+        resumedRunStages.at(-1),
+      );
+      expect(diagnostic).toBe(
+        `Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=${outcome}.\n`,
+      );
+      expect(diagnostic).not.toContain(resumedRunSecret);
+      expect(diagnostic).not.toContain('fixture-private-code');
+      expect(diagnostic).not.toContain(FINANCE_DOCUMENT_ID);
+      expect(diagnostic).not.toContain(FINANCE_COMMIT_PROPOSAL_ID);
+    }
 
     resetFinanceFixture();
     commitRunFailed = false;
