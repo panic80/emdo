@@ -3,7 +3,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   PostgresFinanceDocumentRepository,
   PostgresManagerTurnStore,
+  PostgresProposalQueryRepository,
   PostgresRunEventSource,
+  ProposalQueryCursorCodec,
   checkPostgresProposalWorkflowReadiness,
 } from '@emdo/db/api';
 import { loadOrderedMigrations } from '@emdo/db/migrations';
@@ -87,6 +89,8 @@ const ids = Object.freeze({
   document: 'f3100000-0000-4000-8000-000000000008',
   extraction: 'f3100000-0000-4000-8000-000000000009',
   review: 'f3100000-0000-4000-8000-000000000010',
+  proposalReadGrant: 'f3100000-0000-4000-8000-000000000011',
+  proposalReadRequest: 'f3100000-0000-4000-8000-000000000012',
 });
 
 const sha256 = (value: string): string =>
@@ -708,6 +712,96 @@ describeDatabase(
             disclosurePurpose: 'Run one finance delegation.',
           },
         ]);
+
+        const persistedProposal = proposal.rows[0];
+        if (persistedProposal === undefined) {
+          throw new Error('Finance pending proposal was not persisted.');
+        }
+        await admin.query(
+          `insert into emdo.space_access_grants
+             (grant_id, household_id, original_owner_user_id, session_id,
+              request_id, membership_id, role, private_space_id,
+              writable_space_ids, issued_at, expires_at, retain_until)
+           values ($1, $2, $3, $4, $5, $6, 'owner', $7, array[$7::uuid],
+                   pg_catalog.clock_timestamp() - interval '1 second',
+                   pg_catalog.clock_timestamp() + interval '10 minutes',
+                   pg_catalog.clock_timestamp() + interval '89 days')`,
+          [
+            ids.proposalReadGrant,
+            ids.household,
+            ids.user,
+            ids.session,
+            ids.proposalReadRequest,
+            ids.membership,
+            ids.privateSpace,
+          ],
+        );
+        const proposalReadPrincipal = Object.freeze({
+          ...principal,
+          spaceAccessGrantId: ids.proposalReadGrant,
+        });
+        const proposalQueries = new PostgresProposalQueryRepository(
+          databasePool(appPool),
+          new ProposalQueryCursorCodec({
+            current: {
+              keyId: 'finance-runtime-proposal-read-v1',
+              secret: new Uint8Array(32).fill(63),
+            },
+            previous: [],
+          }),
+        );
+        const proposalDetail = await proposalQueries.getDetail({
+          proposalId: persistedProposal.proposalId,
+          principal: proposalReadPrincipal,
+          requestId: ids.proposalReadRequest,
+        });
+        expect(proposalDetail).toMatchObject({
+          schemaVersion: 1,
+          id: persistedProposal.proposalId,
+          state: 'pending',
+          kind: 'finance.records.write',
+          title: 'Review Finance action',
+          summary:
+            'EMDO needs your approval before applying this Finance action.',
+          beforePreview: { summary: 'No Finance change has been applied.' },
+          afterPreview: {
+            summary: 'EMDO will apply the approved Finance action.',
+          },
+          fields: [
+            {
+              label: 'Action',
+              value: 'finance-document-review-commit',
+            },
+            { label: 'Capability', value: 'finance.records.write' },
+            { label: 'Document', value: ids.document },
+            { label: 'Review revision', value: '1' },
+          ],
+          payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+          approvalHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        });
+        expect(Object.keys(proposalDetail ?? {}).sort()).toEqual([
+          'afterPreview',
+          'approvalHash',
+          'beforePreview',
+          'createdAt',
+          'expiresAt',
+          'fields',
+          'id',
+          'kind',
+          'payloadHash',
+          'schemaVersion',
+          'state',
+          'summary',
+          'title',
+          'version',
+        ]);
+        await expect(
+          proposalQueries.getDetail({
+            proposalId: persistedProposal.proposalId,
+            principal,
+            requestId: ids.proposalReadRequest,
+          }),
+        ).resolves.toBeUndefined();
 
         const checkpoint = await admin.query<{
           revision: number;

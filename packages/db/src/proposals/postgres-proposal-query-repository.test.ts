@@ -15,6 +15,7 @@ const ids = {
   session: '93000000-0000-4000-8000-000000000002',
   request: '93000000-0000-4000-8000-000000000003',
   household: '93000000-0000-4000-8000-000000000004',
+  privateSpace: '93000000-0000-4000-8000-000000000009',
   spaceGrant: '93000000-0000-4000-8000-000000000005',
   nextSpaceGrant: '93000000-0000-4000-8000-000000000006',
   proposal: '93000000-0000-4000-8000-000000000007',
@@ -23,10 +24,14 @@ const ids = {
 
 const authorizationScopeFingerprint =
   EffectiveAuthorizationScopeFingerprintSchema.parse('a'.repeat(64));
-const principal = (spaceAccessGrantId: string = ids.spaceGrant) => ({
+const principal = (
+  spaceAccessGrantId: string = ids.spaceGrant,
+  privateSpaceId?: string,
+) => ({
   userId: ids.user,
   sessionId: ids.session,
   householdId: ids.household,
+  ...(privateSpaceId === undefined ? {} : { privateSpaceId }),
   role: 'member' as const,
   emailVerified: true as const,
   spaceAccessGrantId,
@@ -164,7 +169,7 @@ describe('PostgresProposalQueryRepository', () => {
     expect(release).toHaveBeenCalledOnce();
   });
 
-  it('projects a first page and signs its stable DB-authorized keyset cursor', async () => {
+  it('accepts an authenticated private space while projecting a signed first page', async () => {
     const { pool, query, release } = poolFor((sql) =>
       sql.includes('list_proposal_approval_sources')
         ? [{ result: okListResult([source], true) }]
@@ -176,7 +181,7 @@ describe('PostgresProposalQueryRepository', () => {
     const result = await repository.list({
       state: 'pending',
       limit: 25,
-      principal: principal(),
+      principal: principal(ids.spaceGrant, ids.privateSpace),
       requestId: ids.request,
     });
 
@@ -379,8 +384,8 @@ describe('PostgresProposalQueryRepository', () => {
     } satisfies Partial<PostgresProposalApprovalError>);
   });
 
-  it('builds strict detail fields from immutable approval display only', async () => {
-    const { pool } = poolFor((sql) =>
+  it('accepts an authenticated private space while building strict detail fields', async () => {
+    const { pool, query } = poolFor((sql) =>
       sql.includes('get_proposal_approval_source')
         ? [{ result: { status: 'ok', source } }]
         : [],
@@ -389,7 +394,7 @@ describe('PostgresProposalQueryRepository', () => {
     await expect(
       new PostgresProposalQueryRepository(pool, cursorCodec()).getDetail({
         proposalId: ids.proposal,
-        principal: principal(),
+        principal: principal(ids.spaceGrant, ids.privateSpace),
         requestId: ids.request,
       }),
     ).resolves.toEqual({
@@ -408,7 +413,44 @@ describe('PostgresProposalQueryRepository', () => {
         { label: 'Attendee notifications', value: 'Will not be sent.' },
       ],
     });
+    expect(pool.connect).toHaveBeenCalledOnce();
+    expect(
+      query.mock.calls.find(([sql]) =>
+        sql.includes('get_proposal_approval_source'),
+      )?.[1],
+    ).toEqual([ids.household, ids.spaceGrant, ids.proposal]);
   });
+
+  it.each([
+    [
+      'a malformed private-space ID',
+      { ...principal(), privateSpaceId: 'not-a-uuid' },
+    ],
+    [
+      'an unknown principal field',
+      { ...principal(), unexpectedPrincipalField: 'fail-closed' },
+    ],
+  ])(
+    'rejects %s before opening a database connection',
+    async (_name, unsafePrincipal) => {
+      const { pool } = poolFor(() => []);
+      const repository = new PostgresProposalQueryRepository(
+        pool,
+        cursorCodec(),
+      );
+
+      await expect(
+        repository.getDetail({
+          proposalId: ids.proposal,
+          principal: unsafePrincipal,
+          requestId: ids.request,
+        }),
+      ).rejects.toMatchObject({
+        code: 'invalid-input',
+      } satisfies Partial<PostgresProposalApprovalError>);
+      expect(pool.connect).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     ['top-level provider material', { ...source, canonicalArguments: {} }],
