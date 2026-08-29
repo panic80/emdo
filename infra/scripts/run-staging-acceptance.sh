@@ -167,6 +167,11 @@ finance_staging_acceptance_failure_diagnostic() {
     'Staging acceptance failed at stage=guarded-review-commit:quota-readback.' | \
     'Staging acceptance failed at stage=guarded-delete-denial.' | \
     'Staging acceptance failed at stage=qna-and-isolation.' | \
+    'Staging acceptance failed at stage=qna-and-isolation:turn.' | \
+    'Staging acceptance failed at stage=qna-and-isolation:citations.' | \
+    'Staging acceptance failed at stage=qna-and-isolation:evidence.' | \
+    'Staging acceptance failed at stage=qna-and-isolation:member-list.' | \
+    'Staging acceptance failed at stage=qna-and-isolation:cross-user.' | \
     'Staging acceptance failed at stage=safe-write-and-handoff.' | \
     'Staging acceptance failed at stage=finalize-configuration.' | \
     'Staging acceptance failed at stage=finalize-attestation.' | \

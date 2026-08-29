@@ -282,6 +282,118 @@ describe('createProductionFinanceSpecialistDocumentPort', () => {
     ]);
   });
 
+  it('does not offset the missing modality for late reviewed exact chunk evidence', async () => {
+    const repository = createRepository();
+    const earlyFallbackEvidence = Array.from({ length: 16 }, (_, index) => ({
+      ...evidence[0],
+      id: `72000000-0000-4000-8000-${String(index + 20).padStart(12, '0')}`,
+      chunkId: null,
+    }));
+    const exactEvidence = {
+      ...evidence[0],
+      id: ids.exactEvidence,
+      chunkId: ids.chunk,
+    };
+    repository.search.mockResolvedValueOnce({
+      structured: [],
+      fullText: [
+        {
+          id: ids.summaryChunk,
+          documentId: ids.document,
+          extractionRevision: 2,
+          documentType: 'receipt',
+          currency: 'CAD',
+          pageStart: 1,
+          pageEnd: 1,
+          fullTextRank: 1,
+          vectorRank: 1,
+        },
+        {
+          id: ids.chunk,
+          documentId: ids.document,
+          extractionRevision: 2,
+          documentType: 'receipt',
+          currency: 'CAD',
+          pageStart: 1,
+          pageEnd: 1,
+          fullTextRank: 25,
+          vectorRank: null,
+        },
+      ],
+    });
+    repository.listEvidence.mockResolvedValueOnce([
+      ...earlyFallbackEvidence,
+      exactEvidence,
+    ]);
+    const port = createProductionFinanceSpecialistDocumentPort({
+      owner,
+      repository,
+    });
+
+    const [hit] = await port.searchCommitted({
+      scope,
+      query: 'Example Market',
+      limit: 1,
+    });
+
+    expect(hit?.evidence[0]).toMatchObject({
+      evidenceId: ids.exactEvidence,
+    });
+  });
+
+  it('keeps reviewed evidence order when document-level fallback ranks tie', async () => {
+    const repository = createRepository();
+    const marker = {
+      ...evidence[0],
+      id: ids.exactEvidence,
+      chunkId: null,
+      excerpt: 'Cobalt Lantern Receipt',
+    };
+    const fallbackEvidence = Array.from({ length: 12 }, (_entry, index) => ({
+      ...evidence[0],
+      id: `72000000-0000-4000-8000-${String(index + 20).padStart(12, '0')}`,
+      chunkId: null,
+      excerpt: `Fallback evidence ${index}`,
+    }));
+    repository.search.mockResolvedValueOnce({
+      structured: [],
+      fullText: [
+        {
+          id: ids.summaryChunk,
+          documentId: ids.document,
+          extractionRevision: 2,
+          documentType: 'receipt',
+          currency: 'CAD',
+          pageStart: 1,
+          pageEnd: 1,
+          fullTextRank: 1,
+          vectorRank: null,
+        },
+      ],
+    });
+    repository.listEvidence.mockResolvedValueOnce([
+      marker,
+      ...fallbackEvidence,
+    ]);
+    const port = createProductionFinanceSpecialistDocumentPort({
+      owner,
+      repository,
+    });
+
+    const hits = await port.searchCommitted({
+      scope,
+      query: 'Boreal Quasar Ledger',
+      limit: 1,
+    });
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.evidence).toHaveLength(8);
+    expect(hits[0]?.evidence[0]).toMatchObject({
+      evidenceId: ids.exactEvidence,
+      excerpt: 'Cobalt Lantern Receipt',
+    });
+  });
+
   it('selects matching documents before bounded evidence and prioritizes exact chunk ranks', async () => {
     const repository = createRepository();
     const secondDocument = {

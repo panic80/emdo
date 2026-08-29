@@ -103,6 +103,11 @@ const FinanceStagingAcceptanceStageSchema = z.enum([
   'guarded-review-commit:quota-readback',
   'guarded-delete-denial',
   'qna-and-isolation',
+  'qna-and-isolation:turn',
+  'qna-and-isolation:citations',
+  'qna-and-isolation:evidence',
+  'qna-and-isolation:member-list',
+  'qna-and-isolation:cross-user',
   'safe-write-and-handoff',
   'finalize-configuration',
   'finalize-attestation',
@@ -2446,6 +2451,7 @@ const runFinanceStagingAcceptance = async (
   await parseProblem(anonymousOriginal);
 
   input.financeStageReporter?.('qna-and-isolation');
+  input.financeStageReporter?.('qna-and-isolation:turn');
   const financeQuestionTurn = await acceptFinanceTurn({
     send,
     mutationHeaders,
@@ -2467,6 +2473,7 @@ const runFinanceStagingAcceptance = async (
     event: financeQuestionEvents.at(-1),
     runId: financeQuestionTurn.runId,
   });
+  input.financeStageReporter?.('qna-and-isolation:citations');
   const evidenceReferences = [
     ...new Set(financeQuestionOutput.evidenceReferences),
   ];
@@ -2477,6 +2484,7 @@ const runFinanceStagingAcceptance = async (
   ) {
     throw new Error('Finance EMDO Q&A did not return an unambiguous citation');
   }
+  input.financeStageReporter?.('qna-and-isolation:evidence');
   let evidenceId: string | undefined;
   for (const evidenceReference of evidenceReferences) {
     const candidateId = z.uuid().safeParse(evidenceReference);
@@ -2512,6 +2520,7 @@ const runFinanceStagingAcceptance = async (
     throw new Error('Finance cited evidence readback is invalid');
   }
 
+  input.financeStageReporter?.('qna-and-isolation:member-list');
   const memberListResponse = await send('/api/v1/finance/documents?limit=50', {
     headers: { cookie: memberCookieWithCsrf },
   });
@@ -2526,6 +2535,7 @@ const runFinanceStagingAcceptance = async (
   } else {
     await requireCrossUserFinanceDenial(memberListResponse);
   }
+  input.financeStageReporter?.('qna-and-isolation:cross-user');
   for (const path of [
     `/api/v1/finance/documents/${encodeURIComponent(documentId)}`,
     `/api/v1/finance/documents/${encodeURIComponent(documentId)}/original`,

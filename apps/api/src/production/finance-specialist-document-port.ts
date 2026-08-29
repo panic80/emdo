@@ -344,8 +344,11 @@ const minimumRank = (
 ): number | null =>
   left === null ? right : right === null ? left : Math.min(left, right);
 
-const fallbackRank = (rank: number | null): number | null =>
-  rank === null ? null : MAXIMUM_SEARCH_RESULTS + rank;
+const fallbackRank = (
+  rank: number | null,
+  reviewedEvidenceOffset: number,
+): number | null =>
+  rank === null ? null : MAXIMUM_SEARCH_RESULTS + rank + reviewedEvidenceOffset;
 
 const bindScope = (
   owner: FixedOwner,
@@ -643,6 +646,7 @@ export const createProductionFinanceSpecialistDocumentPort = (
       }
 
       const evidenceById = new Map<string, Evidence>();
+      const reviewedEvidenceOffsetById = new Map<string, number>();
       await Promise.all(
         [...documents.values()].map(async (document) => {
           const result = z.array(EvidenceSchema).safeParse(
@@ -659,16 +663,21 @@ export const createProductionFinanceSpecialistDocumentPort = (
           ) {
             throw unavailable();
           }
-          for (const evidence of result.data) {
+          for (const [
+            reviewedEvidenceOffset,
+            evidence,
+          ] of result.data.entries()) {
             if (
               evidence.documentId !== document.id ||
               evidence.extractionRevision !== document.extractionRevision ||
               evidence.sourceLocale !== document.sourceLocale ||
-              evidenceById.has(evidence.id)
+              evidenceById.has(evidence.id) ||
+              reviewedEvidenceOffsetById.has(evidence.id)
             ) {
               throw unavailable();
             }
             evidenceById.set(evidence.id, evidence);
+            reviewedEvidenceOffsetById.set(evidence.id, reviewedEvidenceOffset);
           }
         }),
       );
@@ -711,6 +720,12 @@ export const createProductionFinanceSpecialistDocumentPort = (
               candidates: [...evidenceById.values()]
                 .filter((evidence) => evidence.documentId === document.id)
                 .map((evidence) => {
+                  const reviewedEvidenceOffset = reviewedEvidenceOffsetById.get(
+                    evidence.id,
+                  );
+                  if (reviewedEvidenceOffset === undefined) {
+                    throw unavailable();
+                  }
                   const chunkRanks =
                     evidence.chunkId === null
                       ? undefined
@@ -718,16 +733,24 @@ export const createProductionFinanceSpecialistDocumentPort = (
                   const documentRanks = ranksByDocumentId.get(
                     evidence.documentId,
                   );
+                  const fallbackEvidenceOffset =
+                    chunkRanks === undefined ? reviewedEvidenceOffset : 0;
                   return {
                     evidenceId: evidence.id,
                     structuredRank:
                       structuredRanks.get(evidence.documentId) ?? null,
                     fullTextRank:
                       chunkRanks?.fullTextRank ??
-                      fallbackRank(documentRanks?.fullTextRank ?? null),
+                      fallbackRank(
+                        documentRanks?.fullTextRank ?? null,
+                        fallbackEvidenceOffset,
+                      ),
                     vectorRank:
                       chunkRanks?.vectorRank ??
-                      fallbackRank(documentRanks?.vectorRank ?? null),
+                      fallbackRank(
+                        documentRanks?.vectorRank ?? null,
+                        fallbackEvidenceOffset,
+                      ),
                   };
                 }),
               limit: MAXIMUM_EVIDENCE_PER_SEARCH_HIT,

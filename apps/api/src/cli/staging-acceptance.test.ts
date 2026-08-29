@@ -2047,6 +2047,11 @@ describe('staging acceptance CLI', () => {
       'guarded-review-commit:quota-readback',
       'guarded-delete-denial',
       'qna-and-isolation',
+      'qna-and-isolation:turn',
+      'qna-and-isolation:citations',
+      'qna-and-isolation:evidence',
+      'qna-and-isolation:member-list',
+      'qna-and-isolation:cross-user',
       'safe-write-and-handoff',
     ]);
     expect(JSON.stringify(phaseOne)).not.toContain('finance-owner-session');

@@ -3092,6 +3092,14 @@ export class PostgresFinanceDocumentRepository {
             and document.household_id = evidence.household_id
             and document.space_id = evidence.space_id
             and document.original_owner_user_id = evidence.original_owner_user_id
+           left join emdo.finance_document_chunks as source_chunk
+             on source_chunk.id = evidence.chunk_id
+            and source_chunk.document_id = evidence.document_id
+            and source_chunk.extraction_revision = evidence.extraction_revision
+            and source_chunk.household_id = evidence.household_id
+            and source_chunk.space_id = evidence.space_id
+            and source_chunk.original_owner_user_id = evidence.original_owner_user_id
+            and source_chunk.deleted_at is null
           where evidence.household_id = $1
             and evidence.space_id = $2
             and evidence.original_owner_user_id = $3
@@ -3100,7 +3108,7 @@ export class PostgresFinanceDocumentRepository {
             and evidence.deleted_at is null
             and document.state = 'committed'
             and document.deleted_at is null
-          order by evidence.page, evidence.id
+          order by source_chunk.ordinal nulls last, evidence.page, evidence.id
           limit $5`,
           [...scopeValues(principal), parsed.documentId, parsed.limit],
         );

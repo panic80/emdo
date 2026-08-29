@@ -1417,6 +1417,12 @@ describe('PostgresFinanceDocumentRepository', () => {
     expect(evidenceSql).toContain('evidence.household_id = $1');
     expect(evidenceSql).toContain('evidence.space_id = $2');
     expect(evidenceSql).toContain('evidence.original_owner_user_id = $3');
+    expect(evidenceSql).toContain(
+      'left join emdo.finance_document_chunks as source_chunk',
+    );
+    expect(evidenceSql).toContain(
+      'order by source_chunk.ordinal nulls last, evidence.page, evidence.id',
+    );
   });
 
   it('deletes in FK-safe order, clears every content field into a tombstone, and is idempotent', async () => {
