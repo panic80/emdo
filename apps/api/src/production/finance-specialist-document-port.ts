@@ -105,6 +105,7 @@ const CommittedProjectionSchema = z.strictObject({
   documentType: FinanceDocumentTypeSchema,
   sourceLocale: FinanceLocaleSchema,
   currency: CurrencySchema.nullable(),
+  currencyLabel: z.enum(['cad', 'non-cad', 'unknown']),
   extractionRevision: z.number().int().positive(),
   occurredOn: z.iso.date().nullable(),
   amountMinor: z.number().int().safe().nullable(),

@@ -12,6 +12,7 @@ import {
 import {
   EffectiveAuthorizationScopeFingerprintSchema,
   SupportedLocaleSchema,
+  type CapabilityInvocationContext,
   type EffectiveAuthorizationScopeFingerprint,
   type SupportedLocale,
 } from '@emdo/contracts';
@@ -690,7 +691,10 @@ export const createOpenAiAgentsSdkFacade = (
           config.capabilityKind,
           typeof detailsCallId === 'string' ? detailsCallId : undefined,
         );
-        return config.execute(input, runContext.context);
+        return config.execute(
+          input,
+          snapshotCapabilityInvocationContext(runContext.context),
+        );
       },
     }) as OpenAiSdkFunctionTool;
   };
@@ -1451,6 +1455,29 @@ const snapshotExecutionContext = (raw: unknown): AgentExecutionContext => {
       : { approvalDecisionId: assertUuid(value.approvalDecisionId) }),
     agentId: assertIdentifier(value.agentId),
     abortSignal: value.abortSignal,
+  });
+};
+
+const snapshotCapabilityInvocationContext = (
+  raw: unknown,
+): CapabilityInvocationContext => {
+  const context = snapshotExecutionContext(raw);
+  return Object.freeze({
+    requestId: context.requestId,
+    runId: context.runId,
+    userId: context.userId,
+    householdId: context.householdId,
+    sessionId: context.authenticatedSessionId,
+    agentId: context.agentId,
+    spaceAccessGrantId: context.spaceAccessGrantId,
+    locale: context.locale,
+    ...(context.disclosureGrantId === undefined
+      ? {}
+      : { disclosureGrantId: context.disclosureGrantId }),
+    ...(context.approvalDecisionId === undefined
+      ? {}
+      : { approvalDecisionId: context.approvalDecisionId }),
+    abortSignal: context.abortSignal,
   });
 };
 

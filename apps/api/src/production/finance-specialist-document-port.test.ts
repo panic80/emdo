@@ -65,6 +65,7 @@ const committedProjection = Object.freeze({
   documentType: 'receipt' as const,
   sourceLocale: 'en-CA' as const,
   currency: 'CAD' as string,
+  currencyLabel: 'cad' as const,
   extractionRevision: 2,
   occurredOn: '2026-08-24',
   amountMinor: 1299 as number,
@@ -734,6 +735,7 @@ describe('createProductionFinanceSpecialistDocumentPort', () => {
     repository.getCommittedProjection.mockResolvedValueOnce({
       ...committedProjection,
       currency: 'USD',
+      currencyLabel: 'non-cad',
       amountMinor: 1599,
     });
     const port = createProductionFinanceSpecialistDocumentPort({

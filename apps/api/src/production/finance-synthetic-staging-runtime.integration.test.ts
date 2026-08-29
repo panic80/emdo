@@ -13,6 +13,7 @@ import {
 } from '@emdo/db/api';
 import { loadOrderedMigrations } from '@emdo/db/migrations';
 import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
+import { FinanceDocumentEnvelopeV1Schema } from '@emdo/domains/finance';
 import { hashCanonicalJson } from '@emdo/toolbox';
 import { Client, Pool, type PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -100,6 +101,8 @@ const ids = Object.freeze({
   visualProofRequest: 'f3100000-0000-4000-8000-000000000014',
   visualDecisionGrant: 'f3100000-0000-4000-8000-000000000015',
   visualDecisionRequest: 'f3100000-0000-4000-8000-000000000016',
+  questionGrant: 'f3100000-0000-4000-8000-000000000017',
+  questionRequest: 'f3100000-0000-4000-8000-000000000018',
 });
 
 const sha256 = (value: string): string =>
@@ -139,6 +142,47 @@ const reviewTokenHash = (payloadHash: string): string => {
   return sha256(token);
 };
 
+const reviewedEnvelope = FinanceDocumentEnvelopeV1Schema.parse({
+  schemaVersion: 1,
+  sourceLocale: 'en-CA',
+  currency: 'CAD',
+  issuer: 'Boreal Quasar Ledger',
+  recipient: null,
+  issuedOn: '2026-08-26',
+  dueOn: null,
+  periodStart: null,
+  periodEnd: null,
+  subtotal: null,
+  tax: null,
+  total: { currency: 'CAD', minorUnits: 123 },
+  accountLast4: null,
+  facts: [
+    {
+      field: 'issuer',
+      confidence: 1,
+      evidence: [
+        {
+          page: 1,
+          excerpt: 'Boreal Quasar Ledger',
+          characterStart: 37,
+          characterEnd: 56,
+        },
+      ],
+    },
+  ],
+  documentType: 'receipt',
+  merchant: 'Boreal Quasar Ledger',
+  purchasedOn: '2026-08-26',
+  tip: null,
+  paymentMethodLast4: null,
+  lineItems: [],
+  proposedRecord: null,
+});
+const encodedReviewedEnvelope = Buffer.from(
+  JSON.stringify(reviewedEnvelope),
+  'utf8',
+).toString('base64url');
+
 const reviewedFacts = Object.freeze({
   documentType: 'receipt' as const,
   sourceLocale: 'en-CA' as const,
@@ -148,11 +192,26 @@ const reviewedFacts = Object.freeze({
       ordinal: 0,
       pageStart: 1,
       pageEnd: 1,
-      content: 'Reviewed synthetic receipt total',
+      content: `emdo.finance-document.review-envelope.v1:1/1:${encodedReviewedEnvelope}`,
+      embedding: null,
+    }),
+    Object.freeze({
+      ordinal: 1,
+      pageStart: 1,
+      pageEnd: 1,
+      content: 'Reviewed synthetic receipt total for Boreal Quasar Ledger',
       embedding: null,
     }),
   ]),
-  evidence: Object.freeze([]),
+  evidence: Object.freeze([
+    Object.freeze({
+      chunkOrdinal: 1,
+      page: 1,
+      excerpt: 'Boreal Quasar Ledger',
+      locator: Object.freeze({ characterStart: 37, characterEnd: 56 }),
+      sourceLocale: 'en-CA' as const,
+    }),
+  ]),
   matchSuggestions: Object.freeze([]),
 });
 
@@ -1322,6 +1381,146 @@ describeDatabase(
         await expect(inspectTerminalDisclosureState()).resolves.toEqual(
           terminalDisclosureStateBefore,
         );
+
+        const reviewedMarkerEvidence = await admin.query<{
+          evidenceId: string;
+        }>(
+          `select evidence.id::text as "evidenceId"
+             from emdo.finance_document_evidence as evidence
+            where evidence.document_id = $1
+              and evidence.extraction_revision = 1
+              and evidence.excerpt = 'Boreal Quasar Ledger'`,
+          [ids.document],
+        );
+        expect(reviewedMarkerEvidence.rows).toEqual([
+          { evidenceId: expect.any(String) },
+        ]);
+        const reviewedMarkerEvidenceId =
+          reviewedMarkerEvidence.rows[0]?.evidenceId;
+        if (reviewedMarkerEvidenceId === undefined) {
+          throw new Error(
+            'Finance reviewed marker evidence was not committed.',
+          );
+        }
+
+        await admin.query(
+          `insert into emdo.space_access_grants
+             (grant_id, household_id, original_owner_user_id, session_id,
+              request_id, membership_id, role, private_space_id,
+              writable_space_ids, issued_at, expires_at, retain_until)
+           values ($1, $2, $3, $4, $5, $6, 'owner', $7, array[$7::uuid],
+                   pg_catalog.clock_timestamp() - interval '1 second',
+                   pg_catalog.clock_timestamp() + interval '10 minutes',
+                   pg_catalog.clock_timestamp() + interval '89 days')`,
+          [
+            ids.questionGrant,
+            ids.household,
+            ids.user,
+            ids.session,
+            ids.questionRequest,
+            ids.membership,
+            ids.privateSpace,
+          ],
+        );
+        const questionPrincipal = Object.freeze({
+          ...principal,
+          spaceAccessGrantId: ids.questionGrant,
+        });
+        const questionAccepted =
+          await services.bindings.managerTurns.service.start({
+            request: {
+              schemaVersion: 1,
+              locale: 'en-CA',
+              routeHint: 'finance',
+              message: formatFinanceSyntheticStagingCommand({
+                schemaVersion: 1,
+                action: 'search-document',
+                query: 'Boreal Quasar Ledger',
+              }),
+            },
+            principal: questionPrincipal,
+            requestId: ids.questionRequest,
+            idempotencyKey: 'finance-synthetic-runtime-question-v1',
+          });
+        expect(questionAccepted).toMatchObject({
+          status: 'accepted',
+          replayed: false,
+        });
+
+        const questionEvents = await collect(
+          await services.bindings.runEvents.service.open({
+            runId: questionAccepted.runId,
+            afterSequence: 0,
+            principal: questionPrincipal,
+            requestId: ids.questionRequest,
+            abortSignal: new AbortController().signal,
+          }),
+        );
+        expect(observedRunTurnError).toBeUndefined();
+        expect(observedSyntheticRunnerErrors).toEqual([]);
+        expect(observedRunTurnFailureCode).toBeUndefined();
+        expect(
+          questionEvents.map(({ sequence, type }) => ({ sequence, type })),
+        ).toEqual([
+          { sequence: 1, type: 'run.accepted' },
+          { sequence: 2, type: 'specialist.completed' },
+          { sequence: 3, type: 'run.completed' },
+        ]);
+        expect(questionEvents.map(({ type }) => type)).not.toContain(
+          'specialist.failed',
+        );
+        expect(questionEvents.map(({ type }) => type)).not.toContain(
+          'run.failed',
+        );
+        expect(questionEvents.at(-1)).toMatchObject({
+          data: {
+            status: 'completed',
+            runId: questionAccepted.runId,
+            output: {
+              evidenceReferences: expect.arrayContaining([
+                reviewedMarkerEvidenceId,
+              ]),
+            },
+          },
+        });
+
+        const questionPersistence = await admin.query<{
+          grantId: string;
+          grantRequestId: string;
+          grantSessionId: string;
+          ownerUserId: string;
+          requestId: string;
+          runStatus: string;
+          state: string;
+          userId: string;
+        }>(
+          `select turn.user_id::text as "userId",
+                  run.original_owner_user_id::text as "ownerUserId",
+                  run.status as "runStatus",
+                  turn.state,
+                  turn.origin_request_id::text as "requestId",
+                  turn.origin_space_access_grant_id::text as "grantId",
+                  access_grant.session_id::text as "grantSessionId",
+                  access_grant.request_id::text as "grantRequestId"
+             from emdo.manager_turns as turn
+             join emdo.agent_runs as run on run.id = turn.run_id
+             join emdo.space_access_grants as access_grant
+               on access_grant.grant_id = turn.origin_space_access_grant_id
+            where turn.run_id = $1`,
+          [questionAccepted.runId],
+        );
+        expect(questionPersistence.rows).toEqual([
+          {
+            userId: ids.user,
+            ownerUserId: ids.user,
+            runStatus: 'completed',
+            state: 'completed',
+            requestId: ids.questionRequest,
+            grantId: ids.questionGrant,
+            grantSessionId: ids.session,
+            grantRequestId: ids.questionRequest,
+          },
+        ]);
       } finally {
         documentGateway.dispose();
         checkpointCipher.dispose();
