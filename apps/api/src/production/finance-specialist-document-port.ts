@@ -733,6 +733,8 @@ export const createProductionFinanceSpecialistDocumentPort = (
                   const documentRanks = ranksByDocumentId.get(
                     evidence.documentId,
                   );
+                  const fallbackEvidenceOffset =
+                    chunkRanks === undefined ? reviewedEvidenceOffset : 0;
                   return {
                     evidenceId: evidence.id,
                     structuredRank:
@@ -741,13 +743,13 @@ export const createProductionFinanceSpecialistDocumentPort = (
                       chunkRanks?.fullTextRank ??
                       fallbackRank(
                         documentRanks?.fullTextRank ?? null,
-                        reviewedEvidenceOffset,
+                        fallbackEvidenceOffset,
                       ),
                     vectorRank:
                       chunkRanks?.vectorRank ??
                       fallbackRank(
                         documentRanks?.vectorRank ?? null,
-                        reviewedEvidenceOffset,
+                        fallbackEvidenceOffset,
                       ),
                   };
                 }),
