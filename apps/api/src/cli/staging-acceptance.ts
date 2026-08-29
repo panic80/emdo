@@ -189,11 +189,102 @@ type FinanceInitialGuardedReviewDiagnostic = z.output<
   typeof FinanceInitialGuardedReviewDiagnosticSchema
 >;
 
+const FinanceRecognizedRunnerSafeErrorCodeSchema = z.enum([
+  'agent-capability-budget-exceeded',
+  'agent-model-escalation-not-allowed',
+  'agent-model-fallback-not-allowed',
+  'agent-model-unavailable',
+  'agent-token-budget-exceeded',
+  'approval-checkpoint-already-consumed',
+  'approval-checkpoint-expired',
+  'approval-checkpoint-invalid',
+  'approval-checkpoint-mismatch',
+  'approval-checkpoint-not-found',
+  'approval-checkpoint-persistence-failed',
+  'approval-interruption-audit-failed',
+  'approval-rejected',
+  'approval-rejection-failed',
+  'approval-rejection-result-invalid',
+  'approved-action-outcome-unknown',
+  'approved-action-result-invalid',
+  'conversation-memory-unavailable',
+  'conversation-persistence-failed',
+  'invalid-approval-channel',
+  'invalid-manager-input',
+  'invalid-manager-plan',
+  'invalid-provider-write-approval-interruption',
+  'invalid-resume-turn-input',
+  'manager-execution-failed',
+  'manager-output-validation-failed',
+  'manager-synthesis-failed',
+  'model-disclosure-denied',
+  'model-routing-failed',
+  'model-spend-authorization-failed',
+  'monthly-ai-spend-limit-reached',
+  'multiple-provider-writes-require-separate-turns',
+  'provider-write-proposal-finalization-pending',
+  'required-agent-model-unavailable',
+  'specialist-dependency-failed',
+  'specialist-execution-failed',
+  'specialist-output-validation-failed',
+  'specialist-result-processing-failed',
+]);
+
+const FinanceResumedRunFailureDiagnosticSchema = z.enum([
+  'guarded-review-commit:resumed-run-failed outcome=approval-resume-binding-invalid',
+  'guarded-review-commit:resumed-run-failed outcome=approval-resume-failed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-agent-capability-budget-exceeded',
+  'guarded-review-commit:resumed-run-failed outcome=runner-agent-model-escalation-not-allowed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-agent-model-fallback-not-allowed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-agent-model-unavailable',
+  'guarded-review-commit:resumed-run-failed outcome=runner-agent-token-budget-exceeded',
+  'guarded-review-commit:resumed-run-failed outcome=runner-approval-checkpoint-already-consumed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-approval-checkpoint-expired',
+  'guarded-review-commit:resumed-run-failed outcome=runner-approval-checkpoint-invalid',
+  'guarded-review-commit:resumed-run-failed outcome=runner-approval-checkpoint-mismatch',
+  'guarded-review-commit:resumed-run-failed outcome=runner-approval-checkpoint-not-found',
+  'guarded-review-commit:resumed-run-failed outcome=runner-approval-checkpoint-persistence-failed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-approval-interruption-audit-failed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-approval-rejected',
+  'guarded-review-commit:resumed-run-failed outcome=runner-approval-rejection-failed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-approval-rejection-result-invalid',
+  'guarded-review-commit:resumed-run-failed outcome=runner-approved-action-outcome-unknown',
+  'guarded-review-commit:resumed-run-failed outcome=runner-approved-action-result-invalid',
+  'guarded-review-commit:resumed-run-failed outcome=runner-conversation-memory-unavailable',
+  'guarded-review-commit:resumed-run-failed outcome=runner-conversation-persistence-failed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-invalid-approval-channel',
+  'guarded-review-commit:resumed-run-failed outcome=runner-invalid-manager-input',
+  'guarded-review-commit:resumed-run-failed outcome=runner-invalid-manager-plan',
+  'guarded-review-commit:resumed-run-failed outcome=runner-invalid-provider-write-approval-interruption',
+  'guarded-review-commit:resumed-run-failed outcome=runner-invalid-resume-turn-input',
+  'guarded-review-commit:resumed-run-failed outcome=runner-manager-execution-failed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-manager-output-validation-failed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-manager-synthesis-failed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-model-disclosure-denied',
+  'guarded-review-commit:resumed-run-failed outcome=runner-model-routing-failed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-model-spend-authorization-failed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-monthly-ai-spend-limit-reached',
+  'guarded-review-commit:resumed-run-failed outcome=runner-multiple-provider-writes-require-separate-turns',
+  'guarded-review-commit:resumed-run-failed outcome=runner-provider-write-proposal-finalization-pending',
+  'guarded-review-commit:resumed-run-failed outcome=runner-required-agent-model-unavailable',
+  'guarded-review-commit:resumed-run-failed outcome=runner-specialist-dependency-failed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-specialist-execution-failed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-specialist-output-validation-failed',
+  'guarded-review-commit:resumed-run-failed outcome=runner-specialist-result-processing-failed',
+  'guarded-review-commit:resumed-run-failed outcome=unrecognized',
+  'guarded-review-commit:resumed-run-failed outcome=invalid',
+]);
+
+type FinanceResumedRunFailureDiagnostic = z.output<
+  typeof FinanceResumedRunFailureDiagnosticSchema
+>;
+
 type FinanceStagingAcceptanceProgress =
   | FinanceStagingAcceptanceStage
   | FinanceMemberInvitationDiagnostic
   | FinanceDocumentUploadDiagnostic
-  | FinanceInitialGuardedReviewDiagnostic;
+  | FinanceInitialGuardedReviewDiagnostic
+  | FinanceResumedRunFailureDiagnostic;
 
 const FinanceMemberInvitationOutcome = Object.freeze({
   'member-invitation:request-or-network-failed': 'request-or-network-failed',
@@ -238,6 +329,11 @@ export const formatStagingAcceptanceFailure = (
     FinanceInitialGuardedReviewDiagnosticSchema.safeParse(progress);
   if (initialGuardedReviewDiagnostic.success) {
     return `Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=${initialGuardedReviewDiagnostic.data}.\n`;
+  }
+  const resumedRunFailureDiagnostic =
+    FinanceResumedRunFailureDiagnosticSchema.safeParse(progress);
+  if (resumedRunFailureDiagnostic.success) {
+    return `Staging acceptance failed at stage=${resumedRunFailureDiagnostic.data}.\n`;
   }
   const stage = FinanceStagingAcceptanceStageSchema.safeParse(progress);
   return stage.success
@@ -665,6 +761,37 @@ const TERMINAL_RUN_EVENT_TYPES = new Set([
 ]);
 
 type ParsedRunEvent = z.output<typeof RunEventSchema>;
+
+const FinanceResumedRunFailureEnvelopeSchema = z
+  .object({
+    safeError: z.object({ code: z.string().min(1) }).passthrough(),
+  })
+  .passthrough();
+
+const financeResumedRunFailureDiagnostic = (
+  terminalData: unknown,
+): FinanceResumedRunFailureDiagnostic => {
+  const envelope =
+    FinanceResumedRunFailureEnvelopeSchema.safeParse(terminalData);
+  if (!envelope.success) {
+    return 'guarded-review-commit:resumed-run-failed outcome=invalid';
+  }
+
+  const { code } = envelope.data.safeError;
+  if (code === 'approval-resume-binding-invalid') {
+    return 'guarded-review-commit:resumed-run-failed outcome=approval-resume-binding-invalid';
+  }
+  if (code === 'approval-resume-failed') {
+    return 'guarded-review-commit:resumed-run-failed outcome=approval-resume-failed';
+  }
+  const runnerCode = FinanceRecognizedRunnerSafeErrorCodeSchema.safeParse(code);
+  if (!runnerCode.success) {
+    return 'guarded-review-commit:resumed-run-failed outcome=unrecognized';
+  }
+  return FinanceResumedRunFailureDiagnosticSchema.parse(
+    `guarded-review-commit:resumed-run-failed outcome=runner-${runnerCode.data}`,
+  );
+};
 
 const InitialSseFailureCategory = Object.freeze({
   httpOrContentType: 'http-or-content-type',
@@ -1477,7 +1604,7 @@ const approveAndResumeFinanceTurn = async (input: {
   readonly decisionIdempotencyKey: string;
   readonly allowRunFailedTerminal?: boolean;
   readonly guardedReviewStageReporter?: (
-    stage: FinanceStagingAcceptanceStage,
+    progress: FinanceStagingAcceptanceProgress,
   ) => void;
 }) => {
   const initialTerminal = input.initialEvents.at(-1);
@@ -1572,7 +1699,7 @@ const approveAndResumeFinanceTurn = async (input: {
   });
   if (resumedEvents.at(-1)?.type === 'run.failed') {
     input.guardedReviewStageReporter?.(
-      'guarded-review-commit:resumed-run-failed',
+      financeResumedRunFailureDiagnostic(resumedEvents.at(-1)?.data),
     );
     throw new Error('Finance guarded turn failed after approval');
   }

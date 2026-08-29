@@ -120,6 +120,48 @@ finance_staging_acceptance_failure_diagnostic() {
     'Staging acceptance failed at stage=guarded-review-commit:decision-receipt.' | \
     'Staging acceptance failed at stage=guarded-review-commit:resumed-run.' | \
     'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=approval-resume-binding-invalid.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=approval-resume-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-agent-capability-budget-exceeded.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-agent-model-escalation-not-allowed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-agent-model-fallback-not-allowed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-agent-model-unavailable.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-agent-token-budget-exceeded.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-approval-checkpoint-already-consumed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-approval-checkpoint-expired.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-approval-checkpoint-invalid.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-approval-checkpoint-mismatch.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-approval-checkpoint-not-found.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-approval-checkpoint-persistence-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-approval-interruption-audit-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-approval-rejected.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-approval-rejection-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-approval-rejection-result-invalid.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-approved-action-outcome-unknown.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-approved-action-result-invalid.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-conversation-memory-unavailable.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-conversation-persistence-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-invalid-approval-channel.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-invalid-manager-input.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-invalid-manager-plan.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-invalid-provider-write-approval-interruption.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-invalid-resume-turn-input.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-manager-execution-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-manager-output-validation-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-manager-synthesis-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-model-disclosure-denied.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-model-routing-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-model-spend-authorization-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-monthly-ai-spend-limit-reached.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-multiple-provider-writes-require-separate-turns.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-provider-write-proposal-finalization-pending.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-required-agent-model-unavailable.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-specialist-dependency-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-specialist-execution-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-specialist-output-validation-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=runner-specialist-result-processing-failed.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=unrecognized.' | \
+    'Staging acceptance failed at stage=guarded-review-commit:resumed-run-failed outcome=invalid.' | \
     'Staging acceptance failed at stage=guarded-review-commit:resumed-run-completed.' | \
     'Staging acceptance failed at stage=guarded-review-commit:commit-readback.' | \
     'Staging acceptance failed at stage=guarded-review-commit:quota-readback.' | \
