@@ -32,6 +32,24 @@ const DisclosureGrantVersionSchema = z
   .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u);
 const PositiveTerminalEventSequenceSchema = z.number().int().positive().safe();
 
+/**
+ * Durable approval aggregates accept only authority-bearing request fields.
+ * The built authentication principal also carries a server-derived private
+ * space for the request-scoped Finance runtime, so retain it for resumption but
+ * do not disclose it to the strict durable boundary.
+ */
+const projectDurableApprovalPrincipal = (principal: AuthenticatedPrincipal) =>
+  deepFreeze({
+    userId: principal.userId,
+    sessionId: principal.sessionId,
+    householdId: principal.householdId,
+    role: principal.role,
+    emailVerified: principal.emailVerified,
+    spaceAccessGrantId: principal.spaceAccessGrantId,
+    collectionAuthorizationScopeFingerprint:
+      principal.collectionAuthorizationScopeFingerprint,
+  });
+
 export interface ApprovalResumeBinding {
   /** Server-generated request ID for this resume phase, never the decision request ID. */
   readonly turnRequestId: string;
@@ -283,12 +301,13 @@ export const createProductionApprovalResumeBinding = (dependencies: {
     async (rawInput) => {
       const request = ActionDecisionRequestSchema.parse(rawInput.request);
       const principal = AuthenticatedPrincipalSchema.parse(rawInput.principal);
+      const durablePrincipal = projectDurableApprovalPrincipal(principal);
       const decisionRequestId = UuidSchema.parse(rawInput.requestId);
       const durable = VisualProposalDecisionResultSchema.parse(
         await boundary.decideAndLink({
           ...rawInput,
           request,
-          principal,
+          principal: durablePrincipal,
           requestId: decisionRequestId,
         }),
       );
@@ -301,7 +320,7 @@ export const createProductionApprovalResumeBinding = (dependencies: {
       const resume = ResumeClaimSchema.parse(
         await boundary.claim({
           decision,
-          principal,
+          principal: durablePrincipal,
           decisionRequestId,
         }),
       );

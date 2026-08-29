@@ -419,6 +419,127 @@ describe('production runtime foundations', () => {
     expect(authorize).toHaveBeenCalledTimes(1);
   });
 
+  it('authorizes manager synthesis with safe canonical record IDs', async () => {
+    const ids = {
+      request: '82700000-0000-4000-8000-000000000001',
+      run: '82700000-0000-4000-8000-000000000002',
+      household: '82700000-0000-4000-8000-000000000003',
+      user: '82700000-0000-4000-8000-000000000004',
+      spaceAccessGrant: '82700000-0000-4000-8000-000000000005',
+      privateSpace: '82700000-0000-4000-8000-000000000006',
+      disclosureGrant: '82700000-0000-4000-8000-000000000007',
+    };
+    const issuer = {
+      issue: vi.fn(
+        async (input: {
+          readonly recordAllowlist: readonly Readonly<{
+            readonly dataClass: string;
+            readonly recordId: string;
+            readonly fields: readonly string[];
+          }>[];
+        }) => {
+          void input;
+          return { grant: { id: ids.disclosureGrant } };
+        },
+      ),
+    };
+    const authorize = vi.fn(
+      async (input: LegacyAuthorizeInput): Promise<LegacyAuthorizeDecision> => {
+        const payload = parseDisclosurePayload(input.payload);
+        return {
+          status: 'authorized' as const,
+          grantId: ids.disclosureGrant,
+          grantVersion: '1.0.0',
+          runId: ids.run,
+          householdId: ids.household,
+          userId: ids.user,
+          agentId: 'manager',
+          phasePurpose: 'manager-synthesis' as const,
+          disclosurePurpose: 'Synthesize this manager turn.',
+          provider: 'openai' as const,
+          expiresAt: '2026-08-15T14:10:00.000Z',
+          records: payload.records.map((record) => ({
+            dataClass: record.dataClass,
+            recordId: record.recordId,
+            fields: Object.keys(record.fields),
+          })),
+          payload: input.payload,
+        };
+      },
+    );
+    const gateway = createPostgresCoreModelDisclosureGateway({
+      issuer,
+      gateway: { authorize },
+      privateSpaceId: ids.privateSpace,
+    });
+    const synthesisInput = {
+      requestId: ids.request,
+      runId: ids.run,
+      householdId: ids.household,
+      userId: ids.user,
+      authenticatedSessionId: '82700000-0000-4000-8000-000000000008',
+      spaceAccessGrantId: ids.spaceAccessGrant,
+      authorizationScopeFingerprint: testScopeFingerprint,
+      agentId: 'manager',
+      phasePurpose: 'manager-synthesis',
+      phaseInvocationId: 'manager-synthesis-1',
+      provider: 'openai',
+      sources: [
+        {
+          kind: 'manager-plan',
+          plan: json({
+            specialistDelegations: ['delegation:one', 'delegation:two'],
+          }),
+        },
+        {
+          kind: 'specialist-outcome',
+          outcome: json({
+            delegationId: 'delegation:one',
+            status: 'completed',
+          }),
+        },
+        {
+          kind: 'specialist-outcome',
+          outcome: json({
+            delegationId: 'delegation:two',
+            status: 'completed',
+          }),
+        },
+      ],
+    } as const;
+
+    await expect(gateway.authorize(synthesisInput)).resolves.toEqual(
+      expect.objectContaining({
+        phasePurpose: 'manager-synthesis',
+        disclosurePurpose: 'Synthesize this manager turn.',
+      }),
+    );
+    expect(issuer.issue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: 'manager',
+        phasePurpose: 'manager-synthesis',
+        disclosurePurpose: 'Synthesize this manager turn.',
+      }),
+    );
+    const issuedAllowlist = issuer.issue.mock.calls[0]?.[0]?.recordAllowlist;
+    expect(issuedAllowlist).toHaveLength(3);
+    expect(issuedAllowlist).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          dataClass: 'agent.manager-plans',
+          recordId: expect.stringMatching(/^manager-plan-/),
+        }),
+        expect.objectContaining({
+          dataClass: 'agent.specialist-outcomes',
+          recordId: expect.stringMatching(/^specialist-outcome-/),
+        }),
+      ]),
+    );
+    for (const record of issuedAllowlist) {
+      expect(record.recordId).toMatch(/^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$/);
+    }
+  });
+
   it('returns only the 12 newest valid manager messages in chronological order', async () => {
     const ids = {
       conversation: '83000000-0000-4000-8000-000000000001',

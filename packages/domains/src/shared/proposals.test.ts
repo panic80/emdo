@@ -245,6 +245,128 @@ class ClockAdvancingProposalRepository extends InMemoryProposalRepository {
   }
 }
 
+class CountingDecisionCommitRepository extends InMemoryProposalRepository {
+  decisionCommitCount = 0;
+
+  override async transaction<Result>(
+    work: (transaction: ProposalRepositoryTransaction) => Promise<Result>,
+  ): Promise<Result> {
+    return super.transaction((transaction) =>
+      work(
+        Object.freeze({
+          ...transaction,
+          commitDecision: async (
+            input: Parameters<
+              ProposalRepositoryTransaction['commitDecision']
+            >[0],
+          ) => {
+            this.decisionCommitCount += 1;
+            return transaction.commitDecision(input);
+          },
+        }),
+      ),
+    );
+  }
+}
+
+class DuplicateDecisionCommitRepository extends CountingDecisionCommitRepository {
+  private reportDuplicateOnce = true;
+
+  override async transaction<Result>(
+    work: (transaction: ProposalRepositoryTransaction) => Promise<Result>,
+  ): Promise<Result> {
+    return super.transaction((transaction) =>
+      work(
+        Object.freeze({
+          ...transaction,
+          commitDecision: async (
+            input: Parameters<
+              ProposalRepositoryTransaction['commitDecision']
+            >[0],
+          ) => {
+            const result = await transaction.commitDecision(input);
+            if (this.reportDuplicateOnce && result === 'created') {
+              this.reportDuplicateOnce = false;
+              return 'duplicate';
+            }
+            return result;
+          },
+        }),
+      ),
+    );
+  }
+}
+
+class ConflictAfterPersistedDecisionRepository extends CountingDecisionCommitRepository {
+  private reportConflictOnce = true;
+
+  override async transaction<Result>(
+    work: (transaction: ProposalRepositoryTransaction) => Promise<Result>,
+  ): Promise<Result> {
+    return super.transaction((transaction) =>
+      work(
+        Object.freeze({
+          ...transaction,
+          commitDecision: async (
+            input: Parameters<
+              ProposalRepositoryTransaction['commitDecision']
+            >[0],
+          ) => {
+            const result = await transaction.commitDecision(input);
+            if (this.reportConflictOnce && result === 'created') {
+              this.reportConflictOnce = false;
+              return 'conflict';
+            }
+            return result;
+          },
+        }),
+      ),
+    );
+  }
+}
+
+class ConcurrentDecisionReadBarrierRepository extends CountingDecisionCommitRepository {
+  private absentDecisionReads = 0;
+  private readonly bothAbsentReadsObserved: Promise<void>;
+  private releaseAbsentReads!: () => void;
+
+  constructor() {
+    super();
+    this.bothAbsentReadsObserved = new Promise<void>((resolve) => {
+      this.releaseAbsentReads = resolve;
+    });
+  }
+
+  override async transaction<Result>(
+    work: (transaction: ProposalRepositoryTransaction) => Promise<Result>,
+  ): Promise<Result> {
+    let observedAbsentDecision = false;
+    const result = await super.transaction((transaction) =>
+      work(
+        Object.freeze({
+          ...transaction,
+          findDecisionByIdempotencyKey: async (
+            lookup: Parameters<
+              ProposalRepositoryTransaction['findDecisionByIdempotencyKey']
+            >[0],
+          ) => {
+            const stored =
+              await transaction.findDecisionByIdempotencyKey(lookup);
+            if (stored === undefined) observedAbsentDecision = true;
+            return stored;
+          },
+        }),
+      ),
+    );
+    if (observedAbsentDecision && this.absentDecisionReads < 2) {
+      this.absentDecisionReads += 1;
+      if (this.absentDecisionReads === 2) this.releaseAbsentReads();
+      await this.bothAbsentReadsObserved;
+    }
+    return result;
+  }
+}
+
 describe('ProposalService', () => {
   it('provides the exact approval lifecycle and abandonment operations without a materializer', async () => {
     const now = () => new Date('2026-08-09T16:02:00.000Z');
@@ -425,6 +547,130 @@ describe('ProposalService', () => {
         }),
       ),
     ).resolves.toBe('conflict');
+  });
+
+  it('returns the persisted decision on an exact second visual-decision request without another commit', async () => {
+    const repository = new CountingDecisionCommitRepository();
+    const service = new ProposalService(
+      materializer,
+      disclosureGrantResolver,
+      repository,
+      () => new Date('2026-08-09T16:02:00.000Z'),
+    );
+    await service.create(proposal, preparationBinding);
+
+    const first = await service.decide(decisionRequest, decisionContext);
+    const replay = await service.decide(decisionRequest, {
+      ...decisionContext,
+      decisionId: ids.otherProposal,
+      now: new Date('2026-08-09T16:02:30.000Z'),
+    });
+
+    expect(replay).toEqual(first);
+    expect(repository.decisionCommitCount).toBe(1);
+    expect((await repository.getProposal(proposal.id))?.state).toBe('approved');
+  });
+
+  it('converges overlapping exact visual-decision requests on one persisted decision', async () => {
+    const repository = new ConcurrentDecisionReadBarrierRepository();
+    const service = new ProposalService(
+      materializer,
+      disclosureGrantResolver,
+      repository,
+      () => new Date('2026-08-09T16:02:00.000Z'),
+    );
+    await service.create(proposal, preparationBinding);
+
+    const [first, second] = await Promise.all([
+      service.decide(decisionRequest, decisionContext),
+      service.decide(decisionRequest, {
+        ...decisionContext,
+        decisionId: ids.otherProposal,
+        now: new Date('2026-08-09T16:01:30.000Z'),
+      }),
+    ]);
+
+    expect(second).toEqual(first);
+    expect(repository.decisionCommitCount).toBe(1);
+    expect((await repository.getProposal(proposal.id))?.state).toBe('approved');
+    expect(
+      (await repository.listEvents()).filter(
+        ({ eventType }) => eventType === 'proposal.approved',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('keeps a conflicting overlapping visual decision fail-closed', async () => {
+    const repository = new ConcurrentDecisionReadBarrierRepository();
+    const service = new ProposalService(
+      materializer,
+      disclosureGrantResolver,
+      repository,
+      () => new Date('2026-08-09T16:02:00.000Z'),
+    );
+    await service.create(proposal, preparationBinding);
+
+    const [approved, rejected] = await Promise.allSettled([
+      service.decide(decisionRequest, decisionContext),
+      service.decide(
+        { ...decisionRequest, decision: 'rejected' },
+        {
+          ...decisionContext,
+          decisionId: ids.otherProposal,
+          now: new Date('2026-08-09T16:01:30.000Z'),
+        },
+      ),
+    ]);
+
+    expect(approved.status).toBe('fulfilled');
+    expect(rejected).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'proposal-decision-conflict' },
+    });
+    expect(repository.decisionCommitCount).toBe(1);
+    expect((await repository.getProposal(proposal.id))?.state).toBe('approved');
+  });
+
+  it('recovers the persisted decision when the commit transaction reports an exact duplicate', async () => {
+    const repository = new DuplicateDecisionCommitRepository();
+    const service = new ProposalService(
+      materializer,
+      disclosureGrantResolver,
+      repository,
+      () => new Date('2026-08-09T16:02:00.000Z'),
+    );
+    await service.create(proposal, preparationBinding);
+
+    const decision = await service.decide(decisionRequest, decisionContext);
+
+    expect(decision).toMatchObject({
+      id: ids.decision,
+      proposalId: proposal.id,
+      decision: 'approved',
+    });
+    expect(repository.decisionCommitCount).toBe(1);
+    expect((await repository.getProposal(proposal.id))?.state).toBe('approved');
+  });
+
+  it('recovers an exact persisted decision after the commit path reports a concurrency conflict', async () => {
+    const repository = new ConflictAfterPersistedDecisionRepository();
+    const service = new ProposalService(
+      materializer,
+      disclosureGrantResolver,
+      repository,
+      () => new Date('2026-08-09T16:02:00.000Z'),
+    );
+    await service.create(proposal, preparationBinding);
+
+    const decision = await service.decide(decisionRequest, decisionContext);
+
+    expect(decision).toMatchObject({
+      id: ids.decision,
+      proposalId: proposal.id,
+      decision: 'approved',
+    });
+    expect(repository.decisionCommitCount).toBe(1);
+    expect((await repository.getProposal(proposal.id))?.state).toBe('approved');
   });
 
   it('rejects direct repository abandonment after visual approval', async () => {

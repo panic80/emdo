@@ -288,7 +288,7 @@ const canonicalSourceRecord = (
     const plan = JsonValueSchema.parse(source.plan);
     return {
       dataClass: 'agent.manager-plans',
-      recordId: `manager-plan:${runId}:${hashCanonicalJson(plan)}`,
+      recordId: `manager-plan-${runId}-${hashCanonicalJson(plan)}`,
       fields: { plan },
     };
   }
@@ -319,7 +319,7 @@ const canonicalSourceRecord = (
   const delegationId = OpaqueReferenceSchema.parse(outcome.delegationId);
   return {
     dataClass: 'agent.specialist-outcomes',
-    recordId: `specialist-outcome:${delegationId}:${hashCanonicalJson(outcome)}`,
+    recordId: `specialist-outcome-${hashCanonicalJson(delegationId)}-${hashCanonicalJson(outcome)}`,
     fields: { outcome },
   };
 };

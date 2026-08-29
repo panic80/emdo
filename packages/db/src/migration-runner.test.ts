@@ -43,6 +43,7 @@ describe('database migration runner', () => {
       '0018_finance_guarded_proposal_authority',
       '0019_manager_turn_spend_warning',
       '0020_manager_specialist_disclosure',
+      '0021_blocked_visual_decision_claim',
     ]);
     expect(migrations.map(({ index }) => index)).toEqual(
       migrations.map((_, index) => index),
@@ -102,6 +103,9 @@ describe('database migration runner', () => {
     );
     expect(migrations[20]?.sql).toContain(
       'CREATE OR REPLACE FUNCTION "emdo"."resolve_model_disclosure_grant"',
+    );
+    expect(migrations[21]?.sql).toContain(
+      'CREATE OR REPLACE FUNCTION "emdo"."issue_workflow_operation_claim_calendar"',
     );
   });
 

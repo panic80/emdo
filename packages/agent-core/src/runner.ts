@@ -3457,14 +3457,81 @@ export class AgentOrchestrator {
       return this.#failed(
         scope.runId,
         trace,
+        rawInput.decision === 'approve'
+          ? safeError(
+              'approved-action-result-invalid',
+              'The provider action was recorded, but its readback result did not match the specialist contract.',
+              false,
+            )
+          : safeError(
+              'approval-rejection-result-invalid',
+              'The proposal rejection was recorded, but its result did not match the specialist contract.',
+              false,
+            ),
+        state.outcomes,
+        state.usage,
+        state.modelResolution,
+      );
+    }
+    if (state.plan === undefined) {
+      return this.#failed(
+        scope.runId,
+        trace,
         safeError(
-          'approved-action-result-invalid',
-          'The provider action was recorded, but its readback result did not match the specialist contract.',
+          'approval-checkpoint-invalid',
+          'The approval checkpoint did not contain a delegation plan.',
           false,
         ),
         state.outcomes,
         state.usage,
         state.modelResolution,
+      );
+    }
+    if (rawInput.decision === 'reject') {
+      const outcomes = new Map(
+        state.outcomes.map((outcome) => [outcome.delegationId, outcome]),
+      );
+      outcomes.set(
+        selected.execution.executionKey,
+        Object.freeze({
+          delegationId: selected.execution.executionKey,
+          specialistId: selected.execution.agentId,
+          status: 'failed' as const,
+          output: snapshotJson(parsed.data),
+          safeError: safeError(
+            'approval-rejected',
+            'The requested provider action was not approved.',
+            false,
+          ),
+          usage: ZERO_USAGE,
+        }),
+      );
+      for (const delegation of state.plan.delegations) {
+        if (outcomes.has(delegation.id)) continue;
+        outcomes.set(
+          delegation.id,
+          Object.freeze({
+            delegationId: delegation.id,
+            specialistId: delegation.specialistId,
+            status: 'blocked' as const,
+            safeError: safeError(
+              'approval-rejected',
+              'This specialist delegation was not run because approval was rejected.',
+              false,
+            ),
+            usage: ZERO_USAGE,
+          }),
+        );
+      }
+      return this.#synthesize(
+        resumeTurn,
+        state.modelResolution,
+        state.plan,
+        state.plan.delegations.map((delegation) =>
+          outcomes.get(delegation.id)!,
+        ),
+        state.usage,
+        trace,
       );
     }
     const outcomes = [
@@ -3477,20 +3544,6 @@ export class AgentOrchestrator {
         usage: ZERO_USAGE,
       }),
     ];
-    if (state.plan === undefined) {
-      return this.#failed(
-        scope.runId,
-        trace,
-        safeError(
-          'approval-checkpoint-invalid',
-          'The approval checkpoint did not contain a delegation plan.',
-          false,
-        ),
-        outcomes,
-        state.usage,
-        state.modelResolution,
-      );
-    }
     return this.#executePlan(
       resumeTurn,
       state.modelResolution,

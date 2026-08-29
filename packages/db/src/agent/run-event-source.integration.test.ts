@@ -19,6 +19,7 @@ const describeDatabase = databaseUrl === undefined ? describe.skip : describe;
 const ids = Object.freeze({
   user: '84900000-0000-4000-8000-000000000001',
   session: '84900000-0000-4000-8000-000000000002',
+  otherSession: '84900000-0000-4000-8000-00000000000e',
   firstRequest: '84900000-0000-4000-8000-000000000003',
   secondRequest: '84900000-0000-4000-8000-000000000004',
   household: '84900000-0000-4000-8000-000000000005',
@@ -57,7 +58,11 @@ const collect = async <Value>(
   return values;
 };
 
-const completedTurnResult = (runId: string, localTraceReference: string) =>
+const completedTurnResult = (
+  runId: string,
+  localTraceReference: string,
+  hasPartialFailures = false,
+) =>
   Object.freeze({
     status: 'completed',
     runId,
@@ -66,8 +71,26 @@ const completedTurnResult = (runId: string, localTraceReference: string) =>
       message: 'The approved calendar action was completed.',
       mutation: { created: 1 },
     },
-    specialistOutcomes: [],
-    hasPartialFailures: false,
+    specialistOutcomes: hasPartialFailures
+      ? [
+          {
+            delegationId: 'finance-delegation-1',
+            specialistId: 'finance',
+            status: 'failed',
+            safeError: {
+              code: 'finance-document-unavailable',
+              message: 'A Finance document could not be read safely.',
+              retryable: false,
+            },
+            usage: {
+              inputTokens: 0,
+              outputTokens: 0,
+              modelCostCadMinor: 0,
+            },
+          },
+        ]
+      : [],
+    hasPartialFailures,
     usage: {
       inputTokens: 7,
       outputTokens: 11,
@@ -103,14 +126,21 @@ describeDatabase(
     let approvalResumeResult: ReturnType<typeof completedTurnResult>;
     let legacyCompletedResult: ReturnType<typeof completedTurnResult>;
     let legacyCompletedWrapper: Readonly<Record<string, unknown>>;
+    let legacyApprovalResumeRunProjection: string;
+    let legacySettlementSerializationSql: string;
 
-    const settleApprovalResume = async (result: unknown): Promise<unknown> =>
+    const settleApprovalResumeAs = async (input: {
+      readonly result: unknown;
+      readonly ownershipToken?: string;
+      readonly requestId?: string;
+      readonly sessionId?: string;
+    }): Promise<unknown> =>
       withClaimedTransaction(
         runtime.scopedPool,
         {
           userId: secondPrincipal.userId,
-          sessionId: secondPrincipal.sessionId,
-          requestId: ids.secondRequest,
+          sessionId: input.sessionId ?? secondPrincipal.sessionId,
+          requestId: input.requestId ?? ids.secondRequest,
           householdId: secondPrincipal.householdId,
         },
         async (client) =>
@@ -119,10 +149,17 @@ describeDatabase(
               `select emdo.settle_approval_resume_job(
                  $1::uuid, $2::text, 'complete', null, $3::jsonb
                ) as settle_result`,
-              [ids.approvalResumeClaim, approvalResumeOwnershipToken, result],
+              [
+                ids.approvalResumeClaim,
+                input.ownershipToken ?? approvalResumeOwnershipToken,
+                input.result,
+              ],
             ),
           )?.settle_result,
       );
+
+    const settleApprovalResume = async (result: unknown): Promise<unknown> =>
+      settleApprovalResumeAs({ result });
 
     beforeAll(async () => {
       const { Client } = await import('pg');
@@ -143,7 +180,25 @@ describeDatabase(
           'TEST_RUN_EVENT_DATABASE_URL must point at an isolated empty database',
         );
       }
-      for (const migration of await loadOrderedMigrations()) {
+      const migrations = await loadOrderedMigrations();
+      const blockedResumeMigration = migrations.find(
+        ({ id }) => id === '0021_blocked_visual_decision_claim',
+      );
+      const legacyProjection = blockedResumeMigration?.sql.match(
+        /WITH canonical_legacy_terminal_resume_events AS \([\s\S]+?\n\tAND run\.completed_at IS NULL;/u,
+      )?.[0];
+      if (legacyProjection === undefined) {
+        throw new Error('Legacy approval-resume run projection is missing');
+      }
+      legacyApprovalResumeRunProjection = legacyProjection;
+      const settlementSerialization = blockedResumeMigration?.sql.match(
+        /SET LOCAL lock_timeout = '30s';\s*\n\s*--> statement-breakpoint\s*\nSET LOCAL statement_timeout = '30s';\s*\n\s*--> statement-breakpoint\s*\nLOCK TABLE emdo\.approval_resume_jobs IN EXCLUSIVE MODE;/u,
+      )?.[0];
+      if (settlementSerialization === undefined) {
+        throw new Error('Legacy approval-resume serialization is missing');
+      }
+      legacySettlementSerializationSql = settlementSerialization;
+      for (const migration of migrations) {
         await admin.query(migration.sql);
       }
       await admin.query(
@@ -174,6 +229,13 @@ describeDatabase(
          ) values ($1, $2, 'run-event-integration-token',
                    pg_catalog.clock_timestamp() + interval '1 hour', $3)`,
         [ids.session, ids.user, ids.household],
+      );
+      await admin.query(
+        `insert into emdo.auth_sessions(
+           id, user_id, token, expires_at, active_household_id
+         ) values ($1, $2, 'run-event-other-session-token',
+                   pg_catalog.clock_timestamp() + interval '1 hour', $3)`,
+        [ids.otherSession, ids.user, ids.household],
       );
       await admin.query(`drop role if exists ${loginRole}`);
       await admin.query(
@@ -318,6 +380,7 @@ describeDatabase(
       approvalResumeResult = completedTurnResult(
         approvalResumeRunId,
         'run-event-approval-resume-completed-trace',
+        true,
       );
 
       await admin.query(
@@ -455,12 +518,12 @@ describeDatabase(
            'run-event-approval-resume', $8, 'scheduler.calendar.write',
            $9, $10, $11, $12, $13, 1, '1.0.0', $14, $15,
            2, 'claimed', 3, $16, $17, $18, 'approved', $9, $19, $20,
-           $21, pg_catalog.clock_timestamp() - interval '1 second',
-           pg_catalog.clock_timestamp() + interval '5 minutes',
-           pg_catalog.clock_timestamp() - interval '2 minutes',
-           pg_catalog.clock_timestamp() - interval '1 second',
-           pg_catalog.clock_timestamp() + interval '5 minutes',
-           pg_catalog.clock_timestamp() + interval '89 days'
+           $21, pg_catalog.statement_timestamp() - interval '7 minutes',
+           pg_catalog.statement_timestamp() - interval '2 minutes',
+           pg_catalog.statement_timestamp() - interval '11 minutes',
+           pg_catalog.statement_timestamp() - interval '7 minutes',
+           pg_catalog.statement_timestamp() - interval '1 minute',
+           pg_catalog.statement_timestamp() + interval '89 days'
          )`,
         [
           ids.approvalResumeJob,
@@ -553,7 +616,78 @@ describeDatabase(
       ).rejects.toMatchObject({ code: 'authorization-revoked' });
     });
 
-    it('rejects malformed approvals, then appends and replays one direct completed terminal event', async () => {
+    it('serializes legacy settlement row locks and bounds a conflicting migration lock', async () => {
+      const { Client } = await import('pg');
+      const migration = new Client({ connectionString: databaseUrl });
+      const legacySettlement = new Client({ connectionString: databaseUrl });
+      await Promise.all([migration.connect(), legacySettlement.connect()]);
+
+      const waitForLock = async (pid: number): Promise<void> => {
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          const state = await admin.query<{ waiting: boolean }>(
+            `select wait_event_type = 'Lock' as waiting
+               from pg_catalog.pg_stat_activity
+              where pid = $1`,
+            [pid],
+          );
+          if (state.rows[0]?.waiting === true) return;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        throw new Error('Legacy settlement did not wait on the migration lock');
+      };
+
+      try {
+        const legacyPid = await legacySettlement.query<{ pid: number }>(
+          'select pg_catalog.pg_backend_pid() as pid',
+        );
+        const pid = legacyPid.rows[0]?.pid;
+        if (pid === undefined) {
+          throw new Error('Legacy settlement PostgreSQL pid is missing');
+        }
+
+        await migration.query('begin');
+        await migration.query(legacySettlementSerializationSql);
+        await legacySettlement.query('begin');
+        await legacySettlement.query("set local lock_timeout = '2s'");
+        const queuedLegacyRead = legacySettlement.query(
+          `select job_id
+             from emdo.approval_resume_jobs
+            where job_id = $1
+            for update`,
+          [ids.approvalResumeJob],
+        );
+        await waitForLock(pid);
+        await migration.query('commit');
+        await expect(queuedLegacyRead).resolves.toMatchObject({ rowCount: 1 });
+        await legacySettlement.query('rollback');
+
+        await legacySettlement.query('begin');
+        await legacySettlement.query(
+          `select job_id
+             from emdo.approval_resume_jobs
+            where job_id = $1
+            for update`,
+          [ids.approvalResumeJob],
+        );
+        await migration.query('begin');
+        await migration.query("set local lock_timeout = '100ms'");
+        await expect(
+          migration.query(
+            'LOCK TABLE emdo.approval_resume_jobs IN EXCLUSIVE MODE',
+          ),
+        ).rejects.toMatchObject({ code: '55P03' });
+        await migration.query('rollback');
+        await legacySettlement.query('rollback');
+      } finally {
+        await Promise.allSettled([
+          migration.query('rollback'),
+          legacySettlement.query('rollback'),
+        ]);
+        await Promise.all([migration.end(), legacySettlement.end()]);
+      }
+    });
+
+    it('rejects mismatched expired-claim settlement, then appends and replays one direct completed terminal event', async () => {
       const malformedUsage = {
         ...approvalResumeResult,
         usage: {
@@ -591,18 +725,435 @@ describeDatabase(
       await expect(settleApprovalResume(nullSpecialistStatus)).resolves.toEqual(
         { status: 'conflict' },
       );
+      await expect(
+        settleApprovalResumeAs({
+          result: approvalResumeResult,
+          ownershipToken: 'run-event-wrong-ownership-token-0001',
+        }),
+      ).resolves.toEqual({ status: 'conflict' });
+      await expect(
+        settleApprovalResumeAs({
+          result: approvalResumeResult,
+          requestId: ids.firstRequest,
+        }),
+      ).resolves.toEqual({ status: 'conflict' });
+      await expect(
+        settleApprovalResumeAs({
+          result: approvalResumeResult,
+          sessionId: ids.otherSession,
+        }),
+      ).resolves.toEqual({ status: 'conflict' });
+
+      const staleUsage = {
+        inputTokens: 1,
+        outputTokens: 2,
+        modelCostCadMinor: 3,
+      };
+      const staleSafeError = {
+        code: 'pre-resume-stale',
+        message: 'Stale pre-resume error.',
+        retryable: false,
+      };
+      const failedResumeResult = {
+        status: 'failed',
+        runId: approvalResumeRunId,
+        localTraceReference: 'run-event-approval-resume-failed-trace',
+        safeError: {
+          code: 'approval-resume-provider-failed',
+          message: 'The resumed provider action failed safely.',
+          retryable: false,
+        },
+        specialistOutcomes: [],
+        usage: {
+          inputTokens: 17,
+          outputTokens: 19,
+          modelCostCadMinor: 23,
+        },
+        modelResolution: {
+          status: 'unavailable',
+          requestedModel: 'gpt-5.6-luna',
+          attemptedModels: ['gpt-5.6-luna'],
+          reason: 'configured-model-fallback-not-allowed',
+          safeError: {
+            code: 'agent-model-fallback-not-allowed',
+            message: 'The active agent policy does not allow a model fallback.',
+            retryable: false,
+          },
+        },
+      };
+      const legacyAuditEnvelope = await admin.query<{ payload: string }>(
+        `select pg_catalog.jsonb_strip_nulls(
+           pg_catalog.jsonb_build_object(
+             'schemaVersion', 1,
+             'runId', $1::uuid,
+             'proposalId', $2::uuid,
+             'approvalDecisionId', $3::uuid,
+             'status', 'completed',
+             'reasonCode', null,
+             'result', $4::jsonb
+           )
+         )::text as payload`,
+        [approvalResumeRunId, ids.proposal, ids.decision, approvalResumeResult],
+      );
+      const legacyAuditPayload = legacyAuditEnvelope.rows[0]?.payload;
+      if (legacyAuditPayload === undefined) {
+        throw new Error(
+          'Legacy approval-resume audit envelope was not rendered',
+        );
+      }
+      const legacyTerminalResultHash = createHash('sha256')
+        .update('emdo.approval-resume-terminal.v1')
+        .update('\0')
+        .update(legacyAuditPayload)
+        .digest('hex');
+      await admin.query('begin');
+      try {
+        await admin.query(
+          `update emdo.agent_runs
+              set status = 'blocked', resolved_model = 'gpt-5.6-luna',
+                  model_reason = 'luna-unavailable',
+                  local_trace_reference = 'pre-resume-stale-trace',
+                  safe_error = $2::jsonb, usage = $3::jsonb
+            where id = $1 and status = 'running' and completed_at is null`,
+          [approvalResumeRunId, staleSafeError, staleUsage],
+        );
+        await admin.query(
+          `select pg_catalog.set_config('emdo.user_id', $1, true),
+                  pg_catalog.set_config('emdo.session_id', $2, true),
+                  pg_catalog.set_config('emdo.request_id', $3, true),
+                  pg_catalog.set_config('emdo.household_id', $4, true)`,
+          [ids.user, ids.session, ids.secondRequest, ids.household],
+        );
+        await admin.query('set local role emdo_approval_resume_executor');
+        await admin.query(
+          `insert into emdo.agent_run_events(
+             household_id, space_id, original_owner_user_id, run_id,
+             sequence, event_type, payload, occurred_at, retain_until
+           ) values (
+             $1, $2, $3, $4, 3, 'run.completed', $5::jsonb,
+             pg_catalog.clock_timestamp(),
+             pg_catalog.clock_timestamp() + interval '89 days'
+           )`,
+          [
+            ids.household,
+            ids.space,
+            ids.user,
+            approvalResumeRunId,
+            approvalResumeResult,
+          ],
+        );
+        await admin.query(
+          `update emdo.approval_resume_jobs
+              set state = 'terminal', revision = revision + 1,
+                  terminal_event_sequence = 3,
+                  terminal_reason_code = null,
+                  terminal_result_hash = $2,
+                  updated_at = pg_catalog.clock_timestamp()
+            where job_id = $1 and state = 'claimed'`,
+          [ids.approvalResumeJob, legacyTerminalResultHash],
+        );
+        await admin.query('reset role');
+        const legacyProjection = await admin.query<{
+          resume_state: string;
+          run_status: string;
+          resolved_model: string | null;
+          model_reason: string | null;
+          local_trace_reference: string;
+          safe_error: unknown;
+          usage: unknown;
+          completed_at: Date | null;
+        }>(
+          `select resume.state as resume_state, run.status as run_status,
+                  run.resolved_model, run.model_reason,
+                  run.local_trace_reference, run.safe_error, run.usage,
+                  run.completed_at
+             from emdo.approval_resume_jobs as resume
+             join emdo.agent_runs as run on run.id = resume.run_id
+            where resume.job_id = $1`,
+          [ids.approvalResumeJob],
+        );
+        expect(legacyProjection.rows[0]).toMatchObject({
+          resume_state: 'terminal',
+          run_status: 'completed',
+          resolved_model: approvalResumeResult.modelResolution.resolvedModel,
+          model_reason: approvalResumeResult.modelResolution.reason,
+          local_trace_reference: approvalResumeResult.localTraceReference,
+          safe_error: null,
+          usage: approvalResumeResult.usage,
+        });
+        expect(legacyProjection.rows[0]?.completed_at).toBeInstanceOf(Date);
+      } finally {
+        await admin.query('rollback');
+      }
+      const probeSettlementMetadata = async (input: {
+        readonly mode:
+          'complete' | 'terminalize-not-dispatched' | 'indeterminate';
+        readonly reasonCode: string | null;
+        readonly result: unknown;
+        readonly tamperTerminalHash?: boolean;
+      }) => {
+        await admin.query('begin');
+        try {
+          await admin.query(
+            `update emdo.agent_runs
+                set status = 'blocked', resolved_model = 'gpt-5.6-luna',
+                    model_reason = 'luna-unavailable',
+                    local_trace_reference = 'pre-resume-stale-trace',
+                    safe_error = $2::jsonb, usage = $3::jsonb
+              where id = $1 and status = 'running' and completed_at is null`,
+            [approvalResumeRunId, staleSafeError, staleUsage],
+          );
+          await admin.query(
+            `select pg_catalog.set_config('emdo.user_id', $1, true),
+                    pg_catalog.set_config('emdo.session_id', $2, true),
+                    pg_catalog.set_config('emdo.request_id', $3, true),
+                    pg_catalog.set_config('emdo.household_id', $4, true)`,
+            [ids.user, ids.session, ids.secondRequest, ids.household],
+          );
+          await admin.query('set local role emdo_app');
+          const settlement = await admin.query<{ settle_result: unknown }>(
+            `select emdo.settle_approval_resume_job(
+               $1::uuid, $2::text, $3::text, $4::text, $5::jsonb
+             ) as settle_result`,
+            [
+              ids.approvalResumeClaim,
+              approvalResumeOwnershipToken,
+              input.mode,
+              input.reasonCode,
+              input.result,
+            ],
+          );
+          await admin.query('reset role');
+          const readProjection = () =>
+            admin.query<{
+              resume_state: string;
+              run_status: string;
+              resolved_model: string | null;
+              model_reason: string | null;
+              local_trace_reference: string;
+              safe_error: unknown;
+              usage: unknown;
+              completed_at: Date | null;
+            }>(
+              `select resume.state as resume_state, run.status as run_status,
+                      run.resolved_model, run.model_reason,
+                      run.local_trace_reference, run.safe_error, run.usage,
+                      run.completed_at
+                 from emdo.approval_resume_jobs as resume
+                 join emdo.agent_runs as run on run.id = resume.run_id
+                where resume.job_id = $1`,
+              [ids.approvalResumeJob],
+            );
+          const projection = await readProjection();
+          if (input.tamperTerminalHash === true) {
+            await admin.query(
+              `alter table emdo.approval_resume_jobs
+                 disable trigger approval_resume_jobs_transition`,
+            );
+            await admin.query(
+              `update emdo.approval_resume_jobs
+                  set terminal_result_hash = case
+                    when terminal_result_hash = repeat('f', 64)
+                      then repeat('e', 64)
+                    else repeat('f', 64)
+                  end
+                where job_id = $1`,
+              [ids.approvalResumeJob],
+            );
+            await admin.query(
+              `alter table emdo.approval_resume_jobs
+                 enable trigger approval_resume_jobs_transition`,
+            );
+          }
+          await admin.query(
+            `update emdo.agent_runs
+                set status = 'blocked', resolved_model = 'gpt-5.6-luna',
+                    model_reason = 'luna-unavailable',
+                    local_trace_reference = 'pre-resume-stale-trace',
+                    safe_error = $2::jsonb, usage = $3::jsonb,
+                    completed_at = null
+              where id = $1`,
+            [approvalResumeRunId, staleSafeError, staleUsage],
+          );
+          await admin.query(legacyApprovalResumeRunProjection);
+          const backfillProjection = await readProjection();
+          return {
+            settlement: settlement.rows[0]?.settle_result,
+            projection: projection.rows[0],
+            backfillProjection: backfillProjection.rows[0],
+          };
+        } finally {
+          await admin.query('rollback');
+        }
+      };
+
+      const completedProbe = await probeSettlementMetadata({
+        mode: 'complete',
+        reasonCode: null,
+        result: approvalResumeResult,
+      });
+      expect(completedProbe.settlement).toEqual({
+        status: 'completed',
+        terminalEventSequence: 3,
+      });
+      for (const projection of [
+        completedProbe.projection,
+        completedProbe.backfillProjection,
+      ]) {
+        expect(projection).toMatchObject({
+          resume_state: 'terminal',
+          run_status: 'completed',
+          resolved_model: approvalResumeResult.modelResolution.resolvedModel,
+          model_reason: approvalResumeResult.modelResolution.reason,
+          local_trace_reference: approvalResumeResult.localTraceReference,
+          safe_error: null,
+          usage: approvalResumeResult.usage,
+        });
+        expect(projection?.completed_at).toBeInstanceOf(Date);
+      }
+
+      const hashMismatchProbe = await probeSettlementMetadata({
+        mode: 'complete',
+        reasonCode: null,
+        result: approvalResumeResult,
+        tamperTerminalHash: true,
+      });
+      expect(hashMismatchProbe.backfillProjection).toMatchObject({
+        resume_state: 'terminal',
+        run_status: 'blocked',
+        resolved_model: 'gpt-5.6-luna',
+        model_reason: 'luna-unavailable',
+        local_trace_reference: 'pre-resume-stale-trace',
+        safe_error: staleSafeError,
+        usage: staleUsage,
+        completed_at: null,
+      });
+
+      const failedProbe = await probeSettlementMetadata({
+        mode: 'complete',
+        reasonCode: null,
+        result: failedResumeResult,
+      });
+      expect(failedProbe.settlement).toEqual({
+        status: 'completed',
+        terminalEventSequence: 3,
+      });
+      for (const projection of [
+        failedProbe.projection,
+        failedProbe.backfillProjection,
+      ]) {
+        expect(projection).toMatchObject({
+          resume_state: 'terminal',
+          run_status: 'failed',
+          resolved_model: null,
+          model_reason: 'configured-model-fallback-not-allowed',
+          local_trace_reference: failedResumeResult.localTraceReference,
+          safe_error: failedResumeResult.safeError,
+          usage: failedResumeResult.usage,
+        });
+        expect(projection?.completed_at).toBeInstanceOf(Date);
+      }
+
+      for (const branch of [
+        {
+          mode: 'terminalize-not-dispatched' as const,
+          reasonCode: 'approval-resume-binding-invalid',
+          expectedState: 'terminal',
+          expectedStatus: 'terminalized',
+          expectedTrace: 'approval-resume-terminalized-before-dispatch',
+          expectedSafeError: {
+            code: 'approval-resume-binding-invalid',
+            message: 'The approved action could not be resumed safely.',
+            retryable: false,
+          },
+        },
+        {
+          mode: 'indeterminate' as const,
+          reasonCode: 'approval-resume-failed',
+          expectedState: 'indeterminate',
+          expectedStatus: 'indeterminate',
+          expectedTrace: 'approval-resume-indeterminate',
+          expectedSafeError: {
+            code: 'approval-resume-failed',
+            message: 'The approved action could not be completed safely.',
+            retryable: false,
+          },
+        },
+      ]) {
+        const probe = await probeSettlementMetadata({
+          mode: branch.mode,
+          reasonCode: branch.reasonCode,
+          result: null,
+        });
+        expect(probe.settlement).toEqual({
+          status: branch.expectedStatus,
+          terminalEventSequence: 3,
+        });
+        for (const projection of [probe.projection, probe.backfillProjection]) {
+          expect(projection).toMatchObject({
+            resume_state: branch.expectedState,
+            run_status: 'failed',
+            resolved_model: 'gpt-5.6-luna',
+            model_reason: 'luna-unavailable',
+            local_trace_reference: branch.expectedTrace,
+            safe_error: branch.expectedSafeError,
+            usage: staleUsage,
+          });
+          expect(projection?.completed_at).toBeInstanceOf(Date);
+        }
+      }
+
+      const expiredClaimOwnership = await admin.query<{
+        claim_id: string;
+        ownership_token_digest: string;
+        revision: number;
+        claim_expired: boolean;
+        job_expired: boolean;
+      }>(
+        `select claim_id, ownership_token_digest, revision,
+                claim_expires_at <= pg_catalog.clock_timestamp()
+                  as claim_expired,
+                expires_at <= pg_catalog.clock_timestamp() as job_expired
+           from emdo.approval_resume_jobs
+          where job_id = $1`,
+        [ids.approvalResumeJob],
+      );
+      expect(expiredClaimOwnership.rows).toEqual([
+        {
+          claim_id: ids.approvalResumeClaim,
+          ownership_token_digest: approvalResumeOwnershipTokenDigest,
+          revision: 3,
+          claim_expired: true,
+          job_expired: true,
+        },
+      ]);
+
+      await expect(
+        settleApprovalResume(approvalResumeResult),
+      ).rejects.toMatchObject({
+        code: 'P0001',
+        message: 'approval resume run lock failed',
+      });
 
       const beforeValidSettlement = await admin.query<{
         state: string;
         terminal_event_sequence: number | null;
         terminal_result_hash: string | null;
         event_count: string;
+        run_status: string;
+        completed_at: Date | null;
+        checkpoint_state: string;
       }>(
         `select resume.state, resume.terminal_event_sequence,
                 resume.terminal_result_hash,
+                run.status as run_status, run.completed_at,
+                checkpoint.state as checkpoint_state,
                 (select count(*)::text from emdo.agent_run_events
                   where run_id = $2) as event_count
            from emdo.approval_resume_jobs as resume
+           join emdo.agent_runs as run on run.id = resume.run_id
+           join emdo.approval_checkpoints as checkpoint
+             on checkpoint.checkpoint_id = resume.checkpoint_id
           where resume.job_id = $1`,
         [ids.approvalResumeJob, approvalResumeRunId],
       );
@@ -612,7 +1163,29 @@ describeDatabase(
           terminal_event_sequence: null,
           terminal_result_hash: null,
           event_count: '2',
+          run_status: 'running',
+          completed_at: null,
+          checkpoint_state: 'pending',
         },
+      ]);
+
+      const pausedRun = await admin.query<{
+        status: string;
+        completed_at: Date | null;
+      }>(
+        `update emdo.agent_runs
+            set status = 'blocked',
+                resolved_model = 'gpt-5.6-luna',
+                model_reason = 'luna-unavailable',
+                local_trace_reference = 'pre-resume-stale-trace',
+                safe_error = '{"code":"pre-resume-stale","message":"Stale pre-resume error.","retryable":false}'::jsonb,
+                usage = '{"inputTokens":1,"outputTokens":2,"modelCostCadMinor":3}'::jsonb
+          where id = $1 and status = 'running' and completed_at is null
+          returning status, completed_at`,
+        [approvalResumeRunId],
+      );
+      expect(pausedRun.rows).toEqual([
+        { status: 'blocked', completed_at: null },
       ]);
 
       await expect(settleApprovalResume(approvalResumeResult)).resolves.toEqual(
@@ -668,10 +1241,25 @@ describeDatabase(
         state: string;
         terminal_event_sequence: string;
         terminal_result_hash: string;
+        run_status: string;
+        resolved_model: string;
+        model_reason: string;
+        local_trace_reference: string;
+        safe_error: unknown;
+        usage: unknown;
+        completed_at: Date;
+        checkpoint_state: string;
       }>(
-        `select state, terminal_event_sequence, terminal_result_hash
-           from emdo.approval_resume_jobs
-          where job_id = $1`,
+        `select resume.state, resume.terminal_event_sequence,
+                resume.terminal_result_hash, run.status as run_status,
+                run.resolved_model, run.model_reason,
+                run.local_trace_reference, run.safe_error, run.usage,
+                run.completed_at, checkpoint.state as checkpoint_state
+           from emdo.approval_resume_jobs as resume
+           join emdo.agent_runs as run on run.id = resume.run_id
+           join emdo.approval_checkpoints as checkpoint
+             on checkpoint.checkpoint_id = resume.checkpoint_id
+          where resume.job_id = $1`,
         [ids.approvalResumeJob],
       );
       const auditEnvelope = await admin.query<{ payload: string }>(
@@ -697,13 +1285,20 @@ describeDatabase(
         .update('\0')
         .update(auditPayload)
         .digest('hex');
-      expect(terminal.rows).toEqual([
-        {
-          state: 'terminal',
-          terminal_event_sequence: '3',
-          terminal_result_hash: expectedTerminalResultHash,
-        },
-      ]);
+      expect(terminal.rows).toHaveLength(1);
+      expect(terminal.rows[0]).toMatchObject({
+        state: 'terminal',
+        terminal_event_sequence: '3',
+        terminal_result_hash: expectedTerminalResultHash,
+        run_status: 'completed',
+        resolved_model: approvalResumeResult.modelResolution.resolvedModel,
+        model_reason: approvalResumeResult.modelResolution.reason,
+        local_trace_reference: approvalResumeResult.localTraceReference,
+        safe_error: null,
+        usage: approvalResumeResult.usage,
+        checkpoint_state: 'cancelled',
+      });
+      expect(terminal.rows[0]?.completed_at).toBeInstanceOf(Date);
 
       await expect(settleApprovalResume(approvalResumeResult)).resolves.toEqual(
         {

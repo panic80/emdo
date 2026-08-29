@@ -3082,6 +3082,250 @@ describe('AgentOrchestrator', () => {
     });
   });
 
+  it('resumes an approved write by dispatching its ready dependent specialist', async () => {
+    const requests: AgentProviderRequest[] = [];
+    const execute = vi.fn(async (request: AgentProviderRequest) => {
+      requests.push(request);
+      if (request.phase === 'plan') {
+        return completed({
+          delegations: [
+            {
+              id: 'calendar-write',
+              specialistId: 'scheduler',
+              input: { title: 'Dentist' },
+              dependsOn: [],
+            },
+            {
+              id: 'finance-after-calendar',
+              specialistId: 'finance',
+              input: { request: 'update the monthly budget' },
+              dependsOn: ['calendar-write'],
+            },
+          ],
+        });
+      }
+      if (request.phase === 'specialist') {
+        const records = (
+          request.input as Readonly<{
+            readonly records: readonly Readonly<{
+              readonly fields: Readonly<{
+                readonly delegation?: Readonly<{ readonly id: string }>;
+              }>;
+            }>[];
+          }>
+        ).records;
+        const delegationId = records.find(
+          (record) => record.fields.delegation !== undefined,
+        )?.fields.delegation?.id;
+        if (delegationId === 'calendar-write') {
+          return Object.freeze({
+            status: 'interrupted' as const,
+            serializedState: JSON.stringify({ sdk: 'pending-calendar-write' }),
+            interruptions: Object.freeze([
+              Object.freeze({
+                id: 'approval-calendar-1',
+                agentId: 'scheduler',
+                capabilityId: 'google-calendar.event.create',
+                proposalId,
+                argumentsPreview: Object.freeze({ title: 'Dentist' }),
+                sdkCallId: 'call-calendar-approved-dependency',
+                providerAuthorityBindingHash,
+                authorizationScopeFingerprint:
+                  ids.authorizationScopeFingerprint,
+              }),
+            ]),
+            usage: Object.freeze({
+              inputTokens: 10,
+              outputTokens: 2,
+              modelCostCadMinor: 1,
+            }),
+          });
+        }
+        expect(delegationId).toBe('finance-after-calendar');
+        expect(records).toHaveLength(2);
+        expect(records).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              dataClass: 'agent.delegations',
+              fields: expect.objectContaining({
+                delegation: expect.objectContaining({
+                  id: 'finance-after-calendar',
+                }),
+              }),
+            }),
+            expect.objectContaining({
+              dataClass: 'agent.specialist-outcomes',
+              fields: expect.objectContaining({
+                outcome: expect.objectContaining({
+                  delegationId: 'calendar-write',
+                  status: 'completed',
+                  output: { eventProposal: 'ready' },
+                }),
+              }),
+            }),
+          ]),
+        );
+        return completed({ budgetUpdated: true });
+      }
+      return completed({ message: 'Calendar and budget are up to date.' });
+    });
+    const { orchestrator } = setup(execute);
+
+    const paused = await orchestrator.runTurn(turn());
+    if (paused.status !== 'needs-approval') throw new Error('not paused');
+
+    await expect(
+      orchestrator.resumeTurn({
+        requestId: '018f1f5e-1000-7000-8000-000000000071',
+        runId: ids.runId,
+        householdId: ids.householdId,
+        userId: ids.userId,
+        conversationId: ids.conversationId,
+        spaceAccessGrantId: ids.spaceAccessGrantId,
+        ...resumeAuthority,
+        checkpointId: paused.checkpoint.checkpointId,
+        interruptionId: paused.interruptions[0]!.id,
+        proposalId,
+        approvalDecisionId,
+        decision: 'approve',
+        approvalChannel: 'authenticated-visual',
+        abortSignal: new AbortController().signal,
+      }),
+    ).resolves.toMatchObject({
+      status: 'completed',
+      specialistOutcomes: [
+        { delegationId: 'calendar-write', status: 'completed' },
+        { delegationId: 'finance-after-calendar', status: 'completed' },
+      ],
+    });
+    expect(requests.map((request) => request.phase)).toEqual([
+      'plan',
+      'specialist',
+      'specialist',
+      'synthesize',
+    ]);
+  });
+
+  it('synthesizes rejected and blocked delegations without dispatching unfinished specialists', async () => {
+    let synthesisInput: JsonValue | undefined;
+    const execute = vi.fn(async (request: AgentProviderRequest) => {
+      if (request.phase === 'plan') {
+        return completed({
+          delegations: [
+            {
+              id: 'calendar-write',
+              specialistId: 'scheduler',
+              input: { title: 'Dentist' },
+              dependsOn: [],
+            },
+            {
+              id: 'finance-after-calendar',
+              specialistId: 'finance',
+              input: { request: 'update the monthly budget' },
+              dependsOn: ['calendar-write'],
+            },
+          ],
+        });
+      }
+      if (request.phase === 'specialist') {
+        return Object.freeze({
+          status: 'interrupted' as const,
+          serializedState: JSON.stringify({ sdk: 'pending-calendar-write' }),
+          interruptions: Object.freeze([
+            Object.freeze({
+              id: 'approval-calendar-1',
+              agentId: 'scheduler',
+              capabilityId: 'google-calendar.event.create',
+              proposalId,
+              argumentsPreview: Object.freeze({ title: 'Dentist' }),
+              sdkCallId: 'call-calendar-rejected-dependency',
+              providerAuthorityBindingHash,
+              authorizationScopeFingerprint: ids.authorizationScopeFingerprint,
+            }),
+          ]),
+          usage: Object.freeze({
+            inputTokens: 10,
+            outputTokens: 2,
+            modelCostCadMinor: 1,
+          }),
+        });
+      }
+      synthesisInput = request.input;
+      return completed({ message: 'The calendar action was not approved.' });
+    });
+    const { orchestrator, traceEvents } = setup(execute);
+
+    const paused = await orchestrator.runTurn(turn());
+    if (paused.status !== 'needs-approval') throw new Error('not paused');
+
+    const result = await orchestrator.resumeTurn({
+      requestId: '018f1f5e-1000-7000-8000-000000000072',
+      runId: ids.runId,
+      householdId: ids.householdId,
+      userId: ids.userId,
+      conversationId: ids.conversationId,
+      spaceAccessGrantId: ids.spaceAccessGrantId,
+      ...resumeAuthority,
+      checkpointId: paused.checkpoint.checkpointId,
+      interruptionId: paused.interruptions[0]!.id,
+      proposalId,
+      approvalDecisionId,
+      decision: 'reject',
+      approvalChannel: 'authenticated-visual',
+      abortSignal: new AbortController().signal,
+    });
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      hasPartialFailures: true,
+      specialistOutcomes: [
+        {
+          delegationId: 'calendar-write',
+          status: 'failed',
+          output: { rejected: true },
+          safeError: { code: 'approval-rejected', retryable: false },
+        },
+        {
+          delegationId: 'finance-after-calendar',
+          status: 'blocked',
+          safeError: { code: 'approval-rejected', retryable: false },
+        },
+      ],
+    });
+    expect(execute.mock.calls.map(([request]) => request.phase)).toEqual([
+      'plan',
+      'specialist',
+      'synthesize',
+    ]);
+    expect(
+      traceEvents.filter((event) => event.type === 'action.executed'),
+    ).toHaveLength(0);
+    expect(synthesisInput).toMatchObject({
+      records: expect.arrayContaining([
+        expect.objectContaining({
+          dataClass: 'agent.specialist-outcomes',
+          fields: expect.objectContaining({
+            outcome: expect.objectContaining({
+              delegationId: 'calendar-write',
+              status: 'failed',
+              output: { rejected: true },
+              safeError: expect.objectContaining({ code: 'approval-rejected' }),
+            }),
+          }),
+        }),
+        expect.objectContaining({
+          dataClass: 'agent.specialist-outcomes',
+          fields: expect.objectContaining({
+            outcome: expect.objectContaining({
+              delegationId: 'finance-after-calendar',
+              status: 'blocked',
+            }),
+          }),
+        }),
+      ]),
+    });
+  });
+
   it('requires reconciliation and never redispatches after an approved write has an indeterminate SDK failure', async () => {
     let resumeCalls = 0;
     const execute = vi.fn(async (request: AgentProviderRequest) => {

@@ -1070,7 +1070,10 @@ const checkedScope = (
   ) {
     throw new Error('api-finance-specialist-request-binding-invalid');
   }
-  return deepFreeze({
+  // The binding values themselves must not be replaceable, but abortSignal is
+  // a live platform object. Deep-freezing it prevents AbortSignal.any() from
+  // registering dependent signals after an approval pause.
+  return Object.freeze({
     requestId: context.data.requestId,
     runId: context.data.runId,
     userId: principal.userId,

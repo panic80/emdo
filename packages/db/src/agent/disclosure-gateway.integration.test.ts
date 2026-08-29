@@ -24,6 +24,13 @@ const ids = {
   space: '82900000-0000-4000-8000-000000000006',
   run: '82900000-0000-4000-8000-000000000007',
   managerRun: '82900000-0000-4000-8000-000000000008',
+  blockedManagerRun: '82900000-0000-4000-8000-000000000009',
+  resumeProposal: '82900000-0000-4000-8000-00000000000a',
+  resumeDecision: '82900000-0000-4000-8000-00000000000b',
+  resumeCheckpoint: '82900000-0000-4000-8000-00000000000c',
+  resumeJob: '82900000-0000-4000-8000-00000000000d',
+  resumeClaim: '82900000-0000-4000-8000-00000000000e',
+  resumeConversation: '82900000-0000-4000-8000-00000000000f',
 };
 const principal = {
   userId: ids.user,
@@ -40,6 +47,7 @@ describeDatabase(
     let admin: import('pg').Client;
     let runtime: EmdoDatabaseClient;
     let spaceAccessGrantId: string;
+    let collectionAuthorizationScopeFingerprint: string;
 
     beforeAll(async () => {
       const { Client } = await import('pg');
@@ -123,6 +131,8 @@ describeDatabase(
         userId: ids.user,
       });
       spaceAccessGrantId = active.spaceAccessGrantId;
+      collectionAuthorizationScopeFingerprint =
+        active.collectionAuthorizationScopeFingerprint;
     }, 30_000);
 
     afterAll(async () => {
@@ -390,6 +400,297 @@ describeDatabase(
       ]);
       expect(JSON.stringify(delegatedAudit.rows)).not.toContain(
         'Manager Run Market',
+      );
+    });
+
+    it('authorizes an approved dependent specialist from a live blocked-resume row', async () => {
+      const authorizationScopeFingerprint = 'a'.repeat(64);
+      const payloadHash = 'b'.repeat(64);
+      const approvalHash = 'c'.repeat(64);
+      const issuer = new PostgresDataDisclosureGrantIssuer(
+        runtime.scopedPool,
+        principal,
+      );
+      const baseInput = {
+        requestId: ids.request,
+        runId: ids.blockedManagerRun,
+        householdId: ids.household,
+        userId: ids.user,
+        spaceId: ids.space,
+        spaceAccessGrantId,
+        provider: 'openai' as const,
+      };
+
+      await admin.query(
+        `insert into emdo.agent_runs(
+           id, household_id, space_id, original_owner_user_id,
+           agent_id, agent_version, requested_model, status
+         ) values ($1, $2, $3, $4, 'manager', '1.0.0', 'luna', 'running')`,
+        [ids.blockedManagerRun, ids.household, ids.space, ids.user],
+      );
+      const selectedDisclosure = await issuer.issue({
+        ...baseInput,
+        agentId: 'scheduler',
+        phasePurpose: 'specialist-execution',
+        disclosurePurpose: 'Run the selected Scheduler action.',
+        recordAllowlist: [
+          {
+            dataClass: 'agent.specialist-delegations',
+            recordId: 'selected-scheduler-delegation',
+            fields: ['request'],
+          },
+        ],
+      });
+      await admin.query(
+        `insert into emdo.action_proposals(
+           id, schema_version, household_id, space_id, original_owner_user_id,
+           run_id, disclosure_grant_id, authorization_scope_fingerprint,
+           provider_authority_binding_hash, provider_sdk_call_id,
+           disclosure_grant, capability_id, capability_fingerprint,
+           canonical_arguments, targets, before_preview, after_preview,
+           approval_display, provider_preconditions, payload_hash, approval_hash,
+           idempotency_key, created_at, expires_at
+         ) values (
+           $1, 1, $2, $3, $4, $5, $6, $7, $8,
+           'blocked-resume-selected-scheduler',
+           pg_catalog.jsonb_build_object(
+             'id', $6::uuid, 'runId', $5::uuid,
+             'householdId', $2::uuid, 'userId', $4::uuid
+           ),
+           'scheduler.calendar.write', $9,
+           '{}'::jsonb, '[]'::jsonb, '{}'::jsonb, '{}'::jsonb,
+           '{"schemaVersion":1,"title":"Review Scheduler action","summary":"Review the selected Scheduler action.","beforeSummary":"","afterSummary":"","fields":[]}'::jsonb,
+           '{}'::jsonb, $10, $11,
+           'blocked-resume-selected-scheduler-v1',
+           pg_catalog.clock_timestamp() - interval '1 second',
+           pg_catalog.clock_timestamp() + interval '5 minutes'
+         )`,
+        [
+          ids.resumeProposal,
+          ids.household,
+          ids.space,
+          ids.user,
+          ids.blockedManagerRun,
+          selectedDisclosure.grant.id,
+          authorizationScopeFingerprint,
+          'd'.repeat(64),
+          'e'.repeat(64),
+          payloadHash,
+          approvalHash,
+        ],
+      );
+      await admin.query(
+        `insert into emdo.action_decisions(
+           id, schema_version, proposal_id, household_id, space_id,
+           original_owner_user_id, authenticated_session_id, payload_hash,
+           approval_hash, decision, channel, decided_at, idempotency_key
+         ) values (
+           $1, 1, $2, $3, $4, $5, $6, $7, $8, 'approved',
+           'authenticated-visual', pg_catalog.clock_timestamp() - interval '1 second',
+           'blocked-resume-selected-scheduler-decision-v1'
+         )`,
+        [
+          ids.resumeDecision,
+          ids.resumeProposal,
+          ids.household,
+          ids.space,
+          ids.user,
+          ids.session,
+          payloadHash,
+          approvalHash,
+        ],
+      );
+      await admin.query(
+        `insert into emdo.approval_checkpoints(
+           checkpoint_id, household_id, space_id, user_id, run_id,
+           format_version, revision, state, agent_graph_hash, sdk_version,
+           sealed_state, created_at, expires_at, updated_at, retain_until
+         ) values (
+           $1, $2, $3, $4, $5, 1, 1, 'pending', $6,
+           'disclosure-integration', 'sealed blocked resume checkpoint',
+           pg_catalog.clock_timestamp() - interval '1 second',
+           pg_catalog.clock_timestamp() + interval '5 minutes',
+           pg_catalog.clock_timestamp() - interval '1 second',
+           pg_catalog.clock_timestamp() + interval '89 days'
+         )`,
+        [
+          ids.resumeCheckpoint,
+          ids.household,
+          ids.space,
+          ids.user,
+          ids.blockedManagerRun,
+          'f'.repeat(64),
+        ],
+      );
+      await admin.query(
+        `insert into emdo.agent_run_events(
+           household_id, space_id, original_owner_user_id, run_id,
+           sequence, event_type, payload, occurred_at, retain_until
+         ) values (
+           $1, $2, $3, $4, 1, 'approval.required',
+           pg_catalog.jsonb_build_object(
+             'status', 'needs-approval', 'runId', $4::uuid
+           ),
+           pg_catalog.clock_timestamp() - interval '1 second',
+           pg_catalog.clock_timestamp() + interval '89 days'
+         )`,
+        [ids.household, ids.space, ids.user, ids.blockedManagerRun],
+      );
+      // The real decision-and-claim aggregate is covered by the Finance synthetic
+      // runtime integration. This fixture isolates post-claim disclosure
+      // issue, resolve, and commit against the live PostgreSQL predicates.
+      await admin.query(
+        `insert into emdo.approval_resume_jobs(
+           job_id, household_id, space_id, user_id, run_id, conversation_id,
+           checkpoint_id, interruption_id, proposal_id, capability_id,
+           origin_session_id, origin_turn_request_id,
+           origin_space_access_grant_id, authorization_scope_fingerprint,
+           disclosure_grant_id, disclosure_grant_version,
+           disclosure_policy_version, payload_hash, approval_hash,
+           approval_event_sequence, state, revision, claim_id,
+           ownership_token_digest, decision_id, decision_type,
+           authenticated_session_id, resume_request_id,
+           resume_space_access_grant_id,
+           collection_authorization_scope_fingerprint, claimed_at,
+           claim_expires_at, created_at, updated_at, expires_at, retain_until
+         ) values (
+           $1, $2, $3, $4, $5, $6, $7,
+           'blocked-resume-selected-scheduler', $8, 'scheduler.calendar.write',
+           $9, $10, $11, $12, $13, $14, '1.0.0', $15, $16,
+           1, 'claimed', 3, $17, $18, $19, 'approved', $9, $10, $11,
+           $20, pg_catalog.clock_timestamp() - interval '1 second',
+           pg_catalog.clock_timestamp() + interval '4 minutes',
+           pg_catalog.clock_timestamp() - interval '2 seconds',
+           pg_catalog.clock_timestamp() - interval '1 second',
+           pg_catalog.clock_timestamp() + interval '5 minutes',
+           pg_catalog.clock_timestamp() + interval '89 days'
+         )`,
+        [
+          ids.resumeJob,
+          ids.household,
+          ids.space,
+          ids.user,
+          ids.blockedManagerRun,
+          ids.resumeConversation,
+          ids.resumeCheckpoint,
+          ids.resumeProposal,
+          ids.session,
+          ids.request,
+          spaceAccessGrantId,
+          authorizationScopeFingerprint,
+          selectedDisclosure.grant.id,
+          selectedDisclosure.grant.version,
+          payloadHash,
+          approvalHash,
+          ids.resumeClaim,
+          '1'.repeat(64),
+          ids.resumeDecision,
+          collectionAuthorizationScopeFingerprint,
+        ],
+      );
+      await admin.query(
+        `update emdo.agent_runs
+            set status = 'blocked'
+          where id = $1 and status = 'running'`,
+        [ids.blockedManagerRun],
+      );
+
+      const dependentDisclosure = await issuer.issue({
+        ...baseInput,
+        agentId: 'finance',
+        phasePurpose: 'specialist-execution',
+        disclosurePurpose:
+          'Run the dependent Finance specialist after the approved action.',
+        recordAllowlist: [
+          {
+            dataClass: 'agent.specialist-outcomes',
+            recordId: 'approved-scheduler-outcome',
+            fields: ['summary'],
+          },
+        ],
+      });
+      const gateway = new PostgresModelDisclosureGateway(
+        runtime.scopedPool,
+        principal,
+        new CanonicalRecordEnvelopeDisclosureFilter(),
+      );
+      await expect(
+        gateway.authorize({
+          requestId: ids.request,
+          runId: ids.blockedManagerRun,
+          householdId: ids.household,
+          userId: ids.user,
+          spaceAccessGrantId,
+          agentId: 'finance',
+          phasePurpose: 'specialist-execution',
+          provider: 'openai',
+          requestedGrantId: dependentDisclosure.grant.id,
+          requestedDataClasses: ['agent.specialist-outcomes'],
+          payload: {
+            schemaVersion: 1,
+            records: [
+              {
+                dataClass: 'agent.specialist-outcomes',
+                recordId: 'approved-scheduler-outcome',
+                fields: { summary: 'The approved Scheduler action completed.' },
+              },
+            ],
+          },
+        }),
+      ).resolves.toMatchObject({
+        status: 'authorized',
+        grantId: dependentDisclosure.grant.id,
+        agentId: 'finance',
+      });
+      await expect(
+        issuer.issue({
+          ...baseInput,
+          agentId: 'manager',
+          phasePurpose: 'manager-plan',
+          disclosurePurpose: 'Planning must not restart on a blocked run.',
+          recordAllowlist: [
+            {
+              dataClass: 'agent.specialist-outcomes',
+              recordId: 'approved-scheduler-outcome',
+              fields: ['summary'],
+            },
+          ],
+        }),
+      ).rejects.toMatchObject({ code: 'authorization-revoked' });
+
+      const audit = await admin.query<{
+        event_type: string;
+        agent_id: string;
+        phase_purpose: string;
+        payload: unknown;
+      }>(
+        `select event_type, payload ->> 'agentId' as agent_id,
+                payload ->> 'phasePurpose' as phase_purpose, payload
+           from emdo.audit_events
+          where run_id = $1 and payload ->> 'agentId' = 'finance'
+          order by event_type`,
+        [ids.blockedManagerRun],
+      );
+      expect(
+        audit.rows.map(({ event_type, agent_id, phase_purpose }) => ({
+          eventType: event_type,
+          agentId: agent_id,
+          phasePurpose: phase_purpose,
+        })),
+      ).toEqual([
+        {
+          eventType: 'model.disclosure.granted',
+          agentId: 'finance',
+          phasePurpose: 'specialist-execution',
+        },
+        {
+          eventType: 'model.disclosure.sent',
+          agentId: 'finance',
+          phasePurpose: 'specialist-execution',
+        },
+      ]);
+      expect(JSON.stringify(audit.rows)).not.toContain(
+        'The approved Scheduler action completed.',
       );
     });
 
