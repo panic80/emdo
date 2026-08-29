@@ -340,6 +340,35 @@ describe('ApprovalCheckpointService', () => {
     );
   });
 
+  it('round-trips dotted key IDs and rejects malformed or tampered envelopes', async () => {
+    const keyId = 'approval.checkpoint-key.v1';
+    const cipher = new AesGcmApprovalCheckpointCipher({
+      activeKeyId: keyId,
+      keys: { [keyId]: randomBytes(32) },
+    });
+    const aad = {
+      ...identity,
+      formatVersion: 1 as const,
+      createdAt: '2026-08-09T15:00:00.000Z',
+      expiresAt: '2026-08-09T15:10:00.000Z',
+    };
+    const sealed = await cipher.seal('{"turn":1}', aad);
+
+    expect(sealed.startsWith(`v1.${keyId}.`)).toBe(true);
+    await expect(cipher.open(sealed, aad)).resolves.toBe('{"turn":1}');
+
+    const ciphertextStart = sealed.lastIndexOf('.') + 1;
+    const tampered = `${sealed.slice(0, ciphertextStart)}${
+      sealed[ciphertextStart] === 'A' ? 'B' : 'A'
+    }${sealed.slice(ciphertextStart + 1)}`;
+    await expect(cipher.open(tampered, aad)).rejects.toThrow(
+      'approval-checkpoint-decryption-failed',
+    );
+    await expect(cipher.open(`${sealed}.`, aad)).rejects.toThrow(
+      'approval-checkpoint-decryption-failed',
+    );
+  });
+
   it('rejects accessor-backed checkpoint identities before encryption', async () => {
     const { service, repository } = createFixture();
     let householdReads = 0;
