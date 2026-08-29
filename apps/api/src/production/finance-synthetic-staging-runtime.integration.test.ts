@@ -2,7 +2,10 @@ import { createHash, createHmac, randomUUID } from 'node:crypto';
 
 import {
   CanonicalRecordEnvelopeDisclosureFilter,
+  createPostgresExperienceReadGateways,
+  ExperienceQueryCursorCodec,
   PostgresFinanceDocumentRepository,
+  PostgresFinanceSpecialistRecordRepository,
   PostgresManagerTurnStore,
   PostgresModelDisclosureGateway,
   PostgresProposalQueryRepository,
@@ -103,6 +106,17 @@ const ids = Object.freeze({
   visualDecisionRequest: 'f3100000-0000-4000-8000-000000000016',
   questionGrant: 'f3100000-0000-4000-8000-000000000017',
   questionRequest: 'f3100000-0000-4000-8000-000000000018',
+  safeWriteGrant: 'f3100000-0000-4000-8000-000000000019',
+  safeWriteRequest: 'f3100000-0000-4000-8000-000000000020',
+});
+
+const syntheticManualTransaction = Object.freeze({
+  id: 'finance-synthetic-staging-manual-transaction-v1',
+  accountId: 'synthetic-finance-account-v1',
+  categoryId: null,
+  postedOn: '2026-08-12',
+  description: 'EMDO synthetic staging manual transaction',
+  amountCadMinor: -123,
 });
 
 const sha256 = (value: string): string =>
@@ -1521,6 +1535,197 @@ describeDatabase(
             grantRequestId: ids.questionRequest,
           },
         ]);
+
+        const records = new PostgresFinanceSpecialistRecordRepository(
+          databasePool(appPool),
+        );
+        await expect(
+          records.provisionSyntheticStagingAccount({
+            scope: {
+              requestId: ids.request,
+              userId: ids.user,
+              householdId: ids.household,
+              sessionId: ids.session,
+              privateSpaceId: ids.privateSpace,
+              spaceAccessGrantId: ids.grant,
+              collectionAuthorizationScopeFingerprint:
+                collectionScopeFingerprint,
+              abortSignal: new AbortController().signal,
+            },
+            idempotencyKey: 'finance-synthetic-account-seed-v1',
+          }),
+        ).resolves.toMatchObject({ status: 'applied' });
+
+        await admin.query(
+          `insert into emdo.space_access_grants
+             (grant_id, household_id, original_owner_user_id, session_id,
+              request_id, membership_id, role, private_space_id,
+              writable_space_ids, issued_at, expires_at, retain_until)
+           values ($1, $2, $3, $4, $5, $6, 'owner', $7, array[$7::uuid],
+                   pg_catalog.clock_timestamp() - interval '1 second',
+                   pg_catalog.clock_timestamp() + interval '10 minutes',
+                   pg_catalog.clock_timestamp() + interval '89 days')`,
+          [
+            ids.safeWriteGrant,
+            ids.household,
+            ids.user,
+            ids.session,
+            ids.safeWriteRequest,
+            ids.membership,
+            ids.privateSpace,
+          ],
+        );
+        const safeWritePrincipal = Object.freeze({
+          ...principal,
+          spaceAccessGrantId: ids.safeWriteGrant,
+        });
+        observedRunTurnResult = undefined;
+        observedRunTurnError = undefined;
+        observedRunTurnFailureCode = undefined;
+        observedSyntheticRunnerErrors.length = 0;
+
+        const safeWriteAccepted =
+          await services.bindings.managerTurns.service.start({
+            request: {
+              schemaVersion: 1,
+              locale: 'en-CA',
+              routeHint: 'finance',
+              message: formatFinanceSyntheticStagingCommand({
+                schemaVersion: 1,
+                action: 'create-manual-transaction',
+                recordId: syntheticManualTransaction.id,
+                record: {
+                  recordType: 'transaction',
+                  accountId: syntheticManualTransaction.accountId,
+                  categoryId: syntheticManualTransaction.categoryId,
+                  postedOn: syntheticManualTransaction.postedOn,
+                  description: syntheticManualTransaction.description,
+                  amountCadMinor: syntheticManualTransaction.amountCadMinor,
+                },
+              }),
+            },
+            principal: safeWritePrincipal,
+            requestId: ids.safeWriteRequest,
+            idempotencyKey: 'finance-staging-direct-safe-write-v1',
+          });
+        expect(safeWriteAccepted).toMatchObject({
+          status: 'accepted',
+          replayed: false,
+        });
+
+        const safeWriteEvents = await collect(
+          await services.bindings.runEvents.service.open({
+            runId: safeWriteAccepted.runId,
+            afterSequence: 0,
+            principal: safeWritePrincipal,
+            requestId: ids.safeWriteRequest,
+            abortSignal: new AbortController().signal,
+          }),
+        );
+        expect(observedRunTurnError).toBeUndefined();
+        expect(observedSyntheticRunnerErrors).toEqual([]);
+        expect(observedRunTurnFailureCode).toBeUndefined();
+        expect(
+          safeWriteEvents.map(({ sequence, type }) => ({ sequence, type })),
+        ).toEqual([
+          { sequence: 1, type: 'run.accepted' },
+          { sequence: 2, type: 'specialist.completed' },
+          { sequence: 3, type: 'run.completed' },
+        ]);
+        expect(safeWriteEvents.at(-1)).toMatchObject({
+          data: {
+            status: 'completed',
+            runId: safeWriteAccepted.runId,
+            output: {
+              summary: 'The manual transaction was recorded.',
+              evidenceReferences: [],
+              actionProposalReferences: [],
+            },
+          },
+        });
+
+        const persistedManualTransaction = await admin.query<{
+          accountId: string;
+          amountCadMinor: number;
+          description: string;
+          effectiveAmountCadMinor: number;
+          entityId: string;
+          postedOn: string;
+          recordType: string;
+          revision: number;
+        }>(
+          `select entity.entity_id as "entityId",
+                  entity.payload ->> 'recordType' as "recordType",
+                  entity.payload ->> 'accountId' as "accountId",
+                  entity.payload ->> 'postedOn' as "postedOn",
+                  entity.payload ->> 'description' as description,
+                  (entity.payload ->> 'originalAmountCadMinor')::integer
+                    as "amountCadMinor",
+                  (entity.payload ->> 'effectiveAmountCadMinor')::integer
+                    as "effectiveAmountCadMinor",
+                  entity.revision::integer as revision
+             from emdo.sync_entities as entity
+            where entity.household_id = $1
+              and entity.space_id = $2
+              and entity.original_owner_user_id = $3
+              and entity.entity_type = 'finance.transaction'
+              and entity.entity_id = $4
+              and entity.tombstoned_at is null`,
+          [
+            ids.household,
+            ids.privateSpace,
+            ids.user,
+            syntheticManualTransaction.id,
+          ],
+        );
+        expect(persistedManualTransaction.rows).toEqual([
+          {
+            entityId: syntheticManualTransaction.id,
+            recordType: 'transaction',
+            accountId: syntheticManualTransaction.accountId,
+            postedOn: syntheticManualTransaction.postedOn,
+            description: syntheticManualTransaction.description,
+            amountCadMinor: syntheticManualTransaction.amountCadMinor,
+            effectiveAmountCadMinor: syntheticManualTransaction.amountCadMinor,
+            revision: 1,
+          },
+        ]);
+
+        const experience = createPostgresExperienceReadGateways(
+          databasePool(appPool),
+          new ExperienceQueryCursorCodec({
+            current: {
+              keyId: 'finance-runtime-experience-v1',
+              secret: new Uint8Array(32).fill(65),
+            },
+            clock: () => new Date('2026-08-29T12:00:00.000Z'),
+          }),
+        );
+        const experiencePrincipal = Object.freeze({
+          userId: safeWritePrincipal.userId,
+          sessionId: safeWritePrincipal.sessionId,
+          householdId: safeWritePrincipal.householdId,
+          role: safeWritePrincipal.role,
+          emailVerified: safeWritePrincipal.emailVerified,
+          spaceAccessGrantId: safeWritePrincipal.spaceAccessGrantId,
+          collectionAuthorizationScopeFingerprint:
+            safeWritePrincipal.collectionAuthorizationScopeFingerprint,
+        });
+        const financePage = await experience.financeRead.list({
+          principal: experiencePrincipal,
+          requestId: ids.safeWriteRequest,
+          limit: 50,
+        });
+        expect(financePage.items).toContainEqual({
+          recordType: 'transaction',
+          id: syntheticManualTransaction.id,
+          description: syntheticManualTransaction.description,
+          category: 'uncategorized',
+          postedOn: syntheticManualTransaction.postedOn,
+          currency: 'CAD',
+          amountCadMinor: syntheticManualTransaction.amountCadMinor,
+          state: 'active',
+        });
       } finally {
         documentGateway.dispose();
         checkpointCipher.dispose();

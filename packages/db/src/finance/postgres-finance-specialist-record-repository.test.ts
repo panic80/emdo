@@ -662,6 +662,10 @@ describe('PostgresFinanceSpecialistRecordRepository', () => {
         String(sql).includes('from emdo.sync_entity_revisions as revision'),
       ),
     ).toBe(true);
+    const receiptRead = query.mock.calls.find(([sql]) =>
+      String(sql).includes('finance_specialist_record_receipts as receipt'),
+    );
+    expect(String(receiptRead?.[0])).not.toContain('for share');
   });
 
   it('uses the locked database revision for a non-destructive metadata patch', async () => {

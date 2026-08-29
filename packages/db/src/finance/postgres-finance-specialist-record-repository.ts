@@ -1933,8 +1933,7 @@ export class PostgresFinanceSpecialistRecordRepository {
             where receipt.household_id = $1::uuid
               and receipt.space_id = $2::uuid
               and receipt.original_owner_user_id = $3::uuid
-              and receipt.idempotency_key = $4::text
-            for share`,
+              and receipt.idempotency_key = $4::text`,
           [...scopeValues(command.scope), command.idempotencyKey],
         )
       ).rows,
