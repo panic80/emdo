@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   ActivityPageSchema,
   EffectiveAuthorizationScopeFingerprintSchema,
@@ -249,6 +251,10 @@ const EntityRowSchema = z.strictObject({
 });
 const FinanceEntityRowSchema = EntityRowSchema.extend({
   entity_type: z.enum(['finance.transaction', 'finance.budget']),
+  space_id: OpaqueReferenceSchema,
+});
+const FinancePageCategoryRowSchema = EntityRowSchema.extend({
+  space_id: OpaqueReferenceSchema,
 });
 
 const FinanceSnapshotEntityRowSchema = z.strictObject({
@@ -523,6 +529,117 @@ const financeSnapshotItemId = (input: {
   return id.length <= 512
     ? id
     : invalidResult('Finance budget allocation identifier is too long');
+};
+
+const modernFinancePageRecord = (input: {
+  readonly row: z.output<typeof FinanceEntityRowSchema>;
+  readonly expectedType: 'transaction' | 'budget';
+  readonly principal: z.output<typeof ApiPrincipalSchema>;
+}): FinanceRecord => {
+  const validated = validateFinanceRecord(input.row.payload);
+  if (
+    validated.status !== 'accepted' ||
+    validated.record.recordType !== input.expectedType ||
+    validated.record.id !== input.row.entity_id ||
+    validated.record.spaceId !== input.row.space_id ||
+    validated.record.ownerUserId !== input.principal.userId
+  ) {
+    return invalidResult(
+      'Database returned malformed owner-scoped Finance data',
+    );
+  }
+  return validated.record;
+};
+
+const financePageCategoryReference = (
+  spaceId: string,
+  categoryId: string,
+): string => `${spaceId.length}:${spaceId}${categoryId}`;
+
+const modernFinancePageCategoryNames = (input: {
+  readonly rows: readonly z.output<typeof FinancePageCategoryRowSchema>[];
+  readonly principal: z.output<typeof ApiPrincipalSchema>;
+}): ReadonlyMap<string, string> => {
+  if (input.rows.length > FINANCE_EXPERIENCE_LIMITS.maximumCategoryTotals) {
+    return invalidResult(
+      'Finance category scope exceeded the bounded page limit',
+    );
+  }
+  const names = new Map<string, string>();
+  for (const row of input.rows) {
+    const validated = validateFinanceRecord(row.payload);
+    if (
+      validated.status !== 'accepted' ||
+      validated.record.recordType !== 'category' ||
+      validated.record.id !== row.entity_id ||
+      validated.record.ownerUserId !== input.principal.userId ||
+      validated.record.spaceId !== row.space_id ||
+      names.has(financePageCategoryReference(row.space_id, validated.record.id))
+    ) {
+      return invalidResult(
+        'Database returned malformed owner-scoped Finance categories',
+      );
+    }
+    names.set(
+      financePageCategoryReference(row.space_id, validated.record.id),
+      validated.record.name,
+    );
+  }
+  return names;
+};
+
+const financePageCategory = (
+  spaceId: string,
+  categoryId: string | null,
+  categoryNames: ReadonlyMap<string, string>,
+): Readonly<{ readonly key: string; readonly label: string }> => {
+  if (categoryId === null) {
+    return { key: 'uncategorized', label: 'uncategorized' };
+  }
+  const name = categoryNames.get(
+    financePageCategoryReference(spaceId, categoryId),
+  );
+  if (name === undefined) {
+    return invalidResult(
+      'Database returned a Finance record with a missing category reference',
+    );
+  }
+  return {
+    key: `category-${createHash('sha256').update(categoryId, 'utf8').digest('hex')}`,
+    label: financePageCategoryLabel(name),
+  };
+};
+
+const financePageDescription = (description: string): string =>
+  description.length <= 160 ? description : description.slice(0, 160).trimEnd();
+
+const financePageCategoryLabel = (name: string): string =>
+  name.length <= 80 ? name : name.slice(0, 80).trimEnd();
+
+const modernFinancePageBudgetAllocations = (
+  record: Extract<FinanceRecord, { readonly recordType: 'budget' }>,
+  categoryNames: ReadonlyMap<string, string>,
+): Record<string, number> => {
+  if (record.allocations.length > 100) {
+    return invalidResult(
+      'Database returned a Finance budget exceeding the page allocation limit',
+    );
+  }
+  const allocations = new Map<string, number>();
+  for (const allocation of record.allocations) {
+    const category = financePageCategory(
+      record.spaceId,
+      allocation.categoryId,
+      categoryNames,
+    );
+    if (allocations.has(category.key)) {
+      return invalidResult(
+        'Database returned a Finance budget with duplicate category allocations',
+      );
+    }
+    allocations.set(category.key, allocation.amountCadMinor);
+  }
+  return Object.fromEntries(allocations);
 };
 
 const safeSnapshotTotal = (value: bigint): number => {
@@ -1340,7 +1457,7 @@ const createFinanceRead = (
     return withHouseholdScope(pool, parsed, async (client) => {
       const result = await client.query(
         `/* experience_finance_entities */
-         select entity_type, entity_id, payload, updated_at
+         select entity_type, entity_id, payload, updated_at, space_id
            from emdo.sync_entities
           where household_id = $1
             and entity_type in ('finance.transaction', 'finance.budget')
@@ -1364,12 +1481,61 @@ const createFinanceRead = (
         result.rows,
         'Database returned malformed finance rows',
       );
+      const categoryResult = await client.query(
+        `/* experience_finance_page_categories */
+         select entity_id, payload, updated_at, space_id
+           from emdo.sync_entities
+          where household_id = $1
+            and original_owner_user_id = $2
+            and entity_type = 'finance.category'
+            and tombstoned_at is null
+          order by id asc
+          limit 1001`,
+        [parsed.principal.householdId, parsed.principal.userId],
+      );
+      const categoryNames = modernFinancePageCategoryNames({
+        rows: parseRows(
+          FinancePageCategoryRowSchema,
+          categoryResult.rows,
+          'Database returned malformed Finance category rows',
+        ),
+        principal: parsed.principal,
+      });
       const page = rows.slice(0, parsed.limit).map((row) => {
         if (row.entity_type === 'finance.transaction') {
-          const transaction = CanonicalFinanceTransactionSchema.safeParse(
+          const legacy = CanonicalFinanceTransactionSchema.safeParse(
             row.payload,
           );
-          if (!transaction.success || transaction.data.id !== row.entity_id) {
+          if (legacy.success) {
+            if (legacy.data.id !== row.entity_id) {
+              return invalidResult(
+                'Database returned a malformed finance transaction',
+              );
+            }
+            return {
+              row,
+              item: {
+                recordType: 'transaction' as const,
+                id: legacy.data.id,
+                description: legacy.data.description,
+                category: legacy.data.category,
+                postedOn: legacy.data.postedOn,
+                currency: legacy.data.currency,
+                amountCadMinor: legacy.data.effectiveAmountCadMinor,
+                state: legacy.data.amountConflict
+                  ? ('needs-review' as const)
+                  : legacy.data.reversal === null
+                    ? ('active' as const)
+                    : ('reversed' as const),
+              },
+            };
+          }
+          const transaction = modernFinancePageRecord({
+            row,
+            expectedType: 'transaction',
+            principal: parsed.principal,
+          });
+          if (transaction.recordType !== 'transaction') {
             return invalidResult(
               'Database returned a malformed finance transaction',
             );
@@ -1378,31 +1544,58 @@ const createFinanceRead = (
             row,
             item: {
               recordType: 'transaction' as const,
-              id: transaction.data.id,
-              description: transaction.data.description,
-              category: transaction.data.category,
-              postedOn: transaction.data.postedOn,
-              currency: transaction.data.currency,
-              amountCadMinor: transaction.data.effectiveAmountCadMinor,
-              state: transaction.data.amountConflict
-                ? ('needs-review' as const)
-                : transaction.data.reversal === null
+              id: transaction.id,
+              description: financePageDescription(transaction.description),
+              category: financePageCategory(
+                transaction.spaceId,
+                transaction.categoryId,
+                categoryNames,
+              ).label,
+              postedOn: transaction.postedOn,
+              currency: transaction.currency,
+              amountCadMinor: transaction.effectiveAmountCadMinor,
+              state:
+                transaction.reversal === null
                   ? ('active' as const)
                   : ('reversed' as const),
             },
           };
         }
-        const budget = CanonicalFinanceBudgetSchema.safeParse(row.payload);
-        if (!budget.success || budget.data.id !== row.entity_id) {
+        const legacy = CanonicalFinanceBudgetSchema.safeParse(row.payload);
+        if (legacy.success) {
+          if (legacy.data.id !== row.entity_id) {
+            return invalidResult(
+              'Database returned a malformed finance budget',
+            );
+          }
+          return {
+            row,
+            item: {
+              recordType: 'budget' as const,
+              id: legacy.data.id,
+              currency: legacy.data.currency,
+              allocationsCadMinor: legacy.data.allocationsCadMinor,
+            },
+          };
+        }
+        const budget = modernFinancePageRecord({
+          row,
+          expectedType: 'budget',
+          principal: parsed.principal,
+        });
+        if (budget.recordType !== 'budget') {
           return invalidResult('Database returned a malformed finance budget');
         }
         return {
           row,
           item: {
             recordType: 'budget' as const,
-            id: budget.data.id,
-            currency: budget.data.currency,
-            allocationsCadMinor: budget.data.allocationsCadMinor,
+            id: budget.id,
+            currency: budget.currency,
+            allocationsCadMinor: modernFinancePageBudgetAllocations(
+              budget,
+              categoryNames,
+            ),
           },
         };
       });
