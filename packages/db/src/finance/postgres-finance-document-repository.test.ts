@@ -645,7 +645,7 @@ describe('PostgresFinanceDocumentRepository', () => {
     ).toBe(false);
   });
 
-  it('recovers legacy duplicate evidence identities while preserving the first locator', async () => {
+  it('recovers legacy duplicate evidence identities without retaining their dedicated chunks', async () => {
     const firstExcerpt = ['legacy', 'duplicate', 'evidence'].join(' ');
     const duplicateExcerpt = Buffer.from(firstExcerpt, 'utf8').toString('utf8');
     const firstLocator = { characterStart: 0, characterEnd: 25 };
@@ -653,23 +653,54 @@ describe('PostgresFinanceDocumentRepository', () => {
     const nextPageLocator = { characterStart: 52, characterEnd: 77 };
     const selectedFacts = {
       ...payload(),
+      chunks: [
+        {
+          ordinal: 0,
+          pageStart: 1,
+          pageEnd: 1,
+          content:
+            'emdo.finance-document.review-envelope.v1:1/1:eyJzY2hlbWFWZXJzaW9uIjoxfQ',
+          embedding: null,
+        },
+        {
+          ordinal: 1,
+          pageStart: 1,
+          pageEnd: 1,
+          content: firstExcerpt,
+          embedding: null,
+        },
+        {
+          ordinal: 2,
+          pageStart: 1,
+          pageEnd: 1,
+          content: duplicateExcerpt,
+          embedding: null,
+        },
+        {
+          ordinal: 3,
+          pageStart: 2,
+          pageEnd: 2,
+          content: duplicateExcerpt,
+          embedding: null,
+        },
+      ],
       evidence: [
         {
-          chunkOrdinal: 0,
+          chunkOrdinal: 1,
           page: 1,
           excerpt: firstExcerpt,
           locator: firstLocator,
           sourceLocale: 'en-CA' as const,
         },
         {
-          chunkOrdinal: 0,
+          chunkOrdinal: 2,
           page: 1,
           excerpt: duplicateExcerpt,
           locator: duplicateLocator,
           sourceLocale: 'en-CA' as const,
         },
         {
-          chunkOrdinal: 0,
+          chunkOrdinal: 3,
           page: 2,
           excerpt: duplicateExcerpt,
           locator: nextPageLocator,
@@ -683,6 +714,12 @@ describe('PostgresFinanceDocumentRepository', () => {
     });
     let documentState: 'awaiting-review' | 'committed' = 'awaiting-review';
     let reviewState: 'pending' | 'committed' = 'pending';
+    const chunkIdByOrdinal = new Map([
+      [0, ids.chunk],
+      [1, ids.evidence],
+      [2, ids.match],
+      [3, ids.rotatedGrant],
+    ]);
     const { pool, query } = poolFor((sql, values) => {
       const lock = lockRows(sql);
       if (lock !== undefined) return lock;
@@ -713,7 +750,15 @@ describe('PostgresFinanceDocumentRepository', () => {
         ];
       }
       if (sql.includes('insert into emdo.finance_document_chunks')) {
-        return [{ id: ids.chunk, ordinal: values[6] }];
+        const ordinal = values[6];
+        if (typeof ordinal !== 'number') {
+          throw new Error('reviewed chunk ordinal was not supplied');
+        }
+        const id = chunkIdByOrdinal.get(ordinal);
+        if (id === undefined) {
+          throw new Error('unexpected reviewed chunk ordinal');
+        }
+        return [{ id, ordinal }];
       }
       if (sql.includes('insert into emdo.finance_document_evidence')) {
         return { rows: [], rowCount: 1 };
@@ -744,19 +789,29 @@ describe('PostgresFinanceDocumentRepository', () => {
       reviewToken: 'A'.repeat(43),
       payloadHash: legacyReview.payloadHash,
       idempotencyKey: legacyReview.idempotencyKey,
-      embeddings: [{ ordinal: 0, embedding: vector(1) }],
+      embeddings: [
+        { ordinal: 1, embedding: vector(1) },
+        { ordinal: 2, embedding: vector(1) },
+        { ordinal: 3, embedding: vector(1) },
+      ],
     };
 
     expect(sha256(firstExcerpt)).toBe(sha256(duplicateExcerpt));
     await expect(repository.commitReview(commitInput)).resolves.toMatchObject({
       status: 'committed',
+      chunksCommitted: 3,
       evidenceCommitted: 2,
     });
     await expect(repository.commitReview(commitInput)).resolves.toMatchObject({
       status: 'replayed',
+      chunksCommitted: 3,
       evidenceCommitted: 2,
     });
 
+    const chunkInserts = query.mock.calls.filter(([sql]) =>
+      String(sql).includes('insert into emdo.finance_document_chunks'),
+    );
+    expect(chunkInserts.map(([, values]) => values?.[6])).toEqual([0, 1, 3]);
     const evidenceInserts = query.mock.calls.filter(([sql]) =>
       String(sql).includes('insert into emdo.finance_document_evidence'),
     );
@@ -766,9 +821,14 @@ describe('PostgresFinanceDocumentRepository', () => {
       sha256(firstExcerpt),
       sha256(firstExcerpt),
     ]);
-    expect(evidenceInserts[0]?.[1]?.[6]).toBe(ids.chunk);
+    expect(evidenceInserts.map(([, values]) => values?.[6])).toEqual([
+      ids.evidence,
+      ids.rotatedGrant,
+    ]);
     expect(evidenceInserts[0]?.[1]?.[10]).toEqual(firstLocator);
     expect(evidenceInserts[0]?.[0]).not.toContain('on conflict');
+    expect(chunkInserts.some(([, values]) => values?.[6] === 2)).toBe(false);
+    expect(legacyReview.selectedFacts.chunks).toHaveLength(4);
     expect(legacyReview.selectedFacts.evidence).toHaveLength(3);
     expect(legacyReview.selectedFacts.evidence[1]?.locator).toEqual(
       duplicateLocator,

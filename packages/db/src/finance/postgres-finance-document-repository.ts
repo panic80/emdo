@@ -2563,6 +2563,34 @@ export class PostgresFinanceDocumentRepository {
             return true;
           },
         );
+        const survivingEvidence = new Set(evidenceForCommit);
+        const survivingEvidenceChunkOrdinals = new Set(
+          evidenceForCommit.flatMap((evidence) =>
+            evidence.chunkOrdinal === null ? [] : [evidence.chunkOrdinal],
+          ),
+        );
+        const chunksForCommit = review.selectedFacts.chunks.filter((chunk) => {
+          if (
+            chunk.content.startsWith(REVIEW_ENVELOPE_PREFIX) ||
+            survivingEvidenceChunkOrdinals.has(chunk.ordinal)
+          ) {
+            return true;
+          }
+          const droppedEvidenceForChunk = review.selectedFacts.evidence.filter(
+            (evidence) =>
+              evidence.chunkOrdinal === chunk.ordinal &&
+              !survivingEvidence.has(evidence),
+          );
+          return (
+            droppedEvidenceForChunk.length === 0 ||
+            !droppedEvidenceForChunk.every(
+              (evidence) =>
+                chunk.pageStart === evidence.page &&
+                chunk.pageEnd === evidence.page &&
+                chunk.content === evidence.excerpt,
+            )
+          );
+        });
         const expectedEmbeddingOrdinals = review.selectedFacts.chunks
           .filter((chunk) => !chunk.content.startsWith(REVIEW_ENVELOPE_PREFIX))
           .map((chunk) => chunk.ordinal)
@@ -2596,7 +2624,7 @@ export class PostgresFinanceDocumentRepository {
             documentType: review.selectedFacts.documentType,
             currency: review.selectedFacts.currency,
             currencyLabel: labelCurrency(review.selectedFacts.currency),
-            chunksCommitted: review.selectedFacts.chunks.length,
+            chunksCommitted: chunksForCommit.length,
             evidenceCommitted: evidenceForCommit.length,
             matchSuggestionsCommitted:
               review.selectedFacts.matchSuggestions.length,
@@ -2651,7 +2679,7 @@ export class PostgresFinanceDocumentRepository {
         }
 
         const chunkIds = new Map<number, string>();
-        for (const chunk of review.selectedFacts.chunks) {
+        for (const chunk of chunksForCommit) {
           const row = firstResultRow(
             await client.query(
               `insert into emdo.finance_document_chunks (
