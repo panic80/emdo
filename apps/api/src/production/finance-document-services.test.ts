@@ -1111,7 +1111,7 @@ describe('production Finance document gateway', () => {
         evidence: [
           {
             page: 1,
-            excerpt: 'e'.repeat(2_000),
+            excerpt: `${String(index).padStart(2, '0')}${'e'.repeat(1_998)}`,
             characterStart: 0,
             characterEnd: 2_000,
           },
@@ -1197,6 +1197,261 @@ describe('production Finance document gateway', () => {
     expect(
       commitInput.embeddings.map((embedding) => embedding.embedding[0]),
     ).toEqual(semanticOrdinals.map((_ordinal, index) => index + 1));
+  });
+
+  it('deduplicates reviewed evidence locators before guarded commit', async () => {
+    const harness = createHarness();
+    const excerpt = 'Shared receipt total CAD 1.23';
+    const firstUnpairedSurrogateExcerpt = 'Malformed \ud800';
+    const secondUnpairedSurrogateExcerpt = 'Malformed \udfff';
+    await harness.gateway.updateReview(
+      request({
+        documentId: IDS.document,
+        expectedExtractionRevision: 1,
+        envelope: {
+          ...envelope,
+          facts: [
+            {
+              field: 'total',
+              confidence: 0.99,
+              evidence: [
+                {
+                  page: 1,
+                  excerpt,
+                  characterStart: 0,
+                  characterEnd: excerpt.length,
+                },
+              ],
+            },
+            {
+              field: 'merchant',
+              confidence: 0.98,
+              evidence: [
+                {
+                  page: 1,
+                  excerpt,
+                  characterStart: 7,
+                  characterEnd: excerpt.length,
+                },
+              ],
+            },
+            {
+              field: 'same-excerpt-other-page',
+              confidence: 0.97,
+              evidence: [
+                {
+                  page: 2,
+                  excerpt,
+                  characterStart: 0,
+                  characterEnd: excerpt.length,
+                },
+              ],
+            },
+            {
+              field: 'first-unpaired-surrogate',
+              confidence: 0.96,
+              evidence: [
+                {
+                  page: 3,
+                  excerpt: firstUnpairedSurrogateExcerpt,
+                  characterStart: 0,
+                  characterEnd: firstUnpairedSurrogateExcerpt.length,
+                },
+              ],
+            },
+            {
+              field: 'second-unpaired-surrogate',
+              confidence: 0.95,
+              evidence: [
+                {
+                  page: 3,
+                  excerpt: secondUnpairedSurrogateExcerpt,
+                  characterStart: 5,
+                  characterEnd: secondUnpairedSurrogateExcerpt.length,
+                },
+              ],
+            },
+          ],
+        },
+        idempotencyKey: 'route:review:duplicate-evidence',
+        principal,
+      }),
+    );
+
+    const replacement = harness.repository.replaceCurrentReviewDraft.mock
+      .calls[0]?.[0] as {
+      readonly selectedFacts: Readonly<{
+        readonly chunks: readonly Readonly<{ readonly content: string }>[];
+        readonly evidence: readonly Readonly<{
+          readonly chunkOrdinal: number | null;
+          readonly page: number;
+          readonly excerpt: string;
+          readonly locator: Readonly<{
+            readonly characterStart: number | null;
+            readonly characterEnd: number | null;
+          }>;
+        }>[];
+      }>;
+    };
+    expect(replacement.selectedFacts.evidence).toEqual([
+      expect.objectContaining({
+        page: 1,
+        excerpt,
+        locator: { characterStart: 0, characterEnd: excerpt.length },
+      }),
+      expect.objectContaining({
+        page: 2,
+        excerpt,
+        locator: { characterStart: 0, characterEnd: excerpt.length },
+      }),
+      expect.objectContaining({
+        page: 3,
+        excerpt: firstUnpairedSurrogateExcerpt,
+        locator: {
+          characterStart: 0,
+          characterEnd: firstUnpairedSurrogateExcerpt.length,
+        },
+      }),
+    ]);
+    const firstEvidenceChunkOrdinal =
+      replacement.selectedFacts.evidence[0]?.chunkOrdinal;
+    if (
+      firstEvidenceChunkOrdinal === null ||
+      firstEvidenceChunkOrdinal === undefined
+    ) {
+      throw new Error('expected the first evidence chunk to materialize');
+    }
+    expect(
+      replacement.selectedFacts.evidence.map((evidence) =>
+        evidence.chunkOrdinal === null
+          ? null
+          : evidence.chunkOrdinal - firstEvidenceChunkOrdinal,
+      ),
+    ).toEqual([0, 1, 2]);
+    expect(
+      replacement.selectedFacts.chunks.filter(
+        (chunk) =>
+          chunk.content === excerpt ||
+          chunk.content === firstUnpairedSurrogateExcerpt,
+      ),
+    ).toHaveLength(3);
+    const encodedEnvelope = replacement.selectedFacts.chunks
+      .filter((chunk) =>
+        chunk.content.startsWith('emdo.finance-document.review-envelope.v1:'),
+      )
+      .map((chunk) =>
+        chunk.content.replace(
+          /^emdo\.finance-document\.review-envelope\.v1:\d{1,3}\/\d{1,3}:/u,
+          '',
+        ),
+      )
+      .join('');
+    const reconstructedEnvelope = JSON.parse(
+      Buffer.from(encodedEnvelope, 'base64url').toString('utf8'),
+    ) as { readonly facts: readonly { readonly field: string }[] };
+    expect(reconstructedEnvelope.facts.map((fact) => fact.field)).toEqual([
+      'total',
+      'merchant',
+      'same-excerpt-other-page',
+      'first-unpaired-surrogate',
+      'second-unpaired-surrogate',
+    ]);
+
+    await expect(
+      executeGuardedDocumentAction(harness.gateway, {
+        operation: 'finance-document-review-commit',
+        intent: { kind: 'commit-document-review', documentId: IDS.document },
+      }),
+    ).resolves.toEqual({
+      status: 'document-committed',
+      documentId: IDS.document,
+      extractionRevision: 1,
+    });
+    expect(harness.repository.commitReview).toHaveBeenCalledOnce();
+    const embeddingRequest = harness.embeddings.embed.mock.calls[0]?.[0] as {
+      readonly chunks: readonly Readonly<{ readonly content: string }>[];
+    };
+    expect(
+      embeddingRequest.chunks.slice(-3).map((chunk) => chunk.content),
+    ).toEqual([excerpt, excerpt, firstUnpairedSurrogateExcerpt]);
+  });
+
+  it('skips duplicate locators before the evidence cap', async () => {
+    const harness = createHarness();
+    const duplicateExcerpt = 'Repeated locator before evidence cap';
+    const laterExcerpt = 'Later distinct locator';
+    const duplicateFacts = Array.from({ length: 32 }, (_value, factIndex) => ({
+      field: `duplicate-${factIndex}`,
+      confidence: 0.99,
+      evidence: Array.from({ length: 16 }, () => ({
+        page: 1,
+        excerpt: duplicateExcerpt,
+        characterStart: 0,
+        characterEnd: duplicateExcerpt.length,
+      })),
+    }));
+    await harness.gateway.updateReview(
+      request({
+        documentId: IDS.document,
+        expectedExtractionRevision: 1,
+        envelope: {
+          ...envelope,
+          facts: [
+            ...duplicateFacts,
+            {
+              field: 'later-distinct',
+              confidence: 0.98,
+              evidence: [
+                {
+                  page: 1,
+                  excerpt: laterExcerpt,
+                  characterStart: 0,
+                  characterEnd: laterExcerpt.length,
+                },
+              ],
+            },
+          ],
+        },
+        idempotencyKey: 'route:review:evidence-cap-deduplication',
+        principal,
+      }),
+    );
+
+    const replacement = harness.repository.replaceCurrentReviewDraft.mock
+      .calls[0]?.[0] as {
+      readonly selectedFacts: Readonly<{
+        readonly chunks: readonly Readonly<{ readonly content: string }>[];
+        readonly evidence: readonly Readonly<{
+          readonly page: number;
+          readonly excerpt: string;
+        }>[];
+      }>;
+    };
+    expect(replacement.selectedFacts.evidence).toEqual([
+      expect.objectContaining({ page: 1, excerpt: duplicateExcerpt }),
+      expect.objectContaining({ page: 1, excerpt: laterExcerpt }),
+    ]);
+    expect(
+      replacement.selectedFacts.chunks.filter(
+        (chunk) =>
+          chunk.content === duplicateExcerpt || chunk.content === laterExcerpt,
+      ),
+    ).toHaveLength(2);
+    const encodedEnvelope = replacement.selectedFacts.chunks
+      .filter((chunk) =>
+        chunk.content.startsWith('emdo.finance-document.review-envelope.v1:'),
+      )
+      .map((chunk) =>
+        chunk.content.replace(
+          /^emdo\.finance-document\.review-envelope\.v1:\d{1,3}\/\d{1,3}:/u,
+          '',
+        ),
+      )
+      .join('');
+    const reconstructedEnvelope = JSON.parse(
+      Buffer.from(encodedEnvelope, 'base64url').toString('utf8'),
+    ) as { readonly facts: readonly unknown[] };
+    expect(reconstructedEnvelope.facts).toHaveLength(33);
   });
 
   it('magic-sniffs before persistence, applies canonical original AAD, and purges a duplicate encrypted object', async () => {

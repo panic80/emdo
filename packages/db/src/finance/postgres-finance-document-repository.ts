@@ -2554,6 +2554,15 @@ export class PostgresFinanceDocumentRepository {
             'The Finance document review payload no longer matches its hash',
           );
         }
+        const evidenceIdentities = new Set<string>();
+        const evidenceForCommit = review.selectedFacts.evidence.filter(
+          (evidence) => {
+            const identity = `${evidence.page}:${sha256(evidence.excerpt)}`;
+            if (evidenceIdentities.has(identity)) return false;
+            evidenceIdentities.add(identity);
+            return true;
+          },
+        );
         const expectedEmbeddingOrdinals = review.selectedFacts.chunks
           .filter((chunk) => !chunk.content.startsWith(REVIEW_ENVELOPE_PREFIX))
           .map((chunk) => chunk.ordinal)
@@ -2588,7 +2597,7 @@ export class PostgresFinanceDocumentRepository {
             currency: review.selectedFacts.currency,
             currencyLabel: labelCurrency(review.selectedFacts.currency),
             chunksCommitted: review.selectedFacts.chunks.length,
-            evidenceCommitted: review.selectedFacts.evidence.length,
+            evidenceCommitted: evidenceForCommit.length,
             matchSuggestionsCommitted:
               review.selectedFacts.matchSuggestions.length,
           });
@@ -2686,7 +2695,7 @@ export class PostgresFinanceDocumentRepository {
           );
           chunkIds.set(created.ordinal, created.id);
         }
-        for (const evidence of review.selectedFacts.evidence) {
+        for (const evidence of evidenceForCommit) {
           const row = await client.query(
             `insert into emdo.finance_document_evidence (
              id, document_id, extraction_revision, chunk_id, household_id, space_id,
