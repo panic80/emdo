@@ -23,6 +23,8 @@ const FINANCE_DOCUMENT_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f94';
 const FINANCE_MEMBER_USER_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f95';
 const FINANCE_MEMBER_EMAIL = 'finance-staging-member@emdo.invalid';
 const FINANCE_EVIDENCE_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f99';
+const FINANCE_UNRELATED_EVIDENCE_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f9a';
+const FINANCE_TRAILING_EVIDENCE_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f9b';
 const FINANCE_COMMIT_RUN_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5fa2';
 const FINANCE_QNA_RUN_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5fa3';
 const FINANCE_WRITE_RUN_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5fa4';
@@ -1184,6 +1186,48 @@ describe('staging acceptance CLI', () => {
               ],
             });
       if (
+        url.pathname ===
+        `/api/v1/finance/evidence/${FINANCE_UNRELATED_EVIDENCE_ID}`
+      )
+        return member || deleted
+          ? problem(404, 'evidence-not-found')
+          : jsonWithRequestId({
+              schemaVersion: 1,
+              items: [
+                {
+                  schemaVersion: 1,
+                  id: FINANCE_UNRELATED_EVIDENCE_ID,
+                  documentId: FINANCE_DOCUMENT_ID,
+                  extractionRevision: 1,
+                  page: 1,
+                  excerpt: 'Unrelated same-document evidence',
+                  sourceLocale: 'en-CA',
+                  locator: { page: 1 },
+                },
+              ],
+            });
+      if (
+        url.pathname ===
+        `/api/v1/finance/evidence/${FINANCE_TRAILING_EVIDENCE_ID}`
+      )
+        return member || deleted
+          ? problem(404, 'evidence-not-found')
+          : jsonWithRequestId({
+              schemaVersion: 1,
+              items: [
+                {
+                  schemaVersion: 1,
+                  id: FINANCE_TRAILING_EVIDENCE_ID,
+                  documentId: FINANCE_DOCUMENT_ID,
+                  extractionRevision: 1,
+                  page: 1,
+                  excerpt: 'Trailing same-document evidence',
+                  sourceLocale: 'en-CA',
+                  locator: { page: 1 },
+                },
+              ],
+            });
+      if (
         url.pathname === `/api/v1/finance/documents/${FINANCE_DOCUMENT_ID}` &&
         request.method === 'DELETE'
       )
@@ -1531,7 +1575,11 @@ describe('staging acceptance CLI', () => {
             runId,
             financeOutput({
               summary: 'Found one reviewed finance document result.',
-              evidenceReferences: [FINANCE_EVIDENCE_ID],
+              evidenceReferences: [
+                FINANCE_UNRELATED_EVIDENCE_ID,
+                FINANCE_EVIDENCE_ID,
+                FINANCE_TRAILING_EVIDENCE_ID,
+              ],
             }),
           );
         if (runId === FINANCE_WRITE_RUN_ID) {
@@ -1958,6 +2006,20 @@ describe('staging acceptance CLI', () => {
       ],
     });
     expect(handoffs).toHaveLength(1);
+    expect(handoffs[0]).toMatchObject({
+      documentId: FINANCE_DOCUMENT_ID,
+      evidenceId: FINANCE_EVIDENCE_ID,
+    });
+    const evidenceRequestPaths = requests
+      .map((request) => new URL(request.url).pathname)
+      .filter((path) => path.startsWith('/api/v1/finance/evidence/'));
+    expect(evidenceRequestPaths).toEqual(
+      expect.arrayContaining([
+        `/api/v1/finance/evidence/${FINANCE_UNRELATED_EVIDENCE_ID}`,
+        `/api/v1/finance/evidence/${FINANCE_EVIDENCE_ID}`,
+        `/api/v1/finance/evidence/${FINANCE_TRAILING_EVIDENCE_ID}`,
+      ]),
+    );
     expect(committed).toBe(true);
     expect(phaseOneStages).toEqual([
       'configuration',

@@ -2477,27 +2477,38 @@ const runFinanceStagingAcceptance = async (
   ) {
     throw new Error('Finance EMDO Q&A did not return an unambiguous citation');
   }
-  const evidenceId = z.uuid().safeParse(evidenceReferences[0]);
-  if (!evidenceId.success) {
-    throw new Error('Finance EMDO Q&A evidence reference is invalid');
+  let evidenceId: string | undefined;
+  for (const evidenceReference of evidenceReferences) {
+    const candidateId = z.uuid().safeParse(evidenceReference);
+    if (!candidateId.success) {
+      throw new Error('Finance EMDO Q&A evidence reference is invalid');
+    }
+    const ownerEvidenceResponse = await send(
+      `/api/v1/finance/evidence/${encodeURIComponent(candidateId.data)}`,
+      { headers: { cookie: ownerCookie } },
+    );
+    requireResponseRequestId(ownerEvidenceResponse);
+    const ownerEvidence = FinanceDocumentEvidenceListSchema.parse(
+      await requireOkJson(ownerEvidenceResponse),
+    );
+    const candidate = ownerEvidence.items[0];
+    if (
+      ownerEvidence.items.length !== 1 ||
+      candidate?.id !== candidateId.data
+    ) {
+      throw new Error('Finance cited evidence readback is invalid');
+    }
+    if (
+      evidenceId === undefined &&
+      candidate.documentId === documentId &&
+      candidate.extractionRevision === updatedReview.extractionRevision &&
+      candidate.page === 1 &&
+      candidate.excerpt === FINANCE_REVIEW_EVIDENCE_EXCERPT
+    ) {
+      evidenceId = candidateId.data;
+    }
   }
-  const ownerEvidenceResponse = await send(
-    `/api/v1/finance/evidence/${encodeURIComponent(evidenceId.data)}`,
-    { headers: { cookie: ownerCookie } },
-  );
-  requireResponseRequestId(ownerEvidenceResponse);
-  const ownerEvidence = FinanceDocumentEvidenceListSchema.parse(
-    await requireOkJson(ownerEvidenceResponse),
-  );
-  if (
-    ownerEvidence.items.length !== 1 ||
-    ownerEvidence.items[0]?.id !== evidenceId.data ||
-    ownerEvidence.items[0]?.documentId !== documentId ||
-    ownerEvidence.items[0]?.extractionRevision !==
-      updatedReview.extractionRevision ||
-    ownerEvidence.items[0]?.page !== 1 ||
-    ownerEvidence.items[0]?.excerpt !== FINANCE_REVIEW_EVIDENCE_EXCERPT
-  ) {
+  if (evidenceId === undefined) {
     throw new Error('Finance cited evidence readback is invalid');
   }
 
@@ -2520,7 +2531,7 @@ const runFinanceStagingAcceptance = async (
     `/api/v1/finance/documents/${encodeURIComponent(documentId)}/original`,
     `/api/v1/finance/documents/${encodeURIComponent(documentId)}/review`,
     `/api/v1/finance/documents/${encodeURIComponent(documentId)}/matches`,
-    `/api/v1/finance/evidence/${encodeURIComponent(evidenceId.data)}`,
+    `/api/v1/finance/evidence/${encodeURIComponent(evidenceId)}`,
   ]) {
     await requireCrossUserFinanceDenial(
       await send(path, { headers: { cookie: memberCookieWithCsrf } }),
@@ -2596,7 +2607,7 @@ const runFinanceStagingAcceptance = async (
     writeFinanceRestoreVerifierHandoff
   )({
     documentId,
-    evidenceId: evidenceId.data,
+    evidenceId,
     expectedPlaintextSha256: SYNTHETIC_FINANCE_PDF_SHA256,
     memberCookie: memberCookieWithCsrf,
     ownerCookie,
