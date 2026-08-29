@@ -2057,6 +2057,12 @@ export const createProductionFinanceDocumentGateway = (
             envelope: envelopeFromReviewedPayload(existing.selectedFacts),
           });
         }
+        const document = await dependencies.repository.getMetadata({
+          principal,
+          requestId: input.requestId,
+          documentId: input.documentId,
+        });
+        if (document === undefined) return error('document-not-found');
         const extraction = await dependencies.repository.getCurrentExtraction({
           principal,
           requestId: input.requestId,
@@ -2170,6 +2176,12 @@ export const createProductionFinanceDocumentGateway = (
     async listMatches(input) {
       try {
         const principal = asPrivatePrincipal(input.principal);
+        const document = await dependencies.repository.getMetadata({
+          principal,
+          requestId: input.requestId,
+          documentId: input.documentId,
+        });
+        if (document === undefined) return error('document-not-found');
         const matches = await dependencies.repository.listMatches({
           principal,
           requestId: input.requestId,

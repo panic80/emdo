@@ -615,6 +615,25 @@ const installLegacyReview = (
 };
 
 describe('production Finance document gateway', () => {
+  it('returns document-not-found before falling through to inaccessible extraction or match collections', async () => {
+    const harness = createHarness();
+    harness.repository.getMetadata.mockResolvedValue(undefined as never);
+
+    await expect(
+      harness.gateway.getReview(
+        request({ documentId: IDS.document, principal }),
+      ),
+    ).rejects.toMatchObject({ code: 'document-not-found' });
+    await expect(
+      harness.gateway.listMatches(
+        request({ documentId: IDS.document, principal }),
+      ),
+    ).rejects.toMatchObject({ code: 'document-not-found' });
+
+    expect(harness.repository.getCurrentExtraction).not.toHaveBeenCalled();
+    expect(harness.repository.listMatches).not.toHaveBeenCalled();
+  });
+
   it('derives a repeatable hash-bound review token and commits only semantic reviewed chunks', async () => {
     const harness = createHarness();
 
