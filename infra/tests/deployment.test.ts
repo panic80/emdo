@@ -1494,6 +1494,7 @@ describe('GitHub delivery policy', () => {
     expect(staging).toContain('initial_deployment:');
     expect(staging).toContain('mvp_core_only:');
     expect(staging).toContain('finance_synthetic_staging:');
+    expect(staging).toContain('live_test_window:');
     expect(staging).toContain(
       'INITIAL_STAGING_BOOTSTRAP: ${{ inputs.initial_deployment }}',
     );
@@ -1521,7 +1522,9 @@ describe('GitHub delivery policy', () => {
     expect(staging).toContain(
       'value?.workflowRunId !== process.env.STAGING_RUN_ID',
     );
-    expect(staging).toContain('if: always()');
+    expect(staging).toContain(
+      'if: ${{ always() && (!inputs.live_test_window || failure() || cancelled()) }}',
+    );
     const teardownStep = staging.slice(
       staging.indexOf('name: Tear down staging at the end of the test window'),
     );

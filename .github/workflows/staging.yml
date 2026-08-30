@@ -32,6 +32,11 @@ on:
         required: true
         default: false
         type: boolean
+      live_test_window:
+        description: Keep a successful staging deployment available until its server-enforced TTL expires
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -366,7 +371,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Tear down staging at the end of the test window
-        if: always()
+        if: ${{ always() && (!inputs.live_test_window || failure() || cancelled()) }}
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.STAGING_SSH_USER }}
