@@ -199,6 +199,7 @@ jobs:
           if [[ "$FINANCE_SYNTHETIC_STAGING" == true ]]; then
             ssh "$VPS_USER@$VPS_HOST" \
               "sudo /usr/local/sbin/emdo-staging-operator accept '${{ github.run_id }}'" \
+              | /usr/bin/tail -n 1 \
               > release/finance-synthetic-staging-probe.json
             chmod 0600 release/finance-synthetic-staging-probe.json
             node --input-type=module --eval '
