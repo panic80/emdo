@@ -2248,8 +2248,10 @@ export class PostgresFinanceDocumentRepository {
 
   /**
    * Server-only current committed-review lookup for an already owner-scoped
-   * guarded document action.  Unlike the public-token lookup above, this
-   * never accepts a review token and must not be exposed through HTTP.
+   * guarded document action. Unlike the delete-only lookup below, this keeps
+   * the historical review session and scope binding used by review commits
+   * and match acceptance. It never accepts a review token and must not be
+   * exposed through HTTP.
    */
   async getCurrentCommittedReview(
     input: unknown,
@@ -2296,6 +2298,58 @@ export class PostgresFinanceDocumentRepository {
               principal.sessionId,
               principal.scopeFingerprint,
             ],
+          ),
+        );
+        return row === undefined ? undefined : reviewFromRow(row);
+      },
+    );
+  }
+
+  /**
+   * Delete-only committed-review lookup. The same uploader may delete their
+   * committed document after signing in again, so this internal reader binds
+   * to the current authenticated owner/private-space scope while retaining
+   * the historical review provenance in its result. Pending, commit, match,
+   * and public-token review readers remain session-bound.
+   */
+  async getCommittedReviewForGuardedDelete(
+    input: unknown,
+  ): Promise<FinanceDocumentReviewDraft | undefined> {
+    const parsed = parseInput(DocumentInputSchema, input);
+    const principal = asPrincipal(parsed.principal);
+    return withScopedTransaction(
+      this.pool,
+      { principal, requestId: parsed.requestId },
+      async (client) => {
+        const row = firstResultRow(
+          await client.query(
+            `select review.id::text as "id", review.document_id::text as "documentId",
+                    review.extraction_revision as "extractionRevision",
+                    review.authenticated_session_id::text as "authenticatedSessionId",
+                    review.space_access_grant_id::text as "spaceAccessGrantId",
+                    review.scope_fingerprint as "scopeFingerprint",
+                    review.payload_hash as "payloadHash",
+                    review.review_token_hash as "reviewTokenHash",
+                    review.selected_facts as "selectedFacts", review.state as "state",
+                    review.idempotency_key as "idempotencyKey",
+                    review.expires_at as "expiresAt"
+               from emdo.finance_document_review_batches as review
+               join emdo.finance_documents as document
+                 on document.id = review.document_id
+                and document.household_id = review.household_id
+                and document.space_id = review.space_id
+                and document.original_owner_user_id = review.original_owner_user_id
+              where review.household_id = $1
+                and review.space_id = $2
+                and review.original_owner_user_id = $3
+                and review.document_id = $4
+                and review.extraction_revision = document.extraction_revision
+                and review.state = 'committed'
+                and document.state = 'committed'
+                and document.deleted_at is null
+              order by review.decided_at desc, review.id desc
+              limit 1`,
+            [...scopeValues(principal), parsed.documentId],
           ),
         );
         return row === undefined ? undefined : reviewFromRow(row);

@@ -857,7 +857,7 @@ describeDatabase(
       ).rejects.toMatchObject({ code: '42501' });
     });
 
-    it('keeps a review usable across a same-session grant rotation while denying changed session, scope, and user bindings', async () => {
+    it('keeps pending and token review access session-bound while internal committed reads survive owner reauthentication', async () => {
       const generatedIds = [
         ids.ownerRotatedReviewBatch,
         ids.ownerRotatedChunk,
@@ -1107,6 +1107,32 @@ describeDatabase(
           spaceAccessGrantId: ids.ownerSpaceAccessGrant,
           scopeFingerprint: ownerRepositoryPrincipal.scopeFingerprint,
         });
+        await expect(
+          repository.getCurrentCommittedReview({
+            principal: changedSessionPrincipal,
+            requestId: ids.ownerReplayRequest,
+            documentId: ids.ownerRotatedDocument,
+          }),
+        ).resolves.toBeUndefined();
+        await expect(
+          repository.getCommittedReviewForGuardedDelete({
+            principal: changedSessionPrincipal,
+            requestId: ids.ownerReplayRequest,
+            documentId: ids.ownerRotatedDocument,
+          }),
+        ).resolves.toMatchObject({
+          id: ids.ownerRotatedReviewBatch,
+          authenticatedSessionId: ids.ownerSession,
+          spaceAccessGrantId: ids.ownerSpaceAccessGrant,
+          scopeFingerprint: ownerRepositoryPrincipal.scopeFingerprint,
+        });
+        await expect(
+          repository.getCommittedReviewForGuardedDelete({
+            principal: collaboratorRepositoryPrincipal,
+            requestId: ids.collaboratorRequest,
+            documentId: ids.ownerRotatedDocument,
+          }),
+        ).resolves.toBeUndefined();
         await expect(
           repository.getCommittedReviewAuthorization({
             principal: ownerRotatedRepositoryPrincipal,

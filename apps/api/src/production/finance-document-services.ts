@@ -103,6 +103,7 @@ type Repository = Pick<
   | 'decideMatch'
   | 'finalizeGuardedDelete'
   | 'getCommittedReviewAuthorization'
+  | 'getCommittedReviewForGuardedDelete'
   | 'getCurrentCommittedReview'
   | 'getCurrentExtraction'
   | 'getCurrentReviewDraft'
@@ -1463,7 +1464,7 @@ export const createProductionFinanceDocumentGateway = (
             documentId: metadata.id,
           })
         : metadata.state === 'committed'
-          ? await dependencies.repository.getCurrentCommittedReview({
+          ? await dependencies.repository.getCommittedReviewForGuardedDelete({
               principal: input.principal,
               requestId: input.requestId,
               documentId: metadata.id,

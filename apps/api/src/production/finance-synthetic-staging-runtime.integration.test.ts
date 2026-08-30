@@ -111,6 +111,9 @@ const ids = Object.freeze({
   questionRequest: 'f3100000-0000-4000-8000-000000000018',
   safeWriteGrant: 'f3100000-0000-4000-8000-000000000019',
   safeWriteRequest: 'f3100000-0000-4000-8000-000000000020',
+  deleteSession: 'f3100000-0000-4000-8000-000000000021',
+  deleteGrant: 'f3100000-0000-4000-8000-000000000022',
+  deleteRequest: 'f3100000-0000-4000-8000-000000000023',
 });
 
 const syntheticManualTransaction = Object.freeze({
@@ -124,13 +127,13 @@ const syntheticManualTransaction = Object.freeze({
 
 const sha256 = (value: string): string =>
   createHash('sha256').update(value, 'utf8').digest('hex');
-const collectionScopeFingerprint =
+const collectionScopeFingerprintForSession = (sessionId: string) =>
   EffectiveAuthorizationScopeFingerprintSchema.parse(
     hashCanonicalJson({
       domain: 'emdo.authorization-scope.v1',
       householdId: ids.household,
       userId: ids.user,
-      sessionId: ids.session,
+      sessionId,
       membershipId: ids.membership,
       membershipAdministrationVersion: 1,
       role: 'owner',
@@ -139,6 +142,12 @@ const collectionScopeFingerprint =
       writableSpaceIds: [ids.privateSpace],
     }),
   );
+const collectionScopeFingerprint = collectionScopeFingerprintForSession(
+  ids.session,
+);
+const deleteCollectionScopeFingerprint = collectionScopeFingerprintForSession(
+  ids.deleteSession,
+);
 const reviewTokenHash = (payloadHash: string): string => {
   const token = createHmac('sha256', Buffer.alloc(32, 62))
     .update('emdo.finance-document.review-token.v2\0', 'utf8')
@@ -1759,6 +1768,118 @@ describeDatabase(
           amountCadMinor: syntheticManualTransaction.amountCadMinor,
           state: 'active',
         });
+
+        await admin.query(
+          `insert into emdo.auth_sessions
+             (id, user_id, token, expires_at, active_household_id)
+           values ($1, $2, 'finance-runtime-delete-session',
+                   pg_catalog.clock_timestamp() + interval '1 hour', $3)`,
+          [ids.deleteSession, ids.user, ids.household],
+        );
+        await admin.query(
+          `insert into emdo.space_access_grants
+             (grant_id, household_id, original_owner_user_id, session_id,
+              request_id, membership_id, role, private_space_id,
+              writable_space_ids, issued_at, expires_at, retain_until)
+           values ($1, $2, $3, $4, $5, $6, 'owner', $7, array[$7::uuid],
+                   pg_catalog.clock_timestamp() - interval '1 second',
+                   pg_catalog.clock_timestamp() + interval '10 minutes',
+                   pg_catalog.clock_timestamp() + interval '89 days')`,
+          [
+            ids.deleteGrant,
+            ids.household,
+            ids.user,
+            ids.deleteSession,
+            ids.deleteRequest,
+            ids.membership,
+            ids.privateSpace,
+          ],
+        );
+        const deletePrincipal = Object.freeze({
+          ...principal,
+          sessionId: ids.deleteSession,
+          spaceAccessGrantId: ids.deleteGrant,
+          collectionAuthorizationScopeFingerprint:
+            deleteCollectionScopeFingerprint,
+        });
+        observedRunTurnResult = undefined;
+        observedRunTurnError = undefined;
+        observedRunTurnFailureCode = undefined;
+        observedSyntheticRunnerErrors.length = 0;
+
+        const deleteAccepted =
+          await services.bindings.managerTurns.service.start({
+            request: {
+              schemaVersion: 1,
+              locale: 'en-CA',
+              routeHint: 'finance',
+              message: formatFinanceSyntheticStagingCommand({
+                schemaVersion: 1,
+                action: 'delete-document',
+                documentId: ids.document,
+              }),
+            },
+            principal: deletePrincipal,
+            requestId: ids.deleteRequest,
+            idempotencyKey: 'finance-synthetic-runtime-delete-v1',
+          });
+        expect(deleteAccepted).toMatchObject({
+          status: 'accepted',
+          replayed: false,
+        });
+        expect(observedRunTurnError).toBeUndefined();
+        expect(observedSyntheticRunnerErrors).toEqual([]);
+        expect(observedRunTurnFailureCode).toBeUndefined();
+        expect(observedRunTurnResult).toMatchObject({
+          status: 'needs-approval',
+        });
+
+        const deleteEvents = await collect(
+          await services.bindings.runEvents.service.open({
+            runId: deleteAccepted.runId,
+            afterSequence: 0,
+            principal: deletePrincipal,
+            requestId: ids.deleteRequest,
+            abortSignal: new AbortController().signal,
+          }),
+        );
+        expect(
+          deleteEvents.map(({ sequence, type }) => ({ sequence, type })),
+        ).toEqual([
+          { sequence: 1, type: 'run.accepted' },
+          { sequence: 2, type: 'specialist.needs_confirmation' },
+          { sequence: 3, type: 'approval.required' },
+        ]);
+        expect(deleteEvents.at(-1)).toMatchObject({
+          data: {
+            status: 'needs-approval',
+            runId: deleteAccepted.runId,
+            interruptions: [
+              expect.objectContaining({
+                agentId: 'finance',
+                capabilityId: 'finance.records.write',
+              }),
+            ],
+          },
+        });
+        const deleteTargetState = await admin.query<{
+          deletedAt: Date | null;
+          deletionProposalId: string | null;
+          state: string;
+        }>(
+          `select state, deleted_at as "deletedAt",
+                  deletion_proposal_id::text as "deletionProposalId"
+             from emdo.finance_documents
+            where id = $1`,
+          [ids.document],
+        );
+        expect(deleteTargetState.rows).toEqual([
+          {
+            state: 'committed',
+            deletedAt: null,
+            deletionProposalId: null,
+          },
+        ]);
       } finally {
         documentGateway.dispose();
         checkpointCipher.dispose();
