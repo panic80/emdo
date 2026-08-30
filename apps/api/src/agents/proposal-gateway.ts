@@ -6,6 +6,7 @@ import type {
 import {
   ActionDecisionSchema,
   ActionProposalSchema,
+  DataDisclosureGrantSchema,
   GuardedActionPermitSchema,
   IdentifierSchema,
   JsonValueSchema,
@@ -23,6 +24,7 @@ import {
   type StoredDecision,
   type StoredProposalPreparation,
   type StoredProviderWriteAttempt,
+  type TrustedDisclosureGrantResolver,
 } from '@emdo/domains/server/provider-proposals';
 import {
   ProviderWriteCompletionSchema,
@@ -149,6 +151,10 @@ const isExactPreparation = (input: {
     proposal.disclosureGrant.userId === parsedBinding.userId &&
     proposal.disclosureGrant.agentId === context.agentId &&
     proposal.disclosureGrant.agentId === parsedBinding.agentId &&
+    hashCanonicalJson(proposal.disclosureGrant.invocationContext) ===
+      hashCanonicalJson(context.invocationContext) &&
+    proposal.disclosureGrant.invocationContextHash ===
+      context.invocationContextHash &&
     parsedBinding.originRequestId === context.requestId &&
     parsedBinding.originSessionId === context.authenticatedSessionId &&
     parsedBinding.originSpaceAccessGrantId === context.spaceAccessGrantId
@@ -227,6 +233,14 @@ const exactDecisionRecord = (
       input.preparationContext.disclosureGrantId ||
     input.context.disclosureGrantVersion !==
       input.preparationContext.disclosureGrantVersion ||
+    input.context.invocationContextHash !==
+      input.preparationContext.invocationContextHash ||
+    hashCanonicalJson(input.context.invocationContext) !==
+      input.context.invocationContextHash ||
+    hashCanonicalJson(input.preparationContext.invocationContext) !==
+      input.preparationContext.invocationContextHash ||
+    hashCanonicalJson(input.context.invocationContext) !==
+      hashCanonicalJson(input.preparationContext.invocationContext) ||
     prepared.proposal.id !== input.proposalId ||
     prepared.proposal.state !== expectedDecision ||
     decision.data.id !== input.approvalDecisionId ||
@@ -398,6 +412,7 @@ export const createNoProviderWriteProposalComposition =
 export const createProductionProviderProposalComposition = (input: {
   readonly proposalService: ProductionProviderProposalService;
   readonly lookup: DurableProviderProposalLookup;
+  readonly disclosureGrantResolver: TrustedDisclosureGrantResolver;
   readonly presenter: TrustedProviderWriteDecisionPresenter;
   readonly authenticatedSessionId: string;
   readonly now?: () => Date;
@@ -409,6 +424,7 @@ export const createProductionProviderProposalComposition = (input: {
     typeof input.lookup.resolveDecisionById !== 'function' ||
     typeof input.lookup.resolveProviderWriteCompletionByDecisionId !==
       'function' ||
+    typeof input.disclosureGrantResolver?.resolve !== 'function' ||
     typeof input.presenter?.present !== 'function' ||
     (input.now !== undefined && typeof input.now !== 'function')
   ) {
@@ -425,9 +441,62 @@ export const createProductionProviderProposalComposition = (input: {
   );
   const resolveProviderWriteCompletionByDecisionId =
     input.lookup.resolveProviderWriteCompletionByDecisionId.bind(input.lookup);
+  const resolveDisclosureGrant = input.disclosureGrantResolver.resolve.bind(
+    input.disclosureGrantResolver,
+  );
   const present = input.presenter.present.bind(input.presenter);
   const authenticatedSessionId = UuidSchema.parse(input.authenticatedSessionId);
   const currentTime = input.now?.bind(undefined) ?? (() => new Date());
+
+  const isBeforeApprovedExecutionExpiry = (
+    record: DurableDecisionProposalRecord,
+  ): boolean => {
+    const now = currentTime();
+    const nowMs = now.getTime();
+    const proposalExpiresAt = Date.parse(record.proposal.expiresAt);
+    const invocationDeadline = Date.parse(
+      record.proposal.disclosureGrant.invocationContext.deadline,
+    );
+    return (
+      Number.isFinite(nowMs) &&
+      Number.isFinite(proposalExpiresAt) &&
+      Number.isFinite(invocationDeadline) &&
+      nowMs < proposalExpiresAt &&
+      nowMs < invocationDeadline
+    );
+  };
+
+  const revalidateApprovedExecutionGrant = async (
+    record: DurableDecisionProposalRecord,
+  ): Promise<void> => {
+    if (!isBeforeApprovedExecutionExpiry(record)) {
+      throw new Error('api-provider-proposal-approval-expired');
+    }
+    let resolved: unknown;
+    try {
+      resolved = await resolveDisclosureGrant(
+        record.proposal.disclosureGrant.id,
+        {
+          invocationContext: record.proposal.disclosureGrant.invocationContext,
+          invocationContextHash:
+            record.proposal.disclosureGrant.invocationContextHash,
+        },
+      );
+    } catch {
+      throw new Error('api-provider-proposal-disclosure-invalid');
+    }
+    const grant = DataDisclosureGrantSchema.safeParse(resolved);
+    if (
+      !grant.success ||
+      hashCanonicalJson(grant.data) !==
+        hashCanonicalJson(record.proposal.disclosureGrant)
+    ) {
+      throw new Error('api-provider-proposal-disclosure-invalid');
+    }
+    if (!isBeforeApprovedExecutionExpiry(record)) {
+      throw new Error('api-provider-proposal-approval-expired');
+    }
+  };
 
   const createGateway = (
     capabilityRuntime: ProductionCapabilityRuntime,
@@ -544,6 +613,8 @@ export const createProductionProviderProposalComposition = (input: {
             rawInput.context.authorizationScopeFingerprint,
           disclosureGrantId: rawInput.context.disclosureGrantId,
           disclosureGrantVersion: rawInput.context.disclosureGrantVersion,
+          invocationContext: rawInput.context.invocationContext,
+          invocationContextHash: rawInput.context.invocationContextHash,
           sdkCallId: rawInput.sdkCallId,
           abortSignal: rawInput.context.abortSignal,
         } as const;
@@ -696,6 +767,7 @@ export const createProductionProviderProposalComposition = (input: {
                 });
               })();
         if (rawInput.decision === 'approve') {
+          await revalidateApprovedExecutionGrant(record);
           capabilityOutput = JsonValueSchema.parse(
             await capability.invoke(record.proposal.canonicalArguments, {
               requestId: rawInput.context.requestId,
@@ -704,6 +776,7 @@ export const createProductionProviderProposalComposition = (input: {
               householdId: rawInput.context.householdId,
               sessionId: rawInput.context.authenticatedSessionId,
               agentId: rawInput.context.agentId,
+              invocationContext: rawInput.context.invocationContext,
               spaceAccessGrantId: rawInput.context.spaceAccessGrantId,
               locale: rawInput.context.locale,
               disclosureGrantId: rawInput.context.disclosureGrantId,

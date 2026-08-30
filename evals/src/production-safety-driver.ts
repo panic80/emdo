@@ -22,6 +22,7 @@ import {
 import {
   ToolboxPolicyError,
   createCapabilityRegistry,
+  hashCanonicalJson,
 } from '../../packages/toolbox/src/index.js';
 
 import type {
@@ -496,6 +497,35 @@ const disclosureGrant = (evalCase: AgentEvalCase, runId: string) => {
     provider: nonemptyString(rawFixture.provider),
     expiresAt: isoDateTime(rawFixture.expiresAt),
   });
+  const invocationContext = Object.freeze({
+    orchestrationRunId: runId,
+    parentInvocationId: evalCase.turn.rootManagerInvocationId,
+    agentInvocationId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f311',
+    phaseInvocationId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f312',
+    actorId: evalCase.turn.userId,
+    locale: evalCase.turn.locale,
+    grantedCapabilities: Object.freeze(['finance.read']),
+    disclosedContextRefs: Object.freeze([
+      `context-ref-${hashCanonicalJson({
+        dataClass: fixture.dataClass,
+        recordId: fixture.recordId,
+      })}`,
+    ]),
+    deadline: fixture.expiresAt,
+    idempotencyScope: hashCanonicalJson({
+      domain: 'emdo.eval-production-safety-disclosure.v1',
+      agentId: fixture.agentId,
+      orchestrationRunId: runId,
+      parentInvocationId: evalCase.turn.rootManagerInvocationId,
+      recordAllowlist: [
+        {
+          dataClass: fixture.dataClass,
+          recordId: fixture.recordId,
+          fields: fixture.fields,
+        },
+      ],
+    }),
+  });
   return DataDisclosureGrantSchema.parse({
     schemaVersion: 1,
     id: fixture.grantId,
@@ -505,6 +535,8 @@ const disclosureGrant = (evalCase: AgentEvalCase, runId: string) => {
     agentId: fixture.agentId,
     purpose: fixture.purpose,
     runId,
+    invocationContext,
+    invocationContextHash: hashCanonicalJson(invocationContext),
     recordAllowlist: [
       {
         dataClass: fixture.dataClass,
@@ -612,8 +644,8 @@ const pushDisclosureEvents = (
     type: 'specialist-outcome',
     delegationId: 'finance-disclosure',
     agentId: grant.agentId,
-    status: 'failed',
-    safeErrorCode: 'model-disclosure-denied',
+    status: 'unavailable',
+    reasonCode: 'model-disclosure-denied',
   });
   return true;
 };

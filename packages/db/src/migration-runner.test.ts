@@ -44,6 +44,7 @@ describe('database migration runner', () => {
       '0019_manager_turn_spend_warning',
       '0020_manager_specialist_disclosure',
       '0021_blocked_visual_decision_claim',
+      '0022_registered_agent_invocation_lineage',
     ]);
     expect(migrations.map(({ index }) => index)).toEqual(
       migrations.map((_, index) => index),

@@ -78,6 +78,7 @@ import {
   financeV1FinanceDefinition,
   financeV1ManagerDefinition,
   financeV1SchedulerDefinition,
+  type RegisteredAgentReadiness,
 } from './registered-agent-profile.js';
 import type { ProductionProviderProposalComposition } from './proposal-gateway.js';
 import type { ProviderFreeTurnResult } from './provider-free-runtime.js';
@@ -163,6 +164,9 @@ export interface CoreProductionAgentRuntimeDependencies extends Omit<
   readonly capabilityServices: CoreProductionCapabilityServices;
   /** Server-owned model runner; core runtime never falls back to process globals. */
   readonly executionRunner: OpenAiAgentsRunnerPort;
+  readonly registeredAgentReadiness: Readonly<{
+    scheduler: () => Promise<RegisteredAgentReadiness>;
+  }>;
 }
 
 export interface CoreProductionAgentRuntime {
@@ -183,6 +187,10 @@ export interface FinanceV1ProductionAgentRuntimeDependencies extends Omit<
   readonly capabilityServices: FinanceV1ProductionCapabilityServices;
   /** Server-owned model runner; the runtime never reads a process-global key. */
   readonly executionRunner: OpenAiAgentsRunnerPort;
+  readonly registeredAgentReadiness: Readonly<{
+    scheduler: () => Promise<RegisteredAgentReadiness>;
+    finance: () => Promise<RegisteredAgentReadiness>;
+  }>;
 }
 
 export interface FinanceV1ProductionAgentRuntime {
@@ -199,6 +207,9 @@ export interface FinanceOnlyProductionAgentRuntimeDependencies extends Omit<
 > {
   readonly capabilityServices: FinanceOnlyProductionCapabilityServices;
   readonly executionRunner: OpenAiAgentsRunnerPort;
+  readonly registeredAgentReadiness: Readonly<{
+    finance: () => Promise<RegisteredAgentReadiness>;
+  }>;
 }
 
 export interface FinanceOnlyProductionAgentRuntime {
@@ -516,6 +527,12 @@ export const createCoreProductionAgentRuntime = (
   const orchestrator = new AgentOrchestrator({
     manager,
     specialists: [scheduler],
+    registeredSpecialists: [
+      {
+        id: 'scheduler',
+        readiness: dependencies.registeredAgentReadiness.scheduler,
+      },
+    ],
     executionProvider,
     modelRouter: new ModelRouter(dependencies.modelAvailability),
     memory: dependencies.memory,
@@ -651,6 +668,12 @@ export const createFinanceOnlyProductionAgentRuntime = (
   const orchestrator = new AgentOrchestrator({
     manager,
     specialists: [finance],
+    registeredSpecialists: [
+      {
+        id: 'finance',
+        readiness: dependencies.registeredAgentReadiness.finance,
+      },
+    ],
     executionProvider,
     modelRouter: new ModelRouter(dependencies.modelAvailability),
     memory: dependencies.memory,
@@ -732,6 +755,16 @@ export const createFinanceV1ProductionAgentRuntime = (
   const orchestrator = new AgentOrchestrator({
     manager,
     specialists: [scheduler, finance],
+    registeredSpecialists: [
+      {
+        id: 'scheduler',
+        readiness: dependencies.registeredAgentReadiness.scheduler,
+      },
+      {
+        id: 'finance',
+        readiness: dependencies.registeredAgentReadiness.finance,
+      },
+    ],
     executionProvider,
     modelRouter: new ModelRouter(dependencies.modelAvailability),
     memory: dependencies.memory,
@@ -756,6 +789,7 @@ export type DurableManagerTurnClaim =
       status: 'replay';
       runId: string;
       conversationId: string;
+      rootManagerInvocationId: string;
     }>
   | Readonly<{
       status: 'claimed';
@@ -763,6 +797,7 @@ export type DurableManagerTurnClaim =
       ownershipToken: string;
       runId: string;
       conversationId: string;
+      rootManagerInvocationId: string;
       authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
       escalationTriggers: readonly RequestedModelEscalationTrigger[];
     }>;
@@ -772,6 +807,7 @@ const DurableManagerTurnClaimSchema = z.discriminatedUnion('status', [
     status: z.literal('replay'),
     runId: UuidSchema,
     conversationId: UuidSchema,
+    rootManagerInvocationId: UuidSchema,
   }),
   z.strictObject({
     status: z.literal('claimed'),
@@ -779,6 +815,7 @@ const DurableManagerTurnClaimSchema = z.discriminatedUnion('status', [
     ownershipToken: OpaqueReferenceSchema,
     runId: UuidSchema,
     conversationId: UuidSchema,
+    rootManagerInvocationId: UuidSchema,
     authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprintSchema,
     escalationTriggers: z
       .array(z.enum(REQUESTED_MODEL_ESCALATION_TRIGGERS))
@@ -810,8 +847,7 @@ export interface DurableManagerTurnStore {
    * any runtime construction or model I/O. A replay never owns execution.
    */
   claim(input: {
-    /** Locale is intentionally excluded from durable manager-turn SQL/idempotency. */
-    readonly request: Omit<TurnRequest, 'locale'>;
+    readonly request: TurnRequest;
     readonly principal: AuthenticatedPrincipal;
     readonly requestId: string;
     readonly idempotencyKey: string;
@@ -860,6 +896,7 @@ export interface ProductionAgentRuntimeFactory {
     readonly requestId: string;
     readonly runId: string;
     readonly conversationId: string;
+    readonly rootManagerInvocationId: string;
     /** The durable turn's proposal/run-operation scope, not collection scope. */
     readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
     readonly approvalResume?: Readonly<{
@@ -952,11 +989,9 @@ export const createProductionAgentServiceBindingsFromDependencies = (
           runtimeFactory,
         });
   const startManagerTurn: ManagerTurnGateway['start'] = async (input) => {
-    const { locale, ...durableRequest } = input.request;
     const claim = parseDurableManagerTurnClaim(
       await turns.claim({
         ...input,
-        request: durableRequest,
         principal: projectDurableAgentPrincipal(input.principal),
       }),
     );
@@ -968,6 +1003,7 @@ export const createProductionAgentServiceBindingsFromDependencies = (
         requestId: input.requestId,
         runId: claim.runId,
         conversationId: claim.conversationId,
+        rootManagerInvocationId: claim.rootManagerInvocationId,
         authorizationScopeFingerprint: claim.authorizationScopeFingerprint,
       });
       const result = await runtime.orchestrator.runTurn({
@@ -977,9 +1013,10 @@ export const createProductionAgentServiceBindingsFromDependencies = (
         userId: input.principal.userId,
         authenticatedSessionId: input.principal.sessionId,
         conversationId: claim.conversationId,
+        rootManagerInvocationId: claim.rootManagerInvocationId,
         spaceAccessGrantId: input.principal.spaceAccessGrantId,
         authorizationScopeFingerprint: claim.authorizationScopeFingerprint,
-        locale,
+        locale: input.request.locale,
         message: input.request.message,
         escalationTriggers: claim.escalationTriggers,
         ...(input.request.routeHint === undefined

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   AesGcmApprovalCheckpointCipher,
@@ -25,6 +25,7 @@ import {
   type AgentProviderResult,
   type AgentProviderRequest,
   type ManagerConversationMemory,
+  type ModelDisclosureAuthorization,
   type ModelDisclosureGateway,
   type OpenAiAgentsRunnerPort,
   type ProviderWriteProposalGateway,
@@ -35,6 +36,7 @@ import {
   type LocalTraceSink,
 } from '../packages/agent-core/src/trace.js';
 import { sumCadMinorUnits } from '../packages/domains/src/finance/money.js';
+import { hashCanonicalJson } from '../packages/toolbox/src/policy.js';
 import {
   managerInputSchema,
   managerOutputSchema,
@@ -384,6 +386,55 @@ const canonicalDisclosureProjection = (
   });
 };
 
+const authorizedDisclosure = (
+  input: Parameters<ModelDisclosureGateway['authorize']>[0],
+  details: Readonly<{
+    grantId: string;
+    grantVersion: string;
+    disclosurePurpose: string;
+    expiresAt: string;
+    records: ModelDisclosureAuthorization['records'];
+    payload: ModelDisclosureAuthorization['payload'];
+  }>,
+): ModelDisclosureAuthorization => {
+  const invocationContext = Object.freeze({
+    ...input.invocation,
+    disclosedContextRefs: Object.freeze(
+      details.records
+        .map(
+          ({ dataClass, recordId }) =>
+            `context-ref-${hashCanonicalJson({ dataClass, recordId })}`,
+        )
+        .sort(),
+    ),
+    deadline: details.expiresAt,
+    idempotencyScope: hashCanonicalJson({
+      domain: 'emdo.eval-disclosure-authority.v1',
+      agentId: input.agentId,
+      invocation: input.invocation,
+      records: details.records,
+    }),
+  });
+  return Object.freeze({
+    status: 'authorized' as const,
+    grantId: details.grantId,
+    grantVersion: details.grantVersion,
+    runId: input.runId,
+    householdId: input.householdId,
+    userId: input.userId,
+    agentId: input.agentId,
+    phasePurpose: input.phasePurpose,
+    phaseInvocationId: input.phaseInvocationId,
+    invocationContext,
+    invocationContextHash: hashCanonicalJson(invocationContext),
+    disclosurePurpose: details.disclosurePurpose,
+    provider: input.provider,
+    expiresAt: details.expiresAt,
+    records: details.records,
+    payload: details.payload,
+  });
+};
+
 const delegatedSpecialistInput = (input: unknown) => {
   if (input === null || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('invalid-canonical-specialist-input');
@@ -445,18 +496,10 @@ const defaultDisclosureGateway: ModelDisclosureGateway = Object.freeze({
     input: Parameters<ModelDisclosureGateway['authorize']>[0],
   ) => {
     const projection = canonicalDisclosureProjection(input.sources);
-    return Object.freeze({
-      status: 'authorized' as const,
+    return authorizedDisclosure(input, {
       grantId: disclosureFixture.grantId,
       grantVersion: '1.0.0',
-      runId: input.runId,
-      householdId: input.householdId,
-      userId: input.userId,
-      agentId: input.agentId,
-      phasePurpose: input.phasePurpose,
-      phaseInvocationId: input.phaseInvocationId,
       disclosurePurpose: 'no-records-required',
-      provider: input.provider,
       expiresAt: '2026-08-09T16:10:00.000Z',
       records: projection.records,
       payload: projection.payload,
@@ -544,7 +587,16 @@ describe('real AgentOrchestrator eval path', () => {
           caseId === 'partial-specialist-failure' &&
           delegation.specialistId === 'finance'
         ) {
-          throw new Error('database password must remain redacted');
+          return Object.freeze({
+            status: 'failed' as const,
+            reason: 'execution-failed' as const,
+            replaySafety: 'safe' as const,
+            usage: Object.freeze({
+              inputTokens: 0,
+              outputTokens: 0,
+              modelCostCadMinor: 0,
+            }),
+          });
         }
         lifecycle.push(`finish:${caseId}:${delegation.id}`);
         return completed(
@@ -729,18 +781,10 @@ describe('real AgentOrchestrator eval path', () => {
         ) => {
           if (input.agentId === 'manager') {
             const projection = canonicalDisclosureProjection(input.sources);
-            return Object.freeze({
-              status: 'authorized' as const,
+            return authorizedDisclosure(input, {
               grantId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f399',
               grantVersion: '1.0.0',
-              runId: input.runId,
-              householdId: input.householdId,
-              userId: input.userId,
-              agentId: input.agentId,
-              phasePurpose: input.phasePurpose,
-              phaseInvocationId: input.phaseInvocationId,
               disclosurePurpose: 'manager-orchestration-no-private-records',
-              provider: input.provider,
               expiresAt: '2026-08-09T16:10:00.000Z',
               records: projection.records,
               payload: projection.payload,
@@ -752,7 +796,6 @@ describe('real AgentOrchestrator eval path', () => {
             userId: item.turn.userId,
             agentId: 'finance',
             phasePurpose: 'specialist-execution',
-            phaseInvocationId: 'finance-disclosure',
             provider: 'openai',
           });
           if (item.id === 'cross-run-disclosure-reuse-denied') {
@@ -762,18 +805,10 @@ describe('real AgentOrchestrator eval path', () => {
               reason: 'grant-run-mismatch' as const,
             });
           }
-          return Object.freeze({
-            status: 'authorized' as const,
+          return authorizedDisclosure(input, {
             grantId: fixture.grantId,
             grantVersion: fixture.grantVersion,
-            runId: item.turn.runId,
-            householdId: item.turn.householdId,
-            userId: item.turn.userId,
-            agentId: fixture.agentId,
-            phasePurpose: fixture.phasePurpose,
-            phaseInvocationId: input.phaseInvocationId,
             disclosurePurpose: fixture.purpose,
-            provider: 'openai' as const,
             expiresAt: fixture.expiresAt,
             records: Object.freeze([
               Object.freeze({
@@ -892,6 +927,7 @@ describe('real AgentOrchestrator eval path', () => {
 
   it('requires separate turns for multiple provider writes before checkpoint or action dispatch', async () => {
     const item = evalCase('multiple-provider-writes-require-separate-turns');
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(Date.parse(EVAL_NOW));
     const traces = new TraceBuffer();
     const providerPhases: string[] = [];
     let checkpointCreates = 0;
@@ -1088,6 +1124,7 @@ describe('real AgentOrchestrator eval path', () => {
     expect(result.phases.flatMap(({ events }) => events)).not.toContainEqual(
       expect.objectContaining({ type: 'action-executed' }),
     );
+    dateNow.mockRestore();
   });
 
   it('rejects duplicate section delegations before either provider write can start', async () => {
@@ -1298,6 +1335,7 @@ describe('real AgentOrchestrator eval path', () => {
 
   it('cancels the checkpoint and abandons the proposal when interruption audit persistence fails', async () => {
     const item = evalCase('calendar-write-authenticated-visual-resume');
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(Date.parse(EVAL_NOW));
     const bufferedTraces = new TraceBuffer();
     let failedAuditWrites = 0;
     const failingTraceSink: LocalTraceSink = Object.freeze({
@@ -1523,6 +1561,7 @@ describe('real AgentOrchestrator eval path', () => {
           ),
       ).toEqual([]);
     } finally {
+      dateNow.mockRestore();
       cipher.dispose();
     }
   });

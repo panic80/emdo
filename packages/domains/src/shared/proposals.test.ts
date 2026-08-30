@@ -37,6 +37,9 @@ const ids = {
   currentRequest: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f015',
   currentSpaceGrant: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f016',
   originSpaceGrant: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f017',
+  parentInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f018',
+  agentInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f019',
+  phaseInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f020',
 } as const;
 
 const argumentsValue = { calendarId: 'primary', title: 'Dentist' };
@@ -69,6 +72,23 @@ const approvalDisplay = {
   afterSummary: 'One event will be created with the approved details.',
   fields: [{ label: 'Title', value: 'Dentist' }],
 } as const;
+const invocationContext = {
+  orchestrationRunId: ids.run,
+  parentInvocationId: ids.parentInvocation,
+  agentInvocationId: ids.agentInvocation,
+  phaseInvocationId: ids.phaseInvocation,
+  actorId: ids.user,
+  locale: 'en-CA',
+  grantedCapabilities: ['google-calendar.event.create'],
+  disclosedContextRefs: [
+    `context-ref-${hashCanonicalJson({
+      dataClass: 'calendar.events',
+      recordId: 'primary',
+    })}`,
+  ],
+  deadline: '2026-08-09T16:10:00.000Z',
+  idempotencyScope: '1'.repeat(64),
+} as const;
 const proposalInput = {
   schemaVersion: 1,
   id: ids.proposal,
@@ -99,6 +119,8 @@ const proposalInput = {
     agentId: 'scheduler',
     purpose: 'Create the approved appointment.',
     runId: ids.run,
+    invocationContext,
+    invocationContextHash: hashCanonicalJson(invocationContext),
     recordAllowlist: [
       { dataClass: 'calendar.events', recordId: 'primary', fields: ['title'] },
     ],

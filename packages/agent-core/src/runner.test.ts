@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
@@ -28,6 +30,7 @@ import {
   type ModelDisclosureGateway,
   type ModelDisclosureSource,
   type ProviderWriteProposalGateway,
+  type RegisteredSpecialistRuntimeDescriptor,
   type TurnInput,
 } from './runner.js';
 import { LocalTraceRecorder, type LocalTraceEvent } from './trace.js';
@@ -43,9 +46,12 @@ const ids = Object.freeze({
   authorizationScopeFingerprint:
     EffectiveAuthorizationScopeFingerprintSchema.parse('e'.repeat(64)),
   disclosureGrantId: '018f1f5e-1000-7000-8000-000000000007',
+  rootManagerInvocationId: '018f1f5e-1000-7000-8000-000000000009',
 });
 
 const graphHash = 'a'.repeat(64);
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const providerAuthorityBindingHash = 'b'.repeat(64);
 const sdkVersion = '0.14.3';
 const proposalId = '018f1f5e-1000-7000-8000-000000000060';
@@ -248,6 +254,7 @@ const turn = (overrides: Partial<TurnInput> = {}): TurnInput => {
     spaceAccessGrantId: ids.spaceAccessGrantId,
     authorizationScopeFingerprint: ids.authorizationScopeFingerprint,
     locale: 'en-CA',
+    rootManagerInvocationId: ids.rootManagerInvocationId,
     message: 'Schedule a dentist visit and update my shopping plan.',
     escalationTriggers: [],
     abortSignal: new AbortController().signal,
@@ -317,6 +324,44 @@ const canonicalProjection = (
   };
 };
 
+const canonicalHash = (value: unknown): string => {
+  const canonicalize = (entry: unknown): unknown => {
+    if (Array.isArray(entry)) return entry.map(canonicalize);
+    if (entry !== null && typeof entry === 'object') {
+      return Object.fromEntries(
+        Object.entries(entry as Record<string, unknown>)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, child]) => [key, canonicalize(child)]),
+      );
+    }
+    return entry;
+  };
+  return createHash('sha256')
+    .update(JSON.stringify(canonicalize(value)))
+    .digest('hex');
+};
+
+const authorizedInvocation = (
+  input: Parameters<ModelDisclosureGateway['authorize']>[0],
+  records: ModelDisclosureAuthorization['records'],
+) => {
+  const invocationContext = {
+    ...input.invocation,
+    disclosedContextRefs: records
+      .map(
+        ({ dataClass, recordId }) =>
+          `context-ref-${canonicalHash({ dataClass, recordId })}`,
+      )
+      .sort(),
+    deadline: '2026-08-09T22:35:00.000Z',
+    idempotencyScope: 'd'.repeat(64),
+  } as const;
+  return {
+    invocationContext,
+    invocationContextHash: canonicalHash(invocationContext),
+  } as const;
+};
+
 const setup = (
   execute: AgentExecutionProvider['execute'],
   overrides: {
@@ -337,6 +382,8 @@ const setup = (
     readonly financeCapabilities?: readonly ResolvedAgentCapability[];
     readonly managerOutputSchema?: z.ZodObject;
     readonly clock?: () => Date;
+    readonly createInvocationId?: () => string;
+    readonly registeredSpecialists?: readonly RegisteredSpecialistRuntimeDescriptor[];
   } = {},
 ) => {
   const retrieveForManager = vi.fn(async () =>
@@ -437,6 +484,7 @@ const setup = (
       ),
       agent('shopping', 'specialist'),
     ],
+    registeredSpecialists: overrides.registeredSpecialists,
     executionProvider: {
       execute: async (request) => {
         await request.beforeModelDispatch?.();
@@ -539,6 +587,7 @@ const setup = (
             agentId: input.agentId,
             phasePurpose: input.phasePurpose,
             phaseInvocationId: input.phaseInvocationId,
+            ...authorizedInvocation(input, projection.records),
             disclosurePurpose:
               input.agentId === 'scheduler'
                 ? 'schedule one appointment'
@@ -556,6 +605,7 @@ const setup = (
     createCheckpointId:
       overrides.createCheckpointId ??
       (() => '018f1f5e-1000-7000-8000-000000000030'),
+    createInvocationId: overrides.createInvocationId,
     clock: overrides.clock ?? (() => new Date('2026-08-09T22:30:00.000Z')),
   });
   return {
@@ -638,13 +688,13 @@ describe('AgentOrchestrator', () => {
   });
 
   it('binds every model call to a distinct phase invocation and canonical durable records', async () => {
-    const authorizationInputs: Readonly<Record<string, unknown>>[] = [];
+    const authorizationInputs: Array<
+      Parameters<ModelDisclosureGateway['authorize']>[0]
+    > = [];
     const providerInputs: AgentProviderRequest[] = [];
     const authorize = vi.fn<ModelDisclosureGateway['authorize']>(
       async (input) => {
-        authorizationInputs.push(
-          input as unknown as Readonly<Record<string, unknown>>,
-        );
+        authorizationInputs.push(input);
         const projection = canonicalProjection(input.sources);
         return {
           status: 'authorized',
@@ -659,6 +709,7 @@ describe('AgentOrchestrator', () => {
           agentId: input.agentId,
           phasePurpose: input.phasePurpose,
           phaseInvocationId: input.phaseInvocationId,
+          ...authorizedInvocation(input, projection.records),
           disclosurePurpose: 'authorize one exact model dispatch',
           provider: input.provider,
           expiresAt: '2026-08-09T22:40:00.000Z',
@@ -700,14 +751,33 @@ describe('AgentOrchestrator', () => {
       status: 'completed',
     });
 
-    expect(authorizationInputs.map((input) => input.phaseInvocationId)).toEqual(
-      [
-        'manager-plan',
-        'schedule-dentist',
-        'schedule-optometrist',
-        'manager-synthesis',
-      ],
-    );
+    expect(
+      authorizationInputs
+        .map((input) => input.phaseInvocationId)
+        .every((id) => UUID_PATTERN.test(String(id))),
+    ).toBe(true);
+    expect(
+      new Set(authorizationInputs.map((input) => input.phaseInvocationId)).size,
+    ).toBe(4);
+    expect(
+      authorizationInputs
+        .filter((input) => input.agentId === 'manager')
+        .every(
+          (input) =>
+            input.invocation.parentInvocationId === ids.runId &&
+            input.invocation.agentInvocationId === ids.rootManagerInvocationId,
+        ),
+    ).toBe(true);
+    expect(
+      authorizationInputs
+        .filter((input) => input.agentId !== 'manager')
+        .every(
+          (input) =>
+            input.invocation.parentInvocationId ===
+              ids.rootManagerInvocationId &&
+            input.invocation.agentInvocationId !== input.phaseInvocationId,
+        ),
+    ).toBe(true);
     expect(
       authorizationInputs.every(
         (input) => !Object.hasOwn(input, 'requestedGrantId'),
@@ -738,6 +808,66 @@ describe('AgentOrchestrator', () => {
     });
   });
 
+  it('uses server-minted child identities and readiness without provider dispatch', async () => {
+    const providerCalls: AgentProviderRequest[] = [];
+    const invocationIds = [
+      '018f1f5e-1000-7000-8000-000000000101',
+      '018f1f5e-1000-7000-8000-000000000102',
+      '018f1f5e-1000-7000-8000-000000000103',
+      '018f1f5e-1000-7000-8000-000000000104',
+    ];
+    const { orchestrator } = setup(
+      async (request) => {
+        providerCalls.push(request);
+        if (request.phase === 'plan') {
+          return completed({
+            delegations: [
+              {
+                id: 'finance-ready-check',
+                specialistId: 'finance',
+                input: { request: 'review documents' },
+                dependsOn: [],
+              },
+            ],
+          });
+        }
+        return completed({ message: 'Finance is unavailable.' });
+      },
+      {
+        createInvocationId: () => invocationIds.shift()!,
+        registeredSpecialists: [
+          {
+            id: 'finance',
+            readiness: async () => ({
+              status: 'unavailable' as const,
+              reasonCode: 'finance-not-ready',
+            }),
+          },
+        ],
+      },
+    );
+
+    await expect(orchestrator.runTurn(turn())).resolves.toMatchObject({
+      status: 'completed',
+      specialistOutcomes: [
+        {
+          delegationId: 'finance-ready-check',
+          status: 'unavailable',
+          reasonCode: 'finance-not-ready',
+          invocationContext: {
+            parentInvocationId: ids.rootManagerInvocationId,
+            agentInvocationId: '018f1f5e-1000-7000-8000-000000000102',
+            phaseInvocationId: '018f1f5e-1000-7000-8000-000000000103',
+            disclosedContextRefs: [],
+          },
+        },
+      ],
+    });
+    expect(providerCalls.filter(({ phase }) => phase === 'specialist')).toEqual(
+      [],
+    );
+  });
+
   it('sends only the gateway-filtered payload and audits authoritative record fields at dispatch', async () => {
     const providerInputs: AgentProviderRequest[] = [];
     const authorize = vi.fn<ModelDisclosureGateway['authorize']>(
@@ -757,6 +887,7 @@ describe('AgentOrchestrator', () => {
           agentId: input.agentId,
           phasePurpose: input.phasePurpose,
           phaseInvocationId: input.phaseInvocationId,
+          ...authorizedInvocation(input, projection.records),
           disclosurePurpose:
             input.agentId === 'scheduler'
               ? 'schedule one appointment'
@@ -823,7 +954,7 @@ describe('AgentOrchestrator', () => {
       .find((input) => input.agentId === 'scheduler');
     expect(specialistAuthorization).toMatchObject({
       phasePurpose: 'specialist-execution',
-      phaseInvocationId: 'schedule-safe',
+      phaseInvocationId: expect.stringMatching(UUID_PATTERN),
       provider: 'openai',
       sources: [{ kind: 'specialist-delegation' }],
     });
@@ -836,7 +967,7 @@ describe('AgentOrchestrator', () => {
           agentId: 'scheduler',
           purpose: 'schedule one appointment',
           phasePurpose: 'specialist-execution',
-          phaseInvocationId: 'schedule-safe',
+          phaseInvocationId: expect.stringMatching(UUID_PATTERN),
           dataClass: 'agent.delegations',
           recordId: 'schedule-safe',
           fields: ['delegation'],
@@ -867,6 +998,10 @@ describe('AgentOrchestrator', () => {
               agentId: input.agentId,
               phasePurpose: input.phasePurpose,
               phaseInvocationId: input.phaseInvocationId,
+              ...authorizedInvocation(
+                input,
+                canonicalProjection(input.sources).records,
+              ),
               disclosurePurpose: 'manage this assistant turn',
               provider: input.provider,
               expiresAt: '2026-08-09T22:40:00.000Z',
@@ -900,11 +1035,8 @@ describe('AgentOrchestrator', () => {
       specialistOutcomes: [
         {
           specialistId: 'scheduler',
-          status: 'failed',
-          safeError: {
-            code: 'model-disclosure-denied',
-            retryable: false,
-          },
+          status: 'unavailable',
+          reasonCode: 'model-disclosure-denied',
         },
       ],
     });
@@ -918,6 +1050,18 @@ describe('AgentOrchestrator', () => {
         grantId: ids.disclosureGrantId,
         agentId: 'scheduler',
         reason: 'grant-run-mismatch',
+      },
+    });
+    expect(
+      traceEvents.find(
+        (event) =>
+          event.type === 'specialist.outcome' &&
+          event.metadata.delegationId === 'schedule-denied',
+      ),
+    ).toMatchObject({
+      metadata: {
+        status: 'unavailable',
+        reasonCode: 'model-disclosure-denied',
       },
     });
   });
@@ -978,6 +1122,7 @@ describe('AgentOrchestrator', () => {
               agentId: input.agentId,
               phasePurpose: input.phasePurpose,
               phaseInvocationId: input.phaseInvocationId,
+              ...authorizedInvocation(input, projection.records),
               disclosurePurpose: 'manage this assistant turn',
               provider: input.provider,
               expiresAt: '2026-08-09T22:40:00.000Z',
@@ -1046,6 +1191,7 @@ describe('AgentOrchestrator', () => {
           agentId: input.agentId,
           phasePurpose: input.phasePurpose,
           phaseInvocationId: input.phaseInvocationId,
+          ...authorizedInvocation(input, projection.records),
           disclosurePurpose: 'manage this assistant turn',
           provider: input.provider,
           expiresAt: '2026-08-09T22:40:00.000Z',
@@ -1106,6 +1252,7 @@ describe('AgentOrchestrator', () => {
           agentId: input.agentId,
           phasePurpose: input.phasePurpose,
           phaseInvocationId: input.phaseInvocationId,
+          ...authorizedInvocation(input, projection.records),
           disclosurePurpose: 'prepare a redacted household plan',
           provider: input.provider,
           expiresAt: '2026-08-09T22:40:00.000Z',
@@ -1286,7 +1433,7 @@ describe('AgentOrchestrator', () => {
       hasPartialFailures: true,
       specialistOutcomes: [
         { delegationId: 'calendar', status: 'completed' },
-        { delegationId: 'budget', status: 'failed' },
+        { delegationId: 'budget', status: 'unavailable' },
         { delegationId: 'shop-after-calendar', status: 'completed' },
       ],
     });
@@ -1301,10 +1448,8 @@ describe('AgentOrchestrator', () => {
           fields: expect.objectContaining({
             outcome: expect.objectContaining({
               delegationId: 'budget',
-              status: 'failed',
-              safeError: expect.objectContaining({
-                code: 'specialist-execution-failed',
-              }),
+              status: 'unavailable',
+              reasonCode: 'specialist-dispatch-unavailable',
             }),
           }),
         }),
@@ -1554,7 +1699,7 @@ describe('AgentOrchestrator', () => {
           {
             delegationId: 'schedule-once',
             status: 'completed',
-            output: { alternatives: ['Tuesday'] },
+            facts: { alternatives: ['Tuesday'] },
           },
         ],
       });
@@ -1601,8 +1746,8 @@ describe('AgentOrchestrator', () => {
       specialistOutcomes: [
         {
           delegationId: 'schedule-once',
-          status: 'failed',
-          safeError: { code: 'specialist-output-validation-failed' },
+          status: 'unavailable',
+          reasonCode: 'specialist-dispatch-unavailable',
         },
       ],
     });
@@ -1791,10 +1936,8 @@ describe('AgentOrchestrator', () => {
       specialistOutcomes: [
         {
           status: 'failed',
-          safeError: {
-            code: 'multiple-provider-writes-require-separate-turns',
-            retryable: false,
-          },
+          safeMessage:
+            'Each provider write requires a separate assistant turn and visual approval.',
         },
       ],
     });
@@ -2452,10 +2595,8 @@ describe('AgentOrchestrator', () => {
       specialistOutcomes: [
         {
           status: 'failed',
-          safeError: {
-            code: 'provider-write-proposal-finalization-pending',
-            retryable: false,
-          },
+          safeMessage:
+            'A prepared external action could not be terminalized safely. Reconciliation is required before retrying.',
         },
       ],
     });
@@ -3159,7 +3300,7 @@ describe('AgentOrchestrator', () => {
                 outcome: expect.objectContaining({
                   delegationId: 'calendar-write',
                   status: 'completed',
-                  output: { eventProposal: 'ready' },
+                  facts: { eventProposal: 'ready' },
                 }),
               }),
             }),
@@ -3282,13 +3423,12 @@ describe('AgentOrchestrator', () => {
         {
           delegationId: 'calendar-write',
           status: 'failed',
-          output: { rejected: true },
-          safeError: { code: 'approval-rejected', retryable: false },
+          safeMessage: 'The requested provider action was not approved.',
         },
         {
           delegationId: 'finance-after-calendar',
-          status: 'blocked',
-          safeError: { code: 'approval-rejected', retryable: false },
+          status: 'unavailable',
+          reasonCode: 'approval-rejected-dependency-unavailable',
         },
       ],
     });
@@ -3308,8 +3448,7 @@ describe('AgentOrchestrator', () => {
             outcome: expect.objectContaining({
               delegationId: 'calendar-write',
               status: 'failed',
-              output: { rejected: true },
-              safeError: expect.objectContaining({ code: 'approval-rejected' }),
+              safeMessage: 'The requested provider action was not approved.',
             }),
           }),
         }),
@@ -3318,7 +3457,8 @@ describe('AgentOrchestrator', () => {
           fields: expect.objectContaining({
             outcome: expect.objectContaining({
               delegationId: 'finance-after-calendar',
-              status: 'blocked',
+              status: 'unavailable',
+              reasonCode: 'approval-rejected-dependency-unavailable',
             }),
           }),
         }),

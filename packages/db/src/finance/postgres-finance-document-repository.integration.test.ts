@@ -395,8 +395,10 @@ describeDatabase(
       );
 
       const migrations = await loadOrderedMigrations();
-      expect(migrations).toHaveLength(22);
-      expect(migrations.at(-1)?.id).toBe('0021_blocked_visual_decision_claim');
+      expect(migrations).toHaveLength(23);
+      expect(migrations.at(-1)?.id).toBe(
+        '0022_registered_agent_invocation_lineage',
+      );
       if (preflight.rows[0]?.emdo_schema === null) {
         for (const migration of migrations) await admin.query(migration.sql);
       } else {

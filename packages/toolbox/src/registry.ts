@@ -374,6 +374,9 @@ export const createCapabilityRegistry = (
         agentId: context.agentId,
         spaceAccessGrantId: context.spaceAccessGrantId,
         locale: context.locale,
+        ...(context.invocationContext === undefined
+          ? {}
+          : { invocationContext: context.invocationContext }),
         ...(context.disclosureGrantId === undefined
           ? {}
           : { disclosureGrantId: context.disclosureGrantId }),
@@ -727,6 +730,9 @@ export const createCapabilityRegistry = (
             sessionId: invocationContext.sessionId,
             agentId: invocationContext.agentId,
             locale: invocationContext.locale,
+            ...(invocationContext.invocationContext === undefined
+              ? {}
+              : { invocationContext: invocationContext.invocationContext }),
             abortSignal: providerAbortController.signal,
             providerWritePermit: dispatchPermit,
             providerWriteOperationScope: dispatchAuthority.operationScope,

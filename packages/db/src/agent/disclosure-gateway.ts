@@ -1,11 +1,14 @@
 import { createHash } from 'node:crypto';
 
 import {
+  AgentInvocationContextSchema,
   DataDisclosureGrantSchema,
   DataClassSchema,
   IdentifierSchema,
   JsonValueSchema,
   OpaqueReferenceSchema,
+  Sha256Schema,
+  SupportedLocaleSchema,
   UuidSchema,
   deepFreeze,
   type DataDisclosureGrant,
@@ -33,6 +36,7 @@ const DenialReasonSchema = z.enum([
   'grant-user-mismatch',
   'grant-agent-mismatch',
   'grant-purpose-mismatch',
+  'grant-invocation-mismatch',
   'grant-provider-mismatch',
   'grant-expired',
   'record-not-allowed',
@@ -40,6 +44,48 @@ const DenialReasonSchema = z.enum([
   'no-active-grant',
 ]);
 const HashSchema = z.string().regex(/^[a-f0-9]{64}$/u);
+
+/** Identity is caller-supplied; the database derives the remaining context. */
+const InvocationIdentitySchema = z
+  .strictObject({
+    orchestrationRunId: UuidSchema,
+    parentInvocationId: UuidSchema,
+    agentInvocationId: UuidSchema,
+    phaseInvocationId: UuidSchema,
+    actorId: UuidSchema,
+    locale: SupportedLocaleSchema,
+    grantedCapabilities: z.array(IdentifierSchema).max(128),
+  })
+  .superRefine((value, context) => {
+    if (
+      value.grantedCapabilities.some(
+        (capability, index) =>
+          index > 0 && value.grantedCapabilities[index - 1]! >= capability,
+      )
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['grantedCapabilities'],
+        message: 'Granted capabilities must be sorted and unique',
+      });
+    }
+    if (
+      new Set([
+        value.parentInvocationId,
+        value.agentInvocationId,
+        value.phaseInvocationId,
+      ]).size !== 3
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['phaseInvocationId'],
+        message: 'Invocation lineage identifiers must be distinct',
+      });
+    }
+  });
+export type ModelDisclosureInvocationIdentity = z.output<
+  typeof InvocationIdentitySchema
+>;
 const RecordAllowlistSchema = z
   .array(
     z.strictObject({
@@ -64,6 +110,29 @@ const RecordAllowlistSchema = z
           message: 'Disclosure allowlist contains a duplicate binding',
         });
       }
+      if (
+        index > 0 &&
+        `${records[index - 1]!.dataClass}\0${records[index - 1]!.recordId}` >=
+          binding
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: [index],
+          message: 'Disclosure allowlist records must be sorted',
+        });
+      }
+      if (
+        record.fields.some(
+          (field, fieldIndex) =>
+            fieldIndex > 0 && record.fields[fieldIndex - 1]! >= field,
+        )
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: [index, 'fields'],
+          message: 'Disclosure allowlist fields must be sorted and unique',
+        });
+      }
       bindings.add(binding);
     }
   });
@@ -78,6 +147,7 @@ const IssueGrantInputSchema = z.strictObject({
   phasePurpose: PhasePurposeSchema,
   disclosurePurpose: z.string().trim().min(3).max(500),
   provider: z.literal('openai'),
+  invocation: InvocationIdentitySchema,
   recordAllowlist: RecordAllowlistSchema,
 });
 const IssuedGrantRowSchema = z.looseObject({
@@ -93,6 +163,8 @@ const IssuedGrantRowSchema = z.looseObject({
   phase_purpose: PhasePurposeSchema,
   provider: z.literal('openai'),
   record_allowlist: RecordAllowlistSchema,
+  invocation_context: AgentInvocationContextSchema,
+  invocation_context_hash: Sha256Schema,
   grant_hash: HashSchema,
   one_run_only: z.literal(true),
   created_at: z.coerce.date(),
@@ -112,6 +184,9 @@ const ActiveGrantRowSchema = z.looseObject({
   purpose: z.string().trim().min(3).max(500),
   provider: z.literal('openai'),
   record_allowlist: RecordAllowlistSchema,
+  phase_purpose: PhasePurposeSchema,
+  invocation_context: AgentInvocationContextSchema,
+  invocation_context_hash: Sha256Schema,
   grant_hash: HashSchema,
   created_at: z.coerce.date(),
   expires_at: z.coerce.date(),
@@ -125,6 +200,31 @@ const ResolutionRowSchema = z.discriminatedUnion('status', [
   ActiveGrantRowSchema,
   DeniedGrantRowSchema,
 ]);
+const ConsumedProposalGrantRowSchema = ActiveGrantRowSchema.extend({
+  status: z.literal('consumed'),
+});
+const ProposalDeniedGrantRowSchema = z.looseObject({
+  status: z.enum([
+    'grant-not-found',
+    'grant-run-mismatch',
+    'grant-household-mismatch',
+    'grant-user-mismatch',
+    'grant-agent-mismatch',
+    'grant-purpose-mismatch',
+    'grant-invocation-mismatch',
+    'grant-provider-mismatch',
+    'grant-expired',
+    'record-not-allowed',
+    'field-not-allowed',
+    'no-active-grant',
+    'grant-not-consumed',
+  ]),
+  grant_id: UuidSchema.nullish(),
+});
+const ProposalGrantResolutionRowSchema = z.discriminatedUnion('status', [
+  ConsumedProposalGrantRowSchema,
+  ProposalDeniedGrantRowSchema,
+]);
 const AuthorizationInputSchema = z
   .strictObject({
     requestId: UuidSchema,
@@ -134,7 +234,9 @@ const AuthorizationInputSchema = z
     spaceAccessGrantId: UuidSchema,
     agentId: IdentifierSchema,
     phasePurpose: PhasePurposeSchema,
+    phaseInvocationId: UuidSchema,
     provider: z.literal('openai'),
+    invocation: InvocationIdentitySchema,
     requestedGrantId: UuidSchema.optional(),
     requestedDataClasses: z.array(DataClassSchema).max(64),
     payload: JsonValueSchema,
@@ -148,6 +250,29 @@ const AuthorizationInputSchema = z
         code: 'custom',
         path: ['requestedDataClasses'],
         message: 'Requested data classes must be unique',
+      });
+    }
+    if (
+      value.requestedDataClasses.some(
+        (dataClass, index) =>
+          index > 0 && value.requestedDataClasses[index - 1]! >= dataClass,
+      )
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['requestedDataClasses'],
+        message: 'Requested data classes must be sorted and unique',
+      });
+    }
+    if (
+      value.phaseInvocationId !== value.invocation.phaseInvocationId ||
+      value.runId !== value.invocation.orchestrationRunId ||
+      value.userId !== value.invocation.actorId
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['invocation'],
+        message: 'Disclosure invocation identity does not match its request',
       });
     }
   });
@@ -173,6 +298,33 @@ export type SchedulerDisclosureGrantResolverScope = Omit<
   'agentId'
 > &
   Readonly<{ readonly agentId: 'scheduler' }>;
+
+/**
+ * A durable proposal already owns this exact, readonly grant binding. The
+ * resolver parses it as untrusted data rather than requiring callers to clone
+ * its frozen contract representation into mutable Zod input arrays.
+ */
+export type SpecialistDisclosureGrantInvocationBinding = Readonly<
+  Pick<DataDisclosureGrant, 'invocationContext' | 'invocationContextHash'>
+>;
+
+const ResolverInvocationSchema = z
+  .strictObject({
+    invocationContext: AgentInvocationContextSchema,
+    invocationContextHash: Sha256Schema,
+  })
+  .superRefine((value, context) => {
+    if (
+      value.invocationContextHash !==
+      hashInvocationContext(value.invocationContext)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['invocationContextHash'],
+        message: 'Invocation context hash is invalid',
+      });
+    }
+  });
 
 const CanonicalEnvelopeSchema = z
   .strictObject({
@@ -267,7 +419,7 @@ const snapshotJsonValue = (value: JsonValue): JsonValue => {
   return snapshot;
 };
 
-const canonicalJson = (value: JsonValue): string => {
+const canonicalJson = (value: unknown): string => {
   if (
     value === null ||
     typeof value === 'boolean' ||
@@ -279,9 +431,10 @@ const canonicalJson = (value: JsonValue): string => {
   if (Array.isArray(value)) {
     return `[${value.map((entry) => canonicalJson(entry)).join(',')}]`;
   }
-  return `{${Object.keys(value)
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
     .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key]!)}`)
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
     .join(',')}}`;
 };
 
@@ -289,6 +442,27 @@ export const hashDataDisclosureGrant = (grant: DataDisclosureGrant): string =>
   createHash('sha256')
     .update(canonicalJson(JsonValueSchema.parse(grant)))
     .digest('hex');
+
+const hashInvocationContext = (context: unknown): string =>
+  createHash('sha256').update(canonicalJson(context), 'utf8').digest('hex');
+
+const contextReferenceFor = (record: {
+  readonly dataClass: string;
+  readonly recordId: string;
+}): string =>
+  `context-ref-${hashInvocationContext({
+    dataClass: record.dataClass,
+    recordId: record.recordId,
+  })}`;
+
+const contextReferencesFor = (
+  records: readonly { readonly dataClass: string; readonly recordId: string }[],
+): readonly string[] =>
+  Object.freeze(
+    records
+      .map(contextReferenceFor)
+      .sort((left, right) => left.localeCompare(right)),
+  );
 
 const normalizeRecordAllowlist = (
   records: z.output<typeof RecordAllowlistSchema>,
@@ -328,6 +502,8 @@ export class SchedulerDisclosureGrantResolverError extends Error {
 export interface IssuedDataDisclosureGrant {
   readonly grant: DataDisclosureGrant;
   readonly grantHash: string;
+  readonly invocationContext: z.output<typeof AgentInvocationContextSchema>;
+  readonly invocationContextHash: string;
   readonly phasePurpose: z.output<typeof PhasePurposeSchema>;
   readonly spaceId: string;
 }
@@ -366,7 +542,7 @@ export class PostgresDataDisclosureGrantIssuer {
         const row = firstResultRow(
           await client.query(
             `select * from emdo.issue_model_disclosure_grant(
-             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb
+             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb
            )`,
             [
               data.runId,
@@ -378,6 +554,7 @@ export class PostgresDataDisclosureGrantIssuer {
               data.phasePurpose,
               data.disclosurePurpose,
               data.provider,
+              JSON.stringify(data.invocation),
               JSON.stringify(data.recordAllowlist),
             ],
           ),
@@ -405,6 +582,8 @@ export class PostgresDataDisclosureGrantIssuer {
           agentId: value.agent_id,
           purpose: value.purpose,
           runId: value.run_id,
+          invocationContext: value.invocation_context,
+          invocationContextHash: value.invocation_context_hash,
           recordAllowlist: value.record_allowlist,
           provider: value.provider,
           createdAt: value.created_at.toISOString(),
@@ -414,6 +593,8 @@ export class PostgresDataDisclosureGrantIssuer {
         const expectedAllowlist = normalizeRecordAllowlist(
           data.recordAllowlist,
         );
+        const expectedContextReferences =
+          contextReferencesFor(expectedAllowlist);
         if (
           !grantResult.success ||
           value.household_id !== data.householdId ||
@@ -424,6 +605,24 @@ export class PostgresDataDisclosureGrantIssuer {
           value.phase_purpose !== data.phasePurpose ||
           value.purpose !== data.disclosurePurpose ||
           value.provider !== data.provider ||
+          value.invocation_context.orchestrationRunId !==
+            data.invocation.orchestrationRunId ||
+          value.invocation_context.parentInvocationId !==
+            data.invocation.parentInvocationId ||
+          value.invocation_context.agentInvocationId !==
+            data.invocation.agentInvocationId ||
+          value.invocation_context.phaseInvocationId !==
+            data.invocation.phaseInvocationId ||
+          value.invocation_context.actorId !== data.invocation.actorId ||
+          value.invocation_context.locale !== data.invocation.locale ||
+          JSON.stringify(value.invocation_context.grantedCapabilities) !==
+            JSON.stringify(data.invocation.grantedCapabilities) ||
+          JSON.stringify(value.invocation_context.disclosedContextRefs) !==
+            JSON.stringify(expectedContextReferences) ||
+          Date.parse(value.invocation_context.deadline) !==
+            value.expires_at.getTime() ||
+          value.invocation_context_hash !==
+            hashInvocationContext(value.invocation_context) ||
           value.expires_at.getTime() - value.created_at.getTime() !== 600_000 ||
           value.database_time.getTime() < value.created_at.getTime() ||
           value.database_time.getTime() >= value.expires_at.getTime() ||
@@ -439,6 +638,8 @@ export class PostgresDataDisclosureGrantIssuer {
         return deepFreeze({
           grant: grantResult.data,
           grantHash: value.grant_hash,
+          invocationContext: value.invocation_context,
+          invocationContextHash: value.invocation_context_hash,
           phasePurpose: value.phase_purpose,
           spaceId: value.space_id,
         });
@@ -479,17 +680,38 @@ export class PostgresSchedulerDisclosureGrantResolver {
 
   async resolve(
     disclosureGrantId: string,
+    rawInvocation: SpecialistDisclosureGrantInvocationBinding,
   ): Promise<DataDisclosureGrant | undefined> {
     const grantId = UuidSchema.safeParse(disclosureGrantId);
-    if (!grantId.success) return undefined;
+    const invocation = ResolverInvocationSchema.safeParse({
+      invocationContext: rawInvocation.invocationContext,
+      invocationContextHash: rawInvocation.invocationContextHash,
+    });
+    if (!grantId.success || !invocation.success) return undefined;
+    const identity = InvocationIdentitySchema.parse({
+      orchestrationRunId: invocation.data.invocationContext.orchestrationRunId,
+      parentInvocationId: invocation.data.invocationContext.parentInvocationId,
+      agentInvocationId: invocation.data.invocationContext.agentInvocationId,
+      phaseInvocationId: invocation.data.invocationContext.phaseInvocationId,
+      actorId: invocation.data.invocationContext.actorId,
+      locale: invocation.data.invocationContext.locale,
+      grantedCapabilities:
+        invocation.data.invocationContext.grantedCapabilities,
+    });
+    if (
+      identity.orchestrationRunId !== this.#scope.runId ||
+      identity.actorId !== this.#scope.userId
+    ) {
+      return undefined;
+    }
     return withClaimedTransaction(
       this.pool,
       this.#principal,
       async (client) => {
         const row = firstResultRow(
           await client.query(
-            `select * from emdo.resolve_model_disclosure_grant(
-             $1, $2, $3, $4, $5, $6, $7, $8, $9
+            `select * from emdo.resolve_consumed_disclosure_grant_for_proposal(
+             $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10
            )`,
             [
               grantId.data,
@@ -500,19 +722,20 @@ export class PostgresSchedulerDisclosureGrantResolver {
               this.#scope.agentId,
               this.#scope.phasePurpose,
               this.#scope.provider,
-              '[]',
+              JSON.stringify(invocation.data.invocationContext),
+              invocation.data.invocationContextHash,
             ],
           ),
         );
         if (row === undefined) return undefined;
-        const resolution = ResolutionRowSchema.safeParse(row);
+        const resolution = ProposalGrantResolutionRowSchema.safeParse(row);
         if (!resolution.success) {
           throw new SchedulerDisclosureGrantResolverError(
             'invalid-result',
             'Database returned a malformed scheduler disclosure resolution',
           );
         }
-        if (resolution.data.status !== 'active') return undefined;
+        if (resolution.data.status !== 'consumed') return undefined;
         const active = resolution.data;
         const recordAllowlist = normalizeRecordAllowlist(
           active.record_allowlist,
@@ -526,6 +749,8 @@ export class PostgresSchedulerDisclosureGrantResolver {
           agentId: active.agent_id,
           purpose: active.purpose,
           runId: active.run_id,
+          invocationContext: active.invocation_context,
+          invocationContextHash: active.invocation_context_hash,
           recordAllowlist,
           provider: active.provider,
           createdAt: active.created_at.toISOString(),
@@ -539,7 +764,30 @@ export class PostgresSchedulerDisclosureGrantResolver {
           active.original_owner_user_id !== this.#scope.userId ||
           active.run_id !== this.#scope.runId ||
           active.agent_id !== this.#scope.agentId ||
+          active.phase_purpose !== this.#scope.phasePurpose ||
           active.provider !== this.#scope.provider ||
+          active.invocation_context.orchestrationRunId !==
+            identity.orchestrationRunId ||
+          active.invocation_context.parentInvocationId !==
+            identity.parentInvocationId ||
+          active.invocation_context.agentInvocationId !==
+            identity.agentInvocationId ||
+          active.invocation_context.phaseInvocationId !==
+            identity.phaseInvocationId ||
+          active.invocation_context.actorId !== identity.actorId ||
+          active.invocation_context.locale !== identity.locale ||
+          JSON.stringify(active.invocation_context.grantedCapabilities) !==
+            JSON.stringify(identity.grantedCapabilities) ||
+          JSON.stringify(active.invocation_context.disclosedContextRefs) !==
+            JSON.stringify(contextReferencesFor(recordAllowlist)) ||
+          Date.parse(active.invocation_context.deadline) !==
+            active.expires_at.getTime() ||
+          active.invocation_context_hash !==
+            hashInvocationContext(active.invocation_context) ||
+          active.invocation_context_hash !==
+            invocation.data.invocationContextHash ||
+          canonicalJson(active.invocation_context) !==
+            canonicalJson(invocation.data.invocationContext) ||
           active.expires_at.getTime() <= active.database_time.getTime() ||
           JSON.stringify(active.record_allowlist) !==
             JSON.stringify(recordAllowlist) ||
@@ -672,6 +920,9 @@ export class PostgresModelDisclosureGateway {
         userId: string;
         agentId: string;
         phasePurpose: z.output<typeof PhasePurposeSchema>;
+        phaseInvocationId: string;
+        invocationContext: z.output<typeof AgentInvocationContextSchema>;
+        invocationContextHash: string;
         disclosurePurpose: string;
         provider: 'openai';
         expiresAt: string;
@@ -714,7 +965,7 @@ export class PostgresModelDisclosureGateway {
         const rawResolution = firstResultRow(
           await client.query(
             `select * from emdo.resolve_model_disclosure_grant(
-             $1, $2, $3, $4, $5, $6, $7, $8, $9
+             $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb
            )`,
             [
               data.requestedGrantId ?? null,
@@ -725,6 +976,7 @@ export class PostgresModelDisclosureGateway {
               data.agentId,
               data.phasePurpose,
               data.provider,
+              JSON.stringify(data.invocation),
               JSON.stringify(data.requestedDataClasses),
             ],
           ),
@@ -775,6 +1027,7 @@ export class PostgresModelDisclosureGateway {
           grant.original_owner_user_id !== data.userId ||
           grant.run_id !== data.runId ||
           grant.agent_id !== data.agentId ||
+          grant.phase_purpose !== data.phasePurpose ||
           grant.provider !== data.provider ||
           (data.requestedGrantId !== undefined &&
             grant.grant_id !== data.requestedGrantId) ||
@@ -785,6 +1038,34 @@ export class PostgresModelDisclosureGateway {
             'Resolved disclosure grant does not match the request',
           );
         }
+        const expectedContextReferences = contextReferencesFor(
+          normalizeRecordAllowlist(grant.record_allowlist),
+        );
+        if (
+          grant.invocation_context.orchestrationRunId !== data.runId ||
+          grant.invocation_context.parentInvocationId !==
+            data.invocation.parentInvocationId ||
+          grant.invocation_context.agentInvocationId !==
+            data.invocation.agentInvocationId ||
+          grant.invocation_context.phaseInvocationId !==
+            data.phaseInvocationId ||
+          grant.invocation_context.actorId !== data.userId ||
+          grant.invocation_context.locale !== data.invocation.locale ||
+          JSON.stringify(grant.invocation_context.grantedCapabilities) !==
+            JSON.stringify(data.invocation.grantedCapabilities) ||
+          JSON.stringify(grant.invocation_context.disclosedContextRefs) !==
+            JSON.stringify(expectedContextReferences) ||
+          Date.parse(grant.invocation_context.deadline) !==
+            grant.expires_at.getTime() ||
+          grant.invocation_context_hash !==
+            hashInvocationContext(grant.invocation_context)
+        ) {
+          return deepFreeze({
+            status: 'denied' as const,
+            grantId: grant.grant_id,
+            reason: 'grant-invocation-mismatch' as const,
+          });
+        }
         const filtered = this.#filter({
           payload: data.payload,
           requestedDataClasses: data.requestedDataClasses,
@@ -794,12 +1075,14 @@ export class PostgresModelDisclosureGateway {
           const audit = firstResultRow(
             await client.query(
               `select emdo.record_model_disclosure_denial(
-               $1, $2, $3, $4, $5, $6
+               $1, $2, $3, $4::jsonb, $5, $6, $7, $8
              ) as recorded`,
               [
                 grant.grant_id,
                 grant.version,
                 grant.grant_hash,
+                JSON.stringify(grant.invocation_context),
+                grant.invocation_context_hash,
                 data.spaceAccessGrantId,
                 data.phasePurpose,
                 filtered.reason,
@@ -822,12 +1105,14 @@ export class PostgresModelDisclosureGateway {
           await client.query(
             `select committed, database_time, expires_at
              from emdo.commit_model_disclosure_authorization(
-               $1, $2, $3, $4, $5, $6::jsonb
+               $1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb
              )`,
             [
               grant.grant_id,
               grant.version,
               grant.grant_hash,
+              JSON.stringify(grant.invocation_context),
+              grant.invocation_context_hash,
               data.spaceAccessGrantId,
               data.phasePurpose,
               JSON.stringify(filtered.records),
@@ -862,6 +1147,9 @@ export class PostgresModelDisclosureGateway {
           userId: grant.original_owner_user_id,
           agentId: grant.agent_id,
           phasePurpose: data.phasePurpose,
+          phaseInvocationId: grant.invocation_context.phaseInvocationId,
+          invocationContext: grant.invocation_context,
+          invocationContextHash: grant.invocation_context_hash,
           disclosurePurpose: grant.purpose,
           provider: 'openai' as const,
           expiresAt: grant.expires_at.toISOString(),

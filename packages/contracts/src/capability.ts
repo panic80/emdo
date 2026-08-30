@@ -14,6 +14,7 @@ import {
   type JsonValue,
   type VersionedSchemaReference,
 } from './primitives.js';
+import type { AgentInvocationContext } from './invocation-context.js';
 import type { SupportedLocale } from './locale.js';
 import {
   isApprovedFinanceGuardedCapabilityOperation,
@@ -328,6 +329,12 @@ export interface CapabilityInvocationContext {
   readonly householdId: string;
   readonly sessionId: string;
   readonly agentId: string;
+  /**
+   * Exact server-minted registered-agent lineage and authority envelope.
+   * Registered production runtimes require it at their narrow schemas; the
+   * generic registry keeps it optional for non-agent and legacy callers.
+   */
+  readonly invocationContext?: AgentInvocationContext;
   readonly spaceAccessGrantId: string;
   /** Server-derived active response locale; capability callers never choose it. */
   readonly locale: SupportedLocale;

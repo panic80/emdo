@@ -19,6 +19,7 @@ const turn = (
   Object.freeze({
     requestId: `018f1f5e-6f47-7d61-b6dd-1e86f8b9${suffix.padStart(4, '0')}`,
     runId: `018f1f5e-6f47-7d61-a6dd-1e86f8b8${suffix.padStart(4, '0')}`,
+    rootManagerInvocationId: `018f1f5e-6f47-7d61-a6dd-1e86f8ba${suffix.padStart(4, '0')}`,
     ...baseEvalIdentity,
     disclosureGrantId: disclosureFixture.grantId,
     locale: 'en-CA',

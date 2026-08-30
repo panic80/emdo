@@ -68,12 +68,18 @@ const ScopeSchema = z.strictObject({
   sessionId: UuidSchema,
   privateSpaceId: UuidSchema,
   spaceAccessGrantId: UuidSchema,
+  agentInvocationId: UuidSchema,
+  phaseInvocationId: UuidSchema,
+  invocationIdempotencyScope: Sha256Schema,
   collectionAuthorizationScopeFingerprint: Sha256Schema,
   disclosureGrantId: UuidSchema.optional(),
   abortSignal: AbortSignalSchema,
 });
 const SyntheticStagingScopeSchema = ScopeSchema.omit({
   runId: true,
+  agentInvocationId: true,
+  phaseInvocationId: true,
+  invocationIdempotencyScope: true,
   disclosureGrantId: true,
 });
 const ProvisionSyntheticStagingAccountInputSchema = z.strictObject({
@@ -158,6 +164,17 @@ const EntityRowSchema = z.strictObject({
   revision: z.number().int().safe().positive(),
 });
 const ListEntityRowSchema = EntityRowSchema.extend({ rowId: UuidSchema });
+const ReceiptAuditPayloadSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  operation: FinanceWriteOperationSchema,
+  canonicalHash: Sha256Schema,
+  agentInvocationId: UuidSchema,
+  phaseInvocationId: UuidSchema,
+  invocationIdempotencyScope: Sha256Schema,
+  entityType: FinanceEntityTypeSchema,
+  entityId: OpaqueReferenceSchema,
+  resultingRevision: z.number().int().safe().positive(),
+});
 const ReceiptRowSchema = z.strictObject({
   operation: FinanceWriteOperationSchema,
   idempotencyKey: IdempotencyKeySchema,
@@ -171,6 +188,7 @@ const ReceiptRowSchema = z.strictObject({
   entityId: OpaqueReferenceSchema,
   resultingRevision: z.number().int().safe().positive(),
   auditEventId: UuidSchema,
+  auditPayload: ReceiptAuditPayloadSchema,
 });
 const AuditRowSchema = z.strictObject({ auditEventId: UuidSchema });
 const SyntheticStagingAccountAuditPayloadSchema = z.strictObject({
@@ -231,6 +249,9 @@ export interface FinanceSpecialistRecordRepositoryScope {
   readonly sessionId: string;
   readonly privateSpaceId: string;
   readonly spaceAccessGrantId: string;
+  readonly agentInvocationId: string;
+  readonly phaseInvocationId: string;
+  readonly invocationIdempotencyScope: string;
   readonly collectionAuthorizationScopeFingerprint: string;
   readonly disclosureGrantId?: string;
   readonly abortSignal: AbortSignal;
@@ -746,14 +767,18 @@ const syntheticStagingAccountReplayBinding = (
 const receiptPayload = (input: {
   readonly operation: FinanceWriteOperation;
   readonly canonicalHash: string;
+  readonly scope: FinanceScope;
   readonly entityType: FinanceEntityType;
   readonly entityId: string;
   readonly resultingRevision: number;
-}) =>
+}): z.output<typeof ReceiptAuditPayloadSchema> =>
   deepFreeze({
     schemaVersion: 1,
     operation: input.operation,
     canonicalHash: input.canonicalHash,
+    agentInvocationId: input.scope.agentInvocationId,
+    phaseInvocationId: input.scope.phaseInvocationId,
+    invocationIdempotencyScope: input.scope.invocationIdempotencyScope,
     entityType: input.entityType,
     entityId: input.entityId,
     resultingRevision: input.resultingRevision,
@@ -1928,8 +1953,10 @@ export class PostgresFinanceSpecialistRecordRepository {
                   receipt.origin_space_access_grant_id::text as "originSpaceAccessGrantId",
                   receipt.entity_type as "entityType", receipt.entity_id as "entityId",
                   receipt.resulting_revision as "resultingRevision",
-                  receipt.audit_event_id::text as "auditEventId"
+                  receipt.audit_event_id::text as "auditEventId",
+                  audit.payload as "auditPayload"
              from emdo.finance_specialist_record_receipts as receipt
+             join emdo.audit_events as audit on audit.id = receipt.audit_event_id
             where receipt.household_id = $1::uuid
               and receipt.space_id = $2::uuid
               and receipt.original_owner_user_id = $3::uuid
@@ -1942,6 +1969,14 @@ export class PostgresFinanceSpecialistRecordRepository {
     if (row === undefined) return undefined;
     const receipt = parseResult(ReceiptRowSchema, row, 'idempotency receipt');
     const entityType = entityTypeFor(record);
+    const expectedAuditPayload = receiptPayload({
+      operation,
+      canonicalHash: command.canonicalHash,
+      scope: command.scope,
+      entityType,
+      entityId: record.id,
+      resultingRevision: receipt.resultingRevision,
+    });
     if (
       receipt.operation !== operation ||
       receipt.idempotencyKey !== command.idempotencyKey ||
@@ -1953,7 +1988,8 @@ export class PostgresFinanceSpecialistRecordRepository {
       receipt.originRunId !== command.scope.runId ||
       receipt.originSpaceAccessGrantId !== command.scope.spaceAccessGrantId ||
       receipt.entityType !== entityType ||
-      receipt.entityId !== record.id
+      receipt.entityId !== record.id ||
+      stableJson(receipt.auditPayload) !== stableJson(expectedAuditPayload)
     ) {
       throw new FinanceSpecialistRecordRepositoryError(
         'conflict',
@@ -2041,6 +2077,7 @@ export class PostgresFinanceSpecialistRecordRepository {
             receiptPayload({
               operation,
               canonicalHash: command.canonicalHash,
+              scope: command.scope,
               entityType: entity.entityType,
               entityId: entity.entityId,
               resultingRevision: entity.revision,

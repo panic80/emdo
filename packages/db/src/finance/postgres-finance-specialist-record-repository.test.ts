@@ -25,6 +25,10 @@ const ids = Object.freeze({
   rowOne: 'e1000000-0000-4000-8000-000000000008',
   rowTwo: 'e1000000-0000-4000-8000-000000000009',
   audit: 'e1000000-0000-4000-8000-000000000010',
+  agentInvocation: 'e1000000-0000-4000-8000-000000000011',
+  phaseInvocation: 'e1000000-0000-4000-8000-000000000012',
+  otherPhaseInvocation: 'e1000000-0000-4000-8000-000000000013',
+  otherAgentInvocation: 'e1000000-0000-4000-8000-000000000014',
 });
 
 const scope = Object.freeze({
@@ -35,6 +39,9 @@ const scope = Object.freeze({
   sessionId: ids.session,
   privateSpaceId: ids.privateSpace,
   spaceAccessGrantId: ids.grant,
+  agentInvocationId: ids.agentInvocation,
+  phaseInvocationId: ids.phaseInvocation,
+  invocationIdempotencyScope: 'c'.repeat(64),
   collectionAuthorizationScopeFingerprint: 'b'.repeat(64),
   abortSignal: new AbortController().signal,
 } satisfies FinanceSpecialistRecordRepositoryScope);
@@ -265,6 +272,32 @@ const scopedRows = (
 };
 
 describe('PostgresFinanceSpecialistRecordRepository', () => {
+  it('rejects missing, malformed, and extra registered-agent invocation lineage before connecting', async () => {
+    const { pool } = poolFor(() => []);
+    const repository = new PostgresFinanceSpecialistRecordRepository(pool);
+    const without = (key: string) =>
+      Object.fromEntries(
+        Object.entries(scope).filter(([candidate]) => candidate !== key),
+      );
+    const invalidScopes: readonly unknown[] = [
+      without('agentInvocationId'),
+      without('phaseInvocationId'),
+      without('invocationIdempotencyScope'),
+      { ...scope, agentInvocationId: 'not-a-uuid' },
+      { ...scope, phaseInvocationId: 'not-a-uuid' },
+      { ...scope, invocationIdempotencyScope: 'not-a-sha256' },
+      { ...scope, unexpectedScopeKey: true },
+    ];
+
+    for (const invalidScope of invalidScopes) {
+      await expect(
+        repository.list({ scope: invalidScope, limit: 1 }),
+      ).rejects.toMatchObject({ code: 'invalid-input' });
+    }
+
+    expect(pool.connect).not.toHaveBeenCalled();
+  });
+
   it('overlays a legacy transaction payload revision from its canonical entity row and paginates by stable row id', async () => {
     const legacy = transaction({
       id: 'transaction-legacy',
@@ -561,7 +594,7 @@ describe('PostgresFinanceSpecialistRecordRepository', () => {
     ).toBe(false);
   });
 
-  it('creates only a validated manual transaction, then atomically writes its audit event and receipt', async () => {
+  it('persists a complete invocation lineage in the applied audit and receipt', async () => {
     const record = transaction();
     const { pool, query, release } = poolFor((sql) => {
       const scoped = scopedRows(sql);
@@ -614,10 +647,28 @@ describe('PostgresFinanceSpecialistRecordRepository', () => {
         ids.audit,
       ]),
     );
+    const audit = query.mock.calls.find(([sql]) =>
+      String(sql).includes('insert into emdo.audit_events'),
+    );
+    expect(audit?.[1]).toEqual(
+      expect.arrayContaining([
+        {
+          schemaVersion: 1,
+          operation: 'manual-transaction-create',
+          canonicalHash: 'a'.repeat(64),
+          agentInvocationId: ids.agentInvocation,
+          phaseInvocationId: ids.phaseInvocation,
+          invocationIdempotencyScope: scope.invocationIdempotencyScope,
+          entityType: 'finance.transaction',
+          entityId: record.id,
+          resultingRevision: 1,
+        },
+      ]),
+    );
     expect(release).toHaveBeenCalledWith();
   });
 
-  it('replays only an exact canonical receipt and retrieves its immutable entity revision', async () => {
+  it('replays only an exact canonical receipt and rejects changed invocation lineage', async () => {
     const record = transaction();
     const canonicalHash = 'c'.repeat(64);
     const receipt = {
@@ -633,6 +684,17 @@ describe('PostgresFinanceSpecialistRecordRepository', () => {
       entityId: record.id,
       resultingRevision: 1,
       auditEventId: ids.audit,
+      auditPayload: {
+        schemaVersion: 1,
+        operation: 'manual-transaction-create',
+        canonicalHash,
+        agentInvocationId: ids.agentInvocation,
+        phaseInvocationId: ids.phaseInvocation,
+        invocationIdempotencyScope: scope.invocationIdempotencyScope,
+        entityType: 'finance.transaction',
+        entityId: record.id,
+        resultingRevision: 1,
+      },
     };
     const { pool, query } = poolFor((sql) => {
       const scoped = scopedRows(sql);
@@ -657,6 +719,19 @@ describe('PostgresFinanceSpecialistRecordRepository', () => {
       record,
       auditEventId: ids.audit,
     });
+    for (const changedScope of [
+      { ...scope, agentInvocationId: ids.otherAgentInvocation },
+      { ...scope, phaseInvocationId: ids.otherPhaseInvocation },
+      { ...scope, invocationIdempotencyScope: 'd'.repeat(64) },
+    ]) {
+      await expect(
+        repository.createManualTransaction({
+          ...command('manual-transaction-create', canonicalHash),
+          scope: changedScope,
+          record,
+        }),
+      ).rejects.toMatchObject({ code: 'conflict' });
+    }
     expect(
       query.mock.calls.some(([sql]) =>
         String(sql).includes('from emdo.sync_entity_revisions as revision'),
@@ -854,6 +929,17 @@ describe('PostgresFinanceSpecialistRecordRepository', () => {
       entityId: record.id,
       resultingRevision: 3,
       auditEventId: ids.audit,
+      auditPayload: {
+        schemaVersion: 1,
+        operation: 'finance-transaction-adjustment',
+        canonicalHash,
+        agentInvocationId: ids.agentInvocation,
+        phaseInvocationId: ids.phaseInvocation,
+        invocationIdempotencyScope: scope.invocationIdempotencyScope,
+        entityType: 'finance.transaction',
+        entityId: record.id,
+        resultingRevision: 3,
+      },
     };
     const { pool } = poolFor((sql) => {
       const scoped = scopedRows(sql);

@@ -41,6 +41,9 @@ const ids = Object.freeze({
   session: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f008',
   privateSpace: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f009',
   spaceAccessGrant: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f00a',
+  parentInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f00b',
+  agentInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f00c',
+  phaseInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f00d',
 });
 
 const capabilityId = parseProductionProviderWriteCapabilityId(
@@ -68,6 +71,24 @@ const canonicalArguments = Object.freeze({
 });
 const capabilityFingerprint = hashCanonicalJson({ capabilityId, version: 1 });
 const providerAuthorityBindingHash = hashCanonicalJson(authorityBinding);
+const invocationContext = Object.freeze({
+  orchestrationRunId: ids.run,
+  parentInvocationId: ids.parentInvocation,
+  agentInvocationId: ids.agentInvocation,
+  phaseInvocationId: ids.phaseInvocation,
+  actorId: ids.user,
+  locale: 'en-CA' as const,
+  grantedCapabilities: Object.freeze([capabilityId]),
+  disclosedContextRefs: Object.freeze([
+    `context-ref-${hashCanonicalJson({
+      dataClass: 'calendar.events',
+      recordId: 'calendar-primary-event-1',
+    })}`,
+  ]),
+  deadline: '2026-08-10T14:10:00.000Z',
+  idempotencyScope: '5'.repeat(64),
+});
+const invocationContextHash = hashCanonicalJson(invocationContext);
 const proposalInput = Object.freeze({
   schemaVersion: 1 as const,
   id: ids.proposal,
@@ -116,6 +137,8 @@ const proposalInput = Object.freeze({
     agentId: 'scheduler',
     purpose: 'Prepare the requested calendar event proposal.',
     runId: ids.run,
+    invocationContext,
+    invocationContextHash,
     recordAllowlist: [
       {
         dataClass: 'calendar.events',
@@ -256,6 +279,8 @@ const context: AgentExecutionContext = Object.freeze({
   spaceAccessGrantId: ids.spaceAccessGrant,
   authorizationScopeFingerprint,
   locale: 'en-CA',
+  invocationContext,
+  invocationContextHash,
   disclosureGrantId: ids.grant,
   disclosureGrantVersion: '1.0.0',
   agentId: 'scheduler',
@@ -269,7 +294,10 @@ const approvalStore: ProviderWriteApprovalStore = Object.freeze({
   reconcile: async () => 'not-found' as const,
 });
 
-const setup = (authenticatedSessionId: string = ids.session) => {
+const setup = (
+  authenticatedSessionId: string = ids.session,
+  options?: Readonly<{ readonly now?: () => Date }>,
+) => {
   const materializeProviderWriteProposal = vi.fn(async () => ({
     sdkCallId,
     proposal,
@@ -314,12 +342,17 @@ const setup = (authenticatedSessionId: string = ids.session) => {
   const abandonPrepared = vi.fn(async () => ({
     status: 'abandoned' as const,
   }));
+  const resolveDisclosureGrant = vi.fn(
+    async (): Promise<ActionProposal['disclosureGrant'] | undefined> =>
+      proposal.disclosureGrant,
+  );
   const composition = createProductionProviderProposalComposition({
     proposalService: { approvalStore, abandonPrepared },
     lookup,
+    disclosureGrantResolver: { resolve: resolveDisclosureGrant },
     presenter,
     authenticatedSessionId,
-    now: () => new Date('2026-08-10T14:02:00.000Z'),
+    now: options?.now ?? (() => new Date('2026-08-10T14:02:00.000Z')),
   });
   return {
     abandonPrepared,
@@ -329,6 +362,7 @@ const setup = (authenticatedSessionId: string = ids.session) => {
     lookup,
     materializeProviderWriteProposal,
     presenter,
+    resolveDisclosureGrant,
     runtime,
   };
 };
@@ -431,7 +465,7 @@ describe('production provider proposal gateway', () => {
   });
 
   it('validates every persisted visual-decision and execution binding before dispatch', async () => {
-    const { gateway, invoke, presenter } = setup();
+    const { gateway, invoke, presenter, resolveDisclosureGrant } = setup();
     const decisionContext = Object.freeze({
       ...context,
       approvalDecisionId: ids.decision,
@@ -475,6 +509,24 @@ describe('production provider proposal gateway', () => {
         decision: 'approve',
       }),
     ).resolves.toBe(false);
+    const forgedInvocationContext = Object.freeze({
+      ...decisionContext.invocationContext,
+      phaseInvocationId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f00e',
+    });
+    await expect(
+      gateway.validateDecision({
+        proposalId: ids.proposal,
+        approvalDecisionId: ids.decision,
+        capabilityId,
+        context: {
+          ...decisionContext,
+          invocationContext: forgedInvocationContext,
+          invocationContextHash: hashCanonicalJson(forgedInvocationContext),
+        },
+        preparationContext: decisionContext,
+        decision: 'approve',
+      }),
+    ).resolves.toBe(false);
     const wrongSession = setup(ids.user);
     await expect(
       wrongSession.gateway.validateDecision({
@@ -510,14 +562,168 @@ describe('production provider proposal gateway', () => {
         disclosureGrantId: ids.grant,
         requestId: currentExecutionContext.requestId,
         spaceAccessGrantId: currentExecutionContext.spaceAccessGrantId,
+        invocationContext,
       }),
     );
+    expect(resolveDisclosureGrant).toHaveBeenCalledWith(ids.grant, {
+      invocationContext,
+      invocationContextHash,
+    });
     expect(presenter.present).toHaveBeenCalledWith(
       expect.objectContaining({
         decision: 'approve',
         capabilityOutput: expect.objectContaining({ schemaVersion: 1 }),
       }),
     );
+  });
+
+  it('fails closed at the proposal expiry before resolving or invoking an approved capability', async () => {
+    const configured = setup(ids.session, {
+      now: () => new Date('2026-08-10T14:10:00.000Z'),
+    });
+    const executionContext = Object.freeze({
+      ...context,
+      approvalDecisionId: ids.decision,
+    });
+
+    await expect(
+      configured.gateway.executeDecision({
+        proposalId: ids.proposal,
+        approvalDecisionId: ids.decision,
+        capabilityId,
+        context: executionContext,
+        preparationContext: executionContext,
+        decision: 'approve',
+      }),
+    ).rejects.toThrow('api-provider-proposal-approval-expired');
+
+    expect(configured.resolveDisclosureGrant).not.toHaveBeenCalled();
+    expect(configured.invoke).not.toHaveBeenCalled();
+  });
+
+  it('fails closed at the persisted invocation deadline even while the proposal remains current', async () => {
+    const expiredInvocationContext = Object.freeze({
+      ...invocationContext,
+      deadline: '2026-08-10T14:03:00.000Z',
+    });
+    const expiredDeadlineProposalInput = {
+      ...proposalInput,
+      createdAt: '2026-08-10T13:55:00.000Z',
+      expiresAt: '2026-08-10T14:05:00.000Z',
+      disclosureGrant: {
+        ...proposal.disclosureGrant,
+        createdAt: '2026-08-10T13:55:00.000Z',
+        expiresAt: '2026-08-10T14:05:00.000Z',
+        invocationContext: expiredInvocationContext,
+        invocationContextHash: hashCanonicalJson(expiredInvocationContext),
+      },
+    };
+    const expiredDeadlineProposal = ActionProposalSchema.parse({
+      ...expiredDeadlineProposalInput,
+      approvalHash: hashActionProposalApproval(expiredDeadlineProposalInput),
+    });
+    const expiredDeadlineApprovedProposal = ActionProposalSchema.parse({
+      ...expiredDeadlineProposal,
+      version: 2,
+      state: 'approved',
+    });
+    const expiredDeadlineDecision: StoredDecision = Object.freeze({
+      proposalId: expiredDeadlineProposal.id,
+      decision: ActionDecisionSchema.parse({
+        ...approvedDecision.decision,
+        payloadHash: expiredDeadlineProposal.payloadHash,
+        approvalHash: expiredDeadlineProposal.approvalHash,
+      }),
+    });
+    const configured = setup(ids.session, {
+      now: () => new Date('2026-08-10T14:04:00.000Z'),
+    });
+    vi.mocked(configured.lookup.resolveDecisionById).mockResolvedValue({
+      proposal: expiredDeadlineApprovedProposal,
+      preparation,
+      decision: expiredDeadlineDecision,
+    });
+    const executionContext = Object.freeze({
+      ...context,
+      invocationContext: expiredInvocationContext,
+      invocationContextHash: hashCanonicalJson(expiredInvocationContext),
+      approvalDecisionId: ids.decision,
+    });
+
+    await expect(
+      configured.gateway.executeDecision({
+        proposalId: ids.proposal,
+        approvalDecisionId: ids.decision,
+        capabilityId,
+        context: executionContext,
+        preparationContext: executionContext,
+        decision: 'approve',
+      }),
+    ).rejects.toThrow('api-provider-proposal-approval-expired');
+
+    expect(configured.resolveDisclosureGrant).not.toHaveBeenCalled();
+    expect(configured.invoke).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the persisted disclosure grant is no longer active', async () => {
+    const configured = setup();
+    configured.resolveDisclosureGrant.mockResolvedValue(undefined);
+    const executionContext = Object.freeze({
+      ...context,
+      approvalDecisionId: ids.decision,
+    });
+
+    await expect(
+      configured.gateway.executeDecision({
+        proposalId: ids.proposal,
+        approvalDecisionId: ids.decision,
+        capabilityId,
+        context: executionContext,
+        preparationContext: executionContext,
+        decision: 'approve',
+      }),
+    ).rejects.toThrow('api-provider-proposal-disclosure-invalid');
+
+    expect(configured.resolveDisclosureGrant).toHaveBeenCalledWith(ids.grant, {
+      invocationContext,
+      invocationContextHash,
+    });
+    expect(configured.invoke).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the active grant does not have the exact persisted invocation context', async () => {
+    const configured = setup();
+    const mismatchedInvocationContext = Object.freeze({
+      ...invocationContext,
+      phaseInvocationId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f00e',
+    });
+    const mismatchedGrant: ActionProposal['disclosureGrant'] = {
+      ...proposal.disclosureGrant,
+      invocationContext: mismatchedInvocationContext,
+      invocationContextHash: hashCanonicalJson(mismatchedInvocationContext),
+    };
+    configured.resolveDisclosureGrant.mockResolvedValue(mismatchedGrant);
+    const executionContext = Object.freeze({
+      ...context,
+      approvalDecisionId: ids.decision,
+    });
+
+    await expect(
+      configured.gateway.executeDecision({
+        proposalId: ids.proposal,
+        approvalDecisionId: ids.decision,
+        capabilityId,
+        context: executionContext,
+        preparationContext: executionContext,
+        decision: 'approve',
+      }),
+    ).rejects.toThrow('api-provider-proposal-disclosure-invalid');
+
+    expect(configured.resolveDisclosureGrant).toHaveBeenCalledWith(ids.grant, {
+      invocationContext,
+      invocationContextHash,
+    });
+    expect(configured.invoke).not.toHaveBeenCalled();
   });
 
   it('refuses to attest provider readback when the durable completion does not bind the output', async () => {
@@ -597,7 +803,11 @@ describe('production provider proposal gateway', () => {
       version: 2,
       state: 'rejected',
     });
-    const { gateway: rejectedGateway, invoke: rejectedInvoke } = (() => {
+    const {
+      gateway: rejectedGateway,
+      invoke: rejectedInvoke,
+      resolveDisclosureGrant,
+    } = (() => {
       const configured = setup();
       vi.mocked(configured.lookup.resolveDecisionById).mockResolvedValue({
         proposal: rejectedProposal,
@@ -620,6 +830,7 @@ describe('production provider proposal gateway', () => {
       }),
     ).resolves.toMatchObject({ outcome: 'rejected' });
     expect(rejectedInvoke).not.toHaveBeenCalled();
+    expect(resolveDisclosureGrant).not.toHaveBeenCalled();
   });
 
   it('mints a Finance guarded-action permit only for an approved durable decision and never invokes on rejection', async () => {
@@ -777,6 +988,9 @@ describe('production provider proposal gateway', () => {
     const composition = createProductionProviderProposalComposition({
       proposalService: { approvalStore, abandonPrepared: vi.fn() },
       lookup,
+      disclosureGrantResolver: {
+        resolve: vi.fn(async () => financeProposal.disclosureGrant),
+      },
       presenter,
       authenticatedSessionId: ids.session,
       now: () => new Date('2026-08-10T14:02:00.000Z'),

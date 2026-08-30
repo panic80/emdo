@@ -31,6 +31,8 @@ const IDS = Object.freeze({
   run: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f7d',
   disclosure: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f7e',
   proposal: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f7f',
+  agentInvocation: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f80',
+  phaseInvocation: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f81',
 });
 
 const NOW = '2026-08-26T12:00:00.000Z';
@@ -189,6 +191,9 @@ type GuardedScopeFixture = Readonly<{
   readonly sessionId: string;
   readonly privateSpaceId: string;
   readonly spaceAccessGrantId: string;
+  readonly agentInvocationId: string;
+  readonly phaseInvocationId: string;
+  readonly invocationIdempotencyScope: string;
   readonly collectionAuthorizationScopeFingerprint: string;
   readonly disclosureGrantId: string;
   readonly abortSignal: AbortSignal;
@@ -202,6 +207,9 @@ const guardedScope: GuardedScopeFixture = Object.freeze({
   sessionId: IDS.session,
   privateSpaceId: IDS.privateSpace,
   spaceAccessGrantId: IDS.grant,
+  agentInvocationId: IDS.agentInvocation,
+  phaseInvocationId: IDS.phaseInvocation,
+  invocationIdempotencyScope: '8'.repeat(64),
   collectionAuthorizationScopeFingerprint:
     principal.collectionAuthorizationScopeFingerprint,
   disclosureGrantId: IDS.disclosure,

@@ -2,6 +2,7 @@ import {
   EffectiveAuthorizationScopeFingerprintSchema,
   IsoDateTimeSchema,
   OpaqueReferenceSchema,
+  Sha256Schema,
   UuidSchema,
   deepFreeze,
 } from '@emdo/contracts';
@@ -69,6 +70,9 @@ const ScopeSchema = z.strictObject({
   sessionId: UuidSchema,
   privateSpaceId: UuidSchema,
   spaceAccessGrantId: UuidSchema,
+  agentInvocationId: UuidSchema,
+  phaseInvocationId: UuidSchema,
+  invocationIdempotencyScope: Sha256Schema,
   collectionAuthorizationScopeFingerprint:
     EffectiveAuthorizationScopeFingerprintSchema,
   disclosureGrantId: UuidSchema.optional(),

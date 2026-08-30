@@ -594,6 +594,10 @@ export const disclosureGrants = emdoSchema.table(
       .notNull(),
     provider: text('provider').notNull(),
     recordAllowlist: jsonb('record_allowlist').$type<JsonValue>().notNull(),
+    /** Immutable server-minted registered-agent authority envelope. */
+    invocationContext: jsonb('invocation_context').$type<JsonValue>(),
+    /** Canonical SHA-256 of invocationContext; historic grants remain null. */
+    invocationContextHash: text('invocation_context_hash'),
     grantHash: text('grant_hash').notNull(),
     oneRunOnly: boolean('one_run_only').default(true).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),

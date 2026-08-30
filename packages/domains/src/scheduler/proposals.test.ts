@@ -38,6 +38,24 @@ const proposalSpaceAccessGrantId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f206';
 const providerAuthorityBindingHash = hashCanonicalJson(
   providerAuthorityBinding,
 );
+const testInvocationContext = (runId: string, actorId: string) =>
+  ({
+    orchestrationRunId: runId,
+    parentInvocationId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f210',
+    agentInvocationId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f211',
+    phaseInvocationId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f212',
+    actorId,
+    locale: 'en-CA' as const,
+    grantedCapabilities: ['google-calendar.event.create'],
+    disclosedContextRefs: [
+      `context-ref-${hashCanonicalJson({
+        dataClass: 'agent.delegations',
+        recordId: 'scheduler-delegation-1',
+      })}`,
+    ],
+    deadline: '2026-08-09T12:10:00.000Z',
+    idempotencyScope: '2'.repeat(64),
+  }) as const;
 
 const reader = {
   readTargetState: async ({
@@ -541,6 +559,10 @@ describe('CalendarProposalMaterializer', () => {
       },
       providerAuthorityBinding,
     );
+    const invocationContext = testInvocationContext(
+      '018f1f5e-6f47-7d61-a6dd-1e86f8b8f204',
+      '018f1f5e-6f47-7d61-a6dd-1e86f8b8f202',
+    );
     const disclosureGrant = {
       schemaVersion: 1 as const,
       id: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f111',
@@ -550,6 +572,8 @@ describe('CalendarProposalMaterializer', () => {
       agentId: 'scheduler',
       purpose: 'Create the requested calendar appointment.',
       runId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f204',
+      invocationContext,
+      invocationContextHash: hashCanonicalJson(invocationContext),
       recordAllowlist: [
         {
           dataClass: 'agent.delegations',
@@ -645,6 +669,10 @@ describe('CalendarProposalMaterializer', () => {
       expectedEventVersion: 'event-v3',
       replacement,
     };
+    const invocationContext = testInvocationContext(
+      '018f1f5e-6f47-7d61-a6dd-1e86f8b8f104',
+      '018f1f5e-6f47-7d61-a6dd-1e86f8b8f102',
+    );
     const disclosureGrant = {
       schemaVersion: 1 as const,
       id: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f101',
@@ -654,6 +682,8 @@ describe('CalendarProposalMaterializer', () => {
       agentId: 'scheduler',
       purpose: 'Update the approved appointment.',
       runId: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f104',
+      invocationContext,
+      invocationContextHash: hashCanonicalJson(invocationContext),
       recordAllowlist: [
         {
           dataClass: 'agent.delegations',

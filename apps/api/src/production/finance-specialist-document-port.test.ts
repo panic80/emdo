@@ -22,6 +22,8 @@ const ids = Object.freeze({
   summaryChunk: '72000000-0000-4000-8000-000000000013',
   documentTwo: '72000000-0000-4000-8000-000000000014',
   summaryChunkTwo: '72000000-0000-4000-8000-000000000015',
+  agentInvocation: '72000000-0000-4000-8000-000000000016',
+  phaseInvocation: '72000000-0000-4000-8000-000000000017',
   exactEvidence: '72000000-0000-4000-8000-000000000099',
 });
 
@@ -44,6 +46,9 @@ const scope = Object.freeze({
   sessionId: ids.session,
   privateSpaceId: ids.privateSpace,
   spaceAccessGrantId: ids.spaceGrant,
+  agentInvocationId: ids.agentInvocation,
+  phaseInvocationId: ids.phaseInvocation,
+  invocationIdempotencyScope: '7'.repeat(64),
   collectionAuthorizationScopeFingerprint: 'a'.repeat(64),
   abortSignal: new AbortController().signal,
 } satisfies FinanceCapabilityScope);

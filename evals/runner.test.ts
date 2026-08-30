@@ -414,13 +414,13 @@ describe('EMDO agent eval harness', () => {
     );
   });
 
-  it('requires a denied specialist disclosure to retain its safe error code', async () => {
+  it('requires a denied specialist disclosure to retain its exact unavailable reason code', async () => {
     const base = createReferenceEvalDriver();
     const driver = wrapDriver(base, (phase) =>
       mutatePhase(phase, (events) =>
         events.map((event) =>
           event.type === 'specialist-outcome' && event.agentId === 'finance'
-            ? { ...event, safeErrorCode: 'generic-specialist-failure' }
+            ? { ...event, reasonCode: 'generic-specialist-failure' }
             : event,
         ),
       ),

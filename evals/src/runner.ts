@@ -26,6 +26,7 @@ export interface AgentEvalTurn {
   readonly conversationId: string;
   readonly spaceAccessGrantId: string;
   readonly authorizationScopeFingerprint: EvalAuthorizationScopeFingerprint;
+  readonly rootManagerInvocationId: string;
   /** Eval fixtures model the fresh disclosure grant required for a resume. */
   readonly disclosureGrantId: string;
   readonly locale: SupportedLocale;
@@ -111,8 +112,9 @@ export type AgentEvalTraceEvent =
       readonly type: 'specialist-outcome';
       readonly delegationId: string;
       readonly agentId: string;
-      readonly status: 'completed' | 'failed' | 'blocked';
+      readonly status: 'completed' | 'failed' | 'blocked' | 'unavailable';
       readonly safeErrorCode?: string;
+      readonly reasonCode?: string;
     })
   | (TraceEventBase & {
       readonly type: 'model-resolution';
@@ -987,8 +989,10 @@ const evaluateAssertion = (
               (event) =>
                 event.type === 'specialist-outcome' &&
                 event.agentId === assertion.agentId &&
-                event.status === 'failed' &&
-                event.safeErrorCode === assertion.expectedSafeErrorCode,
+                ((event.status === 'failed' &&
+                  event.safeErrorCode === assertion.expectedSafeErrorCode) ||
+                  (event.status === 'unavailable' &&
+                    event.reasonCode === assertion.expectedSafeErrorCode)),
             );
       return denials.length === 1 &&
         matchingDenials.length === 1 &&

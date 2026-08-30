@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import {
+  AgentInvocationContextSchema,
   EffectiveAuthorizationScopeFingerprintSchema,
   IdentifierSchema,
   JsonValueSchema,
   type JsonValue,
 } from '@emdo/contracts';
+import { hashCanonicalJson } from '@emdo/toolbox';
 
 import {
   createPostgresCoreModelDisclosureGateway,
@@ -30,6 +32,9 @@ type LegacyAuthorizeInput = Parameters<
 type LegacyAuthorizeDecision = Awaited<
   ReturnType<DisclosureGatewayDependencies['gateway']['authorize']>
 >;
+type DisclosureGrantIssueInput = Parameters<
+  DisclosureGatewayDependencies['issuer']['issue']
+>[0];
 
 const json = (value: unknown): JsonValue => JsonValueSchema.parse(value);
 const testScopeFingerprint = EffectiveAuthorizationScopeFingerprintSchema.parse(
@@ -51,6 +56,90 @@ type DisclosurePayload = z.output<typeof DisclosurePayloadSchema>;
 
 const parseDisclosurePayload = (value: JsonValue): DisclosurePayload =>
   DisclosurePayloadSchema.parse(value);
+
+const invocationRequest = (input: {
+  readonly runId: string;
+  readonly userId: string;
+  readonly parentInvocationId: string;
+  readonly agentInvocationId: string;
+  readonly phaseInvocationId: string;
+  readonly grantedCapabilities?: readonly string[];
+}) =>
+  Object.freeze({
+    orchestrationRunId: input.runId,
+    parentInvocationId: input.parentInvocationId,
+    agentInvocationId: input.agentInvocationId,
+    phaseInvocationId: input.phaseInvocationId,
+    actorId: input.userId,
+    locale: 'en-CA' as const,
+    grantedCapabilities: Object.freeze([...(input.grantedCapabilities ?? [])]),
+  });
+
+const invocationContextFor = (
+  invocation: DisclosureGrantIssueInput['invocation'],
+  records: readonly Readonly<{ dataClass: string; recordId: string }>[],
+) =>
+  AgentInvocationContextSchema.parse({
+    ...invocation,
+    disclosedContextRefs: records
+      .map(
+        ({ dataClass, recordId }) =>
+          `context-ref-${hashCanonicalJson({ dataClass, recordId })}`,
+      )
+      .sort(),
+    deadline: '2026-08-15T14:10:00.000Z',
+    idempotencyScope: 'b'.repeat(64),
+  });
+
+const issuedGrant = (grantId: string, input: DisclosureGrantIssueInput) => {
+  const invocationContext = invocationContextFor(
+    input.invocation,
+    input.recordAllowlist,
+  );
+  return {
+    grant: {
+      id: grantId,
+      invocationContext,
+      invocationContextHash: hashCanonicalJson(invocationContext),
+    },
+  };
+};
+
+const authorizedDecision = (
+  input: LegacyAuthorizeInput,
+  details: {
+    readonly grantId: string;
+    readonly disclosurePurpose: string;
+  },
+): LegacyAuthorizeDecision => {
+  const payload = parseDisclosurePayload(input.payload);
+  const invocationContext = invocationContextFor(
+    input.invocation,
+    payload.records,
+  );
+  return {
+    status: 'authorized',
+    grantId: details.grantId,
+    grantVersion: '1.0.0',
+    runId: input.runId,
+    householdId: input.householdId,
+    userId: input.userId,
+    agentId: input.agentId,
+    phasePurpose: input.phasePurpose,
+    phaseInvocationId: input.phaseInvocationId,
+    invocationContext,
+    invocationContextHash: hashCanonicalJson(invocationContext),
+    disclosurePurpose: details.disclosurePurpose,
+    provider: 'openai',
+    expiresAt: invocationContext.deadline,
+    records: payload.records.map((record) => ({
+      dataClass: record.dataClass,
+      recordId: record.recordId,
+      fields: Object.keys(record.fields),
+    })),
+    payload: input.payload,
+  };
+};
 
 describe('production runtime foundations', () => {
   it('retrieves only persisted manager messages and returns the exact stored event after append', async () => {
@@ -168,39 +257,21 @@ describe('production runtime foundations', () => {
       spaceAccessGrant: '82000000-0000-4000-8000-000000000005',
       privateSpace: '82000000-0000-4000-8000-000000000006',
       disclosureGrant: '82000000-0000-4000-8000-000000000007',
+      parentInvocation: '82000000-0000-4000-8000-000000000008',
+      agentInvocation: '82000000-0000-4000-8000-000000000009',
+      phaseInvocation: '82000000-0000-4000-8000-000000000010',
     };
     const issuer = {
-      issue: vi.fn(async (input: { readonly recordAllowlist: unknown }) => ({
-        grant: {
-          id: ids.disclosureGrant,
-          version: 1,
-          recordAllowlist: input.recordAllowlist,
-        },
-      })),
+      issue: vi.fn(async (input: DisclosureGrantIssueInput) =>
+        issuedGrant(ids.disclosureGrant, input),
+      ),
     };
     const authorize = vi.fn(
-      async (input: LegacyAuthorizeInput): Promise<LegacyAuthorizeDecision> => {
-        const payload = parseDisclosurePayload(input.payload);
-        return {
-          status: 'authorized' as const,
+      async (input: LegacyAuthorizeInput): Promise<LegacyAuthorizeDecision> =>
+        authorizedDecision(input, {
           grantId: ids.disclosureGrant,
-          grantVersion: '1.0.0',
-          runId: ids.run,
-          householdId: ids.household,
-          userId: ids.user,
-          agentId: 'scheduler',
-          phasePurpose: 'specialist-execution' as const,
           disclosurePurpose: 'Run one scheduler delegation.',
-          provider: 'openai' as const,
-          expiresAt: '2026-08-15T14:10:00.000Z',
-          records: payload.records.map((record) => ({
-            dataClass: record.dataClass,
-            recordId: record.recordId,
-            fields: Object.keys(record.fields),
-          })),
-          payload: input.payload,
-        };
-      },
+        }),
     );
     const gateway = createPostgresCoreModelDisclosureGateway({
       issuer,
@@ -219,12 +290,20 @@ describe('production runtime foundations', () => {
       runId: ids.run,
       householdId: ids.household,
       userId: ids.user,
-      authenticatedSessionId: '82000000-0000-4000-8000-000000000008',
+      authenticatedSessionId: '82000000-0000-4000-8000-000000000011',
       spaceAccessGrantId: ids.spaceAccessGrant,
       authorizationScopeFingerprint: testScopeFingerprint,
       agentId: 'scheduler',
       phasePurpose: 'specialist-execution',
-      phaseInvocationId: 'scheduler-delegation-1',
+      phaseInvocationId: ids.phaseInvocation,
+      invocation: invocationRequest({
+        runId: ids.run,
+        userId: ids.user,
+        parentInvocationId: ids.parentInvocation,
+        agentInvocationId: ids.agentInvocation,
+        phaseInvocationId: ids.phaseInvocation,
+        grantedCapabilities: ['agent.scheduler.delegate'],
+      }),
       provider: 'openai',
       sources: [
         {
@@ -237,7 +316,7 @@ describe('production runtime foundations', () => {
       expect.objectContaining({
         status: 'authorized',
         grantId: ids.disclosureGrant,
-        phaseInvocationId: 'scheduler-delegation-1',
+        phaseInvocationId: ids.phaseInvocation,
       }),
     );
     expect(issuer.issue).toHaveBeenCalledWith(
@@ -249,6 +328,9 @@ describe('production runtime foundations', () => {
         spaceId: ids.privateSpace,
         spaceAccessGrantId: ids.spaceAccessGrant,
         agentId: 'scheduler',
+        invocation: expect.objectContaining({
+          phaseInvocationId: ids.phaseInvocation,
+        }),
         phasePurpose: 'specialist-execution',
         provider: 'openai',
         recordAllowlist: [
@@ -267,7 +349,11 @@ describe('production runtime foundations', () => {
       userId: ids.user,
       spaceAccessGrantId: ids.spaceAccessGrant,
       agentId: 'scheduler',
+      invocation: expect.objectContaining({
+        phaseInvocationId: ids.phaseInvocation,
+      }),
       phasePurpose: 'specialist-execution',
+      phaseInvocationId: ids.phaseInvocation,
       provider: 'openai',
       requestedGrantId: ids.disclosureGrant,
       requestedDataClasses: ['agent.delegations'],
@@ -282,38 +368,34 @@ describe('production runtime foundations', () => {
         ],
       },
     });
-    authorize.mockResolvedValueOnce({
-      status: 'authorized' as const,
-      grantId: ids.disclosureGrant,
-      grantVersion: '1.0.0',
-      runId: ids.run,
-      householdId: ids.household,
-      userId: ids.user,
-      agentId: 'scheduler',
-      phasePurpose: 'specialist-execution' as const,
-      disclosurePurpose: 'Run one scheduler delegation.',
-      provider: 'openai' as const,
-      expiresAt: '2026-08-15T14:10:00.000Z',
-      records: [
-        {
-          dataClass: 'agent.delegations',
-          recordId: 'scheduler-delegation-1',
-          fields: ['delegation', 'unexpected-field'],
-        },
-      ],
-      payload: {
-        schemaVersion: 1,
-        records: [
-          {
-            dataClass: 'agent.delegations',
-            recordId: 'scheduler-delegation-1',
-            fields: {
-              delegation,
-              'unexpected-field': 'not issued',
+    authorize.mockImplementationOnce(async (input) => {
+      const authorized = authorizedDecision(input, {
+        grantId: ids.disclosureGrant,
+        disclosurePurpose: 'Run one scheduler delegation.',
+      });
+      if (authorized.status !== 'authorized') {
+        throw new Error('test-authorization-must-succeed');
+      }
+      return {
+        ...authorized,
+        records: authorized.records.map((record) => ({
+          ...record,
+          fields: [...record.fields, 'unexpected-field'],
+        })),
+        payload: json({
+          schemaVersion: 1,
+          records: [
+            {
+              dataClass: 'agent.delegations',
+              recordId: 'scheduler-delegation-1',
+              fields: {
+                delegation,
+                'unexpected-field': 'not issued',
+              },
             },
-          },
-        ],
-      },
+          ],
+        }),
+      };
     });
     await expect(gateway.authorize(disclosureInput)).rejects.toThrow(
       'api-model-disclosure-gateway-envelope-invalid',
@@ -329,39 +411,21 @@ describe('production runtime foundations', () => {
       spaceAccessGrant: '82500000-0000-4000-8000-000000000005',
       privateSpace: '82500000-0000-4000-8000-000000000006',
       disclosureGrant: '82500000-0000-4000-8000-000000000007',
+      parentInvocation: '82500000-0000-4000-8000-000000000008',
+      agentInvocation: '82500000-0000-4000-8000-000000000009',
+      phaseInvocation: '82500000-0000-4000-8000-000000000010',
     };
     const issuer = {
-      issue: vi.fn(async (input: { readonly recordAllowlist: unknown }) => ({
-        grant: {
-          id: ids.disclosureGrant,
-          version: 1,
-          recordAllowlist: input.recordAllowlist,
-        },
-      })),
+      issue: vi.fn(async (input: DisclosureGrantIssueInput) =>
+        issuedGrant(ids.disclosureGrant, input),
+      ),
     };
     const authorize = vi.fn(
-      async (input: LegacyAuthorizeInput): Promise<LegacyAuthorizeDecision> => {
-        const payload = parseDisclosurePayload(input.payload);
-        return {
-          status: 'authorized' as const,
+      async (input: LegacyAuthorizeInput): Promise<LegacyAuthorizeDecision> =>
+        authorizedDecision(input, {
           grantId: ids.disclosureGrant,
-          grantVersion: '1.0.0',
-          runId: ids.run,
-          householdId: ids.household,
-          userId: ids.user,
-          agentId: 'finance',
-          phasePurpose: 'specialist-execution' as const,
           disclosurePurpose: 'Run one finance delegation.',
-          provider: 'openai' as const,
-          expiresAt: '2026-08-15T14:10:00.000Z',
-          records: payload.records.map((record) => ({
-            dataClass: record.dataClass,
-            recordId: record.recordId,
-            fields: Object.keys(record.fields),
-          })),
-          payload: input.payload,
-        };
-      },
+        }),
     );
     const gateway = createPostgresCoreModelDisclosureGateway({
       issuer,
@@ -373,12 +437,20 @@ describe('production runtime foundations', () => {
       runId: ids.run,
       householdId: ids.household,
       userId: ids.user,
-      authenticatedSessionId: '82500000-0000-4000-8000-000000000008',
+      authenticatedSessionId: '82500000-0000-4000-8000-000000000011',
       spaceAccessGrantId: ids.spaceAccessGrant,
       authorizationScopeFingerprint: testScopeFingerprint,
       agentId: 'finance',
       phasePurpose: 'specialist-execution',
-      phaseInvocationId: 'finance-delegation-1',
+      phaseInvocationId: ids.phaseInvocation,
+      invocation: invocationRequest({
+        runId: ids.run,
+        userId: ids.user,
+        parentInvocationId: ids.parentInvocation,
+        agentInvocationId: ids.agentInvocation,
+        phaseInvocationId: ids.phaseInvocation,
+        grantedCapabilities: ['agent.finance.delegate'],
+      }),
       provider: 'openai',
       sources: [
         {
@@ -412,7 +484,15 @@ describe('production runtime foundations', () => {
       gateway.authorize({
         ...financeInput,
         agentId: 'shopping',
-        phaseInvocationId: 'shopping-delegation-1',
+        phaseInvocationId: '82500000-0000-4000-8000-000000000012',
+        invocation: invocationRequest({
+          runId: ids.run,
+          userId: ids.user,
+          parentInvocationId: ids.parentInvocation,
+          agentInvocationId: ids.agentInvocation,
+          phaseInvocationId: '82500000-0000-4000-8000-000000000012',
+          grantedCapabilities: ['agent.shopping.delegate'],
+        }),
       }),
     ).rejects.toThrow('api-model-disclosure-specialist-agent-invalid');
     expect(issuer.issue).toHaveBeenCalledTimes(1);
@@ -428,83 +508,101 @@ describe('production runtime foundations', () => {
       spaceAccessGrant: '82700000-0000-4000-8000-000000000005',
       privateSpace: '82700000-0000-4000-8000-000000000006',
       disclosureGrant: '82700000-0000-4000-8000-000000000007',
+      parentInvocation: '82700000-0000-4000-8000-000000000008',
+      agentInvocation: '82700000-0000-4000-8000-000000000009',
+      phaseInvocation: '82700000-0000-4000-8000-000000000010',
     };
     const issuer = {
-      issue: vi.fn(
-        async (input: {
-          readonly recordAllowlist: readonly Readonly<{
-            readonly dataClass: string;
-            readonly recordId: string;
-            readonly fields: readonly string[];
-          }>[];
-        }) => {
-          void input;
-          return { grant: { id: ids.disclosureGrant } };
-        },
+      issue: vi.fn(async (input: DisclosureGrantIssueInput) =>
+        issuedGrant(ids.disclosureGrant, input),
       ),
     };
     const authorize = vi.fn(
-      async (input: LegacyAuthorizeInput): Promise<LegacyAuthorizeDecision> => {
-        const payload = parseDisclosurePayload(input.payload);
-        return {
-          status: 'authorized' as const,
+      async (input: LegacyAuthorizeInput): Promise<LegacyAuthorizeDecision> =>
+        authorizedDecision(input, {
           grantId: ids.disclosureGrant,
-          grantVersion: '1.0.0',
-          runId: ids.run,
-          householdId: ids.household,
-          userId: ids.user,
-          agentId: 'manager',
-          phasePurpose: 'manager-synthesis' as const,
           disclosurePurpose: 'Synthesize this manager turn.',
-          provider: 'openai' as const,
-          expiresAt: '2026-08-15T14:10:00.000Z',
-          records: payload.records.map((record) => ({
-            dataClass: record.dataClass,
-            recordId: record.recordId,
-            fields: Object.keys(record.fields),
-          })),
-          payload: input.payload,
-        };
-      },
+        }),
     );
     const gateway = createPostgresCoreModelDisclosureGateway({
       issuer,
       gateway: { authorize },
       privateSpaceId: ids.privateSpace,
     });
+    const plan = json({
+      specialistDelegations: [
+        'delegation-completed',
+        'delegation-confirmation',
+        'delegation-input',
+        'delegation-unavailable',
+        'delegation-failed',
+      ],
+    });
+    const specialistOutcomes = [
+      {
+        delegationId: 'delegation-completed',
+        specialistId: 'scheduler',
+        status: 'completed',
+        facts: { summary: 'Scheduled lunch.' },
+        evidence: ['evidence-1'],
+      },
+      {
+        delegationId: 'delegation-confirmation',
+        specialistId: 'scheduler',
+        status: 'needs_confirmation',
+        proposedAction: {
+          proposalId: '82700000-0000-4000-8000-000000000011',
+          capabilityId: 'google-calendar.event.create',
+          argumentsPreview: { title: 'Lunch' },
+        },
+      },
+      {
+        delegationId: 'delegation-input',
+        specialistId: 'finance',
+        status: 'needs_input',
+        question: 'Which statement should I review?',
+      },
+      {
+        delegationId: 'delegation-unavailable',
+        specialistId: 'finance',
+        status: 'unavailable',
+        reasonCode: 'finance-not-ready',
+      },
+      {
+        delegationId: 'delegation-failed',
+        specialistId: 'scheduler',
+        status: 'failed',
+        safeMessage: 'Calendar access is temporarily unavailable.',
+      },
+    ] as const;
     const synthesisInput = {
       requestId: ids.request,
       runId: ids.run,
       householdId: ids.household,
       userId: ids.user,
-      authenticatedSessionId: '82700000-0000-4000-8000-000000000008',
+      authenticatedSessionId: '82700000-0000-4000-8000-000000000012',
       spaceAccessGrantId: ids.spaceAccessGrant,
       authorizationScopeFingerprint: testScopeFingerprint,
       agentId: 'manager',
       phasePurpose: 'manager-synthesis',
-      phaseInvocationId: 'manager-synthesis-1',
+      phaseInvocationId: ids.phaseInvocation,
+      invocation: invocationRequest({
+        runId: ids.run,
+        userId: ids.user,
+        parentInvocationId: ids.parentInvocation,
+        agentInvocationId: ids.agentInvocation,
+        phaseInvocationId: ids.phaseInvocation,
+      }),
       provider: 'openai',
       sources: [
         {
           kind: 'manager-plan',
-          plan: json({
-            specialistDelegations: ['delegation:one', 'delegation:two'],
-          }),
+          plan,
         },
-        {
-          kind: 'specialist-outcome',
-          outcome: json({
-            delegationId: 'delegation:one',
-            status: 'completed',
-          }),
-        },
-        {
-          kind: 'specialist-outcome',
-          outcome: json({
-            delegationId: 'delegation:two',
-            status: 'completed',
-          }),
-        },
+        ...specialistOutcomes.map((outcome) => ({
+          kind: 'specialist-outcome' as const,
+          outcome: json(outcome),
+        })),
       ],
     } as const;
 
@@ -522,7 +620,7 @@ describe('production runtime foundations', () => {
       }),
     );
     const issuedAllowlist = issuer.issue.mock.calls[0]?.[0]?.recordAllowlist;
-    expect(issuedAllowlist).toHaveLength(3);
+    expect(issuedAllowlist).toHaveLength(6);
     expect(issuedAllowlist).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -538,6 +636,24 @@ describe('production runtime foundations', () => {
     for (const record of issuedAllowlist) {
       expect(record.recordId).toMatch(/^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$/);
     }
+    const authorizedPayload = parseDisclosurePayload(
+      authorize.mock.calls[0]?.[0].payload,
+    );
+    expect(
+      authorizedPayload.records
+        .filter((record) => record.dataClass === 'agent.specialist-outcomes')
+        .map(
+          (record) =>
+            (record.fields.outcome as { readonly status: string }).status,
+        )
+        .sort(),
+    ).toEqual([
+      'completed',
+      'failed',
+      'needs_confirmation',
+      'needs_input',
+      'unavailable',
+    ]);
   });
 
   it('returns only the 12 newest valid manager messages in chronological order', async () => {
@@ -623,46 +739,26 @@ describe('production runtime foundations', () => {
       privateSpace: '84000000-0000-4000-8000-000000000006',
       disclosureGrant: '84000000-0000-4000-8000-000000000007',
       message: '84000000-0000-4000-8000-000000000008',
+      parentInvocation: '84000000-0000-4000-8000-000000000009',
+      agentInvocation: '84000000-0000-4000-8000-000000000010',
+      phaseInvocation: '84000000-0000-4000-8000-000000000011',
     };
     const issuer = {
-      issue: vi.fn(
-        async (input: {
-          readonly recordAllowlist: readonly Readonly<{
-            readonly fields: readonly string[];
-          }>[];
-        }) => {
-          for (const record of input.recordAllowlist) {
-            for (const field of record.fields) {
-              IdentifierSchema.parse(field);
-            }
+      issue: vi.fn(async (input: DisclosureGrantIssueInput) => {
+        for (const record of input.recordAllowlist) {
+          for (const field of record.fields) {
+            IdentifierSchema.parse(field);
           }
-          return { grant: { id: ids.disclosureGrant } };
-        },
-      ),
+        }
+        return issuedGrant(ids.disclosureGrant, input);
+      }),
     };
     const authorize = vi.fn(
-      async (input: LegacyAuthorizeInput): Promise<LegacyAuthorizeDecision> => {
-        const payload = parseDisclosurePayload(input.payload);
-        return {
-          status: 'authorized' as const,
+      async (input: LegacyAuthorizeInput): Promise<LegacyAuthorizeDecision> =>
+        authorizedDecision(input, {
           grantId: ids.disclosureGrant,
-          grantVersion: '1.0.0',
-          runId: ids.run,
-          householdId: ids.household,
-          userId: ids.user,
-          agentId: 'manager',
-          phasePurpose: 'manager-plan' as const,
           disclosurePurpose: 'Plan this manager turn.',
-          provider: 'openai' as const,
-          expiresAt: '2026-08-15T14:10:00.000Z',
-          records: payload.records.map((record) => ({
-            dataClass: record.dataClass,
-            recordId: record.recordId,
-            fields: Object.keys(record.fields),
-          })),
-          payload: input.payload,
-        };
-      },
+        }),
     );
     const gateway = createPostgresCoreModelDisclosureGateway({
       issuer,
@@ -675,19 +771,26 @@ describe('production runtime foundations', () => {
       runId: ids.run,
       householdId: ids.household,
       userId: ids.user,
-      authenticatedSessionId: '84000000-0000-4000-8000-000000000009',
+      authenticatedSessionId: '84000000-0000-4000-8000-000000000012',
       spaceAccessGrantId: ids.spaceAccessGrant,
       authorizationScopeFingerprint: testScopeFingerprint,
       agentId: 'manager',
       phasePurpose: 'manager-plan',
-      phaseInvocationId: 'manager-plan',
+      phaseInvocationId: ids.phaseInvocation,
+      invocation: invocationRequest({
+        runId: ids.run,
+        userId: ids.user,
+        parentInvocationId: ids.parentInvocation,
+        agentInvocationId: ids.agentInvocation,
+        phaseInvocationId: ids.phaseInvocation,
+      }),
       provider: 'openai',
       sources: [
         {
           kind: 'conversation-message',
           entry: {
             id: ids.message,
-            conversationId: '84000000-0000-4000-8000-000000000010',
+            conversationId: '84000000-0000-4000-8000-000000000013',
             householdId: ids.household,
             userId: ids.user,
             role: 'user',

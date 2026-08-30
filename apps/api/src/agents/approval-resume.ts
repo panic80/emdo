@@ -55,6 +55,7 @@ export interface ApprovalResumeBinding {
   readonly turnRequestId: string;
   readonly runId: string;
   readonly conversationId: string;
+  readonly rootManagerInvocationId: string;
   readonly checkpointId: string;
   readonly interruptionId: string;
   readonly proposalId: string;
@@ -80,6 +81,7 @@ const ApprovalResumeBindingSchema = z
     turnRequestId: UuidSchema,
     runId: UuidSchema,
     conversationId: UuidSchema,
+    rootManagerInvocationId: UuidSchema,
     checkpointId: UuidSchema,
     interruptionId: InterruptionIdSchema,
     proposalId: UuidSchema,
@@ -195,6 +197,7 @@ export interface ProductionApprovalResumeRuntimeFactory {
     readonly requestId: string;
     readonly runId: string;
     readonly conversationId: string;
+    readonly rootManagerInvocationId: string;
     readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
     readonly approvalResume: Readonly<{
       checkpointId: string;
@@ -369,6 +372,7 @@ export const createProductionApprovalResumeBinding = (dependencies: {
           requestId: binding.turnRequestId,
           runId: binding.runId,
           conversationId: binding.conversationId,
+          rootManagerInvocationId: binding.rootManagerInvocationId,
           authorizationScopeFingerprint: binding.authorizationScopeFingerprint,
           approvalResume: {
             checkpointId: binding.checkpointId,

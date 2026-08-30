@@ -28,6 +28,7 @@ const ids = Object.freeze({
   disclosureGrant: '018f1f5e-3000-7000-8000-00000000000c',
   resumeSpaceGrant: '018f1f5e-3000-7000-8000-00000000000d',
   privateSpace: '018f1f5e-3000-7000-8000-00000000000e',
+  rootManagerInvocation: '018f1f5e-3000-7000-8000-00000000000f',
 });
 
 const payloadHash = 'a'.repeat(64);
@@ -81,6 +82,7 @@ const claimed = Object.freeze({
   turnRequestId: ids.turnRequest,
   runId: ids.run,
   conversationId: ids.conversation,
+  rootManagerInvocationId: ids.rootManagerInvocation,
   checkpointId: ids.checkpoint,
   interruptionId: 'delegation-1:approval:call-1',
   proposalId: ids.proposal,
@@ -196,6 +198,7 @@ describe('production approval resume binding', () => {
       requestId: ids.turnRequest,
       runId: ids.run,
       conversationId: ids.conversation,
+      rootManagerInvocationId: ids.rootManagerInvocation,
       authorizationScopeFingerprint: runScopeFingerprint,
       approvalResume: {
         checkpointId: ids.checkpoint,
