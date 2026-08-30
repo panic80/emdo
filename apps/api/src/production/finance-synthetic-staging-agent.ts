@@ -22,8 +22,12 @@ const MAX_DISCLOSED_ARRAY_ITEMS = 128;
 const MAX_DISCLOSED_OBJECT_KEYS = 64;
 const MAX_DISCLOSED_TEXT_LENGTH = 32_000;
 const SYNTHETIC_USAGE = Object.freeze({ inputTokens: 1, outputTokens: 1 });
-const SYNTHESIS_INSTRUCTION_SUFFIX =
-  '. Keep evidence excerpts in their source language; do not translate those excerpts.';
+const SYNTHESIS_LANGUAGE_BY_LOCALE = Object.freeze({
+  'en-CA': 'English (Canada)',
+  'fr-CA': 'French (Canada)',
+  'ja-JP': 'Japanese',
+  'ko-KR': 'Korean',
+} as const);
 
 export const FINANCE_SYNTHETIC_STAGING_COMMAND_MARKER =
   'EMDO_FINANCE_STAGING_V1 ' as const;
@@ -369,7 +373,9 @@ const isServerOwnedSynthesis = (
   agent: OpenAiSdkAgent,
   context: AgentExecutionContext,
 ): boolean => {
-  const expected = `Write the final EMDO synthesis in ${context.locale}${SYNTHESIS_INSTRUCTION_SUFFIX}`;
+  const locale = LocaleSchema.safeParse(context.locale);
+  if (!locale.success) return false;
+  const expected = `Write the entire user-facing final EMDO synthesis in ${SYNTHESIS_LANGUAGE_BY_LOCALE[locale.data]} (${locale.data}), regardless of the language used in the user message or conversation history. The only exception is brief, bounded source-language evidence excerpts, which must remain in their original language and must not be translated.`;
   return (
     agent.name === 'manager' &&
     typeof agent.instructions === 'string' &&

@@ -74,6 +74,28 @@ const options = () =>
     toolNameCollisionPolicy: 'error' as const,
   });
 
+const optionsForLocale = (locale: AgentExecutionContext['locale']) => {
+  const localizedInvocationContext = Object.freeze({
+    ...invocationContext,
+    locale,
+  });
+  return Object.freeze({
+    ...options(),
+    context: Object.freeze({
+      ...context,
+      locale,
+      invocationContext: localizedInvocationContext,
+      invocationContextHash: hashCanonicalJson(localizedInvocationContext),
+    }),
+  });
+};
+
+const synthesisInstruction = (
+  locale: AgentExecutionContext['locale'],
+  language: string,
+) =>
+  `Write the entire user-facing final EMDO synthesis in ${language} (${locale}), regardless of the language used in the user message or conversation history. The only exception is brief, bounded source-language evidence excerpts, which must remain in their original language and must not be translated.`;
+
 const bundle = () => {
   const value = createFinanceSyntheticStagingAgentServiceBundle(environment);
   if (value === undefined) throw new Error('synthetic bundle unavailable');
@@ -364,84 +386,89 @@ describe('Finance synthetic staging agent service bundle', () => {
     ).rejects.toThrow('finance-synthetic-staging-command-unavailable');
   });
 
-  it('keeps exact acceptance marker flows local when live chat is enabled', async () => {
-    const services =
-      createFinanceSyntheticStagingAgentServiceBundle(liveChatEnvironment);
-    if (services === undefined) throw new Error('live chat bundle unavailable');
-    const search = vi.fn(async () => searchResult);
-    const managerResult = await services.runner.run(
-      agent('manager'),
-      managerInput(searchCommand()),
-      options(),
-    );
-    expect(managerResult.finalOutput).toEqual({
-      delegations: [
-        {
-          id: 'finance-synthetic-staging',
-          specialistId: 'finance',
-          input: {
-            request: formatFinanceSyntheticStagingCommand(searchCommand()),
+  it.each([
+    ['en-CA', 'English (Canada)'],
+    ['fr-CA', 'French (Canada)'],
+    ['ja-JP', 'Japanese'],
+    ['ko-KR', 'Korean'],
+  ] as const)(
+    'keeps exact acceptance marker flows local for the server-owned %s synthesis instruction when live chat is enabled',
+    async (locale, language) => {
+      const services =
+        createFinanceSyntheticStagingAgentServiceBundle(liveChatEnvironment);
+      if (services === undefined)
+        throw new Error('live chat bundle unavailable');
+      const search = vi.fn(async () => searchResult);
+      const managerResult = await services.runner.run(
+        agent('manager'),
+        managerInput(searchCommand()),
+        options(),
+      );
+      expect(managerResult.finalOutput).toEqual({
+        delegations: [
+          {
+            id: 'finance-synthetic-staging',
+            specialistId: 'finance',
+            input: {
+              request: formatFinanceSyntheticStagingCommand(searchCommand()),
+            },
+            dependsOn: [],
           },
-          dependsOn: [],
-        },
-      ],
-      directResponse: null,
-    });
-    const financeResult = await services.runner.run(
-      agent('finance', [
-        functionTool({ name: 'finance_documents_search', invoke: search }),
-      ]),
-      financeInput(searchCommand()),
-      options(),
-    );
-    expect(search).toHaveBeenCalledOnce();
-    expect(financeResult.finalOutput).toMatchObject({
-      summary: 'Found 1 reviewed finance document result.',
-      evidenceReferences: ['evidence-actual-1', 'evidence-actual-2'],
-    });
-    const synthesisInput = JSON.stringify({
-      schemaVersion: 1,
-      records: [
-        {
-          dataClass: 'conversation.messages',
-          recordId: 'message-1',
-          fields: {
-            role: 'user',
-            content: formatFinanceSyntheticStagingCommand(searchCommand()),
-          },
-        },
-        {
-          dataClass: 'agent.manager-plans',
-          recordId: 'manager-plan',
-          fields: { plan: managerResult.finalOutput },
-        },
-        {
-          dataClass: 'agent.specialist-outcomes',
-          recordId: 'finance-synthetic-staging',
-          fields: {
-            outcome: {
-              delegationId: 'finance-synthetic-staging',
-              specialistId: 'finance',
-              status: 'completed',
-              facts: financeResult.finalOutput,
+        ],
+        directResponse: null,
+      });
+      const financeResult = await services.runner.run(
+        agent('finance', [
+          functionTool({ name: 'finance_documents_search', invoke: search }),
+        ]),
+        financeInput(searchCommand()),
+        options(),
+      );
+      expect(search).toHaveBeenCalledOnce();
+      expect(financeResult.finalOutput).toMatchObject({
+        summary: 'Found 1 reviewed finance document result.',
+        evidenceReferences: ['evidence-actual-1', 'evidence-actual-2'],
+      });
+      const synthesisInput = JSON.stringify({
+        schemaVersion: 1,
+        records: [
+          {
+            dataClass: 'conversation.messages',
+            recordId: 'message-1',
+            fields: {
+              role: 'user',
+              content: formatFinanceSyntheticStagingCommand(searchCommand()),
             },
           },
-        },
-      ],
-    });
-    await expect(
-      services.runner.run(
-        agent(
-          'manager',
-          [],
-          'Write the final EMDO synthesis in en-CA. Keep evidence excerpts in their source language; do not translate those excerpts.',
+          {
+            dataClass: 'agent.manager-plans',
+            recordId: 'manager-plan',
+            fields: { plan: managerResult.finalOutput },
+          },
+          {
+            dataClass: 'agent.specialist-outcomes',
+            recordId: 'finance-synthetic-staging',
+            fields: {
+              outcome: {
+                delegationId: 'finance-synthetic-staging',
+                specialistId: 'finance',
+                status: 'completed',
+                facts: financeResult.finalOutput,
+              },
+            },
+          },
+        ],
+      });
+      await expect(
+        services.runner.run(
+          agent('manager', [], synthesisInstruction(locale, language)),
+          synthesisInput,
+          optionsForLocale(locale),
         ),
-        synthesisInput,
-        options(),
-      ),
-    ).resolves.toMatchObject({ finalOutput: financeResult.finalOutput });
-    await services.close();
-  });
+      ).resolves.toMatchObject({ finalOutput: financeResult.finalOutput });
+      await services.close();
+    },
+  );
 
   it('uses only finance_documents_search with exact arguments and returns actual evidence IDs', async () => {
     const search = vi.fn(async () => searchResult);
@@ -600,7 +627,7 @@ describe('Finance synthetic staging agent service bundle', () => {
       ],
     });
     const synthesisInstruction =
-      'Write the final EMDO synthesis in en-CA. Keep evidence excerpts in their source language; do not translate those excerpts.';
+      'Write the entire user-facing final EMDO synthesis in English (Canada) (en-CA), regardless of the language used in the user message or conversation history. The only exception is brief, bounded source-language evidence excerpts, which must remain in their original language and must not be translated.';
     const result = await bundle().runner.run(
       agent('manager', [], synthesisInstruction),
       input,
@@ -636,7 +663,7 @@ describe('Finance synthetic staging agent service bundle', () => {
       ],
     });
     const synthesisInstruction =
-      'Write the final EMDO synthesis in en-CA. Keep evidence excerpts in their source language; do not translate those excerpts.';
+      'Write the entire user-facing final EMDO synthesis in English (Canada) (en-CA), regardless of the language used in the user message or conversation history. The only exception is brief, bounded source-language evidence excerpts, which must remain in their original language and must not be translated.';
     const manager = agent('manager', [], synthesisInstruction);
     const resumed = new RunState(new RunContext(context), input, manager, 12);
 
@@ -649,7 +676,7 @@ describe('Finance synthetic staging agent service bundle', () => {
     const manager = agent(
       'manager',
       [],
-      'Write the final EMDO synthesis in en-CA. Keep evidence excerpts in their source language; do not translate those excerpts.',
+      'Write the entire user-facing final EMDO synthesis in English (Canada) (en-CA), regardless of the language used in the user message or conversation history. The only exception is brief, bounded source-language evidence excerpts, which must remain in their original language and must not be translated.',
     );
     const malformed = new RunState(
       new RunContext(context),
