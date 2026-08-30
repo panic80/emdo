@@ -697,7 +697,7 @@ describe('real AgentOrchestrator eval path', () => {
           }
           return completed({
             delegations: [],
-            directResponse: managerOutput('Local summary ready.'),
+            directResponse: 'Local summary ready.',
           });
         }),
         modelRouter: new ModelRouter(
