@@ -210,6 +210,20 @@ type FinanceInitialGuardedReviewDiagnostic = z.output<
   typeof FinanceInitialGuardedReviewDiagnosticSchema
 >;
 
+const FinanceFinalizeGuardedDeleteInitialSseDiagnosticSchema = z.enum([
+  'finalize-guarded-delete:initial-sse outcome=initial-sse-request-failed',
+  'finalize-guarded-delete:initial-sse outcome=initial-sse-http-or-content-type-invalid',
+  'finalize-guarded-delete:initial-sse outcome=initial-sse-byte-or-framing-invalid',
+  'finalize-guarded-delete:initial-sse outcome=initial-sse-event-schema-run-or-sequence-invalid',
+  'finalize-guarded-delete:initial-sse outcome=initial-sse-terminal-run-failed',
+  'finalize-guarded-delete:initial-sse outcome=initial-sse-terminal-run-indeterminate',
+  'finalize-guarded-delete:initial-sse outcome=initial-sse-terminal-other-or-cardinality-invalid',
+]);
+
+type FinanceFinalizeGuardedDeleteInitialSseDiagnostic = z.output<
+  typeof FinanceFinalizeGuardedDeleteInitialSseDiagnosticSchema
+>;
+
 const FinanceRecognizedRunnerSafeErrorCodeSchema = z.enum([
   'agent-capability-budget-exceeded',
   'agent-model-escalation-not-allowed',
@@ -305,6 +319,7 @@ type FinanceStagingAcceptanceProgress =
   | FinanceMemberInvitationDiagnostic
   | FinanceDocumentUploadDiagnostic
   | FinanceInitialGuardedReviewDiagnostic
+  | FinanceFinalizeGuardedDeleteInitialSseDiagnostic
   | FinanceResumedRunFailureDiagnostic;
 
 const FinanceMemberInvitationOutcome = Object.freeze({
@@ -350,6 +365,11 @@ export const formatStagingAcceptanceFailure = (
     FinanceInitialGuardedReviewDiagnosticSchema.safeParse(progress);
   if (initialGuardedReviewDiagnostic.success) {
     return `Staging acceptance failed at stage=guarded-review-commit:initial-turn outcome=${initialGuardedReviewDiagnostic.data}.\n`;
+  }
+  const finalizeGuardedDeleteInitialSseDiagnostic =
+    FinanceFinalizeGuardedDeleteInitialSseDiagnosticSchema.safeParse(progress);
+  if (finalizeGuardedDeleteInitialSseDiagnostic.success) {
+    return `Staging acceptance failed at stage=${finalizeGuardedDeleteInitialSseDiagnostic.data}.\n`;
   }
   const resumedRunFailureDiagnostic =
     FinanceResumedRunFailureDiagnosticSchema.safeParse(progress);
@@ -995,7 +1015,7 @@ const readFiniteRunEvents = async (input: {
   readonly expectedTerminalType: 'approval.required' | 'run.completed';
   /** Guarded-review diagnostics may distinguish only the static failed type. */
   readonly allowRunFailedTerminal?: boolean;
-  /** Only the initial guarded-review replay emits categorized diagnostics. */
+  /** Only the explicitly classified initial guarded replays emit diagnostics. */
   readonly initialSseDiagnostic?: boolean;
 }): Promise<readonly ParsedRunEvent[]> => {
   if (!Number.isSafeInteger(input.afterSequence) || input.afterSequence < 0) {
@@ -2982,13 +3002,42 @@ const runFinanceStagingFinalize = async (
     }),
   });
   input.financeStageReporter?.('finalize-guarded-delete:initial-sse');
-  const guardedDeleteInitialEvents = await readFinanceTurnEvents({
+  const guardedDeleteInitialEventsInput = {
     send,
     cookie: ownerCookie,
     turn: guardedDeleteTurn,
     afterSequence: 0,
-    expectedTerminalType: 'approval.required',
-  });
+    expectedTerminalType: 'approval.required' as const,
+    initialSseDiagnostic: true,
+  };
+  let guardedDeleteInitialEventsResponse: Response;
+  try {
+    guardedDeleteInitialEventsResponse = await requestFinanceTurnEvents(
+      guardedDeleteInitialEventsInput,
+    );
+  } catch (error) {
+    input.financeStageReporter?.(
+      'finalize-guarded-delete:initial-sse outcome=initial-sse-request-failed',
+    );
+    throw error;
+  }
+  let guardedDeleteInitialEvents: readonly ParsedRunEvent[];
+  try {
+    guardedDeleteInitialEvents = await parseFinanceTurnEvents({
+      ...guardedDeleteInitialEventsInput,
+      response: guardedDeleteInitialEventsResponse,
+    });
+  } catch (error) {
+    const diagnostic = initialSseDiagnosticFromError(error);
+    if (diagnostic !== undefined) {
+      const scoped =
+        FinanceFinalizeGuardedDeleteInitialSseDiagnosticSchema.safeParse(
+          `finalize-guarded-delete:initial-sse outcome=${diagnostic}`,
+        );
+      if (scoped.success) input.financeStageReporter?.(scoped.data);
+    }
+    throw error;
+  }
   input.financeStageReporter?.('finalize-guarded-delete:approval-parsing');
   const guardedDeleteApproval = financeApprovalFromTerminal({
     event: guardedDeleteInitialEvents.at(-1),

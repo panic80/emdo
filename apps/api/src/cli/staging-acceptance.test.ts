@@ -838,6 +838,15 @@ describe('staging acceptance CLI', () => {
       | 'initial-sse-terminal-not-last'
       | 'approval-terminal-invalid'
       | undefined;
+    let deleteInitialSseFailure:
+      | 'request-failed'
+      | 'http-or-content-type-invalid'
+      | 'byte-or-framing-invalid'
+      | 'event-schema-run-or-sequence-invalid'
+      | 'terminal-run-failed'
+      | 'terminal-run-indeterminate'
+      | 'terminal-other-or-cardinality-invalid'
+      | undefined;
     const reviewEnvelope = {
       schemaVersion: 1,
       sourceLocale: 'en-CA',
@@ -1675,7 +1684,71 @@ describe('staging acceptance CLI', () => {
                   2,
                 );
         }
-        if (runId === FINANCE_DELETE_RUN_ID)
+        if (runId === FINANCE_DELETE_RUN_ID) {
+          if (after === null) {
+            if (deleteInitialSseFailure === 'request-failed') {
+              throw new Error(
+                'cookie=delete-private-cookie provider-body=delete-private-body',
+              );
+            }
+            if (deleteInitialSseFailure === 'http-or-content-type-invalid') {
+              return new Response(
+                'cookie=delete-private-cookie provider-body=delete-private-body',
+                {
+                  status: 503,
+                  headers: { 'content-type': 'text/plain' },
+                },
+              );
+            }
+            if (deleteInitialSseFailure === 'byte-or-framing-invalid') {
+              return new Response(
+                'data: cookie=delete-private-cookie provider-body=delete-private-body\n\n',
+                { headers: { 'content-type': 'text/event-stream' } },
+              );
+            }
+            if (
+              deleteInitialSseFailure === 'event-schema-run-or-sequence-invalid'
+            ) {
+              return sse([
+                {
+                  schemaVersion: 1,
+                  runId,
+                  sequence: 2,
+                  type: 'approval.required',
+                  occurredAt: '2026-08-12T15:05:01.000Z',
+                  data: {
+                    status: 'needs-approval',
+                    runId,
+                    interruptions: [],
+                  },
+                },
+              ]);
+            }
+            if (deleteInitialSseFailure === 'terminal-run-failed') {
+              return failedEvents(runId, 0);
+            }
+            if (deleteInitialSseFailure === 'terminal-run-indeterminate') {
+              return sse([
+                {
+                  schemaVersion: 1,
+                  runId,
+                  sequence: 1,
+                  type: 'run.indeterminate',
+                  occurredAt: '2026-08-12T15:05:01.000Z',
+                  data: {
+                    status: 'indeterminate',
+                    private: 'cookie=delete-private-cookie',
+                  },
+                },
+              ]);
+            }
+            if (
+              deleteInitialSseFailure ===
+              'terminal-other-or-cardinality-invalid'
+            ) {
+              return completedEvents(runId, { status: 'completed' });
+            }
+          }
           return after === null
             ? approvalEvents(runId, FINANCE_DELETE_PROPOSAL_ID)
             : deleteRunFailed
@@ -1688,6 +1761,7 @@ describe('staging acceptance CLI', () => {
                   }),
                   2,
                 );
+        }
         if (runId === FINANCE_QNA_RUN_ID)
           return completedEvents(
             runId,
@@ -2206,6 +2280,83 @@ describe('staging acceptance CLI', () => {
     ]);
     expect(JSON.stringify(phaseOne)).not.toContain('finance-owner-session');
     expect(JSON.stringify(phaseOne)).not.toContain('Cobalt Lantern Receipt');
+
+    const requestsBeforeInitialDeleteDiagnostics = requests.length;
+    for (const failure of [
+      'request-failed',
+      'http-or-content-type-invalid',
+      'byte-or-framing-invalid',
+      'event-schema-run-or-sequence-invalid',
+      'terminal-run-failed',
+      'terminal-run-indeterminate',
+      'terminal-other-or-cardinality-invalid',
+    ] as const) {
+      deleteInitialSseFailure = failure;
+      const requestsBeforeInitialDeleteFailure = requests.length;
+      const failedInitialDeleteStages: FinanceAcceptanceStage[] = [];
+      await expect(
+        runStagingAcceptanceCommand({
+          argv: [
+            '--all-mvp-gates',
+            '--require-synthetic',
+            '--forbid-worker-provider-execution',
+            '--finance-synthetic-document-gates',
+            '--finance-synthetic-document-finalize',
+          ],
+          environment: financeEnvironment,
+          fetch,
+          now: () => OBSERVED_AT,
+          financeStageReporter: (stage) => {
+            failedInitialDeleteStages.push(stage);
+          },
+          financePhase2RootAttestationReader: async () => ({
+            sourceSha: SOURCE_SHA,
+            workflowRunId: WORKFLOW_RUN_ID,
+            documentId: FINANCE_DOCUMENT_ID,
+            evidenceId: FINANCE_EVIDENCE_ID,
+            backupRestoreReceiptSha256: 'f'.repeat(64),
+          }),
+        }),
+      ).rejects.toThrow();
+      const diagnostic = formatStagingAcceptanceFailure(
+        failedInitialDeleteStages.at(-1),
+      );
+      expect(diagnostic).toBe(
+        `Staging acceptance failed at stage=finalize-guarded-delete:initial-sse outcome=initial-sse-${failure}.\n`,
+      );
+      expect(diagnostic).not.toContain('delete-private-cookie');
+      expect(diagnostic).not.toContain('delete-private-body');
+      expect(diagnostic).not.toContain(FINANCE_DOCUMENT_ID);
+      expect(diagnostic).not.toContain(FINANCE_DELETE_RUN_ID);
+      expect(failedInitialDeleteStages).not.toContain(
+        'finalize-guarded-delete:approval-parsing',
+      );
+      const initialDeleteRequests = requests.slice(
+        requestsBeforeInitialDeleteFailure,
+      );
+      expect(
+        initialDeleteRequests.filter(
+          (request) =>
+            new URL(request.url).pathname ===
+            `/api/v1/runs/${FINANCE_DELETE_RUN_ID}/events`,
+        ),
+      ).toHaveLength(1);
+      expect(
+        initialDeleteRequests.filter(
+          (request) => new URL(request.url).pathname === '/api/v1/turns',
+        ),
+      ).toHaveLength(1);
+      expect(
+        initialDeleteRequests.some((request) => {
+          const path = new URL(request.url).pathname;
+          return (
+            path.startsWith('/api/v1/proposals/') || request.method === 'DELETE'
+          );
+        }),
+      ).toBe(false);
+    }
+    deleteInitialSseFailure = undefined;
+    requests.length = requestsBeforeInitialDeleteDiagnostics;
 
     const requestsBeforeGuardedDeleteFailure = requests.length;
     const failedDeleteStages: FinanceAcceptanceStage[] = [];

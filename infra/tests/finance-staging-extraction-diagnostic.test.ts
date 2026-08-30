@@ -316,6 +316,15 @@ describe('Finance staging acceptance failure diagnostic', () => {
     'initial-sse-terminal-other-or-cardinality-invalid',
     'approval-terminal-invalid',
   ];
+  const finalizeGuardedDeleteInitialSseOutcomes = [
+    'initial-sse-request-failed',
+    'initial-sse-http-or-content-type-invalid',
+    'initial-sse-byte-or-framing-invalid',
+    'initial-sse-event-schema-run-or-sequence-invalid',
+    'initial-sse-terminal-run-failed',
+    'initial-sse-terminal-run-indeterminate',
+    'initial-sse-terminal-other-or-cardinality-invalid',
+  ];
   const resumedRunRunnerCodes = [
     'agent-capability-budget-exceeded',
     'agent-model-escalation-not-allowed',
@@ -373,6 +382,9 @@ describe('Finance staging acceptance failure diagnostic', () => {
     ),
     ...initialTurnOutcomes.map((outcome) =>
       stagingFailure(`guarded-review-commit:initial-turn outcome=${outcome}`),
+    ),
+    ...finalizeGuardedDeleteInitialSseOutcomes.map((outcome) =>
+      stagingFailure(`finalize-guarded-delete:initial-sse outcome=${outcome}`),
     ),
     ...resumedRunFailureOutcomes.map((outcome) =>
       stagingFailure(
@@ -501,6 +513,8 @@ exit 43`,
         `${stagingFailure('safe-write-and-handoff:protected-handoff-write extra=private-filesystem')}\n`,
         `${stagingFailure('guarded-review-commit:initial-turn outcome=unknown-private-outcome')}\n`,
         `${stagingFailure('guarded-review-commit:initial-turn outcome=initial-sse-framing-or-sequence-invalid')}\n`,
+        `${stagingFailure('finalize-guarded-delete:initial-sse outcome=private-response')}\n`,
+        `${stagingFailure('finalize-guarded-delete:initial-sse outcome=initial-sse-framing-or-sequence-invalid')}\n`,
         `${stagingFailure('guarded-review-commit:resumed-run-failed outcome=fixture-private-code')}\n`,
         `${stagingFailure('guarded-review-commit:resumed-run-failed outcome=runner-approval-checkpoint-invalid extra=fixture-private-secret')}\n`,
         `${safeFailure}`,
