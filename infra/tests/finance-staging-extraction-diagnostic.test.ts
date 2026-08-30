@@ -248,6 +248,16 @@ describe('Finance staging acceptance failure diagnostic', () => {
     'finalize-member-authentication',
     'finalize-document-and-evidence',
     'finalize-guarded-delete',
+    'finalize-guarded-delete:turn',
+    'finalize-guarded-delete:initial-sse',
+    'finalize-guarded-delete:approval-parsing',
+    'finalize-guarded-delete:proposal-read',
+    'finalize-guarded-delete:visual-proof',
+    'finalize-guarded-delete:decision-receipt',
+    'finalize-guarded-delete:resumed-run',
+    'finalize-guarded-delete:resumed-run-failed',
+    'finalize-guarded-delete:completion-validation',
+    'finalize-guarded-delete:resumed-run-completed',
     'finalize-purge-and-revocation',
   ];
   const memberInvitationOutcomes = [
