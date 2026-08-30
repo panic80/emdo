@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
+import { hashCanonicalJson } from '@emdo/toolbox';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { PostgresSpaceAccessGrantService } from '../auth/space-access-grants.js';
@@ -49,6 +50,13 @@ const approvalAuthorizationScopeFingerprint = hash(
 );
 const approvalPayloadHash = hash('run-event-approval-resume-payload');
 const approvalHash = hash('run-event-approval-resume-approval');
+const approvalResumeRecordAllowlist = Object.freeze([
+  Object.freeze({
+    dataClass: 'agent.delegations',
+    recordId: 'scheduler-delegation-1',
+    fields: ['outcome'],
+  }),
+]);
 
 const collect = async <Value>(
   input: AsyncIterable<Value>,
@@ -104,6 +112,14 @@ const completedTurnResult = (
     },
   });
 
+type ApprovalResumeResult = Omit<
+  ReturnType<typeof completedTurnResult>,
+  'specialistOutcomes' | 'hasPartialFailures'
+> & {
+  readonly specialistOutcomes: readonly Readonly<Record<string, unknown>>[];
+  readonly hasPartialFailures: boolean;
+};
+
 describeDatabase(
   'PostgreSQL 18 grant-bound manager run replay (isolated database only)',
   () => {
@@ -123,7 +139,7 @@ describeDatabase(
     let secondPrincipal: typeof firstPrincipal;
     let runId: string;
     let approvalResumeRunId: string;
-    let approvalResumeResult: ReturnType<typeof completedTurnResult>;
+    let approvalResumeResult: ApprovalResumeResult;
     let legacyCompletedResult: ReturnType<typeof completedTurnResult>;
     let legacyCompletedWrapper: Readonly<Record<string, unknown>>;
     let legacyApprovalResumeRunProjection: string;
@@ -281,6 +297,7 @@ describeDatabase(
           schemaVersion: 1,
           message: 'What is on my schedule?',
           routeHint: 'scheduler',
+          locale: 'en-CA',
         },
         principal: firstPrincipal,
         requestId: ids.firstRequest,
@@ -366,6 +383,7 @@ describeDatabase(
           schemaVersion: 1,
           message: 'Finish the approved calendar action.',
           routeHint: 'scheduler',
+          locale: 'en-CA',
         },
         principal: secondPrincipal,
         requestId: ids.secondRequest,
@@ -377,23 +395,82 @@ describeDatabase(
         );
       }
       approvalResumeRunId = approvalResumeClaim.runId;
-      approvalResumeResult = completedTurnResult(
-        approvalResumeRunId,
-        'run-event-approval-resume-completed-trace',
-        true,
+      const approvalResumeGrantDeadline = new Date(
+        Date.now() + 5 * 60 * 1000,
+      ).toISOString();
+      const approvalResumeInvocationContext = Object.freeze({
+        orchestrationRunId: approvalResumeRunId,
+        parentInvocationId: approvalResumeClaim.rootManagerInvocationId,
+        agentInvocationId: randomUUID(),
+        phaseInvocationId: randomUUID(),
+        actorId: ids.user,
+        locale: 'en-CA' as const,
+        grantedCapabilities: ['google-calendar.event.create'],
+        disclosedContextRefs: [
+          `context-ref-${hashCanonicalJson({
+            dataClass: approvalResumeRecordAllowlist[0].dataClass,
+            recordId: approvalResumeRecordAllowlist[0].recordId,
+          })}`,
+        ],
+        deadline: approvalResumeGrantDeadline,
+        idempotencyScope: '',
+      });
+      const approvalResumeInvocationScope = hashCanonicalJson({
+        domain: 'emdo.agent-invocation-scope.v1',
+        agentId: 'scheduler',
+        orchestrationRunId: approvalResumeInvocationContext.orchestrationRunId,
+        parentInvocationId: approvalResumeInvocationContext.parentInvocationId,
+        agentInvocationId: approvalResumeInvocationContext.agentInvocationId,
+        phaseInvocationId: approvalResumeInvocationContext.phaseInvocationId,
+        actorId: approvalResumeInvocationContext.actorId,
+        locale: approvalResumeInvocationContext.locale,
+        grantedCapabilities:
+          approvalResumeInvocationContext.grantedCapabilities,
+        disclosedContextRefs:
+          approvalResumeInvocationContext.disclosedContextRefs,
+      });
+      const registeredApprovalResumeInvocationContext = Object.freeze({
+        ...approvalResumeInvocationContext,
+        idempotencyScope: approvalResumeInvocationScope,
+      });
+      const approvalResumeInvocationContextHash = hashCanonicalJson(
+        registeredApprovalResumeInvocationContext,
       );
+      approvalResumeResult = Object.freeze({
+        ...completedTurnResult(
+          approvalResumeRunId,
+          'run-event-approval-resume-completed-trace',
+        ),
+        specialistOutcomes: [
+          {
+            delegationId: 'scheduler-delegation-1',
+            specialistId: 'scheduler',
+            invocationContext: registeredApprovalResumeInvocationContext,
+            invocationContextHash: approvalResumeInvocationContextHash,
+            status: 'failed',
+            safeMessage: 'The approved calendar action could not be completed.',
+            usage: {
+              inputTokens: 0,
+              outputTokens: 0,
+              modelCostCadMinor: 0,
+            },
+          },
+        ],
+        hasPartialFailures: true,
+      });
 
       await admin.query(
         `insert into emdo.disclosure_grants(
            id, schema_version, version, household_id, space_id, user_id,
            run_id, agent_id, purpose, phase_purpose, provider,
-           record_allowlist, grant_hash, created_at, expires_at, one_run_only
+           record_allowlist, invocation_context, invocation_context_hash,
+           grant_hash, created_at, expires_at, one_run_only
          ) values (
            $1, 1, 1, $2, $3, $4, $5, 'scheduler',
            'Resume one approved calendar action.', 'specialist-execution',
-           'openai', '[]'::jsonb, $6,
+           'openai', $6::jsonb, $7::jsonb, $8, $9,
            pg_catalog.clock_timestamp() - interval '1 second',
-           pg_catalog.clock_timestamp() + interval '5 minutes', true
+           $10::timestamptz, true
          )`,
         [
           ids.disclosure,
@@ -401,7 +478,11 @@ describeDatabase(
           ids.space,
           ids.user,
           approvalResumeRunId,
+          JSON.stringify(approvalResumeRecordAllowlist),
+          JSON.stringify(registeredApprovalResumeInvocationContext),
+          approvalResumeInvocationContextHash,
           hash('run-event-approval-resume-disclosure'),
+          approvalResumeGrantDeadline,
         ],
       );
       await admin.query(

@@ -28,6 +28,9 @@ const ids = Object.freeze({
   disclosureGrant: '72000000-0000-4000-8000-000000000008',
   proposal: '72000000-0000-4000-8000-000000000009',
   decision: '72000000-0000-4000-8000-000000000010',
+  parentInvocation: '72000000-0000-4000-8000-000000000017',
+  agentInvocation: '72000000-0000-4000-8000-000000000018',
+  phaseInvocation: '72000000-0000-4000-8000-000000000019',
 });
 
 const principal = Object.freeze({
@@ -48,6 +51,26 @@ const context = Object.freeze({
   householdId: ids.household,
   sessionId: ids.session,
   agentId: 'finance',
+  invocationContext: {
+    orchestrationRunId: ids.run,
+    parentInvocationId: ids.parentInvocation,
+    agentInvocationId: ids.agentInvocation,
+    phaseInvocationId: ids.phaseInvocation,
+    actorId: ids.user,
+    locale: 'en-CA',
+    grantedCapabilities: [
+      'finance.analytics.calculate',
+      'finance.documents.read',
+      'finance.documents.search',
+      'finance.matches.read',
+      'finance.records.read',
+      'finance.records.write',
+      'finance.statement.import',
+    ],
+    disclosedContextRefs: [],
+    deadline: '2026-08-26T13:30:00.000Z',
+    idempotencyScope: 'd'.repeat(64),
+  },
   locale: 'en-CA',
   spaceAccessGrantId: ids.spaceGrant,
   disclosureGrantId: ids.disclosureGrant,
@@ -311,6 +334,11 @@ describe('request-scoped Finance specialist services', () => {
     expect(forwardedScope).toBeDefined();
     expect(Object.isFrozen(forwardedScope)).toBe(true);
     expect(forwardedScope?.abortSignal).toBe(abortController.signal);
+    expect(forwardedScope).toMatchObject({
+      agentInvocationId: ids.agentInvocation,
+      phaseInvocationId: ids.phaseInvocation,
+      invocationIdempotencyScope: 'd'.repeat(64),
+    });
     expect(Object.isFrozen(abortController.signal)).toBe(false);
     expect(() =>
       AbortSignal.any([abortController.signal, new AbortController().signal]),
@@ -538,6 +566,44 @@ describe('request-scoped Finance specialist services', () => {
         { ...context, userId: '72000000-0000-4000-8000-000000000099' },
       ),
     ).rejects.toThrow('api-finance-specialist-request-binding-invalid');
+    expect(records.list).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed, missing, or conflicting invocation lineage before it reaches any durable port', async () => {
+    const { dependencies, records } = createDependencies();
+    const services = createRequestScopedFinanceSpecialistServices({
+      principal,
+      dependencies,
+    });
+    const { agentInvocationId: _missingAgentInvocationId, ...missingLineage } =
+      context.invocationContext;
+    void _missingAgentInvocationId;
+    const invalidContexts = [
+      {
+        ...context,
+        invocationContext: {
+          ...context.invocationContext,
+          agentInvocationId: 'not-a-uuid',
+        },
+      },
+      { ...context, invocationContext: missingLineage },
+      {
+        ...context,
+        invocationContext: {
+          ...context.invocationContext,
+          phaseInvocationId: context.invocationContext.agentInvocationId,
+        },
+      },
+    ] as const;
+
+    for (const invalidContext of invalidContexts) {
+      await expect(
+        services.readFinanceRecords(
+          { recordTypes: ['transaction'], limit: 25 },
+          invalidContext as CapabilityInvocationContext,
+        ),
+      ).rejects.toThrow('api-finance-specialist-request-binding-invalid');
+    }
     expect(records.list).not.toHaveBeenCalled();
   });
 

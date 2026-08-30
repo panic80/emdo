@@ -21,6 +21,7 @@ export interface AgentOrchestratorEvalTurnInput {
   readonly conversationId: string;
   readonly spaceAccessGrantId: string;
   readonly authorizationScopeFingerprint: EvalAuthorizationScopeFingerprint;
+  readonly rootManagerInvocationId: string;
   readonly disclosureGrantId: string;
   readonly locale: SupportedLocale;
   readonly message: string;

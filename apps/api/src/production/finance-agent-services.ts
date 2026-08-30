@@ -1,4 +1,5 @@
 import {
+  AgentInvocationContextSchema,
   GuardedActionPermitSchema,
   IsoDateTimeSchema,
   OpaqueReferenceSchema,
@@ -8,6 +9,7 @@ import {
   type CapabilityInvocationContext,
   type GuardedActionPermit,
 } from '@emdo/contracts';
+import { financeCapabilityReferences } from '@emdo/agent-finance';
 import {
   applyTransactionLedgerOperation,
   validateFinanceRecord,
@@ -68,6 +70,7 @@ const FinanceInvocationContextSchema = z.strictObject({
   householdId: UuidSchema,
   sessionId: UuidSchema,
   agentId: z.literal('finance'),
+  invocationContext: AgentInvocationContextSchema,
   spaceAccessGrantId: OpaqueReferenceSchema,
   locale: z.enum(['en-CA', 'fr-CA', 'ja-JP', 'ko-KR']),
   disclosureGrantId: UuidSchema.optional(),
@@ -75,6 +78,10 @@ const FinanceInvocationContextSchema = z.strictObject({
   guardedActionPermit: GuardedActionPermitSchema.optional(),
   abortSignal: AbortSignalSchema,
 });
+
+const FINANCE_REGISTERED_CAPABILITY_IDS = Object.freeze(
+  financeCapabilityReferences.map(({ id }) => id).sort(),
+);
 
 const FinanceRecordTypeSchema = z.enum([
   'account',
@@ -176,6 +183,9 @@ export interface FinanceCapabilityScope {
   readonly sessionId: string;
   readonly privateSpaceId: string;
   readonly spaceAccessGrantId: string;
+  readonly agentInvocationId: string;
+  readonly phaseInvocationId: string;
+  readonly invocationIdempotencyScope: string;
   readonly collectionAuthorizationScopeFingerprint: string;
   readonly disclosureGrantId?: string;
   readonly abortSignal: AbortSignal;
@@ -591,6 +601,9 @@ const scopeHashBinding = (scope: FinanceCapabilityScope) => ({
   sessionId: scope.sessionId,
   privateSpaceId: scope.privateSpaceId,
   spaceAccessGrantId: scope.spaceAccessGrantId,
+  agentInvocationId: scope.agentInvocationId,
+  phaseInvocationId: scope.phaseInvocationId,
+  invocationIdempotencyScope: scope.invocationIdempotencyScope,
   collectionAuthorizationScopeFingerprint:
     scope.collectionAuthorizationScopeFingerprint,
   ...(scope.disclosureGrantId === undefined
@@ -1066,7 +1079,16 @@ const checkedScope = (
     context.data.userId !== principal.userId ||
     context.data.householdId !== principal.householdId ||
     context.data.sessionId !== principal.sessionId ||
-    context.data.spaceAccessGrantId !== principal.spaceAccessGrantId
+    context.data.spaceAccessGrantId !== principal.spaceAccessGrantId ||
+    context.data.invocationContext.orchestrationRunId !== context.data.runId ||
+    context.data.invocationContext.actorId !== context.data.userId ||
+    context.data.invocationContext.locale !== context.data.locale ||
+    context.data.invocationContext.grantedCapabilities.length !==
+      FINANCE_REGISTERED_CAPABILITY_IDS.length ||
+    context.data.invocationContext.grantedCapabilities.some(
+      (capabilityId, index) =>
+        capabilityId !== FINANCE_REGISTERED_CAPABILITY_IDS[index],
+    )
   ) {
     throw new Error('api-finance-specialist-request-binding-invalid');
   }
@@ -1081,6 +1103,9 @@ const checkedScope = (
     sessionId: principal.sessionId,
     privateSpaceId: principal.privateSpaceId,
     spaceAccessGrantId: principal.spaceAccessGrantId,
+    agentInvocationId: context.data.invocationContext.agentInvocationId,
+    phaseInvocationId: context.data.invocationContext.phaseInvocationId,
+    invocationIdempotencyScope: context.data.invocationContext.idempotencyScope,
     collectionAuthorizationScopeFingerprint:
       principal.collectionAuthorizationScopeFingerprint,
     ...(context.data.disclosureGrantId === undefined

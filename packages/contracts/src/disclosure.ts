@@ -6,10 +6,12 @@ import {
   IsoDateTimeSchema,
   OpaqueReferenceSchema,
   SchemaVersionSchema,
+  Sha256Schema,
   UuidSchema,
   deepFreeze,
   type DeepReadonly,
 } from './capability.js';
+import { AgentInvocationContextSchema } from './invocation-context.js';
 
 const DisclosureRecordSchema = z
   .strictObject({
@@ -37,6 +39,8 @@ const DataDisclosureGrantBaseSchema = z
     agentId: IdentifierSchema,
     purpose: z.string().trim().min(3).max(500),
     runId: UuidSchema,
+    invocationContext: AgentInvocationContextSchema,
+    invocationContextHash: Sha256Schema,
     recordAllowlist: z.array(DisclosureRecordSchema).min(1).max(256),
     provider: IdentifierSchema,
     createdAt: IsoDateTimeSchema,

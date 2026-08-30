@@ -48,6 +48,9 @@ const ids = {
   session: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f308',
   request: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f309',
   spaceGrant: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f30a',
+  parentInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f30b',
+  agentInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f30c',
+  phaseInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f30d',
 } as const;
 
 const capabilityDescriptor = parseProviderWriteCapabilityDescriptor({
@@ -142,6 +145,24 @@ const reconnectedAuthority = {
   authorizationEpoch: 2,
 } as const satisfies ProviderWriteAuthorityBinding;
 
+const grantInvocationContext = {
+  orchestrationRunId: ids.run,
+  parentInvocationId: ids.parentInvocation,
+  agentInvocationId: ids.agentInvocation,
+  phaseInvocationId: ids.phaseInvocation,
+  actorId: ids.user,
+  locale: 'en-CA',
+  grantedCapabilities: [capabilityDescriptor.id],
+  disclosedContextRefs: [
+    `context-ref-${hashCanonicalJson({
+      dataClass: 'agent.delegations',
+      recordId: 'scheduler-delegation-1',
+    })}`,
+  ],
+  deadline: '2026-08-09T12:10:00.000Z',
+  idempotencyScope: '4'.repeat(64),
+} as const;
+
 const disclosureGrant = {
   schemaVersion: 1 as const,
   id: ids.grant,
@@ -151,6 +172,8 @@ const disclosureGrant = {
   agentId: 'scheduler' as const,
   purpose: 'Create the visually approved appointment.',
   runId: ids.run,
+  invocationContext: grantInvocationContext,
+  invocationContextHash: hashCanonicalJson(grantInvocationContext),
   recordAllowlist: [
     {
       dataClass: 'agent.delegations' as const,

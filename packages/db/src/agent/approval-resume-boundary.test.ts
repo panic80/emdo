@@ -14,6 +14,7 @@ const ids = Object.freeze({
   proposal: '018f1f5e-3000-7000-8000-000000000007',
   run: '018f1f5e-3000-7000-8000-000000000008',
   conversation: '018f1f5e-3000-7000-8000-000000000009',
+  rootManagerInvocation: '018f1f5e-3000-7000-8000-00000000000e',
   checkpoint: '018f1f5e-3000-7000-8000-00000000000a',
   resumeRequest: '018f1f5e-3000-7000-8000-00000000000b',
   resumeGrant: '018f1f5e-3000-7000-8000-00000000000c',
@@ -57,6 +58,7 @@ const decision = Object.freeze({
 const binding = Object.freeze({
   turnRequestId: ids.resumeRequest,
   runId: ids.run,
+  rootManagerInvocationId: ids.rootManagerInvocation,
   conversationId: ids.conversation,
   checkpointId: ids.checkpoint,
   interruptionId: 'delegation-1:approval:call-1',
@@ -188,6 +190,54 @@ describe('PostgresApprovalResumeBoundary', () => {
     ]);
   });
 
+  it('settles a fully resolved completed result through one ownership-token terminal CAS', async () => {
+    const { pool, query } = poolFor((sql) =>
+      sql.includes('settle_approval_resume_job')
+        ? [
+            {
+              settle_result: {
+                status: 'completed',
+                terminalEventSequence: 18,
+              },
+            },
+          ]
+        : [],
+    );
+    const boundary = new PostgresApprovalResumeBoundary({
+      pool,
+      decideAndLink: vi.fn(),
+    });
+    const result = Object.freeze({
+      status: 'completed',
+      runId: ids.run,
+      localTraceReference: 'completed-local-trace-ref',
+      output: { summary: 'Completed.' },
+      specialistOutcomes: [],
+      hasPartialFailures: false,
+      usage: { inputTokens: 0, outputTokens: 0, modelCostCadMinor: 0 },
+      modelResolution: {
+        status: 'resolved',
+        requestedModel: 'gpt-5.6-terra',
+        resolvedModel: 'gpt-5.6-terra',
+        reason: 'default',
+      },
+    });
+
+    await expect(
+      boundary.complete({
+        claimId: 'approval-resume-claim-0001',
+        ownershipToken: 'approval-resume-owner-0001',
+        binding,
+        result,
+      }),
+    ).resolves.toEqual({ status: 'completed', terminalEventSequence: 18 });
+    expect(
+      query.mock.calls.some(([sql]) =>
+        sql.includes('settle_approval_resume_job'),
+      ),
+    ).toBe(true);
+  });
+
   it('rejects an incomplete terminal result before the settlement function', async () => {
     const { pool, query } = poolFor(() => []);
     const boundary = new PostgresApprovalResumeBoundary({
@@ -201,6 +251,59 @@ describe('PostgresApprovalResumeBoundary', () => {
         ownershipToken: 'approval-resume-owner-0001',
         binding,
         result: { status: 'failed', runId: ids.run },
+      }),
+    ).toThrow();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'out-of-range usage',
+      {
+        status: 'failed',
+        runId: ids.run,
+        localTraceReference: 'invalid-usage-trace',
+        safeError: {
+          code: 'approval-resume-failed',
+          message: 'The approved action could not be completed safely.',
+          retryable: false,
+        },
+        specialistOutcomes: [],
+        usage: {
+          inputTokens: Number.MAX_SAFE_INTEGER + 1,
+          outputTokens: 0,
+          modelCostCadMinor: 0,
+        },
+      },
+    ],
+    [
+      'malformed safe error',
+      {
+        status: 'failed',
+        runId: ids.run,
+        localTraceReference: 'invalid-safe-error-trace',
+        safeError: {
+          code: 'approval-resume-failed',
+          message: '',
+          retryable: false,
+        },
+        specialistOutcomes: [],
+        usage: { inputTokens: 0, outputTokens: 0, modelCostCadMinor: 0 },
+      },
+    ],
+  ])('rejects %s before the settlement function', (_name, result) => {
+    const { pool, query } = poolFor(() => []);
+    const boundary = new PostgresApprovalResumeBoundary({
+      pool,
+      decideAndLink: vi.fn(),
+    });
+
+    expect(() =>
+      boundary.complete({
+        claimId: 'approval-resume-claim-0001',
+        ownershipToken: 'approval-resume-owner-0001',
+        binding,
+        result,
       }),
     ).toThrow();
     expect(query).not.toHaveBeenCalled();

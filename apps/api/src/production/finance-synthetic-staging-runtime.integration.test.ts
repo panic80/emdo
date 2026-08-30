@@ -15,7 +15,10 @@ import {
   checkPostgresProposalWorkflowReadiness,
 } from '@emdo/db/api';
 import { loadOrderedMigrations } from '@emdo/db/migrations';
-import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
+import {
+  AgentInvocationContextSchema,
+  EffectiveAuthorizationScopeFingerprintSchema,
+} from '@emdo/contracts';
 import { FinanceDocumentEnvelopeV1Schema } from '@emdo/domains/finance';
 import { hashCanonicalJson } from '@emdo/toolbox';
 import { Client, Pool, type PoolClient } from 'pg';
@@ -532,10 +535,13 @@ describeDatabase(
                        and original_owner_user_id = $2
                   ) as "companionSeeded",
                   pg_catalog.to_regprocedure(
-                    'emdo.issue_model_disclosure_grant(uuid,uuid,uuid,uuid,uuid,text,text,text,text,jsonb)'
+                    'emdo.issue_model_disclosure_grant(uuid,uuid,uuid,uuid,uuid,text,text,text,text,jsonb,jsonb)'
                   ) is not null
                   and pg_catalog.to_regprocedure(
-                    'emdo.resolve_model_disclosure_grant(uuid,uuid,uuid,uuid,uuid,text,text,text,jsonb)'
+                    'emdo.resolve_model_disclosure_grant(uuid,uuid,uuid,uuid,uuid,text,text,text,jsonb,jsonb)'
+                  ) is not null
+                  and pg_catalog.to_regprocedure(
+                    'emdo.commit_model_disclosure_authorization(uuid,integer,text,jsonb,text,uuid,text,jsonb)'
                   ) is not null as "disclosureReady",
                   not exists (
                     select 1 from emdo.auth_users where id = $3
@@ -792,6 +798,7 @@ describeDatabase(
                 requestId: input.requestId,
                 runId: input.runId,
                 conversationId: input.conversationId,
+                rootManagerInvocationId: input.rootManagerInvocationId,
                 authorizationScopeFingerprint:
                   input.authorizationScopeFingerprint,
                 readPool: databasePool(appPool),
@@ -892,7 +899,8 @@ describeDatabase(
           events.map(({ sequence, type }) => ({ sequence, type })),
         ).toEqual([
           { sequence: 1, type: 'run.accepted' },
-          { sequence: 2, type: 'approval.required' },
+          { sequence: 2, type: 'specialist.needs_confirmation' },
+          { sequence: 3, type: 'approval.required' },
         ]);
         expect(events.at(-1)).toMatchObject({
           data: {
@@ -1180,9 +1188,9 @@ describeDatabase(
           documentId: ids.document,
           extractionRevision: 1,
         });
-        expect(observedSyntheticRunnerErrors).toHaveLength(
-          runnerErrorsBeforeDecision,
-        );
+        expect(
+          observedSyntheticRunnerErrors.slice(runnerErrorsBeforeDecision),
+        ).toEqual([]);
         expect(
           observedSyntheticRunnerResults.slice(runnerCallsBeforeDecision),
         ).toEqual([{ agentName: 'manager', isManagerSynthesis: true }]);
@@ -1256,6 +1264,8 @@ describeDatabase(
           grantId: string;
           phasePurpose:
             'manager-plan' | 'specialist-execution' | 'manager-synthesis';
+          invocationContext: unknown;
+          invocationContextHash: string;
           requestId: string;
           spaceAccessGrantId: string;
           version: number;
@@ -1265,6 +1275,8 @@ describeDatabase(
                   disclosure.grant_hash as "grantHash",
                   disclosure.agent_id as "agentId",
                   disclosure.phase_purpose as "phasePurpose",
+                  disclosure.invocation_context as "invocationContext",
+                  disclosure.invocation_context_hash as "invocationContextHash",
                   disclosure.record_allowlist as "commitRecords",
                   granted.request_id::text as "requestId",
                   scope.grant_id::text as "spaceAccessGrantId"
@@ -1308,6 +1320,12 @@ describeDatabase(
         ]);
 
         for (const disclosure of terminalDisclosureGrants.rows) {
+          const invocationContext = AgentInvocationContextSchema.parse(
+            disclosure.invocationContext,
+          );
+          expect(disclosure.invocationContextHash).toBe(
+            hashCanonicalJson(invocationContext),
+          );
           const gateway = new PostgresModelDisclosureGateway(
             databasePool(appPool),
             {
@@ -1327,6 +1345,16 @@ describeDatabase(
               spaceAccessGrantId: disclosure.spaceAccessGrantId,
               agentId: disclosure.agentId,
               phasePurpose: disclosure.phasePurpose,
+              phaseInvocationId: invocationContext.phaseInvocationId,
+              invocation: {
+                orchestrationRunId: invocationContext.orchestrationRunId,
+                parentInvocationId: invocationContext.parentInvocationId,
+                agentInvocationId: invocationContext.agentInvocationId,
+                phaseInvocationId: invocationContext.phaseInvocationId,
+                actorId: invocationContext.actorId,
+                locale: invocationContext.locale,
+                grantedCapabilities: [...invocationContext.grantedCapabilities],
+              },
               provider: 'openai',
               requestedGrantId: disclosure.grantId,
               requestedDataClasses: [],
@@ -1335,7 +1363,7 @@ describeDatabase(
           ).resolves.toMatchObject({
             status: 'denied',
             grantId: disclosure.grantId,
-            reason: 'grant-run-mismatch',
+            reason: 'grant-expired',
           });
         }
 
@@ -1363,6 +1391,9 @@ describeDatabase(
           await inspectTerminalDisclosureState();
 
         for (const disclosure of terminalDisclosureGrants.rows) {
+          const invocationContext = AgentInvocationContextSchema.parse(
+            disclosure.invocationContext,
+          );
           const commit = await withRequestScopedAppTransaction(
             appPool,
             {
@@ -1374,13 +1405,15 @@ describeDatabase(
               client.query<{ committed: boolean }>(
                 `select committed
                    from emdo.commit_model_disclosure_authorization(
-                     $1::uuid, $2::integer, $3::text, $4::uuid, $5::text,
-                     $6::jsonb
+                     $1::uuid, $2::integer, $3::text, $4::jsonb, $5::text,
+                     $6::uuid, $7::text, $8::jsonb
                    )`,
                 [
                   disclosure.grantId,
                   disclosure.version,
                   disclosure.grantHash,
+                  JSON.stringify(invocationContext),
+                  disclosure.invocationContextHash,
                   disclosure.spaceAccessGrantId,
                   disclosure.phasePurpose,
                   JSON.stringify(disclosure.commitRecords),

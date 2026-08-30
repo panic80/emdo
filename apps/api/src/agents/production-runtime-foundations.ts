@@ -10,8 +10,10 @@ import type {
   JsonValue as AgentJsonValue,
 } from '@emdo/agent-core';
 import {
+  AgentInvocationContextSchema,
   JsonValueSchema,
   OpaqueReferenceSchema,
+  Sha256Schema,
   UuidSchema,
   deepFreeze,
   type JsonValue as ContractJsonValue,
@@ -208,10 +210,6 @@ export const createPostgresManagerConversationMemory = (input: {
   });
 };
 
-type LegacyDisclosureAuthorization = Omit<
-  ModelDisclosureAuthorization,
-  'phaseInvocationId'
->;
 type LegacyDisclosureGateway = Readonly<{
   authorize(input: {
     readonly requestId: string;
@@ -220,14 +218,18 @@ type LegacyDisclosureGateway = Readonly<{
     readonly userId: string;
     readonly spaceAccessGrantId: string;
     readonly agentId: string;
+    readonly invocation: Parameters<
+      ModelDisclosureGateway['authorize']
+    >[0]['invocation'];
     readonly phasePurpose:
       'manager-plan' | 'specialist-execution' | 'manager-synthesis';
+    readonly phaseInvocationId: string;
     readonly provider: 'openai';
     readonly requestedGrantId: string;
     readonly requestedDataClasses: readonly string[];
     readonly payload: ContractJsonValue;
   }): Promise<
-    | LegacyDisclosureAuthorization
+    | ModelDisclosureAuthorization
     | Exclude<ModelDisclosureDecision, { status: 'authorized' }>
   >;
 }>;
@@ -240,6 +242,9 @@ type DisclosureGrantIssuer = Readonly<{
     readonly spaceId: string;
     readonly spaceAccessGrantId: string;
     readonly agentId: string;
+    readonly invocation: Parameters<
+      ModelDisclosureGateway['authorize']
+    >[0]['invocation'];
     readonly phasePurpose:
       'manager-plan' | 'specialist-execution' | 'manager-synthesis';
     readonly disclosurePurpose: string;
@@ -249,7 +254,15 @@ type DisclosureGrantIssuer = Readonly<{
       recordId: string;
       fields: readonly string[];
     }>[];
-  }): Promise<Readonly<{ grant: Readonly<{ id: string }> }>>;
+  }): Promise<
+    Readonly<{
+      grant: Readonly<{
+        id: string;
+        invocationContext: ModelDisclosureAuthorization['invocationContext'];
+        invocationContextHash: string;
+      }>;
+    }>
+  >;
 }>;
 
 type CanonicalDisclosureRecord = Readonly<{
@@ -368,6 +381,18 @@ const canonicalizeSources = (
   });
 };
 
+const disclosedContextRefsFor = (
+  records: readonly Readonly<{ dataClass: string; recordId: string }>[],
+): readonly string[] =>
+  Object.freeze(
+    records
+      .map(
+        ({ dataClass, recordId }) =>
+          `context-ref-${hashCanonicalJson({ dataClass, recordId })}`,
+      )
+      .sort(),
+  );
+
 const disclosurePurpose = (
   agentId: string,
   phasePurpose: 'manager-plan' | 'specialist-execution' | 'manager-synthesis',
@@ -415,6 +440,7 @@ export const createPostgresCoreModelDisclosureGateway = (input: {
         spaceId: privateSpaceId,
         spaceAccessGrantId: inputSnapshot.spaceAccessGrantId,
         agentId: inputSnapshot.agentId,
+        invocation: inputSnapshot.invocation,
         phasePurpose: inputSnapshot.phasePurpose,
         disclosurePurpose: disclosurePurpose(
           inputSnapshot.agentId,
@@ -431,7 +457,9 @@ export const createPostgresCoreModelDisclosureGateway = (input: {
         userId: inputSnapshot.userId,
         spaceAccessGrantId: inputSnapshot.spaceAccessGrantId,
         agentId: inputSnapshot.agentId,
+        invocation: inputSnapshot.invocation,
         phasePurpose: inputSnapshot.phasePurpose,
+        phaseInvocationId: inputSnapshot.invocation.phaseInvocationId,
         provider: inputSnapshot.provider,
         requestedGrantId: grantId,
         requestedDataClasses: canonical.dataClasses,
@@ -449,14 +477,51 @@ export const createPostgresCoreModelDisclosureGateway = (input: {
             `${right.dataClass}\0${right.recordId}`,
           ),
         );
+      const issuedContext = AgentInvocationContextSchema.parse(
+        issued.grant.invocationContext,
+      );
+      const resolvedContext = AgentInvocationContextSchema.parse(
+        resolved.invocationContext,
+      );
+      const issuedContextHash = Sha256Schema.parse(
+        issued.grant.invocationContextHash,
+      );
+      const resolvedContextHash = Sha256Schema.parse(
+        resolved.invocationContextHash,
+      );
+      const expectedContextRefs = disclosedContextRefsFor(
+        canonical.recordAllowlist,
+      );
       if (
         resolved.grantId !== grantId ||
         resolved.runId !== inputSnapshot.runId ||
         resolved.householdId !== inputSnapshot.householdId ||
         resolved.userId !== inputSnapshot.userId ||
         resolved.agentId !== inputSnapshot.agentId ||
+        resolved.phaseInvocationId !==
+          inputSnapshot.invocation.phaseInvocationId ||
         resolved.phasePurpose !== inputSnapshot.phasePurpose ||
         resolved.provider !== inputSnapshot.provider ||
+        issuedContextHash !== resolvedContextHash ||
+        hashCanonicalJson(issuedContext) !== issuedContextHash ||
+        hashCanonicalJson(resolvedContext) !== resolvedContextHash ||
+        hashCanonicalJson(issuedContext) !==
+          hashCanonicalJson(resolvedContext) ||
+        resolvedContext.orchestrationRunId !==
+          inputSnapshot.invocation.orchestrationRunId ||
+        resolvedContext.parentInvocationId !==
+          inputSnapshot.invocation.parentInvocationId ||
+        resolvedContext.agentInvocationId !==
+          inputSnapshot.invocation.agentInvocationId ||
+        resolvedContext.phaseInvocationId !==
+          inputSnapshot.invocation.phaseInvocationId ||
+        resolvedContext.actorId !== inputSnapshot.invocation.actorId ||
+        resolvedContext.locale !== inputSnapshot.invocation.locale ||
+        hashCanonicalJson(resolvedContext.grantedCapabilities) !==
+          hashCanonicalJson(inputSnapshot.invocation.grantedCapabilities) ||
+        hashCanonicalJson(resolvedContext.disclosedContextRefs) !==
+          hashCanonicalJson(expectedContextRefs) ||
+        resolvedContext.deadline !== resolved.expiresAt ||
         hashCanonicalJson(resolved.payload) !==
           hashCanonicalJson(canonical.payload) ||
         hashCanonicalJson(resolvedAllowlist) !==
@@ -466,7 +531,6 @@ export const createPostgresCoreModelDisclosureGateway = (input: {
       }
       return deepFreeze({
         ...resolved,
-        phaseInvocationId: inputSnapshot.phaseInvocationId,
       });
     },
   });

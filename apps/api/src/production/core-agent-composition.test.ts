@@ -12,7 +12,10 @@ import {
 } from '@emdo/integrations/google-calendar';
 import { ScopedCalendarProposalMaterializer } from '@emdo/domains/scheduler';
 import type { ProviderWriteAuthorityBinding } from '@emdo/contracts';
-import { hashProviderWriteApprovalBinding } from '@emdo/toolbox';
+import {
+  hashCanonicalJson,
+  hashProviderWriteApprovalBinding,
+} from '@emdo/toolbox';
 
 import { createPostgresCoreModelDisclosureGateway } from '../agents/production-runtime-foundations.js';
 import { parseProductionProviderWriteCapabilityId } from '../agents/capability-runtime.js';
@@ -28,6 +31,9 @@ const ids = Object.freeze({
   user: '42000000-0000-4000-8000-000000000003',
   run: '42000000-0000-4000-8000-000000000004',
   privateSpace: '42000000-0000-4000-8000-000000000005',
+  parentInvocation: '42000000-0000-4000-8000-00000000000a',
+  agentInvocation: '42000000-0000-4000-8000-00000000000b',
+  phaseInvocation: '42000000-0000-4000-8000-00000000000c',
 });
 
 const authorizationScopeFingerprint =
@@ -35,6 +41,27 @@ const authorizationScopeFingerprint =
 const calendarCreateCapabilityId = parseProductionProviderWriteCapabilityId(
   'google-calendar.event.create',
 );
+const invocation = Object.freeze({
+  orchestrationRunId: ids.run,
+  parentInvocationId: ids.parentInvocation,
+  agentInvocationId: ids.agentInvocation,
+  phaseInvocationId: ids.phaseInvocation,
+  actorId: ids.user,
+  locale: 'en-CA' as const,
+  grantedCapabilities: Object.freeze(['google-calendar.event.create']),
+});
+const invocationContext = Object.freeze({
+  ...invocation,
+  disclosedContextRefs: Object.freeze([
+    `context-ref-${hashCanonicalJson({
+      dataClass: 'agent.delegations',
+      recordId: 'scheduler-delegation-1',
+    })}`,
+  ]),
+  deadline: '2026-08-15T12:10:00.000Z',
+  idempotencyScope: '6'.repeat(64),
+});
+const invocationContextHash = hashCanonicalJson(invocationContext);
 const eventId = 'abcde1';
 const targetId = `7:primary${eventId.length}:${eventId}`;
 
@@ -544,6 +571,8 @@ describe('core manager and scheduler production composition', () => {
           purpose:
             'Generate a calendar proposal from the model-visible record.',
           runId: ids.run,
+          invocationContext,
+          invocationContextHash,
           recordAllowlist: [
             {
               dataClass: 'agent.delegations',
@@ -578,7 +607,13 @@ describe('core manager and scheduler production composition', () => {
     const issuer = {
       issue: vi.fn(async (input) => {
         recordAllowlist = input.recordAllowlist;
-        return { grant: { id: issuedGrant } };
+        return {
+          grant: {
+            id: issuedGrant,
+            invocationContext,
+            invocationContextHash,
+          },
+        };
       }),
     };
     const disclosureGateway = createPostgresCoreModelDisclosureGateway({
@@ -593,6 +628,9 @@ describe('core manager and scheduler production composition', () => {
           userId: ids.user,
           agentId: 'scheduler',
           phasePurpose: 'specialist-execution' as const,
+          phaseInvocationId: ids.phaseInvocation,
+          invocationContext,
+          invocationContextHash,
           disclosurePurpose: 'Run one scheduler delegation.',
           provider: 'openai' as const,
           expiresAt: '2026-08-15T12:10:00.000Z',
@@ -618,7 +656,8 @@ describe('core manager and scheduler production composition', () => {
       authorizationScopeFingerprint,
       agentId: 'scheduler',
       phasePurpose: 'specialist-execution',
-      phaseInvocationId: 'scheduler-delegation-1',
+      phaseInvocationId: ids.phaseInvocation,
+      invocation,
       provider: 'openai',
       sources: [
         {
@@ -653,6 +692,8 @@ describe('core manager and scheduler production composition', () => {
       agentId: 'scheduler',
       purpose: 'Run one scheduler delegation.',
       runId: ids.run,
+      invocationContext,
+      invocationContextHash,
       recordAllowlist,
       provider: 'openai',
       createdAt: '2026-08-15T12:00:00.000Z',

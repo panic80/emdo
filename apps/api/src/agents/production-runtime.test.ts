@@ -9,11 +9,15 @@ import type {
   OpenAiAgentsRunnerPort,
   ProviderWriteProposalGateway,
 } from '@emdo/agent-core';
-import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
+import {
+  AgentInvocationContextSchema,
+  EffectiveAuthorizationScopeFingerprintSchema,
+} from '@emdo/contracts';
 import type {
   ProviderWriteApprovalStore,
   TrustedProviderWriteAuthorityResolver,
 } from '@emdo/toolbox';
+import { hashCanonicalJson } from '@emdo/toolbox';
 
 import type {
   AuthenticatedPrincipal,
@@ -47,6 +51,7 @@ const ids = Object.freeze({
   household: '018f1f5e-2000-7000-8000-000000000006',
   spaceGrant: '018f1f5e-2000-7000-8000-000000000007',
   privateSpace: '018f1f5e-2000-7000-8000-000000000008',
+  rootManagerInvocation: '018f1f5e-2000-7000-8000-000000000009',
 });
 
 const principal: AuthenticatedPrincipal = Object.freeze({
@@ -193,7 +198,12 @@ const costCalculator: OpenAiAgentCostCalculator = {
   calculateCadMinor: () => 1,
 };
 
-const runtimeDependencies = (): ProductionAgentRuntimeDependencies => ({
+const runtimeDependencies = (): ProductionAgentRuntimeDependencies & {
+  readonly registeredAgentReadiness: Readonly<{
+    scheduler: () => Promise<{ readonly status: 'ready' }>;
+    finance: () => Promise<{ readonly status: 'ready' }>;
+  }>;
+} => ({
   capabilityServices: capabilityServices(),
   proposals: proposalComposition(),
   trustedProviderWriteAuthorityResolver: authorityResolver,
@@ -204,6 +214,10 @@ const runtimeDependencies = (): ProductionAgentRuntimeDependencies => ({
   approvalCheckpoints,
   disclosureGateway,
   costCalculator,
+  registeredAgentReadiness: {
+    scheduler: async () => ({ status: 'ready' }),
+    finance: async () => ({ status: 'ready' }),
+  },
   spendGuard: {
     reserve: async () => ({
       status: 'blocked',
@@ -321,6 +335,17 @@ describe('production agent runtime', () => {
                 `${right.dataClass}\0${right.recordId}`,
               ),
             );
+          const invocationContext = AgentInvocationContextSchema.parse({
+            ...input.invocation,
+            disclosedContextRefs: records
+              .map(
+                ({ dataClass, recordId }) =>
+                  `context-ref-${hashCanonicalJson({ dataClass, recordId })}`,
+              )
+              .sort(),
+            deadline: '2099-01-01T00:00:00.000Z',
+            idempotencyScope: 'c'.repeat(64),
+          });
           return {
             status: 'authorized' as const,
             grantId: '018f1f5e-2000-7000-8000-000000000008',
@@ -331,6 +356,8 @@ describe('production agent runtime', () => {
             agentId: input.agentId,
             phasePurpose: input.phasePurpose,
             phaseInvocationId: input.phaseInvocationId,
+            invocationContext,
+            invocationContextHash: hashCanonicalJson(invocationContext),
             disclosurePurpose: 'test-core-runner-injection',
             provider: 'openai' as const,
             expiresAt: '2099-01-01T00:00:00.000Z',
@@ -382,6 +409,7 @@ describe('production agent runtime', () => {
         userId: ids.user,
         authenticatedSessionId: ids.session,
         conversationId: ids.conversation,
+        rootManagerInvocationId: ids.rootManagerInvocation,
         spaceAccessGrantId: ids.spaceGrant,
         authorizationScopeFingerprint: runScopeFingerprint,
         locale: 'en-CA',
@@ -568,6 +596,7 @@ describe('production agent runtime', () => {
           userId: ids.user,
           authenticatedSessionId: ids.session,
           conversationId: ids.conversation,
+          rootManagerInvocationId: ids.rootManagerInvocation,
           spaceAccessGrantId: ids.spaceGrant,
           authorizationScopeFingerprint: runScopeFingerprint,
           locale: 'en-CA',
@@ -708,6 +737,7 @@ describe('production agent runtime', () => {
       ownershipToken: 'turn-owner-00000001',
       runId: ids.run,
       conversationId: ids.conversation,
+      rootManagerInvocationId: ids.rootManagerInvocation,
       authorizationScopeFingerprint: runScopeFingerprint,
       escalationTriggers: [],
     }));
@@ -781,6 +811,7 @@ describe('production agent runtime', () => {
       requestId: ids.request,
       runId: ids.run,
       conversationId: ids.conversation,
+      rootManagerInvocationId: ids.rootManagerInvocation,
       authorizationScopeFingerprint: runScopeFingerprint,
     });
     expect(complete).toHaveBeenCalledWith(
@@ -822,6 +853,7 @@ describe('production agent runtime', () => {
         status: 'replay' as const,
         runId: ids.run,
         conversationId: ids.conversation,
+        rootManagerInvocationId: ids.rootManagerInvocation,
       };
     });
     const open = vi.fn(async (input: { readonly principal: unknown }) => {
@@ -894,6 +926,7 @@ describe('production agent runtime', () => {
         status: 'replay' as const,
         runId: ids.run,
         conversationId: ids.conversation,
+        rootManagerInvocationId: ids.rootManagerInvocation,
       };
     });
     const services = createProductionAgentServiceBindingsFromDependencies({
@@ -977,6 +1010,7 @@ describe('production agent runtime', () => {
             ownershipToken: 'turn-owner-00000001',
             runId: 'model-controlled-run-id',
             conversationId: ids.conversation,
+            rootManagerInvocationId: ids.rootManagerInvocation,
             escalationTriggers: ['unknown-model-escalation'],
           }) as never,
         complete: async () => ({
@@ -1029,6 +1063,7 @@ describe('production agent runtime', () => {
           ownershipToken: 'turn-owner-00000001',
           runId: ids.run,
           conversationId: ids.conversation,
+          rootManagerInvocationId: ids.rootManagerInvocation,
           authorizationScopeFingerprint: runScopeFingerprint,
           escalationTriggers: [],
         }),
@@ -1075,6 +1110,7 @@ describe('production agent runtime', () => {
           ownershipToken: 'turn-owner-00000001',
           runId: ids.run,
           conversationId: ids.conversation,
+          rootManagerInvocationId: ids.rootManagerInvocation,
           authorizationScopeFingerprint: runScopeFingerprint,
           escalationTriggers: [],
         }),
@@ -1142,6 +1178,7 @@ describe('production agent runtime', () => {
           ownershipToken: 'turn-owner-00000001',
           runId: ids.run,
           conversationId: ids.conversation,
+          rootManagerInvocationId: ids.rootManagerInvocation,
           authorizationScopeFingerprint: runScopeFingerprint,
           escalationTriggers: [],
         }),

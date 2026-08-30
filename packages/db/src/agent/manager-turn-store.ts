@@ -7,6 +7,7 @@ import {
   OpaqueReferenceSchema,
   SemanticVersionSchema,
   Sha256Schema,
+  SupportedLocaleSchema,
   UuidSchema,
   deepFreeze,
   type EffectiveAuthorizationScopeFingerprint,
@@ -47,6 +48,9 @@ const TurnRequestSchema = z.strictObject({
   conversationId: UuidSchema.optional(),
   message: z.string().trim().min(1).max(16_000),
   routeHint: z.enum(['scheduler', 'finance', 'shopping']).optional(),
+  // This is user-request data, fixed before the server-minted invocation
+  // lineage is added below. It is therefore part of idempotency equality.
+  locale: SupportedLocaleSchema,
 });
 
 const ClaimInputSchema = z.strictObject({
@@ -62,6 +66,7 @@ const StoredClaimResultSchema = z.discriminatedUnion('status', [
     claimId: UuidSchema,
     runId: UuidSchema,
     conversationId: UuidSchema,
+    rootManagerInvocationId: UuidSchema,
     authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprintSchema,
     escalationTriggers: z
       .array(RequestedEscalationTriggerSchema)
@@ -72,6 +77,7 @@ const StoredClaimResultSchema = z.discriminatedUnion('status', [
     status: z.literal('replay'),
     runId: UuidSchema,
     conversationId: UuidSchema,
+    rootManagerInvocationId: UuidSchema,
   }),
   z.strictObject({ status: z.literal('conflict') }),
 ]);
@@ -156,6 +162,7 @@ export interface PostgresManagerTurnRequest {
   readonly conversationId?: string;
   readonly message: string;
   readonly routeHint?: 'scheduler' | 'finance' | 'shopping';
+  readonly locale: z.output<typeof SupportedLocaleSchema>;
 }
 
 export type PostgresManagerTurnClaim =
@@ -165,6 +172,7 @@ export type PostgresManagerTurnClaim =
       ownershipToken: string;
       runId: string;
       conversationId: string;
+      rootManagerInvocationId: string;
       authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
       escalationTriggers: readonly z.infer<
         typeof RequestedEscalationTriggerSchema
@@ -174,6 +182,7 @@ export type PostgresManagerTurnClaim =
       status: 'replay';
       runId: string;
       conversationId: string;
+      rootManagerInvocationId: string;
     }>;
 
 export type PostgresManagerTurnCompletion =
@@ -361,6 +370,14 @@ export class PostgresManagerTurnStore {
     const candidateRunId = randomUUID();
     const candidateConversationId =
       input.request.conversationId ?? randomUUID();
+    // The root invocation must be stable across all phases of the claimed run,
+    // but a retry must not rely on a caller retaining an earlier random ID.
+    // It is stored inside the immutable request payload and replayed by SQL.
+    const candidateRootManagerInvocationId = randomUUID();
+    const storedRequest = deepFreeze({
+      ...input.request,
+      rootManagerInvocationId: candidateRootManagerInvocationId,
+    });
     const requestClaimId = randomUUID();
     const ownershipToken = randomBytes(32).toString('base64url');
     const requestOwnershipTokenHash = ownershipTokenHash(ownershipToken);
@@ -373,7 +390,7 @@ export class PostgresManagerTurnStore {
       requestClaimId,
       requestOwnershipTokenHash,
       idempotencyKey: input.idempotencyKey,
-      request: input.request,
+      request: storedRequest,
       householdId: input.principal.householdId,
       userId: input.principal.userId,
       sessionId: input.principal.sessionId,
@@ -401,7 +418,7 @@ export class PostgresManagerTurnStore {
               requestClaimId,
               requestOwnershipTokenHash,
               input.idempotencyKey,
-              input.request,
+              storedRequest,
               input.principal.householdId,
               input.principal.spaceAccessGrantId,
               input.principal.role,
@@ -442,7 +459,10 @@ export class PostgresManagerTurnStore {
       );
     }
     if (stored.status === 'replay') return deepFreeze(stored);
-    if (stored.claimId !== requestClaimId) {
+    if (
+      stored.claimId !== requestClaimId ||
+      stored.rootManagerInvocationId !== candidateRootManagerInvocationId
+    ) {
       throw new ManagerTurnPersistenceError(
         'invalid-result',
         'The manager turn claim identity did not match the request',

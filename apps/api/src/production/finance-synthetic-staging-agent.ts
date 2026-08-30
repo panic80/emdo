@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 
-import { RunContext, RunToolApprovalItem } from '@openai/agents';
+import { RunContext, RunState, RunToolApprovalItem } from '@openai/agents';
 import { IdentifierSchema, OpaqueReferenceSchema } from '@emdo/contracts';
 import type {
   AgentExecutionContext,
@@ -347,7 +347,7 @@ const synthesisOutput = (
     ) {
       continue;
     }
-    const output = FinanceOutputSchema.safeParse(outcome.output);
+    const output = FinanceOutputSchema.safeParse(outcome.facts);
     if (!output.success) return undefined;
     outcomes.push(output.data);
   }
@@ -383,6 +383,24 @@ const asRunContext = (
     throw new Error('finance-synthetic-staging-context-unavailable');
   }
   return new RunContext(context);
+};
+
+/**
+ * A provider resume supplies the SDK's live RunState rather than re-sending
+ * the disclosed input. The synthetic runner deliberately reads only the
+ * original, already-bounded disclosure string; it does not inspect history,
+ * generated items, tool state, or any other resumable state.
+ */
+const disclosedInputFromRunState = (
+  agent: OpenAiSdkAgent,
+  input: unknown,
+): string | undefined => {
+  if (!(input instanceof RunState) || input.currentAgent !== agent) {
+    return undefined;
+  }
+  return typeof input._originalInput === 'string'
+    ? input._originalInput
+    : undefined;
 };
 
 const exactFunctionTool = (
@@ -663,14 +681,18 @@ const readExactSyntheticStagingEnvironment = (
 const localRunner = (): OpenAiAgentsRunnerPort => {
   const runner: OpenAiAgentsRunnerPort = {
     run: async (agent, input, options) => {
-      if (typeof input !== 'string') {
+      const disclosedInput =
+        typeof input === 'string'
+          ? input
+          : disclosedInputFromRunState(agent, input);
+      if (disclosedInput === undefined) {
         throw new Error('finance-synthetic-staging-resume-unavailable');
       }
       const context = asRunContext(options.context);
       if (options.signal.aborted || context.context.abortSignal.aborted) {
         throw new Error('finance-synthetic-staging-run-aborted');
       }
-      const envelope = disclosedEnvelope(input);
+      const envelope = disclosedEnvelope(disclosedInput);
       if (envelope === undefined) {
         throw new Error('finance-synthetic-staging-disclosure-invalid');
       }

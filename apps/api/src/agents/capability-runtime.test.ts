@@ -42,6 +42,9 @@ const IDS = {
   privateSpace: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f008',
   session: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f009',
   spaceAccessGrant: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f00a',
+  parentInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f00b',
+  agentInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f00c',
+  phaseInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f00d',
 } as const;
 
 const authorizationScopeFingerprint =
@@ -68,6 +71,27 @@ const operationScope = Object.freeze({
 const authorityResolution = Object.freeze({
   authorityBinding,
   operationScope,
+});
+const invocationContext = Object.freeze({
+  orchestrationRunId: IDS.run,
+  parentInvocationId: IDS.parentInvocation,
+  agentInvocationId: IDS.agentInvocation,
+  phaseInvocationId: IDS.phaseInvocation,
+  actorId: IDS.user,
+  locale: 'en-CA' as const,
+  grantedCapabilities: Object.freeze(['google-calendar.event.create']),
+  disclosedContextRefs: Object.freeze([
+    `context-ref-${hashCanonicalJson({
+      dataClass: 'calendar.events',
+      recordId: 'event-target-1',
+    })}`,
+  ]),
+  deadline: '2026-08-09T16:10:00.000Z',
+  idempotencyScope: '3'.repeat(64),
+});
+const invocationBinding = Object.freeze({
+  invocationContext,
+  invocationContextHash: hashCanonicalJson(invocationContext),
 });
 
 const authorityResolvers = () => ({
@@ -130,6 +154,7 @@ const proposal = (input: {
     agentId: 'scheduler',
     purpose: 'Prepare the requested Calendar event proposal.',
     runId: IDS.run,
+    ...invocationBinding,
     recordAllowlist: [
       {
         dataClass: 'calendar.events',
@@ -711,6 +736,7 @@ describe('production capability runtime conformance', () => {
       authorizationScopeFingerprint,
       disclosureGrantId: IDS.grant,
       disclosureGrantVersion: '1.0.0',
+      ...invocationBinding,
       sdkCallId: 'call-google-calendar-create-1',
       abortSignal: new AbortController().signal,
     } as const;
@@ -778,6 +804,7 @@ describe('production capability runtime conformance', () => {
       authorizationScopeFingerprint,
       disclosureGrantId: IDS.grant,
       disclosureGrantVersion: '7.2.5',
+      ...invocationBinding,
       sdkCallId: 'call-google-calendar-create-versioned',
       abortSignal: new AbortController().signal,
     } as const;
@@ -847,6 +874,7 @@ describe('production capability runtime conformance', () => {
       authorizationScopeFingerprint,
       disclosureGrantId: IDS.grant,
       disclosureGrantVersion: '1.0.0',
+      ...invocationBinding,
       sdkCallId: 'call-google-calendar-create-rotated',
       abortSignal: new AbortController().signal,
     } as const;

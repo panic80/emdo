@@ -58,6 +58,9 @@ const poolFixture = () => {
               claimId: values?.[4],
               runId: values?.[2],
               conversationId: values?.[3],
+              rootManagerInvocationId: (
+                values?.[7] as { readonly rootManagerInvocationId: string }
+              ).rootManagerInvocationId,
               authorizationScopeFingerprint: 'e'.repeat(64),
               escalationTriggers: [],
             },

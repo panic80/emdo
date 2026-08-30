@@ -27,6 +27,7 @@ import {
 } from '@emdo/agent-shopping';
 import {
   ActionProposalSchema,
+  AgentInvocationContextSchema,
   CapabilityDescriptorSchema,
   EffectiveAuthorizationScopeFingerprintSchema,
   IdentifierSchema,
@@ -38,6 +39,7 @@ import {
   createRuntimeSchemaRegistry,
   deepFreeze,
   type ActionProposal,
+  type AgentInvocationContext,
   type AgentManifest,
   type CapabilityDescriptor,
   type CapabilityExecutor,
@@ -1349,6 +1351,8 @@ export interface ProviderProposalMaterializationContext {
   readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
   readonly disclosureGrantId: string;
   readonly disclosureGrantVersion: string;
+  readonly invocationContext: AgentInvocationContext;
+  readonly invocationContextHash: string;
   readonly sdkCallId: string;
   readonly abortSignal: AbortSignal;
 }
@@ -1841,6 +1845,8 @@ const ProposalMaterializationRequestSchema = z.strictObject({
     authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprintSchema,
     disclosureGrantId: UuidSchema,
     disclosureGrantVersion: SemanticVersionSchema,
+    invocationContext: AgentInvocationContextSchema,
+    invocationContextHash: Sha256Schema,
     sdkCallId: OpaqueReferenceSchema,
     abortSignal: z.custom<AbortSignal>(
       (value) =>
@@ -1864,6 +1870,8 @@ const GuardedActionMaterializationRequestSchema = z.strictObject({
     authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprintSchema,
     disclosureGrantId: UuidSchema,
     disclosureGrantVersion: SemanticVersionSchema,
+    invocationContext: AgentInvocationContextSchema,
+    invocationContextHash: Sha256Schema,
     sdkCallId: OpaqueReferenceSchema,
     agentId: IdentifierSchema,
     abortSignal: z.custom<AbortSignal>(
@@ -2115,6 +2123,10 @@ const createScopedProductionCapabilityRuntime = <
         proposal.disclosureGrant.userId !== request.context.userId ||
         proposal.disclosureGrant.householdId !== request.context.householdId ||
         proposal.disclosureGrant.agentId !== 'scheduler' ||
+        hashCanonicalJson(proposal.disclosureGrant.invocationContext) !==
+          hashCanonicalJson(request.context.invocationContext) ||
+        proposal.disclosureGrant.invocationContextHash !==
+          request.context.invocationContextHash ||
         proposal.state !== 'pending' ||
         (proposal.beforePreview === null && proposal.afterPreview === null)
       ) {
@@ -2154,6 +2166,8 @@ const createScopedProductionCapabilityRuntime = <
               request.context.authorizationScopeFingerprint,
             disclosureGrantId: request.context.disclosureGrantId,
             disclosureGrantVersion: request.context.disclosureGrantVersion,
+            invocationContext: request.context.invocationContext,
+            invocationContextHash: request.context.invocationContextHash,
             sdkCallId: request.context.sdkCallId,
             abortSignal: request.context.abortSignal,
           },
@@ -2210,6 +2224,10 @@ const createScopedProductionCapabilityRuntime = <
         proposal.disclosureGrant.userId !== request.context.userId ||
         proposal.disclosureGrant.householdId !== request.context.householdId ||
         proposal.disclosureGrant.agentId !== request.context.agentId ||
+        hashCanonicalJson(proposal.disclosureGrant.invocationContext) !==
+          hashCanonicalJson(request.context.invocationContext) ||
+        proposal.disclosureGrant.invocationContextHash !==
+          request.context.invocationContextHash ||
         proposal.guardedAction === undefined ||
         proposal.guardedAction.capabilityVersion !== descriptor.version ||
         proposal.guardedAction.actionHash !== actionHash ||
@@ -2335,6 +2353,7 @@ export const capabilityInvocationContextForServer = (input: {
   readonly householdId: string;
   readonly sessionId: string;
   readonly agentId: string;
+  readonly invocationContext: CapabilityInvocationContext['invocationContext'];
   readonly spaceAccessGrantId: string;
   readonly locale: SupportedLocale;
   readonly disclosureGrantId?: string;

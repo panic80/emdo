@@ -1,10 +1,11 @@
-import { RunContext, RunToolApprovalItem } from '@openai/agents';
+import { RunContext, RunState, RunToolApprovalItem } from '@openai/agents';
 import type {
   AgentExecutionContext,
   OpenAiSdkAgent,
   OpenAiSdkFunctionTool,
 } from '@emdo/agent-core';
 import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
+import { hashCanonicalJson } from '@emdo/toolbox';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -23,6 +24,19 @@ const environment = Object.freeze({
   EMDO_FINANCE_DOCUMENTS_ENABLED: 'true',
 });
 
+const invocationContext = Object.freeze({
+  orchestrationRunId: '71000000-0000-4000-8000-000000000002',
+  parentInvocationId: '71000000-0000-4000-8000-000000000007',
+  agentInvocationId: '71000000-0000-4000-8000-000000000008',
+  phaseInvocationId: '71000000-0000-4000-8000-000000000009',
+  actorId: '71000000-0000-4000-8000-000000000004',
+  locale: 'en-CA' as const,
+  grantedCapabilities: Object.freeze(['finance.records.write']),
+  disclosedContextRefs: Object.freeze([`context-ref-${'c'.repeat(64)}`]),
+  deadline: '2099-01-01T00:00:00.000Z',
+  idempotencyScope: 'b'.repeat(64),
+});
+
 const context: AgentExecutionContext = Object.freeze({
   requestId: '71000000-0000-4000-8000-000000000001',
   runId: '71000000-0000-4000-8000-000000000002',
@@ -33,6 +47,8 @@ const context: AgentExecutionContext = Object.freeze({
   authorizationScopeFingerprint:
     EffectiveAuthorizationScopeFingerprintSchema.parse('a'.repeat(64)),
   locale: 'en-CA',
+  invocationContext,
+  invocationContextHash: hashCanonicalJson(invocationContext),
   disclosureGrantId: '71000000-0000-4000-8000-000000000006',
   disclosureGrantVersion: '1.0.0',
   agentId: 'finance',
@@ -442,7 +458,7 @@ describe('Finance synthetic staging agent service bundle', () => {
               delegationId: 'finance-synthetic-staging',
               specialistId: 'finance',
               status: 'completed',
-              output,
+              facts: output,
               usage: { inputTokens: 1, outputTokens: 1, modelCostCadMinor: 3 },
             },
           },
@@ -458,6 +474,70 @@ describe('Finance synthetic staging agent service bundle', () => {
     );
 
     expect(result.finalOutput).toEqual(output);
+  });
+
+  it('accepts a matching SDK RunState by using only its original bounded disclosure input', async () => {
+    const output = {
+      summary: 'The reviewed document is ready.',
+      clarificationQuestion: null,
+      evidenceReferences: ['evidence-actual-1'],
+      derivedValueReferences: ['derived-record-1'],
+      actionProposalReferences: ['proposal-actual-1'],
+    };
+    const input = JSON.stringify({
+      schemaVersion: 1,
+      records: [
+        {
+          dataClass: 'agent.specialist-outcomes',
+          recordId: 'finance-synthetic-staging',
+          fields: {
+            outcome: {
+              delegationId: 'finance-synthetic-staging',
+              specialistId: 'finance',
+              status: 'completed',
+              facts: output,
+            },
+          },
+        },
+      ],
+    });
+    const synthesisInstruction =
+      'Write the final EMDO synthesis in en-CA. Keep evidence excerpts in their source language; do not translate those excerpts.';
+    const manager = agent('manager', [], synthesisInstruction);
+    const resumed = new RunState(new RunContext(context), input, manager, 12);
+
+    const result = await bundle().runner.run(manager, resumed, options());
+
+    expect(result.finalOutput).toEqual(output);
+  });
+
+  it('fails closed for malformed or unsupported resume state', async () => {
+    const manager = agent(
+      'manager',
+      [],
+      'Write the final EMDO synthesis in en-CA. Keep evidence excerpts in their source language; do not translate those excerpts.',
+    );
+    const malformed = new RunState(
+      new RunContext(context),
+      JSON.stringify({ schemaVersion: 1, records: [] }),
+      manager,
+      12,
+    );
+    (malformed as { _originalInput: unknown })._originalInput = [];
+
+    await expect(
+      bundle().runner.run(manager, malformed, options()),
+    ).rejects.toThrow('finance-synthetic-staging-resume-unavailable');
+    await expect(
+      bundle().runner.run(
+        manager,
+        {
+          currentAgent: manager,
+          _originalInput: managerInput(searchCommand()),
+        } as never,
+        options(),
+      ),
+    ).rejects.toThrow('finance-synthetic-staging-resume-unavailable');
   });
 
   it('fails closed for unknown actions and Scheduler or Shopping agents', async () => {

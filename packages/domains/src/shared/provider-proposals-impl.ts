@@ -122,6 +122,10 @@ export interface TrustedProposalMaterializer {
 export interface TrustedDisclosureGrantResolver {
   resolve(
     disclosureGrantId: string,
+    invocationBinding: Pick<
+      ActionProposal['disclosureGrant'],
+      'invocationContext' | 'invocationContextHash'
+    >,
   ): Promise<ActionProposal['disclosureGrant'] | undefined>;
 }
 
@@ -1424,7 +1428,10 @@ const acquireApproval = async (
   }
 
   const trustedGrantResult = DataDisclosureGrantSchema.safeParse(
-    await resolveDisclosureGrant(initial.proposal.disclosureGrant.id),
+    await resolveDisclosureGrant(
+      initial.proposal.disclosureGrant.id,
+      initial.proposal.disclosureGrant,
+    ),
   );
   const observedAuthorizationNow = currentTime();
   const observedAuthorizationAt = observedAuthorizationNow.getTime();
@@ -1720,7 +1727,10 @@ const markDispatchingApproval = async (
   if (existing.attemptState !== 'prepared') return existing;
 
   const trustedGrantResult = DataDisclosureGrantSchema.safeParse(
-    await resolveDisclosureGrant(initial.proposal.disclosureGrant.id),
+    await resolveDisclosureGrant(
+      initial.proposal.disclosureGrant.id,
+      initial.proposal.disclosureGrant,
+    ),
   );
   const dispatchNow = currentTime();
   const observedDispatchAt = dispatchNow.getTime();
@@ -2249,7 +2259,10 @@ export class ProposalService {
       );
     }
     const trustedGrantResult = DataDisclosureGrantSchema.safeParse(
-      await this.resolveDisclosureGrant(proposal.disclosureGrant.id),
+      await this.resolveDisclosureGrant(
+        proposal.disclosureGrant.id,
+        proposal.disclosureGrant,
+      ),
     );
     const grantCheckedAt = this.currentTime();
     const grantCheckedAtMs = grantCheckedAt.getTime();

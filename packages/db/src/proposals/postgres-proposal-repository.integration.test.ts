@@ -88,6 +88,8 @@ const ids = Object.freeze({
     queue: '96000000-0000-4000-8000-000000000022',
     lease: '96000000-0000-4000-8000-000000000023',
     membership: '96000000-0000-4000-8000-000000000024',
+    rootManagerInvocationId: '96000000-0000-4000-8000-000000000025',
+    managerConversationId: '96000000-0000-4000-8000-000000000026',
   }),
   b: Object.freeze({
     user: '97000000-0000-4000-8000-000000000001',
@@ -114,6 +116,8 @@ const ids = Object.freeze({
     queue: '97000000-0000-4000-8000-000000000022',
     lease: '97000000-0000-4000-8000-000000000023',
     membership: '97000000-0000-4000-8000-000000000024',
+    rootManagerInvocationId: '97000000-0000-4000-8000-000000000025',
+    managerConversationId: '97000000-0000-4000-8000-000000000026',
   }),
   c: Object.freeze({
     user: '98000000-0000-4000-8000-000000000001',
@@ -140,6 +144,8 @@ const ids = Object.freeze({
     queue: '98000000-0000-4000-8000-000000000022',
     lease: '98000000-0000-4000-8000-000000000023',
     membership: '98000000-0000-4000-8000-000000000024',
+    rootManagerInvocationId: '98000000-0000-4000-8000-000000000025',
+    managerConversationId: '98000000-0000-4000-8000-000000000026',
   }),
   d: Object.freeze({
     user: '99000000-0000-4000-8000-000000000001',
@@ -166,6 +172,8 @@ const ids = Object.freeze({
     queue: '99000000-0000-4000-8000-000000000022',
     lease: '99000000-0000-4000-8000-000000000023',
     membership: '99000000-0000-4000-8000-000000000024',
+    rootManagerInvocationId: '99000000-0000-4000-8000-000000000025',
+    managerConversationId: '99000000-0000-4000-8000-000000000026',
   }),
 });
 
@@ -222,6 +230,62 @@ interface ExecutingLifecycle extends PreparedLifecycle {
 const isoOffset = (milliseconds: number): string =>
   new Date(Date.now() + milliseconds).toISOString();
 
+const schedulerCapabilities = ['google-calendar.event.create'] as const;
+const financeCapabilities = [
+  'finance.analytics.calculate',
+  'finance.documents.read',
+  'finance.documents.search',
+  'finance.matches.read',
+  'finance.records.read',
+  'finance.records.write',
+  'finance.statement.import',
+] as const;
+
+const invocationContextFor = (
+  actor: ActorIds,
+  agentId: 'scheduler' | 'finance',
+  grantedCapabilities: readonly string[],
+  recordAllowlist: readonly Readonly<{
+    dataClass: string;
+    recordId: string;
+    fields: readonly string[];
+  }>[],
+  deadline: string,
+) => {
+  const parentInvocationId = actor.rootManagerInvocationId;
+  const agentInvocationId = randomUUID();
+  const phaseInvocationId = randomUUID();
+  const disclosedContextRefs = recordAllowlist
+    .map(
+      ({ dataClass, recordId }) =>
+        `context-ref-${hashCanonicalJson({ dataClass, recordId })}`,
+    )
+    .sort();
+  return {
+    orchestrationRunId: actor.run,
+    parentInvocationId,
+    agentInvocationId,
+    phaseInvocationId,
+    actorId: actor.user,
+    locale: 'en-CA' as const,
+    grantedCapabilities,
+    disclosedContextRefs,
+    deadline,
+    idempotencyScope: hashCanonicalJson({
+      domain: 'emdo.agent-invocation-scope.v1',
+      agentId,
+      orchestrationRunId: actor.run,
+      parentInvocationId,
+      agentInvocationId,
+      phaseInvocationId,
+      actorId: actor.user,
+      locale: 'en-CA',
+      grantedCapabilities,
+      disclosedContextRefs,
+    }),
+  };
+};
+
 const operationId = (phase: string, marker = randomUUID()): string =>
   `proposal_${phase}_${marker.replaceAll('-', '_')}`;
 
@@ -257,12 +321,27 @@ const buildFixture = (
   options: Readonly<{
     proposalId?: string;
     sdkCallSuffix?: string;
+    disclosure?: ActionProposal['disclosureGrant'];
   }> = {},
 ): Fixture => {
   const disclosureCreatedAt = isoOffset(-60_000);
   const proposalCreatedAt = isoOffset(-1_000);
-  const expiresAt = isoOffset(8 * 60_000);
+  const expiresAt = options.disclosure?.expiresAt ?? isoOffset(8 * 60_000);
   const providerGrantReference = `calendar-grant-${actor.user}`;
+  const recordAllowlist = [
+    {
+      dataClass: 'calendar.event',
+      recordId: 'calendar-event:dinner',
+      fields: ['title'],
+    },
+  ];
+  const invocationContext = invocationContextFor(
+    actor,
+    'scheduler',
+    schedulerCapabilities,
+    recordAllowlist,
+    expiresAt,
+  );
   const authorizationScopeFingerprint =
     EffectiveAuthorizationScopeFingerprintSchema.parse(
       hashCanonicalJson({
@@ -278,6 +357,21 @@ const buildFixture = (
         writableSpaceIds: [actor.space],
       }),
     );
+  const collectionAuthorizationScopeFingerprint =
+    EffectiveAuthorizationScopeFingerprintSchema.parse(
+      hashCanonicalJson({
+        domain: 'emdo.authorization-scope.v1',
+        householdId: actor.household,
+        userId: actor.user,
+        sessionId: actor.session,
+        membershipId: actor.membership,
+        membershipAdministrationVersion: 1,
+        role: 'owner',
+        privateSpaceId: actor.space,
+        proposalSpaceId: null,
+        writableSpaceIds: [actor.space],
+      }),
+    );
   const authorityBinding = Object.freeze({
     kind: 'google-calendar-grant-v2' as const,
     householdId: actor.household,
@@ -287,27 +381,25 @@ const buildFixture = (
     authorizationEpoch: 0,
   });
   const providerAuthorityBindingHash = hashCanonicalJson(authorityBinding);
-  const disclosure = Object.freeze({
-    schemaVersion: 1 as const,
-    id: actor.disclosure,
-    version: 1,
-    userId: actor.user,
-    householdId: actor.household,
-    agentId: 'scheduler',
-    purpose: 'Create the exact visually approved calendar event',
-    runId: actor.run,
-    recordAllowlist: [
-      {
-        dataClass: 'calendar.event',
-        recordId: 'calendar-event:dinner',
-        fields: ['title'],
-      },
-    ],
-    provider: 'google-calendar',
-    createdAt: disclosureCreatedAt,
-    expiresAt,
-    oneRunOnly: true,
-  });
+  const disclosure =
+    options.disclosure ??
+    Object.freeze({
+      schemaVersion: 1 as const,
+      id: actor.disclosure,
+      version: 1,
+      userId: actor.user,
+      householdId: actor.household,
+      agentId: 'scheduler',
+      purpose: 'Create the exact visually approved calendar event',
+      runId: actor.run,
+      invocationContext,
+      invocationContextHash: hashCanonicalJson(invocationContext),
+      recordAllowlist,
+      provider: 'google-calendar',
+      createdAt: disclosureCreatedAt,
+      expiresAt,
+      oneRunOnly: true,
+    });
   const proposalWithoutApproval = {
     schemaVersion: 1 as const,
     id: options.proposalId ?? actor.proposal,
@@ -373,7 +465,7 @@ const buildFixture = (
     disclosureHash: hashCanonicalJson(disclosure),
     providerGrantReference,
     authorityBinding,
-    collectionAuthorizationScopeFingerprint: authorizationScopeFingerprint,
+    collectionAuthorizationScopeFingerprint,
     providerAuthorityBindingHash,
     proposal,
     preparation: Object.freeze({
@@ -392,18 +484,33 @@ const buildFinanceFixture = (
     proposalId?: string;
     sdkCallSuffix?: string;
     action?: 'delete-document' | 'commit-document-review';
+    disclosure?: ActionProposal['disclosureGrant'];
   }> = {},
 ): Fixture => {
   const disclosureCreatedAt = isoOffset(-60_000);
   const proposalCreatedAt = isoOffset(-1_000);
-  const expiresAt = isoOffset(8 * 60_000);
+  const expiresAt = options.disclosure?.expiresAt ?? isoOffset(8 * 60_000);
   const proposalId = options.proposalId ?? actor.proposal;
+  const documentId = `finance-document:${actor.proposal}`;
+  const recordAllowlist = [
+    {
+      dataClass: 'finance.document',
+      recordId: documentId,
+      fields: ['status'],
+    },
+  ];
+  const invocationContext = invocationContextFor(
+    actor,
+    'finance',
+    financeCapabilities,
+    recordAllowlist,
+    expiresAt,
+  );
   const action = options.action ?? 'delete-document';
   const isReviewCommit = action === 'commit-document-review';
   const guardedOperation = isReviewCommit
     ? 'finance-document-review-commit'
     : 'finance-document-delete';
-  const documentId = `finance-document:${actor.proposal}`;
   const authorizationScopeFingerprint =
     EffectiveAuthorizationScopeFingerprintSchema.parse(
       hashCanonicalJson({
@@ -484,29 +591,27 @@ const buildFinanceFixture = (
     executionBindingHash: providerAuthorityBindingHash,
     targetBindingHash,
   } as const;
-  const disclosure = Object.freeze({
-    schemaVersion: 1 as const,
-    id: actor.disclosure,
-    version: 1,
-    userId: actor.user,
-    householdId: actor.household,
-    agentId: 'finance',
-    purpose: isReviewCommit
-      ? 'Commit one visually approved Finance document review'
-      : 'Delete one visually approved Finance document',
-    runId: actor.run,
-    recordAllowlist: [
-      {
-        dataClass: 'finance.document',
-        recordId: documentId,
-        fields: ['status'],
-      },
-    ],
-    provider: 'openai',
-    createdAt: disclosureCreatedAt,
-    expiresAt,
-    oneRunOnly: true,
-  });
+  const disclosure =
+    options.disclosure ??
+    Object.freeze({
+      schemaVersion: 1 as const,
+      id: actor.disclosure,
+      version: 1,
+      userId: actor.user,
+      householdId: actor.household,
+      agentId: 'finance',
+      purpose: isReviewCommit
+        ? 'Commit one visually approved Finance document review'
+        : 'Delete one visually approved Finance document',
+      runId: actor.run,
+      invocationContext,
+      invocationContextHash: hashCanonicalJson(invocationContext),
+      recordAllowlist,
+      provider: 'openai',
+      createdAt: disclosureCreatedAt,
+      expiresAt,
+      oneRunOnly: true,
+    });
   const proposalWithoutApproval = {
     schemaVersion: 1 as const,
     id: proposalId,
@@ -789,11 +894,13 @@ describeDatabase(
       const actor = fixture.actor;
       await admin.query(
         `insert into emdo.disclosure_grants
-           (id, version, household_id, space_id, user_id, run_id, agent_id,
-            purpose, provider, record_allowlist, grant_hash, created_at,
-            expires_at, one_run_only)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11,
-                 $12::timestamptz, $13::timestamptz, true)`,
+           (id, schema_version, version, household_id, space_id, user_id,
+            run_id, agent_id, purpose, phase_purpose, provider,
+            record_allowlist, invocation_context, invocation_context_hash,
+            grant_hash, created_at, expires_at, one_run_only)
+         values ($1, 1, $2, $3, $4, $5, $6, $7, $8,
+                 'specialist-execution', $9, $10::jsonb, $11::jsonb, $12,
+                 $13, $14::timestamptz, $15::timestamptz, true)`,
         [
           fixture.disclosure.id,
           fixture.disclosure.version,
@@ -805,6 +912,8 @@ describeDatabase(
           fixture.disclosure.purpose,
           fixture.disclosure.provider,
           JSON.stringify(fixture.disclosure.recordAllowlist),
+          JSON.stringify(fixture.disclosure.invocationContext),
+          fixture.disclosure.invocationContextHash,
           fixture.disclosureHash,
           fixture.disclosure.createdAt,
           fixture.disclosure.expiresAt,
@@ -869,13 +978,7 @@ describeDatabase(
             agent_version, requested_model, status)
          values ($1, $2, $3, $4, $5, '1.0.0',
                  'gpt-5.6-luna', 'running')`,
-        [
-          actor.run,
-          actor.household,
-          actor.space,
-          actor.user,
-          fixture.disclosure.agentId,
-        ],
+        [actor.run, actor.household, actor.space, actor.user, 'manager'],
       );
       await admin.query(
         `insert into emdo.space_access_grants
@@ -909,6 +1012,50 @@ describeDatabase(
           actor.otherSessionRequest,
           actor.household,
           actor.user,
+        ],
+      );
+      const managerRequest = {
+        schemaVersion: 1,
+        message: `Prepare a ${fixture.disclosure.agentId} proposal lifecycle fixture.`,
+        routeHint: fixture.disclosure.agentId,
+        locale: 'en-CA',
+        rootManagerInvocationId: actor.rootManagerInvocationId,
+      } as const;
+      await admin.query(
+        `insert into emdo.manager_turns
+           (run_id, schema_version, household_id, space_id, user_id,
+            conversation_id, origin_session_id, origin_request_id,
+            origin_space_access_grant_id,
+            origin_collection_authorization_scope_fingerprint,
+            origin_operation_authorization_scope_fingerprint,
+            idempotency_key, request_payload, request_hash,
+            manager_agent_version, requested_model, claim_id,
+            ownership_token_hash, state, revision, created_at, updated_at,
+            retain_until)
+         values ($1, 1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                 $12::jsonb, $13, '1.0.0', 'gpt-5.6-luna', $14, $15,
+                 'claimed', 1, pg_catalog.clock_timestamp(),
+                 pg_catalog.clock_timestamp(),
+                 pg_catalog.clock_timestamp() + interval '89 days')`,
+        [
+          actor.run,
+          actor.household,
+          actor.space,
+          actor.user,
+          actor.managerConversationId,
+          actor.session,
+          actor.request,
+          actor.grant,
+          fixture.collectionAuthorizationScopeFingerprint,
+          fixture.proposal.authorizationScopeFingerprint,
+          `proposal-lifecycle-root:${actor.run}`,
+          JSON.stringify(managerRequest),
+          hashCanonicalJson(managerRequest),
+          randomUUID(),
+          hashCanonicalJson({
+            domain: 'emdo.manager-turn-owner.v1',
+            runId: actor.run,
+          }),
         ],
       );
       if (options.includeGoogle !== false) {
@@ -1035,7 +1182,7 @@ describeDatabase(
 
       const proposalMigrations = await loadOrderedMigrations();
       expect(proposalMigrations.at(-1)?.id).toBe(
-        '0021_blocked_visual_decision_claim',
+        '0022_registered_agent_invocation_lineage',
       );
       for (const migration of proposalMigrations) {
         try {
@@ -1235,7 +1382,7 @@ describeDatabase(
           expiresAt,
           retainUntil,
           randomUUID(),
-          randomUUID(),
+          fixture.actor.managerConversationId,
           `proposal-interruption:${proposal.id}`,
           proposal.id,
           proposal.capabilityId,
@@ -1564,6 +1711,7 @@ describeDatabase(
           schemaVersion: 1,
           message: 'Commit this reviewed Finance document.',
           routeHint: 'finance',
+          locale: 'en-CA',
         },
         principal: visualPrincipal(fixtureA),
         requestId: fixtureA.actor.request,
@@ -1581,6 +1729,8 @@ describeDatabase(
           disclosure: managerReviewIds.disclosure,
           proposal: managerReviewIds.proposal,
           run: managerClaim.runId,
+          rootManagerInvocationId: managerClaim.rootManagerInvocationId,
+          managerConversationId: managerClaim.conversationId,
         }),
         {
           sdkCallSuffix: 'manager-review',
@@ -1691,7 +1841,32 @@ describeDatabase(
             },
           },
         ],
-        specialistOutcomes: [],
+        specialistOutcomes: [
+          {
+            delegationId: 'finance-manager-review-delegation',
+            specialistId: 'finance',
+            invocationContext:
+              managerReviewFixture.disclosure.invocationContext,
+            invocationContextHash:
+              managerReviewFixture.disclosure.invocationContextHash,
+            status: 'needs_confirmation',
+            proposedAction: {
+              proposalId: managerReviewFixture.proposal.id,
+              capabilityId: managerReviewFixture.proposal.capabilityId,
+              argumentsPreview: {
+                mutation: {
+                  kind: 'commit-document-review',
+                  documentId: managerReviewDocumentId,
+                },
+              },
+            },
+            usage: {
+              inputTokens: 0,
+              outputTokens: 0,
+              modelCostCadMinor: 0,
+            },
+          },
+        ],
         usage: {
           inputTokens: 0,
           outputTokens: 0,
@@ -1713,7 +1888,7 @@ describeDatabase(
           runId: managerClaim.runId,
           result: managerApprovalResult,
         }),
-      ).resolves.toEqual({ status: 'completed', terminalEventSequence: 2 });
+      ).resolves.toEqual({ status: 'completed', terminalEventSequence: 3 });
 
       const managerEvents = await admin.query<{
         sequence: number;
@@ -1733,7 +1908,8 @@ describeDatabase(
         })),
       ).toEqual([
         { sequence: 1, eventType: 'run.accepted' },
-        { sequence: 2, eventType: 'approval.required' },
+        { sequence: 2, eventType: 'specialist.needs_confirmation' },
+        { sequence: 3, eventType: 'approval.required' },
       ]);
       expect(managerEvents.rows.at(-1)?.payload).toMatchObject({
         status: 'needs-approval',
@@ -1766,7 +1942,7 @@ describeDatabase(
           checkpointId: checkpoint.checkpointId,
           proposalId: managerReviewFixture.proposal.id,
           capabilityId: 'finance.records.write',
-          approvalEventSequence: 2,
+          approvalEventSequence: 3,
           state: 'awaiting-decision',
         },
       ]);
@@ -2000,6 +2176,7 @@ describeDatabase(
       const forgedFixture = buildFinanceFixture(ids.c, {
         proposalId: ids.c.attackProposal,
         sdkCallSuffix: 'forged-binding',
+        disclosure: financeFixture.disclosure,
       });
       const forgedBindingHash = 'f'.repeat(64);
       const forgedProposal = ActionProposalSchema.parse({
@@ -2032,6 +2209,7 @@ describeDatabase(
       const targetSubstitutionFixture = buildFinanceFixture(ids.c, {
         proposalId: randomUUID(),
         sdkCallSuffix: 'substituted-target',
+        disclosure: financeFixture.disclosure,
       });
       const targetSubstitutionProposal = ActionProposalSchema.parse({
         ...targetSubstitutionFixture.proposal,
@@ -2362,6 +2540,7 @@ describeDatabase(
       const attackFixture = buildFixture(fixtureA.actor, {
         proposalId: fixtureA.actor.attackProposal,
         sdkCallSuffix: 'claim-swap',
+        disclosure: fixtureA.disclosure,
       });
       const createScope = scopeFor(
         attackFixture,
@@ -2381,9 +2560,9 @@ describeDatabase(
           createOperation,
           {
             ...createMutation,
-            event: {
-              ...createMutation.event,
-              occurredAt: isoOffset(1_000),
+            scope: {
+              ...createMutation.scope,
+              providerSdkCallId: `${createMutation.scope.providerSdkCallId}-scope-tamper`,
             },
           },
         ),

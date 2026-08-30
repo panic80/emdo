@@ -25,6 +25,9 @@ const ids = {
   attempt: '91000000-0000-4000-8000-000000000009',
   privateSpace: '91000000-0000-4000-8000-000000000010',
   spaceGrant: '91000000-0000-4000-8000-000000000011',
+  parentInvocation: '91000000-0000-4000-8000-000000000012',
+  agentInvocation: '91000000-0000-4000-8000-000000000013',
+  phaseInvocation: '91000000-0000-4000-8000-000000000014',
 } as const;
 
 const hash = (character: string) => character.repeat(64);
@@ -66,6 +69,19 @@ const proposal = ActionProposalSchema.parse({
     agentId: 'scheduler',
     purpose: 'Create one approved Calendar event',
     runId: ids.run,
+    invocationContext: {
+      orchestrationRunId: ids.run,
+      parentInvocationId: ids.parentInvocation,
+      agentInvocationId: ids.agentInvocation,
+      phaseInvocationId: ids.phaseInvocation,
+      actorId: ids.user,
+      locale: 'en-CA',
+      grantedCapabilities: ['scheduler.calendar.create'],
+      disclosedContextRefs: [`context-ref-${hash('1')}`],
+      deadline: '2026-08-10T14:10:00.000Z',
+      idempotencyScope: hash('2'),
+    },
+    invocationContextHash: hash('3'),
     recordAllowlist: [
       {
         dataClass: 'calendar.event',

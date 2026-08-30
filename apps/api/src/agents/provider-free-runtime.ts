@@ -2,7 +2,6 @@ import {
   type AgentUsage,
   type JsonValue,
   type SafeAgentError,
-  type SpecialistOutcome,
 } from '@emdo/agent-core';
 import { hashCanonicalJson } from '@emdo/toolbox';
 import { z } from 'zod';
@@ -71,12 +70,32 @@ export interface ProviderFreeExecutionResolution {
   readonly reason: 'provider-free-mvp';
 }
 
+/**
+ * Compatibility-only outcome for the isolated provider-free Shopping runtime.
+ * It is deliberately not the registered specialist outcome contract.
+ */
+export type ProviderFreeSpecialistOutcome =
+  | Readonly<{
+      delegationId: 'shopping.create';
+      specialistId: 'shopping';
+      status: 'completed';
+      output: JsonValue;
+      usage: AgentUsage;
+    }>
+  | Readonly<{
+      delegationId: 'shopping.create';
+      specialistId: 'shopping';
+      status: 'failed';
+      safeError: SafeAgentError;
+      usage: AgentUsage;
+    }>;
+
 export interface ProviderFreeCompletedTurnResult {
   readonly status: 'completed';
   readonly runId: string;
   readonly localTraceReference: string;
   readonly output: JsonValue;
-  readonly specialistOutcomes: readonly SpecialistOutcome[];
+  readonly specialistOutcomes: readonly ProviderFreeSpecialistOutcome[];
   readonly hasPartialFailures: false;
   readonly usage: AgentUsage;
   readonly executionResolution: ProviderFreeExecutionResolution;
@@ -87,7 +106,7 @@ export interface ProviderFreeFailedTurnResult {
   readonly runId: string;
   readonly localTraceReference: string;
   readonly safeError: SafeAgentError;
-  readonly specialistOutcomes: readonly SpecialistOutcome[];
+  readonly specialistOutcomes: readonly ProviderFreeSpecialistOutcome[];
   readonly usage: AgentUsage;
 }
 
@@ -174,7 +193,7 @@ const parseCommand = (message: string) => {
 const failed = (
   runId: string,
   error: SafeAgentError,
-  specialistOutcomes: readonly SpecialistOutcome[] = [],
+  specialistOutcomes: readonly ProviderFreeSpecialistOutcome[] = [],
 ): ProviderFreeFailedTurnResult =>
   Object.freeze({
     status: 'failed' as const,
@@ -320,7 +339,7 @@ export const createProviderFreeMvpRuntime = (input: {
       ]);
     }
 
-    const outcome: SpecialistOutcome = Object.freeze({
+    const outcome: ProviderFreeSpecialistOutcome = Object.freeze({
       delegationId: 'shopping.create',
       specialistId: 'shopping',
       status: 'completed',

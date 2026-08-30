@@ -17,6 +17,7 @@ import {
   type ValidatedAgentManifest,
 } from '@emdo/agent-core';
 import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
+import { hashCanonicalJson } from '@emdo/toolbox';
 
 import {
   FINANCE_V1_REGISTERED_SPECIALIST_IDS,
@@ -34,6 +35,7 @@ const ids = Object.freeze({
   managerGrant: '018f1f5e-4000-7000-8000-000000000008',
   financeGrant: '018f1f5e-4000-7000-8000-000000000009',
   schedulerGrant: '018f1f5e-4000-7000-8000-00000000000a',
+  rootManagerInvocation: '018f1f5e-4000-7000-8000-00000000000b',
 });
 
 const scope = EffectiveAuthorizationScopeFingerprintSchema.parse(
@@ -57,6 +59,7 @@ const turn = (): TurnInput =>
     userId: ids.user,
     authenticatedSessionId: ids.session,
     conversationId: ids.conversation,
+    rootManagerInvocationId: ids.rootManagerInvocation,
     spaceAccessGrantId: ids.spaceGrant,
     authorizationScopeFingerprint: scope,
     locale: 'en-CA',
@@ -181,26 +184,49 @@ const setup = (execute: AgentExecutionProvider['execute']) => {
     createdAt: '2026-08-26T12:00:00.000Z',
   }));
   const disclosureGateway: ModelDisclosureGateway = {
-    authorize: vi.fn(async (input) => ({
-      status: 'authorized' as const,
-      grantId:
-        input.agentId === 'manager'
-          ? ids.managerGrant
-          : input.agentId === 'finance'
-            ? ids.financeGrant
-            : ids.schedulerGrant,
-      grantVersion: '1.0.0',
-      runId: input.runId,
-      householdId: input.householdId,
-      userId: input.userId,
-      agentId: input.agentId,
-      phasePurpose: input.phasePurpose,
-      phaseInvocationId: input.phaseInvocationId,
-      disclosurePurpose: 'registered-orchestration-test',
-      provider: 'openai' as const,
-      expiresAt: '2099-01-01T00:00:00.000Z',
-      ...projection(input.sources),
-    })),
+    authorize: vi.fn(async (input) => {
+      const projected = projection(input.sources);
+      const expiresAt = '2099-01-01T00:00:00.000Z';
+      const invocationContext = Object.freeze({
+        ...input.invocation,
+        disclosedContextRefs: Object.freeze(
+          projected.records
+            .map(
+              ({ dataClass, recordId }) =>
+                `context-ref-${hashCanonicalJson({ dataClass, recordId })}`,
+            )
+            .sort(),
+        ),
+        deadline: expiresAt,
+        idempotencyScope: hashCanonicalJson({
+          domain: 'registered-orchestration-test.v1',
+          invocation: input.invocation,
+          records: projected.records,
+        }),
+      });
+      return {
+        status: 'authorized' as const,
+        grantId:
+          input.agentId === 'manager'
+            ? ids.managerGrant
+            : input.agentId === 'finance'
+              ? ids.financeGrant
+              : ids.schedulerGrant,
+        grantVersion: '1.0.0',
+        runId: input.runId,
+        householdId: input.householdId,
+        userId: input.userId,
+        agentId: input.agentId,
+        phasePurpose: input.phasePurpose,
+        phaseInvocationId: input.phaseInvocationId,
+        invocationContext,
+        invocationContextHash: hashCanonicalJson(invocationContext),
+        disclosurePurpose: 'registered-orchestration-test',
+        provider: 'openai' as const,
+        expiresAt,
+        ...projected,
+      };
+    }),
   };
   const proposalGateway: ProviderWriteProposalGateway = {
     prepare: async () => {
@@ -486,7 +512,11 @@ describe('registered Finance v1 orchestration contract', () => {
       output: { summary: 'Scheduling succeeded; finance is unavailable.' },
       hasPartialFailures: true,
       specialistOutcomes: expect.arrayContaining([
-        expect.objectContaining({ specialistId: 'finance', status: 'failed' }),
+        expect.objectContaining({
+          specialistId: 'finance',
+          status: 'unavailable',
+          reasonCode: 'specialist-dispatch-unavailable',
+        }),
         expect.objectContaining({
           specialistId: 'scheduler',
           status: 'completed',
@@ -643,21 +673,44 @@ const orchestratorDependencies = () => ({
   disclosureGateway: {
     authorize: async (
       input: Parameters<ModelDisclosureGateway['authorize']>[0],
-    ) => ({
-      status: 'authorized' as const,
-      grantId: ids.managerGrant,
-      grantVersion: '1.0.0',
-      runId: input.runId,
-      householdId: input.householdId,
-      userId: input.userId,
-      agentId: input.agentId,
-      phasePurpose: input.phasePurpose,
-      phaseInvocationId: input.phaseInvocationId,
-      disclosurePurpose: 'guard-test',
-      provider: 'openai' as const,
-      expiresAt: '2099-01-01T00:00:00.000Z',
-      ...projection(input.sources),
-    }),
+    ) => {
+      const projected = projection(input.sources);
+      const expiresAt = '2099-01-01T00:00:00.000Z';
+      const invocationContext = Object.freeze({
+        ...input.invocation,
+        disclosedContextRefs: Object.freeze(
+          projected.records
+            .map(
+              ({ dataClass, recordId }) =>
+                `context-ref-${hashCanonicalJson({ dataClass, recordId })}`,
+            )
+            .sort(),
+        ),
+        deadline: expiresAt,
+        idempotencyScope: hashCanonicalJson({
+          domain: 'registered-orchestration-guard-test.v1',
+          invocation: input.invocation,
+          records: projected.records,
+        }),
+      });
+      return {
+        status: 'authorized' as const,
+        grantId: ids.managerGrant,
+        grantVersion: '1.0.0',
+        runId: input.runId,
+        householdId: input.householdId,
+        userId: input.userId,
+        agentId: input.agentId,
+        phasePurpose: input.phasePurpose,
+        phaseInvocationId: input.phaseInvocationId,
+        invocationContext,
+        invocationContextHash: hashCanonicalJson(invocationContext),
+        disclosurePurpose: 'guard-test',
+        provider: 'openai' as const,
+        expiresAt,
+        ...projected,
+      };
+    },
   } satisfies ModelDisclosureGateway,
   agentGraphHash: graphHash,
   sdkVersion: '0.14.3',

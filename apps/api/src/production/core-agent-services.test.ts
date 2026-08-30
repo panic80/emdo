@@ -185,6 +185,11 @@ const ids = Object.freeze({
   otherDocument: '52000000-0000-4000-8000-000000000012',
   match: '52000000-0000-4000-8000-000000000013',
   otherMatch: '52000000-0000-4000-8000-000000000014',
+  rootManagerInvocation: '52000000-0000-4000-8000-000000000015',
+  schedulerAgentInvocation: '52000000-0000-4000-8000-000000000016',
+  schedulerPhaseInvocation: '52000000-0000-4000-8000-000000000017',
+  financeAgentInvocation: '52000000-0000-4000-8000-000000000018',
+  financePhaseInvocation: '52000000-0000-4000-8000-000000000019',
 });
 
 const authorizationScopeFingerprint =
@@ -224,6 +229,48 @@ const authorityBinding = Object.freeze({
   providerGrantReference: 'calendar-grant-reference',
   authorizationEpoch: 1,
 });
+const schedulerInvocationContext = Object.freeze({
+  orchestrationRunId: ids.run,
+  parentInvocationId: ids.rootManagerInvocation,
+  agentInvocationId: ids.schedulerAgentInvocation,
+  phaseInvocationId: ids.schedulerPhaseInvocation,
+  actorId: ids.user,
+  locale: 'en-CA' as const,
+  grantedCapabilities: Object.freeze(['google-calendar.event.create']),
+  disclosedContextRefs: Object.freeze([
+    `context-ref-${hashCanonicalJson({
+      dataClass: 'agent.delegations',
+      recordId: 'scheduler-delegation-1',
+    })}`,
+  ]),
+  deadline: '2026-08-15T12:10:00.000Z',
+  idempotencyScope: '9'.repeat(64),
+});
+const schedulerInvocationBinding = Object.freeze({
+  invocationContext: schedulerInvocationContext,
+  invocationContextHash: hashCanonicalJson(schedulerInvocationContext),
+});
+const financeInvocationContext = Object.freeze({
+  orchestrationRunId: ids.run,
+  parentInvocationId: ids.rootManagerInvocation,
+  agentInvocationId: ids.financeAgentInvocation,
+  phaseInvocationId: ids.financePhaseInvocation,
+  actorId: ids.user,
+  locale: 'en-CA' as const,
+  grantedCapabilities: Object.freeze(['finance.records.write']),
+  disclosedContextRefs: Object.freeze([
+    `context-ref-${hashCanonicalJson({
+      dataClass: 'finance.transactions',
+      recordId: 'transaction-1',
+    })}`,
+  ]),
+  deadline: '2026-08-15T12:10:00.000Z',
+  idempotencyScope: 'a'.repeat(64),
+});
+const financeInvocationBinding = Object.freeze({
+  invocationContext: financeInvocationContext,
+  invocationContextHash: hashCanonicalJson(financeInvocationContext),
+});
 const disclosureGrant = DataDisclosureGrantSchema.parse({
   schemaVersion: 1,
   id: ids.disclosureGrant,
@@ -233,6 +280,7 @@ const disclosureGrant = DataDisclosureGrantSchema.parse({
   agentId: 'scheduler',
   purpose: 'Run one scheduler delegation.',
   runId: ids.run,
+  ...schedulerInvocationBinding,
   recordAllowlist: [
     {
       dataClass: 'agent.delegations',
@@ -323,13 +371,17 @@ describe('request-scoped core Calendar proposal adapter', () => {
         disclosureGrantId: ids.disclosureGrant,
         sdkCallId: 'calendar-sdk-call-1',
         disclosureGrantVersion: '7.2.5',
+        ...schedulerInvocationBinding,
         abortSignal: new AbortController().signal,
       } as never,
     });
 
     expect(createProposalTargetReader).toHaveBeenCalledOnce();
     expect(resolveAuthority).toHaveBeenCalledOnce();
-    expect(resolveDisclosureGrant).toHaveBeenCalledWith(ids.disclosureGrant);
+    expect(resolveDisclosureGrant).toHaveBeenCalledWith(
+      ids.disclosureGrant,
+      schedulerInvocationBinding,
+    );
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         id: ids.proposal,
@@ -406,6 +458,7 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
     ...disclosureGrant,
     agentId: 'finance',
     purpose: 'Execute one Finance specialist action.',
+    ...financeInvocationBinding,
     recordAllowlist: [
       {
         dataClass: 'finance.transactions',
@@ -533,6 +586,7 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
         authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
         disclosureGrantId: ids.disclosureGrant,
         disclosureGrantVersion: '7.2.5',
+        ...financeInvocationBinding,
         sdkCallId: `finance-presentation-${input.operation}`,
         agentId: 'finance',
         abortSignal: new AbortController().signal,
@@ -620,13 +674,19 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
     const executionBindingHash = hashFinanceGuardedActionExecutionBinding({
       proposalId: ids.proposal,
       scope: {
+        requestId: ids.request,
         runId: ids.run,
         householdId: ids.household,
         userId: ids.user,
         sessionId: ids.session,
         privateSpaceId: ids.privateSpace,
+        spaceAccessGrantId: ids.spaceGrant,
+        agentInvocationId: ids.financeAgentInvocation,
+        phaseInvocationId: ids.financePhaseInvocation,
+        invocationIdempotencyScope: financeInvocationContext.idempotencyScope,
         collectionAuthorizationScopeFingerprint: authorizationScopeFingerprint,
         disclosureGrantId: ids.disclosureGrant,
+        abortSignal: new AbortController().signal,
       },
       capabilityId: 'finance.records.write',
       capabilityVersion: '1.0.0',
@@ -650,6 +710,7 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
         authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
         disclosureGrantId: ids.disclosureGrant,
         disclosureGrantVersion: '7.2.5',
+        ...financeInvocationBinding,
         sdkCallId: 'finance-sdk-call-1',
         agentId: 'finance',
         abortSignal: new AbortController().signal,
@@ -659,7 +720,10 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
       throw new Error('test-finance-materialization-missing');
     }
 
-    expect(resolve).toHaveBeenCalledWith(ids.disclosureGrant);
+    expect(resolve).toHaveBeenCalledWith(
+      ids.disclosureGrant,
+      financeInvocationBinding,
+    );
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         id: ids.proposal,
@@ -799,6 +863,7 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
         authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
         disclosureGrantId: ids.disclosureGrant,
         disclosureGrantVersion: '7.2.5',
+        ...financeInvocationBinding,
         sdkCallId: 'finance-document-abort-signal-regression',
         agentId: 'finance',
         abortSignal: controller.signal,
@@ -1253,6 +1318,7 @@ describe('request-scoped Finance guarded action proposal adapter', () => {
           authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
           disclosureGrantId: ids.disclosureGrant,
           disclosureGrantVersion: '7.2.5',
+          ...financeInvocationBinding,
           sdkCallId: 'finance-sdk-call-2',
           agentId: 'finance',
           abortSignal: new AbortController().signal,
@@ -1283,6 +1349,7 @@ describe('request-scoped core agent runtime factory', () => {
       requestId: ids.request,
       runId: ids.run,
       conversationId: ids.conversation,
+      rootManagerInvocationId: ids.rootManagerInvocation,
       authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
       readPool,
       workflowPool,
@@ -1306,6 +1373,7 @@ describe('request-scoped core agent runtime factory', () => {
       requestId: ids.request,
       runId: ids.run,
       conversationId: ids.conversation,
+      rootManagerInvocationId: ids.rootManagerInvocation,
       authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
     });
     expect(factory?.runtime.agentIds).toEqual(['manager', 'scheduler']);
@@ -1368,6 +1436,7 @@ describe('request-scoped core agent runtime factory', () => {
       requestId: ids.request,
       runId: ids.run,
       conversationId: ids.conversation,
+      rootManagerInvocationId: ids.rootManagerInvocation,
       authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
       readPool,
       openAi,
@@ -1432,6 +1501,7 @@ describe('request-scoped core agent runtime factory', () => {
       requestId: ids.request,
       runId: ids.run,
       conversationId: ids.conversation,
+      rootManagerInvocationId: ids.rootManagerInvocation,
       authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
       readPool,
       openAi: {
@@ -1467,6 +1537,7 @@ describe('request-scoped core agent runtime factory', () => {
       requestId: ids.request,
       runId: ids.run,
       conversationId: ids.conversation,
+      rootManagerInvocationId: ids.rootManagerInvocation,
       authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
       readPool,
       workflowPool: { connect: vi.fn() } as never,
@@ -1517,6 +1588,7 @@ describe('request-scoped core agent runtime factory', () => {
       requestId: ids.request,
       runId: ids.run,
       conversationId: ids.conversation,
+      rootManagerInvocationId: ids.rootManagerInvocation,
       authorizationScopeFingerprint: operationAuthorizationScopeFingerprint,
       readPool: pool,
       workflowPool: pool,

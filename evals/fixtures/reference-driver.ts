@@ -352,8 +352,8 @@ export const createReferenceEvalDriver = (): ReferenceEvalDriver => {
                 type: 'specialist-outcome',
                 delegationId: 'finance-disclosure',
                 agentId: fixture.agentId,
-                status: 'failed',
-                safeErrorCode: 'model-disclosure-denied',
+                status: 'unavailable',
+                reasonCode: 'model-disclosure-denied',
               },
             ),
           };

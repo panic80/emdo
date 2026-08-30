@@ -28,6 +28,22 @@ const ids = {
   client: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f006',
   operation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f007',
   request: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f008',
+  parentInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f009',
+  agentInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f010',
+  phaseInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f011',
+} as const;
+
+const invocationContext = {
+  orchestrationRunId: ids.run,
+  parentInvocationId: ids.parentInvocation,
+  agentInvocationId: ids.agentInvocation,
+  phaseInvocationId: ids.phaseInvocation,
+  actorId: ids.user,
+  locale: 'en-CA',
+  grantedCapabilities: ['calendar.events.read', 'google-calendar.event.create'],
+  disclosedContextRefs: [`context-ref-${'1'.repeat(64)}`],
+  deadline: '2026-08-09T16:10:00.000Z',
+  idempotencyScope: '2'.repeat(64),
 } as const;
 
 const grant = {
@@ -39,6 +55,8 @@ const grant = {
   agentId: 'scheduler',
   purpose: 'Find an appointment time for this run.',
   runId: ids.run,
+  invocationContext,
+  invocationContextHash: '3'.repeat(64),
   recordAllowlist: [
     {
       dataClass: 'calendar.events',

@@ -1272,6 +1272,9 @@ export const createProductionFinanceDocumentGateway = (
     collectionAuthorizationScopeFingerprint:
       EffectiveAuthorizationScopeFingerprintSchema,
     disclosureGrantId: UuidSchema,
+    agentInvocationId: UuidSchema,
+    phaseInvocationId: UuidSchema,
+    invocationIdempotencyScope: Sha256Schema,
     abortSignal: AbortSignalSchema,
   });
 

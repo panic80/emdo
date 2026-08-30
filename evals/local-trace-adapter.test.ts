@@ -23,6 +23,38 @@ const localEvent = (
 });
 
 describe('local trace eval adapter', () => {
+  it('binds failed and unavailable specialist outcomes to their exact safe code fields', () => {
+    const runId = '018f1f5e-6f47-7d61-a6dd-1e86f8b80400';
+    const outcome = (metadata: LocalTraceEvent['metadata']) =>
+      normalizeLocalTraceEvents(runId, TRACE_REFERENCE, [
+        localEvent(runId, 'specialist.outcome', metadata, 0),
+      ]);
+
+    expect(() =>
+      outcome({
+        delegationId: 'finance',
+        agentId: 'finance',
+        status: 'failed',
+        reasonCode: 'model-disclosure-denied',
+      }),
+    ).toThrow();
+    expect(() =>
+      outcome({
+        delegationId: 'finance',
+        agentId: 'finance',
+        status: 'unavailable',
+        errorCode: 'model-disclosure-denied',
+      }),
+    ).toThrow();
+    expect(() =>
+      outcome({
+        delegationId: 'finance',
+        agentId: 'finance',
+        status: 'unavailable',
+      }),
+    ).toThrow();
+  });
+
   it('normalizes the frozen runtime orchestration trace vocabulary', () => {
     const runId = '018f1f5e-6f47-7d61-a6dd-1e86f8b80401';
     const normalized = normalizeLocalTraceEvents(runId, TRACE_REFERENCE, [

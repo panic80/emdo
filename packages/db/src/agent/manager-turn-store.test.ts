@@ -33,6 +33,7 @@ const claimInput = Object.freeze({
     schemaVersion: 1 as const,
     message: 'What is on my schedule?',
     routeHint: 'scheduler' as const,
+    locale: 'en-CA' as const,
   }),
   principal,
   requestId: ids.request,
@@ -44,6 +45,7 @@ const claimedResult = Object.freeze({
   claimId: ids.claim,
   runId: ids.run,
   conversationId: ids.conversation,
+  rootManagerInvocationId: '018f1f5e-5000-7000-8000-000000000009',
   authorizationScopeFingerprint: 'a'.repeat(64),
   escalationTriggers: Object.freeze([]),
 });
@@ -57,6 +59,8 @@ const claimedResultFor = (values: readonly unknown[]) =>
     claimId: values[4],
     runId: values[2],
     conversationId: values[3],
+    rootManagerInvocationId: (values[7] as { rootManagerInvocationId: string })
+      .rootManagerInvocationId,
   });
 
 const failedTurn = Object.freeze({
@@ -138,6 +142,7 @@ describe('PostgresManagerTurnStore', () => {
       claimId: expect.stringMatching(uuidPattern),
       runId: expect.stringMatching(uuidPattern),
       conversationId: expect.stringMatching(uuidPattern),
+      rootManagerInvocationId: expect.stringMatching(uuidPattern),
       authorizationScopeFingerprint:
         claimedResult.authorizationScopeFingerprint,
       escalationTriggers: [],
@@ -153,7 +158,10 @@ describe('PostgresManagerTurnStore', () => {
         ids.grant,
         principal.role,
         claimInput.idempotencyKey,
-        claimInput.request,
+        expect.objectContaining({
+          ...claimInput.request,
+          rootManagerInvocationId: expect.stringMatching(uuidPattern),
+        }),
       ]),
     );
     expect(aggregate?.[1]).not.toContain(

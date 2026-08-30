@@ -8,6 +8,7 @@ import {
 import {
   ActionDecisionSchema,
   ActionProposalSchema,
+  AgentInvocationContextSchema,
   CapabilityDescriptorSchema,
   EffectiveAuthorizationScopeFingerprintSchema,
   JsonValueSchema,
@@ -116,6 +117,8 @@ const MaterializationContextSchema = z.strictObject({
   authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprintSchema,
   disclosureGrantId: UuidSchema,
   disclosureGrantVersion: SemanticVersionSchema,
+  invocationContext: AgentInvocationContextSchema,
+  invocationContextHash: Sha256Schema,
   sdkCallId: z.string().trim().min(1).max(512),
   abortSignal: z.custom<AbortSignal>(
     (value) =>
@@ -1000,6 +1003,10 @@ export const createRequestScopedFinanceGuardedActionProposalAdapter = (
       const capabilityFingerprint = hashCapabilityDescriptorBinding(descriptor);
       const disclosureGrant = await disclosureGrantResolver.resolve(
         context.disclosureGrantId,
+        {
+          invocationContext: context.invocationContext,
+          invocationContextHash: context.invocationContextHash,
+        },
       );
       if (
         disclosureGrant === undefined ||
@@ -1047,6 +1054,10 @@ export const createRequestScopedFinanceGuardedActionProposalAdapter = (
               collectionAuthorizationScopeFingerprint:
                 fixedPrincipal.collectionAuthorizationScopeFingerprint,
               disclosureGrantId: disclosureGrant.id,
+              agentInvocationId: context.invocationContext.agentInvocationId,
+              phaseInvocationId: context.invocationContext.phaseInvocationId,
+              invocationIdempotencyScope:
+                context.invocationContext.idempotencyScope,
               abortSignal: context.abortSignal,
             } satisfies FinanceCapabilityScope),
             operation:
@@ -1323,6 +1334,10 @@ export const createRequestScopedCoreCalendarProposalAdapter = (
     );
     const disclosureGrant = await disclosureGrantResolver.resolve(
       context.disclosureGrantId,
+      {
+        invocationContext: context.invocationContext,
+        invocationContextHash: context.invocationContextHash,
+      },
     );
     if (disclosureGrant === undefined) {
       throw new Error('api-core-calendar-proposal-disclosure-invalid');
@@ -1435,6 +1450,7 @@ export interface RequestScopedCoreAgentRuntimeFactory {
     readonly requestId: string;
     readonly runId: string;
     readonly conversationId: string;
+    readonly rootManagerInvocationId: string;
     readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
   }>;
   readonly runtime:
@@ -1490,6 +1506,7 @@ export const createRequestScopedCoreAgentRuntimeFactory = (
     readonly requestId: unknown;
     readonly runId: unknown;
     readonly conversationId: unknown;
+    readonly rootManagerInvocationId: unknown;
     /** The durable turn's proposal/run-operation scope, not collection scope. */
     readonly authorizationScopeFingerprint: unknown;
     readonly readPool: DatabasePool;
@@ -1507,6 +1524,9 @@ export const createRequestScopedCoreAgentRuntimeFactory = (
   const requestId = UuidSchema.safeParse(rawInput.requestId);
   const runId = UuidSchema.safeParse(rawInput.runId);
   const conversationId = UuidSchema.safeParse(rawInput.conversationId);
+  const rootManagerInvocationId = UuidSchema.safeParse(
+    rawInput.rootManagerInvocationId,
+  );
   const authorizationScopeFingerprint =
     EffectiveAuthorizationScopeFingerprintSchema.safeParse(
       rawInput.authorizationScopeFingerprint,
@@ -1516,6 +1536,7 @@ export const createRequestScopedCoreAgentRuntimeFactory = (
     !requestId.success ||
     !runId.success ||
     !conversationId.success ||
+    !rootManagerInvocationId.success ||
     !authorizationScopeFingerprint.success ||
     rawInput.readPool === rawInput.workflowPool ||
     typeof rawInput.readPool?.connect !== 'function' ||
@@ -1648,16 +1669,24 @@ export const createRequestScopedCoreAgentRuntimeFactory = (
           disclosureGrantId: Parameters<
             TrustedDisclosureGrantResolver['resolve']
           >[0],
+          invocationBinding: Parameters<
+            TrustedDisclosureGrantResolver['resolve']
+          >[1],
         ) => {
-          const scheduler =
-            await schedulerDisclosureGrantResolver.resolve(disclosureGrantId);
+          const scheduler = await schedulerDisclosureGrantResolver.resolve(
+            disclosureGrantId,
+            invocationBinding,
+          );
           if (
             scheduler !== undefined ||
             financeDisclosureGrantResolver === undefined
           ) {
             return scheduler;
           }
-          return financeDisclosureGrantResolver.resolve(disclosureGrantId);
+          return financeDisclosureGrantResolver.resolve(
+            disclosureGrantId,
+            invocationBinding,
+          );
         },
       });
     const proposalLifecycle = createProposalLifecycleService({
@@ -1667,6 +1696,7 @@ export const createRequestScopedCoreAgentRuntimeFactory = (
     const proposals = createProductionProviderProposalComposition({
       proposalService: proposalLifecycle,
       lookup: proposalRepository,
+      disclosureGrantResolver: proposalDisclosureGrantResolver,
       presenter: createCompositeProposalPresenter({
         calendar: calendarProposals.presenter,
         ...(financeGuardedActionProposal === undefined
@@ -1730,6 +1760,10 @@ export const createRequestScopedCoreAgentRuntimeFactory = (
         authorize: async (input) =>
           modelDisclosureGateway.authorize({
             ...input,
+            invocation: {
+              ...input.invocation,
+              grantedCapabilities: [...input.invocation.grantedCapabilities],
+            },
             requestedDataClasses: [...input.requestedDataClasses],
           }),
       },
@@ -1756,25 +1790,6 @@ export const createRequestScopedCoreAgentRuntimeFactory = (
       }),
       executionRunner: rawInput.openAi.runner,
     } as const;
-    const runtime =
-      rawInput.finance === undefined
-        ? createCoreProductionAgentRuntime({
-            ...sharedRuntimeDependencies,
-            capabilityServices: {
-              schedulerDelegation: denyDirectSchedulerDelegation,
-              calendarEventCreate,
-            },
-          })
-        : createFinanceV1ProductionAgentRuntime({
-            ...sharedRuntimeDependencies,
-            capabilityServices: {
-              schedulerDelegation: denyDirectSchedulerDelegation,
-              financeDelegation: denyDirectFinanceDelegation,
-              calendarEventCreate,
-              finance: rawInput.finance,
-              guardedActionProposal: financeGuardedActionProposal,
-            },
-          });
     const check = async (): Promise<boolean> => {
       try {
         const global = await rawInput.checkGlobalDependencies();
@@ -1788,12 +1803,60 @@ export const createRequestScopedCoreAgentRuntimeFactory = (
         return false;
       }
     };
+    const readyWhen = async (
+      probe: () => Promise<boolean>,
+      reasonCode: string,
+    ) =>
+      (await probe())
+        ? ({ status: 'ready' } as const)
+        : ({ status: 'unavailable', reasonCode } as const);
+    const financeReadiness = async () =>
+      readyWhen(async () => {
+        try {
+          return (
+            (await rawInput.openAi.modelAvailability.isAvailable(
+              'gpt-5.6-terra',
+            )) === true
+          );
+        } catch {
+          return false;
+        }
+      }, 'finance-readiness-unavailable');
+    const runtime =
+      rawInput.finance === undefined
+        ? createCoreProductionAgentRuntime({
+            ...sharedRuntimeDependencies,
+            registeredAgentReadiness: {
+              scheduler: async () =>
+                readyWhen(check, 'scheduler-readiness-unavailable'),
+            },
+            capabilityServices: {
+              schedulerDelegation: denyDirectSchedulerDelegation,
+              calendarEventCreate,
+            },
+          })
+        : createFinanceV1ProductionAgentRuntime({
+            ...sharedRuntimeDependencies,
+            registeredAgentReadiness: {
+              scheduler: async () =>
+                readyWhen(check, 'scheduler-readiness-unavailable'),
+              finance: financeReadiness,
+            },
+            capabilityServices: {
+              schedulerDelegation: denyDirectSchedulerDelegation,
+              financeDelegation: denyDirectFinanceDelegation,
+              calendarEventCreate,
+              finance: rawInput.finance,
+              guardedActionProposal: financeGuardedActionProposal,
+            },
+          });
     return Object.freeze({
       scope: Object.freeze({
         principal: fixedPrincipal,
         requestId: fixedRequestId,
         runId: fixedRunId,
         conversationId: conversationId.data,
+        rootManagerInvocationId: rootManagerInvocationId.data,
         authorizationScopeFingerprint: fixedAuthorizationScopeFingerprint,
       }),
       runtime,
@@ -1822,6 +1885,7 @@ export const createRequestScopedManagerFinanceAgentRuntimeFactory = (
     readonly requestId: unknown;
     readonly runId: unknown;
     readonly conversationId: unknown;
+    readonly rootManagerInvocationId: unknown;
     /** The durable turn's proposal/run-operation scope, not collection scope. */
     readonly authorizationScopeFingerprint: unknown;
     readonly readPool: DatabasePool;
@@ -1838,6 +1902,9 @@ export const createRequestScopedManagerFinanceAgentRuntimeFactory = (
   const requestId = UuidSchema.safeParse(rawInput.requestId);
   const runId = UuidSchema.safeParse(rawInput.runId);
   const conversationId = UuidSchema.safeParse(rawInput.conversationId);
+  const rootManagerInvocationId = UuidSchema.safeParse(
+    rawInput.rootManagerInvocationId,
+  );
   const authorizationScopeFingerprint =
     EffectiveAuthorizationScopeFingerprintSchema.safeParse(
       rawInput.authorizationScopeFingerprint,
@@ -1847,6 +1914,7 @@ export const createRequestScopedManagerFinanceAgentRuntimeFactory = (
     !requestId.success ||
     !runId.success ||
     !conversationId.success ||
+    !rootManagerInvocationId.success ||
     !authorizationScopeFingerprint.success ||
     (rawInput.workflowPool !== undefined &&
       (rawInput.workflowPool === rawInput.readPool ||
@@ -1986,6 +2054,10 @@ export const createRequestScopedManagerFinanceAgentRuntimeFactory = (
         authorize: async (input) =>
           modelDisclosureGateway.authorize({
             ...input,
+            invocation: {
+              ...input.invocation,
+              grantedCapabilities: [...input.invocation.grantedCapabilities],
+            },
             requestedDataClasses: [...input.requestedDataClasses],
           }),
       },
@@ -2005,6 +2077,7 @@ export const createRequestScopedManagerFinanceAgentRuntimeFactory = (
           : createProductionProviderProposalComposition({
               proposalService: financeProposalLifecycle,
               lookup: financeProposalRepository,
+              disclosureGrantResolver: financeDisclosureGrantResolver!,
               presenter: createFinanceGuardedActionPresenter(),
               authenticatedSessionId: fixedPrincipal.sessionId,
             }),
@@ -2023,17 +2096,6 @@ export const createRequestScopedManagerFinanceAgentRuntimeFactory = (
       }),
       executionRunner: rawInput.openAi.runner,
     } as const;
-    const runtime =
-      rawInput.finance === undefined
-        ? createManagerOnlyProductionAgentRuntime(sharedRuntimeDependencies)
-        : createFinanceOnlyProductionAgentRuntime({
-            ...sharedRuntimeDependencies,
-            capabilityServices: {
-              financeDelegation: denyDirectFinanceDelegation,
-              finance: rawInput.finance,
-              guardedActionProposal: financeGuardedActionProposal,
-            },
-          });
     const check = async (): Promise<boolean> => {
       try {
         const [global, terra] = await Promise.all([
@@ -2045,12 +2107,33 @@ export const createRequestScopedManagerFinanceAgentRuntimeFactory = (
         return false;
       }
     };
+    const runtime =
+      rawInput.finance === undefined
+        ? createManagerOnlyProductionAgentRuntime(sharedRuntimeDependencies)
+        : createFinanceOnlyProductionAgentRuntime({
+            ...sharedRuntimeDependencies,
+            registeredAgentReadiness: {
+              finance: async () =>
+                (await check())
+                  ? ({ status: 'ready' } as const)
+                  : ({
+                      status: 'unavailable',
+                      reasonCode: 'finance-readiness-unavailable',
+                    } as const),
+            },
+            capabilityServices: {
+              financeDelegation: denyDirectFinanceDelegation,
+              finance: rawInput.finance,
+              guardedActionProposal: financeGuardedActionProposal,
+            },
+          });
     return Object.freeze({
       scope: Object.freeze({
         principal: fixedPrincipal,
         requestId: fixedRequestId,
         runId: fixedRunId,
         conversationId: conversationId.data,
+        rootManagerInvocationId: rootManagerInvocationId.data,
         authorizationScopeFingerprint: fixedAuthorizationScopeFingerprint,
       }),
       runtime,
