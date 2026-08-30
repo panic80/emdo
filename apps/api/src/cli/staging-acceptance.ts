@@ -370,6 +370,10 @@ const FINANCE_STAGING_MANUAL_TRANSACTION_DESCRIPTION =
   'EMDO synthetic staging manual transaction';
 const FINANCE_STAGING_MANUAL_TRANSACTION_DATE = '2026-08-12';
 const FINANCE_STAGING_MANUAL_TRANSACTION_AMOUNT_CAD_MINOR = -123;
+const FINANCE_STAGING_MANUAL_TRANSACTION_APPLIED_SUMMARY =
+  'The manual transaction was recorded.';
+const FINANCE_STAGING_MANUAL_TRANSACTION_DUPLICATE_SUMMARY =
+  'The manual transaction was already recorded.';
 const FINANCE_RESTORE_VERIFIER_HANDOFF_PATH =
   '/run/emdo/finance-restore/finance-staging-restore-verifier-input.env';
 const FINANCE_RESTORE_VERIFIER_HANDOFF_SCHEMA =
@@ -2606,7 +2610,10 @@ const runFinanceStagingAcceptance = async (
     runId: directSafeWriteTurn.runId,
   });
   if (
-    directSafeWriteOutput.summary !== 'The manual transaction was recorded.' ||
+    (directSafeWriteOutput.summary !==
+      FINANCE_STAGING_MANUAL_TRANSACTION_APPLIED_SUMMARY &&
+      directSafeWriteOutput.summary !==
+        FINANCE_STAGING_MANUAL_TRANSACTION_DUPLICATE_SUMMARY) ||
     directSafeWriteOutput.evidenceReferences.length !== 0 ||
     directSafeWriteOutput.actionProposalReferences.length !== 0
   ) {
