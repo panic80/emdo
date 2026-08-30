@@ -34,6 +34,7 @@ const PrincipalSchema = z.strictObject({
   householdId: UuidSchema,
   role: RoleSchema,
   emailVerified: z.literal(true),
+  privateSpaceId: UuidSchema.optional(),
   spaceAccessGrantId: UuidSchema,
   collectionAuthorizationScopeFingerprint:
     EffectiveAuthorizationScopeFingerprintSchema,

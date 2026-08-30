@@ -336,54 +336,62 @@ const turnProviderWriteLedger = (
 });
 
 describe('OpenAI Agents SDK boundary', () => {
-  it('mints fixed synthesis locale guidance while preserving evidence source language', async () => {
-    const gateway = proposalGateway();
-    const base = compiledAgentWithCapability('read', gateway);
-    const materialize = vi.fn(base.materialize);
-    const agent: CompiledAgent<Agent<AgentExecutionContext, z.ZodObject>> = {
-      ...base,
-      materialize,
-    };
-    const runner: OpenAiAgentsRunnerPort = {
-      run: vi.fn(async () => ({
-        state: {
-          usage: { inputTokens: 1, outputTokens: 1 },
-          getInterruptions: () => [],
-          approve: vi.fn(),
-          reject: vi.fn(),
-          toString: () => JSON.stringify({ sdk: 'complete' }),
-        },
-        finalOutput: { summary: '完了しました。' },
-      })),
-    };
-    const provider = new OpenAiAgentsExecutionProvider({
-      proposalGateway: gateway,
-      costCalculator: { calculateCadMinor: () => 1 },
-      spendGuard: spendGuard(),
-      inputTokenCounter: { countUpperBound: () => 1 },
-      runner,
-    });
+  it.each([
+    ['en-CA', 'English (Canada)'],
+    ['fr-CA', 'French (Canada)'],
+    ['ja-JP', 'Japanese'],
+    ['ko-KR', 'Korean'],
+  ] as const)(
+    'mints fixed %s synthesis guidance while preserving evidence source language',
+    async (locale, language) => {
+      const gateway = proposalGateway();
+      const base = compiledAgentWithCapability('read', gateway);
+      const materialize = vi.fn(base.materialize);
+      const agent: CompiledAgent<Agent<AgentExecutionContext, z.ZodObject>> = {
+        ...base,
+        materialize,
+      };
+      const runner: OpenAiAgentsRunnerPort = {
+        run: vi.fn(async () => ({
+          state: {
+            usage: { inputTokens: 1, outputTokens: 1 },
+            getInterruptions: () => [],
+            approve: vi.fn(),
+            reject: vi.fn(),
+            toString: () => JSON.stringify({ sdk: 'complete' }),
+          },
+          finalOutput: { summary: '完了しました。' },
+        })),
+      };
+      const provider = new OpenAiAgentsExecutionProvider({
+        proposalGateway: gateway,
+        costCalculator: { calculateCadMinor: () => 1 },
+        spendGuard: spendGuard(),
+        inputTokenCounter: { countUpperBound: () => 1 },
+        runner,
+      });
 
-    await expect(
-      provider.execute({
-        phase: 'synthesize',
-        agent,
-        model: 'gpt-5.6-luna',
-        input: { sourceExcerpt: 'facture originale' },
-        context: { ...context, locale: 'ja-JP' },
-        maxTurns: 12,
-      }),
-    ).resolves.toMatchObject({ status: 'completed' });
+      await expect(
+        provider.execute({
+          phase: 'synthesize',
+          agent,
+          model: 'gpt-5.6-luna',
+          input: { sourceExcerpt: 'facture originale' },
+          context: { ...context, locale },
+          maxTurns: 12,
+        }),
+      ).resolves.toMatchObject({ status: 'completed' });
 
-    expect(materialize).toHaveBeenCalledWith(
-      'gpt-5.6-luna',
-      expect.objectContaining({
-        trustedInstructions: [
-          'Write the final EMDO synthesis in ja-JP. Keep evidence excerpts in their source language; do not translate those excerpts.',
-        ],
-      }),
-    );
-  });
+      expect(materialize).toHaveBeenCalledWith(
+        'gpt-5.6-luna',
+        expect.objectContaining({
+          trustedInstructions: [
+            `Write the entire user-facing final EMDO synthesis in ${language} (${locale}), regardless of the language used in the user message or conversation history. The only exception is brief, bounded source-language evidence excerpts, which must remain in their original language and must not be translated.`,
+          ],
+        }),
+      );
+    },
+  );
 
   it('materializes real SDK agents and strict approval-aware function tools', async () => {
     const execute = vi.fn(
