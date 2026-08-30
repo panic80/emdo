@@ -188,6 +188,13 @@ finance_staging_acceptance_failure_diagnostic() {
     'Staging acceptance failed at stage=finalize-guarded-delete.' | \
     'Staging acceptance failed at stage=finalize-guarded-delete:turn.' | \
     'Staging acceptance failed at stage=finalize-guarded-delete:initial-sse.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:initial-sse outcome=initial-sse-request-failed.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:initial-sse outcome=initial-sse-http-or-content-type-invalid.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:initial-sse outcome=initial-sse-byte-or-framing-invalid.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:initial-sse outcome=initial-sse-event-schema-run-or-sequence-invalid.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:initial-sse outcome=initial-sse-terminal-run-failed.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:initial-sse outcome=initial-sse-terminal-run-indeterminate.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:initial-sse outcome=initial-sse-terminal-other-or-cardinality-invalid.' | \
     'Staging acceptance failed at stage=finalize-guarded-delete:approval-parsing.' | \
     'Staging acceptance failed at stage=finalize-guarded-delete:proposal-read.' | \
     'Staging acceptance failed at stage=finalize-guarded-delete:visual-proof.' | \
