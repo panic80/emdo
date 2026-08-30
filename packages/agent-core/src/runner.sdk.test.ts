@@ -509,11 +509,23 @@ describe('OpenAI Agents SDK boundary', () => {
       delegations: [{ specialistId: 'scheduler' }],
       directResponse: null,
     });
+    expect(
+      MANAGER_PLAN_OUTPUT_SCHEMA.parse({
+        delegations: [],
+        directResponse: 'Local summary ready.',
+      }),
+    ).toMatchObject({ directResponse: 'Local summary ready.' });
     expect(() =>
       MANAGER_PLAN_OUTPUT_SCHEMA.parse({
         delegations: [],
         directResponse: null,
         rawCredential: 'forbidden',
+      }),
+    ).toThrow();
+    expect(() =>
+      MANAGER_PLAN_OUTPUT_SCHEMA.parse({
+        delegations: [],
+        directResponse: { message: 'unsupported' },
       }),
     ).toThrow();
   });
