@@ -685,6 +685,12 @@ const readExactSyntheticStagingEnvironment = (
       : 'local';
   }
   if (
+    liveChat === 'true' &&
+    value('EMDO_FINANCE_RESTORE_READ_ONLY') === 'true'
+  ) {
+    return 'local';
+  }
+  if (
     liveChat !== 'true' ||
     value('EMDO_OPENAI_FINANCE_API_KEY') !== undefined
   ) {
@@ -847,8 +853,10 @@ const liveChatRunner = (
 
 /**
  * A staging-only Finance runner. Local mode accepts only fixed synthetic
- * commands. Real model execution requires a separate exact opt-in and can
- * never activate outside the isolated Finance staging environment.
+ * commands. Read-only restore verification remains deterministic even if live
+ * chat is configured; all other real model execution requires a separate exact
+ * opt-in and can never activate outside the isolated Finance staging
+ * environment.
  */
 export const createFinanceSyntheticStagingAgentServiceBundle = (
   environment: Readonly<Record<string, string | undefined>>,
