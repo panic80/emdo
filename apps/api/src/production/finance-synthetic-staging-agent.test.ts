@@ -276,6 +276,31 @@ describe('Finance synthetic staging agent service bundle', () => {
     ).toBeUndefined();
   });
 
+  it('uses deterministic local mode for read-only restore without accessing provider configuration', async () => {
+    const providerKey = vi.fn(() => {
+      throw new Error('restore verifier must not access provider key');
+    });
+    const restoreEnvironment: Record<string, string | undefined> = {
+      ...environment,
+      EMDO_FINANCE_SYNTHETIC_STAGING_LIVE_CHAT: 'true',
+      EMDO_FINANCE_RESTORE_READ_ONLY: 'true',
+    };
+    Object.defineProperty(restoreEnvironment, 'EMDO_OPENAI_AGENT_API_KEY', {
+      enumerable: true,
+      get: providerKey,
+    });
+
+    const services =
+      createFinanceSyntheticStagingAgentServiceBundle(restoreEnvironment);
+    if (services === undefined) throw new Error('restore bundle unavailable');
+
+    expect(providerKey).not.toHaveBeenCalled();
+    await expect(
+      services.modelAvailability.isAvailable('gpt-5.6-luna'),
+    ).resolves.toBe(true);
+    await services.close();
+  });
+
   it('parses exactly one bounded marker from a user disclosure and emits one Finance delegation', async () => {
     const result = await bundle().runner.run(
       agent('manager'),
