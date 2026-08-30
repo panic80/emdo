@@ -628,7 +628,7 @@ describe('deployment script trust boundaries', () => {
     expect(invalid.stderr).toContain('EMDO_FINANCE_SYNTHETIC_STAGING');
   });
 
-  it('keeps the Finance provider credential in the extraction overlay only', async () => {
+  it('keeps the Finance extraction credential isolated while admitting a separately gated agent credential only to the Finance API overlay', async () => {
     const apiEnvironment = join(directory, 'finance-api.env');
     const extractionEnvironment = join(directory, 'finance-extraction.env');
     const stagingApiEnvironment = join(directory, 'api.env');
@@ -643,6 +643,7 @@ describe('deployment script trust boundaries', () => {
       }),
     ).toString('base64url');
     const financeApiKey = 'finance_staging_openai_key_0123456789';
+    const agentApiKey = `sk-proj-${'a'.repeat(40)}`;
 
     await writeFile(
       apiEnvironment,
@@ -695,6 +696,24 @@ describe('deployment script trust boundaries', () => {
 
     await writeFile(
       apiEnvironment,
+      `${(await readFile(apiEnvironment, 'utf8')).trimEnd()}\n${[
+        'EMDO_FINANCE_SYNTHETIC_STAGING_LIVE_CHAT=true',
+        `EMDO_OPENAI_AGENT_API_KEY=${agentApiKey}`,
+        'EMDO_OPENAI_AGENT_PRICING_VERSION=openai-2026-07-30.boc-2026-08-28.usdcad-1.3888.ceil',
+        'EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS=28',
+        'EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS=167',
+        'EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS=278',
+        'EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS=1667',
+      ].join('\n')}\n`,
+      { mode: 0o600 },
+    );
+    expect(
+      runCommon('assert_finance_staging_api_environment "$2"', apiEnvironment)
+        .status,
+    ).toBe(0);
+
+    await writeFile(
+      apiEnvironment,
       [
         'EMDO_FINANCE_DOCUMENTS_ENABLED=true',
         `EMDO_FINANCE_DOCUMENT_KEYRING_B64URL=${documentKeyring}`,
@@ -718,6 +737,7 @@ describe('deployment script trust boundaries', () => {
     expect(apiProviderKeyRejected.status).not.toBe(0);
     expect(apiProviderKeyRejected.stdout).not.toContain(financeApiKey);
     expect(apiProviderKeyRejected.stderr).not.toContain(financeApiKey);
+    expect(apiProviderKeyRejected.stderr).not.toContain(agentApiKey);
 
     await writeFile(
       extractionEnvironment,

@@ -23,6 +23,17 @@ const environment = Object.freeze({
   EMDO_FINANCE_SYNTHETIC_STAGING: 'true',
   EMDO_FINANCE_DOCUMENTS_ENABLED: 'true',
 });
+const liveChatEnvironment = Object.freeze({
+  ...environment,
+  EMDO_FINANCE_SYNTHETIC_STAGING_LIVE_CHAT: 'true',
+  EMDO_OPENAI_AGENT_API_KEY: `sk-proj-${'a'.repeat(40)}`,
+  EMDO_OPENAI_AGENT_PRICING_VERSION:
+    'openai-2026-07-30.boc-2026-08-28.usdcad-1.3888.ceil',
+  EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '28',
+  EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: '167',
+  EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '278',
+  EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: '1667',
+});
 
 const invocationContext = Object.freeze({
   orchestrationRunId: '71000000-0000-4000-8000-000000000002',
@@ -210,7 +221,7 @@ const writeResult = Object.freeze({
 });
 
 describe('Finance synthetic staging agent service bundle', () => {
-  it('requires every exact staging gate, rejects provider keys, and exposes only local model/cost services', async () => {
+  it('requires every exact staging gate, keeps marker-only mode local by default, and admits real chat only with its explicit gate', async () => {
     expect(
       createFinanceSyntheticStagingAgentServiceBundle({
         ...environment,
@@ -220,6 +231,13 @@ describe('Finance synthetic staging agent service bundle', () => {
     expect(
       createFinanceSyntheticStagingAgentServiceBundle({
         ...environment,
+        EMDO_OPENAI_AGENT_API_KEY: 'must-not-be-read',
+      }),
+    ).toBeUndefined();
+    expect(
+      createFinanceSyntheticStagingAgentServiceBundle({
+        ...environment,
+        EMDO_FINANCE_SYNTHETIC_STAGING_LIVE_CHAT: 'false',
         EMDO_OPENAI_AGENT_API_KEY: 'must-not-be-read',
       }),
     ).toBeUndefined();
@@ -244,6 +262,18 @@ describe('Finance synthetic staging agent service bundle', () => {
         outputTokens: 99_999,
       }),
     ).toBe(1);
+
+    const liveChat =
+      createFinanceSyntheticStagingAgentServiceBundle(liveChatEnvironment);
+    expect(liveChat).toBeDefined();
+    await liveChat?.close();
+    expect(
+      createFinanceSyntheticStagingAgentServiceBundle({
+        ...environment,
+        EMDO_FINANCE_SYNTHETIC_STAGING_LIVE_CHAT: 'true',
+        EMDO_OPENAI_FINANCE_API_KEY: 'must-not-be-read',
+      }),
+    ).toBeUndefined();
   });
 
   it('parses exactly one bounded marker from a user disclosure and emits one Finance delegation', async () => {
@@ -307,6 +337,85 @@ describe('Finance synthetic staging agent service bundle', () => {
     await expect(
       bundle().runner.run(agent('manager'), documentMarker, options()),
     ).rejects.toThrow('finance-synthetic-staging-command-unavailable');
+  });
+
+  it('keeps exact acceptance marker flows local when live chat is enabled', async () => {
+    const services =
+      createFinanceSyntheticStagingAgentServiceBundle(liveChatEnvironment);
+    if (services === undefined) throw new Error('live chat bundle unavailable');
+    const search = vi.fn(async () => searchResult);
+    const managerResult = await services.runner.run(
+      agent('manager'),
+      managerInput(searchCommand()),
+      options(),
+    );
+    expect(managerResult.finalOutput).toEqual({
+      delegations: [
+        {
+          id: 'finance-synthetic-staging',
+          specialistId: 'finance',
+          input: {
+            request: formatFinanceSyntheticStagingCommand(searchCommand()),
+          },
+          dependsOn: [],
+        },
+      ],
+      directResponse: null,
+    });
+    const financeResult = await services.runner.run(
+      agent('finance', [
+        functionTool({ name: 'finance_documents_search', invoke: search }),
+      ]),
+      financeInput(searchCommand()),
+      options(),
+    );
+    expect(search).toHaveBeenCalledOnce();
+    expect(financeResult.finalOutput).toMatchObject({
+      summary: 'Found 1 reviewed finance document result.',
+      evidenceReferences: ['evidence-actual-1', 'evidence-actual-2'],
+    });
+    const synthesisInput = JSON.stringify({
+      schemaVersion: 1,
+      records: [
+        {
+          dataClass: 'conversation.messages',
+          recordId: 'message-1',
+          fields: {
+            role: 'user',
+            content: formatFinanceSyntheticStagingCommand(searchCommand()),
+          },
+        },
+        {
+          dataClass: 'agent.manager-plans',
+          recordId: 'manager-plan',
+          fields: { plan: managerResult.finalOutput },
+        },
+        {
+          dataClass: 'agent.specialist-outcomes',
+          recordId: 'finance-synthetic-staging',
+          fields: {
+            outcome: {
+              delegationId: 'finance-synthetic-staging',
+              specialistId: 'finance',
+              status: 'completed',
+              facts: financeResult.finalOutput,
+            },
+          },
+        },
+      ],
+    });
+    await expect(
+      services.runner.run(
+        agent(
+          'manager',
+          [],
+          'Write the final EMDO synthesis in en-CA. Keep evidence excerpts in their source language; do not translate those excerpts.',
+        ),
+        synthesisInput,
+        options(),
+      ),
+    ).resolves.toMatchObject({ finalOutput: financeResult.finalOutput });
+    await services.close();
   });
 
   it('uses only finance_documents_search with exact arguments and returns actual evidence IDs', async () => {

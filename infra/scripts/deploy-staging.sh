@@ -8,12 +8,16 @@ run_id="${1:-}"
 digest_lock="${2:-}"
 ttl_minutes="${3:-60}"
 finance_synthetic_staging="${4:-false}"
+finance_live_chat="${5:-false}"
 assert_safe_identifier "$run_id" STAGING_RUN_ID
 [[ "$run_id" =~ ^[0-9]{1,20}$ ]] || die 'STAGING_RUN_ID must be numeric'
 [[ "$ttl_minutes" =~ ^[0-9]+$ ]] || die 'staging TTL must be an integer'
 ((ttl_minutes >= 15 && ttl_minutes <= 240)) ||
   die 'staging TTL must be between 15 and 240 minutes'
 assert_finance_synthetic_staging_flag "$finance_synthetic_staging"
+assert_finance_synthetic_staging_live_chat_flag "$finance_live_chat"
+[[ "$finance_synthetic_staging" == true || "$finance_live_chat" == false ]] ||
+  die 'Finance live chat requires Finance synthetic staging'
 
 staging_capacity_lock_fd=''
 acquire_host_lock /var/lib/emdo/locks/capacity.lock staging_capacity_lock_fd
@@ -65,8 +69,10 @@ trap cleanup_failed_deploy EXIT
 
 if [[ "$finance_synthetic_staging" == true ]]; then
   export EMDO_FINANCE_SYNTHETIC_STAGING=true
+  export EMDO_FINANCE_SYNTHETIC_STAGING_LIVE_CHAT="$finance_live_chat"
   prepare_finance_synthetic_staging_state "$state_dir"
 else
+  export EMDO_FINANCE_SYNTHETIC_STAGING_LIVE_CHAT=false
   disable_finance_synthetic_staging
 fi
 deadline_pending="$(mktemp "$state_dir/.expires-at-epoch.XXXXXX")"

@@ -10,7 +10,10 @@ import type {
 } from '@emdo/agent-core';
 import { z } from 'zod';
 
-import type { ProductionOpenAiAgentServiceBundle } from './core-openai-services.js';
+import {
+  createProductionOpenAiAgentServiceBundle,
+  type ProductionOpenAiAgentServiceBundle,
+} from './core-openai-services.js';
 
 const MAX_DISCLOSED_INPUT_BYTES = 48_000;
 const MAX_DISCLOSED_NODES = 1_024;
@@ -618,28 +621,27 @@ const executeFinanceCommand = async (
   );
 };
 
-const hasForbiddenAgentEnvironmentKey = (
+const hasAgentEnvironmentKey = (
   descriptors: Readonly<Record<string, PropertyDescriptor>>,
 ): boolean =>
   Reflect.ownKeys(descriptors).some((key) => {
     if (typeof key !== 'string') return false;
-    return (
-      key.startsWith('EMDO_OPENAI_AGENT_') ||
-      key === 'EMDO_OPENAI_FINANCE_API_KEY'
-    );
+    return key.startsWith('EMDO_OPENAI_AGENT_');
   });
+
+type FinanceSyntheticStagingAgentMode = 'local' | 'live-chat';
 
 const readExactSyntheticStagingEnvironment = (
   environment: Readonly<Record<string, string | undefined>>,
-): boolean => {
-  if (environment === null || typeof environment !== 'object') return false;
+): FinanceSyntheticStagingAgentMode | undefined => {
+  if (environment === null || typeof environment !== 'object') return undefined;
   const prototype = Object.getPrototypeOf(environment);
   if (
     prototype !== Object.prototype &&
     prototype !== null &&
     Object.getPrototypeOf(prototype) !== Object.prototype
   ) {
-    return false;
+    return undefined;
   }
   const descriptors = Object.getOwnPropertyDescriptors(environment);
   const inheritedDescriptors =
@@ -650,12 +652,11 @@ const readExactSyntheticStagingEnvironment = (
     Object.prototype,
   );
   if (
-    hasForbiddenAgentEnvironmentKey(descriptors) ||
     (inheritedDescriptors !== undefined &&
-      hasForbiddenAgentEnvironmentKey(inheritedDescriptors)) ||
-    hasForbiddenAgentEnvironmentKey(objectPrototypeDescriptors)
+      hasAgentEnvironmentKey(inheritedDescriptors)) ||
+    hasAgentEnvironmentKey(objectPrototypeDescriptors)
   ) {
-    return false;
+    return undefined;
   }
   const value = (key: string): unknown => {
     const descriptor = descriptors[key];
@@ -669,13 +670,27 @@ const readExactSyntheticStagingEnvironment = (
     }
     return descriptor.value;
   };
-  return (
+  const exactStaging =
     value('EMDO_ENVIRONMENT') === 'staging' &&
     value('EMDO_ALLOW_LOOPBACK_API_INGRESS') === 'true' &&
     value('EMDO_SYNTHETIC_DATA_ONLY') === 'true' &&
     value('EMDO_FINANCE_SYNTHETIC_STAGING') === 'true' &&
-    value('EMDO_FINANCE_DOCUMENTS_ENABLED') === 'true'
-  );
+    value('EMDO_FINANCE_DOCUMENTS_ENABLED') === 'true';
+  if (!exactStaging) return undefined;
+  const liveChat = value('EMDO_FINANCE_SYNTHETIC_STAGING_LIVE_CHAT');
+  if (liveChat === undefined || liveChat === 'false') {
+    return hasAgentEnvironmentKey(descriptors) ||
+      value('EMDO_OPENAI_FINANCE_API_KEY') !== undefined
+      ? undefined
+      : 'local';
+  }
+  if (
+    liveChat !== 'true' ||
+    value('EMDO_OPENAI_FINANCE_API_KEY') !== undefined
+  ) {
+    return undefined;
+  }
+  return 'live-chat';
 };
 
 const localRunner = (): OpenAiAgentsRunnerPort => {
@@ -731,15 +746,121 @@ const localRunner = (): OpenAiAgentsRunnerPort => {
   return Object.freeze(runner);
 };
 
+const exactSyntheticSynthesis = (envelope: DisclosedEnvelope): boolean => {
+  if (synthesisOutput(envelope) === undefined) return false;
+  const messages = envelope.records.filter((item) => {
+    const fields = record(item.fields);
+    return (
+      item.dataClass === 'conversation.messages' &&
+      fields?.role === 'user' &&
+      typeof fields.content === 'string'
+    );
+  });
+  const plans = envelope.records.filter(
+    (item) => item.dataClass === 'agent.manager-plans',
+  );
+  if (messages.length !== 1 || plans.length !== 1) return false;
+  const messageFields = record(messages[0]!.fields);
+  const planFields = record(plans[0]!.fields);
+  const plan = planFields === undefined ? undefined : record(planFields.plan);
+  const delegations = plan === undefined ? undefined : plan.delegations;
+  if (
+    messageFields === undefined ||
+    typeof messageFields.content !== 'string' ||
+    !Array.isArray(delegations) ||
+    delegations.length !== 1
+  ) {
+    return false;
+  }
+  const delegation = record(delegations[0]);
+  const input = delegation === undefined ? undefined : record(delegation.input);
+  if (
+    delegation?.id !== 'finance-synthetic-staging' ||
+    delegation.specialistId !== 'finance' ||
+    !Array.isArray(delegation.dependsOn) ||
+    delegation.dependsOn.length !== 0 ||
+    input === undefined ||
+    typeof input.request !== 'string'
+  ) {
+    return false;
+  }
+  const messageCommand = commandFromMarker(messageFields.content);
+  const delegationCommand = commandFromMarker(input.request);
+  return (
+    messageCommand !== undefined &&
+    delegationCommand !== undefined &&
+    formatFinanceSyntheticStagingCommand(messageCommand) ===
+      formatFinanceSyntheticStagingCommand(delegationCommand) &&
+    messageFields.content ===
+      formatFinanceSyntheticStagingCommand(messageCommand)
+  );
+};
+
 /**
- * A staging-only, no-provider runner. It accepts only a fixed synthetic
- * Finance command carried through the disclosed canonical envelope; no model,
- * provider, credential, or network boundary is initialized here.
+ * Finance staging acceptance is deliberately provider-free.  Once live chat is
+ * enabled, route only exact, bounded acceptance marker envelopes to that local
+ * runner; every other turn remains a real model turn.
+ */
+const isExactSyntheticStagingMarkerFlow = (
+  agent: OpenAiSdkAgent,
+  input: unknown,
+  context:
+    AgentExecutionContext | RunContext<AgentExecutionContext> | undefined,
+): boolean => {
+  const disclosedInput =
+    typeof input === 'string'
+      ? input
+      : disclosedInputFromRunState(agent, input);
+  if (disclosedInput === undefined) return false;
+  const envelope = disclosedEnvelope(disclosedInput);
+  if (envelope === undefined) return false;
+  let runContext: RunContext<AgentExecutionContext>;
+  try {
+    runContext = asRunContext(context);
+  } catch {
+    return false;
+  }
+  if (agent.name === 'manager') {
+    return isServerOwnedSynthesis(agent, runContext.context)
+      ? exactSyntheticSynthesis(envelope)
+      : commandFromDisclosedInput(envelope, 'manager-plan') !== undefined;
+  }
+  return (
+    agent.name === 'finance' &&
+    commandFromDisclosedInput(envelope, 'finance-execution') !== undefined
+  );
+};
+
+const liveChatRunner = (
+  providerRunner: OpenAiAgentsRunnerPort,
+): OpenAiAgentsRunnerPort => {
+  const deterministicRunner = localRunner();
+  return Object.freeze({
+    run: (...args: Parameters<OpenAiAgentsRunnerPort['run']>) => {
+      const [agent, input, options] = args;
+      return isExactSyntheticStagingMarkerFlow(agent, input, options.context)
+        ? deterministicRunner.run(...args)
+        : providerRunner.run(...args);
+    },
+  });
+};
+
+/**
+ * A staging-only Finance runner. Local mode accepts only fixed synthetic
+ * commands. Real model execution requires a separate exact opt-in and can
+ * never activate outside the isolated Finance staging environment.
  */
 export const createFinanceSyntheticStagingAgentServiceBundle = (
   environment: Readonly<Record<string, string | undefined>>,
 ): ProductionOpenAiAgentServiceBundle | undefined => {
-  if (!readExactSyntheticStagingEnvironment(environment)) return undefined;
+  const mode = readExactSyntheticStagingEnvironment(environment);
+  if (mode === undefined) return undefined;
+  if (mode === 'live-chat') {
+    const provider = createProductionOpenAiAgentServiceBundle({ environment });
+    return provider === undefined
+      ? undefined
+      : Object.freeze({ ...provider, runner: liveChatRunner(provider.runner) });
+  }
   const close = (() => {
     let closed: Promise<void> | undefined;
     return () => {

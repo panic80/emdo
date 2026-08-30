@@ -259,12 +259,13 @@ install_release() {
 }
 
 deploy_release() {
-  [[ "$#" == 3 || "$#" == 4 ]] ||
-    die 'deploy requires run ID, initial-deployment flag, TTL, and optional Finance synthetic-staging flag'
+  [[ "$#" == 3 || "$#" == 4 || "$#" == 5 ]] ||
+    die 'deploy requires run ID, initial-deployment flag, TTL, optional Finance synthetic-staging flag, and optional live-chat flag'
   local run_id="$1"
   local initial_deployment="$2"
   local ttl_minutes="$3"
   local finance_synthetic_staging="${4:-false}"
+  local finance_live_chat="${5:-false}"
   local -a finance_key_lines=()
   assert_safe_run_id "$run_id"
   [[ "$initial_deployment" == true || "$initial_deployment" == false ]] ||
@@ -272,15 +273,36 @@ deploy_release() {
   [[ "$ttl_minutes" =~ ^[0-9]{1,3}$ ]] || die 'staging TTL is invalid'
   [[ "$finance_synthetic_staging" == true || "$finance_synthetic_staging" == false ]] ||
     die 'Finance synthetic-staging flag is invalid'
+  [[ "$finance_live_chat" == true || "$finance_live_chat" == false ]] ||
+    die 'Finance live-chat flag is invalid'
+  [[ "$finance_synthetic_staging" == true || "$finance_live_chat" == false ]] ||
+    die 'Finance live chat requires Finance synthetic staging'
   if [[ "$finance_synthetic_staging" == true ]]; then
-    # Receive the Finance-only key through this root action's stdin before the
-    # one-use release record is consumed. It never becomes an argument, env var,
-    # log entry, or on-host command line.
+    # Receive Finance provider material through this root action's stdin before
+    # the one-use release record is consumed. It never becomes an argument,
+    # remote environment variable, log entry, or on-host command line.
     mapfile -t finance_key_lines
-    [[ "${#finance_key_lines[@]}" == 1 && ${#finance_key_lines[0]} -ge 16 &&
+    [[ "${#finance_key_lines[@]}" -ge 1 ]] ||
+      die 'Finance staging extraction key is missing from protected stdin'
+    [[ ${#finance_key_lines[0]} -ge 16 &&
       ${#finance_key_lines[0]} -le 512 &&
       "${finance_key_lines[0]}" =~ ^[A-Za-z0-9_-]+$ ]] ||
-      die 'Finance staging key must be one protected stdin line with a valid format'
+      die 'Finance staging extraction key has an invalid protected stdin format'
+    if [[ "$finance_live_chat" == true ]]; then
+      [[ "${#finance_key_lines[@]}" == 7 &&
+        ${#finance_key_lines[1]} -ge 20 && ${#finance_key_lines[1]} -le 512 &&
+        "${finance_key_lines[1]}" =~ ^sk-[A-Za-z0-9_-]+$ &&
+        ${#finance_key_lines[2]} -ge 1 && ${#finance_key_lines[2]} -le 128 &&
+        "${finance_key_lines[2]}" =~ ^[A-Za-z0-9._:-]+$ ]] ||
+        die 'Finance live chat protected stdin packet is invalid'
+      for value in "${finance_key_lines[@]:3}"; do
+        [[ "$value" =~ ^[1-9][0-9]{0,15}$ ]] ||
+          die 'Finance live chat protected stdin packet has an invalid token rate'
+      done
+    else
+      [[ "${#finance_key_lines[@]}" == 1 ]] ||
+        die 'Finance marker-only staging requires exactly one protected stdin line'
+    fi
   fi
   load_record "$run_id"
   [[ "$RECORD_STATUS" == installed ]] || die 'staging release has already been consumed'
@@ -290,17 +312,18 @@ deploy_release() {
   if [[ "$finance_synthetic_staging" == true ]]; then
     # The signed release reads this same root-owned protected stdin stream to
     # create its run-scoped env files without receiving a secret argument.
-    printf '%s\n' "${finance_key_lines[0]}" |
+    printf '%s\n' "${finance_key_lines[@]}" |
       INITIAL_STAGING_BOOTSTRAP="$initial_deployment" \
         EMDO_FINANCE_SYNTHETIC_STAGING=true \
+        EMDO_FINANCE_SYNTHETIC_STAGING_LIVE_CHAT="$finance_live_chat" \
         "$RECORD_RELEASE/infra/scripts/deploy-staging.sh" \
-          "$run_id" "$RECORD_RELEASE/images.env" "$ttl_minutes" true
-    finance_key_lines[0]=''
+          "$run_id" "$RECORD_RELEASE/images.env" "$ttl_minutes" true "$finance_live_chat"
+    finance_key_lines=()
   else
     INITIAL_STAGING_BOOTSTRAP="$initial_deployment" \
-      EMDO_FINANCE_SYNTHETIC_STAGING=false \
-      "$RECORD_RELEASE/infra/scripts/deploy-staging.sh" \
-        "$run_id" "$RECORD_RELEASE/images.env" "$ttl_minutes" false
+        EMDO_FINANCE_SYNTHETIC_STAGING=false \
+        "$RECORD_RELEASE/infra/scripts/deploy-staging.sh" \
+          "$run_id" "$RECORD_RELEASE/images.env" "$ttl_minutes" false false
   fi
 }
 

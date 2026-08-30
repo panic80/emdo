@@ -7,8 +7,10 @@ import type { FinancePage } from '@emdo/contracts/browser';
 
 import { Button } from '../components/button.js';
 import { Page, PageHeader } from '../components/page.js';
-import { AskComposer } from '../features/chat/ask-composer.js';
-import { useConversation } from '../features/chat/conversation.js';
+import {
+  ConversationPanel,
+  useConversation,
+} from '../features/chat/conversation.js';
 import { useAuth } from '../features/auth/auth-context.js';
 import { useDomainData } from '../features/domains/domain-data.js';
 import { DomainSyncStatus } from '../features/domains/domain-status.js';
@@ -694,14 +696,7 @@ export function FinanceRoute() {
       <PageHeader title={copy.title} description={copy.description} />
       <FinanceViews
         locale={locale}
-        ask={
-          <AskComposer
-            compact
-            onSubmit={async (message) => {
-              await conversation.submit(message, 'finance', locale);
-            }}
-          />
-        }
+        ask={<ConversationPanel specialist="finance" />}
         overview={
           <>
             <DomainSyncStatus />

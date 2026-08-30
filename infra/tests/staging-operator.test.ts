@@ -34,7 +34,7 @@ afterEach(async () => {
 });
 
 describe('staging release operator', () => {
-  it('forwards an opted-in Finance key only through protected stdin', async () => {
+  it('forwards Finance provider material only through protected stdin and requires an explicit live-chat flag for the agent packet', async () => {
     const root = await mkdtemp(
       join(tmpdir(), 'emdo-staging-operator-finance-'),
     );
@@ -50,8 +50,8 @@ describe('staging release operator', () => {
         '#!/usr/bin/env bash',
         'set -Eeuo pipefail',
         '[[ -z "${EMDO_OPENAI_FINANCE_API_KEY:-}" ]]',
-        `printf '%s\\n' "$#" "$1" "$2" "$3" "$4" > '${receivedArguments}'`,
-        `IFS= read -r finance_key; printf '%s' "$finance_key" > '${receivedInput}'`,
+        `printf '%s\\n' "$#" "$1" "$2" "$3" "$4" "$5" > '${receivedArguments}'`,
+        `cat > '${receivedInput}'`,
         '',
       ].join('\n'),
     );
@@ -101,9 +101,9 @@ deploy_release "$@"`,
     );
 
     expect(result.status, result.stderr).toBe(0);
-    expect(await readFile(receivedInput, 'utf8')).toBe(financeKey);
+    expect(await readFile(receivedInput, 'utf8')).toBe(`${financeKey}\n`);
     expect(await readFile(receivedArguments, 'utf8')).toBe(
-      '4\n123456789\n/release/images.env\n60\ntrue\n'.replace(
+      '5\n123456789\n/release/images.env\n60\ntrue\nfalse\n'.replace(
         '/release',
         release,
       ),
@@ -117,6 +117,32 @@ deploy_release "$@"`,
     );
     expect(invalid.status).not.toBe(0);
     expect(invalid.stderr).not.toContain('not-a-valid Finance key');
+
+    const agentKey = `sk-proj-${'a'.repeat(40)}`;
+    const livePacket = [
+      financeKey,
+      agentKey,
+      'openai-2026-07-30.boc-2026-08-28.usdcad-1.3888.ceil',
+      '28',
+      '167',
+      '278',
+      '1667',
+    ].join('\n');
+    const live = spawnSync(
+      'bash',
+      [scriptPath, '123456790', 'false', '60', 'true', 'true'],
+      { encoding: 'utf8', input: `${livePacket}\n` },
+    );
+    expect(live.status, live.stderr).toBe(0);
+    expect(await readFile(receivedInput, 'utf8')).toBe(`${livePacket}\n`);
+    expect(await readFile(receivedArguments, 'utf8')).toBe(
+      '5\n123456790\n/release/images.env\n60\ntrue\ntrue\n'.replace(
+        '/release',
+        release,
+      ),
+    );
+    expect(live.stderr).not.toContain(financeKey);
+    expect(live.stderr).not.toContain(agentKey);
   });
 
   it('cleans temporary install state without dereferencing expired function locals', async () => {

@@ -181,7 +181,7 @@ describe('Finance v1 offline/browser persistence exclusion', () => {
 
     expect(financeRoute).toContain('useActiveLocale()');
     expect(financeRoute).toContain(
-      "conversation.submit(message, 'finance', locale)",
+      '<ConversationPanel specialist="finance" />',
     );
     expect(financeRoute).toContain(
       "record.entityType !== 'finance.transaction'",
