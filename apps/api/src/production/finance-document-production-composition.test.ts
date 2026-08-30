@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -29,12 +29,16 @@ const environmentFor = (input: {
   readonly reviewKey: Buffer;
   readonly storeDir: string;
   readonly includeFinanceApiKey?: boolean;
+  readonly restoreReadOnly?: boolean;
 }) => ({
   EMDO_FINANCE_DOCUMENTS_ENABLED: 'true',
   EMDO_FINANCE_DOCUMENT_KEYRING_B64URL: encodeKeyring(input.encryptionKey),
   EMDO_FINANCE_DOCUMENT_REVIEW_HMAC_KEY_B64URL:
     input.reviewKey.toString('base64url'),
   EMDO_FINANCE_DOCUMENT_STORE_DIR: input.storeDir,
+  ...(input.restoreReadOnly === true
+    ? { EMDO_FINANCE_RESTORE_READ_ONLY: 'true' }
+    : {}),
   ...(input.includeFinanceApiKey === false
     ? {}
     : { EMDO_OPENAI_FINANCE_API_KEY: 'sk_test_finance_only_1234567890' }),
@@ -178,6 +182,54 @@ describe('Finance document production composition', () => {
     expect(fetch).not.toHaveBeenCalled();
     expect(financeKeyRead).not.toHaveBeenCalled();
     await composition!.close();
+  });
+
+  it('opens an exact synthetic restore store read-only without mutating its permissions', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'emdo-finance-composition-'));
+    temporaryRoots.push(base);
+    const webRoot = join(base, 'app');
+    const storeDir = join(base, 'finance-documents');
+    await mkdir(webRoot, { mode: 0o700 });
+    await mkdir(storeDir, { mode: 0o700 });
+    await chmod(storeDir, 0o500);
+    const environment = {
+      ...environmentFor({
+        encryptionKey: Buffer.alloc(32, 51),
+        reviewKey: Buffer.alloc(32, 52),
+        storeDir,
+        includeFinanceApiKey: false,
+        restoreReadOnly: true,
+      }),
+      EMDO_ENVIRONMENT: 'staging',
+      EMDO_ALLOW_LOOPBACK_API_INGRESS: 'true',
+      EMDO_SYNTHETIC_DATA_ONLY: 'true',
+      EMDO_FINANCE_SYNTHETIC_STAGING: 'true',
+    };
+
+    const composition = await createProductionFinanceDocumentComposition({
+      environment,
+      pool: databasePool(),
+      financeRead: { list: vi.fn(), readSnapshot: vi.fn() },
+      webRoot,
+    });
+
+    expect(composition).toBeDefined();
+    await expect(composition!.gateway.checkReady()).resolves.toBe(true);
+    expect((await stat(storeDir)).mode & 0o777).toBe(0o500);
+    await composition!.close();
+
+    await expect(
+      createProductionFinanceDocumentComposition({
+        environment: {
+          ...environment,
+          EMDO_ENVIRONMENT: 'production',
+          EMDO_OPENAI_FINANCE_API_KEY: 'sk_test_finance_only_1234567890',
+        },
+        pool: databasePool(),
+        financeRead: { list: vi.fn(), readSnapshot: vi.fn() },
+        webRoot,
+      }),
+    ).resolves.toBeUndefined();
   });
 
   it('requires the Finance embedding key outside every exact synthetic staging boundary', async () => {

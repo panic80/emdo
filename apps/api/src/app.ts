@@ -7,7 +7,7 @@ import { FINANCE_DOCUMENT_LIMITS } from '@emdo/domains/finance';
 
 import { resolveApiLimits, type ApiLimits } from './config.js';
 import { createOpenApiDocument } from './openapi.js';
-import { installProblemHandler } from './problem.js';
+import { ApiProblem, installProblemHandler } from './problem.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerExperienceRoutes } from './routes/experience.js';
 import { registerFinanceImportRoutes } from './routes/finance-imports.js';
@@ -46,9 +46,26 @@ export interface CreateAppOptions {
   readonly allowLoopbackApiIngress?: boolean;
   readonly enableSyntheticHttpSubsetReadiness?: boolean;
   readonly enableFinanceSyntheticStagingReadiness?: boolean;
+  readonly enableFinanceRestoreVerifierOnly?: boolean;
   readonly syntheticFinanceAccountProvisioner?: SyntheticFinanceAccountProvisioner;
   readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
 }
+
+const FINANCE_RESTORE_UUID =
+  '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+const FINANCE_RESTORE_VERIFIER_READ_PATH = new RegExp(
+  `^/api/v1/finance/(?:documents/${FINANCE_RESTORE_UUID}(?:/original)?|evidence/${FINANCE_RESTORE_UUID})$`,
+  'u',
+);
+
+const isFinanceRestoreVerifierRequest = (input: {
+  readonly method: string;
+  readonly url: string;
+}): boolean =>
+  input.method === 'GET' &&
+  (input.url === '/healthz' ||
+    input.url === '/finance-synthetic-staging/readyz' ||
+    FINANCE_RESTORE_VERIFIER_READ_PATH.test(input.url));
 
 const requestId = (request: { readonly headers: Record<string, unknown> }) => {
   const candidate = request.headers['x-request-id'];
@@ -107,6 +124,27 @@ export const createApp = async (
   });
 
   installProblemHandler(app);
+  if (options.enableFinanceRestoreVerifierOnly === true) {
+    if (options.enableFinanceSyntheticStagingReadiness !== true) {
+      throw new Error('finance-restore-verifier-requires-synthetic-staging');
+    }
+    app.addHook('onRequest', async (request) => {
+      if (
+        !isFinanceRestoreVerifierRequest({
+          method: request.method,
+          url: request.url,
+        })
+      ) {
+        throw new ApiProblem({
+          status: 503,
+          code: 'finance-restore-verifier-only',
+          title: 'Finance restore verifier only',
+          detail:
+            'This isolated Finance restore accepts only its bounded verification reads.',
+        });
+      }
+    });
+  }
   await app.register(multipart, {
     limits: {
       fieldNameSize: 100,

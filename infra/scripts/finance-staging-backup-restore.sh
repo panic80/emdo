@@ -424,6 +424,8 @@ write_restore_compose_override() {
   cat > "$destination" <<EOF
 services:
   api:
+    environment:
+      EMDO_FINANCE_RESTORE_READ_ONLY: 'true'
     volumes: !override
       - type: bind
         source: '$document_store'

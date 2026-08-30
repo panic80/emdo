@@ -105,21 +105,29 @@ describe('FinanceDocumentStorage', () => {
       source: chunksOf([plaintext]),
       aad: DEFAULT_AAD,
     });
-    const reader = await FinanceDocumentStorage.openReadOnly({
-      root: storageRoot,
-      webRoot,
-      keyProvider,
-    });
+    const objectPath = join(storageRoot, metadata.objectName);
+    await chmod(objectPath, 0o400);
+    await chmod(storageRoot, 0o500);
+    try {
+      const reader = await FinanceDocumentStorage.openReadOnly({
+        root: storageRoot,
+        webRoot,
+        keyProvider,
+      });
 
-    await expect(
-      collect(reader.read({ metadata, aad: DEFAULT_AAD })),
-    ).resolves.toEqual(plaintext);
-    await expect(
-      reader.store({ source: chunksOf([plaintext]), aad: DEFAULT_AAD }),
-    ).rejects.toThrow('finance-document-storage-read-only');
-    await expect(reader.purge(metadata.objectName)).rejects.toThrow(
-      'finance-document-storage-read-only',
-    );
+      await expect(
+        collect(reader.read({ metadata, aad: DEFAULT_AAD })),
+      ).resolves.toEqual(plaintext);
+      await expect(
+        reader.store({ source: chunksOf([plaintext]), aad: DEFAULT_AAD }),
+      ).rejects.toThrow('finance-document-storage-read-only');
+      await expect(reader.purge(metadata.objectName)).rejects.toThrow(
+        'finance-document-storage-read-only',
+      );
+    } finally {
+      await chmod(storageRoot, 0o700);
+      await chmod(objectPath, 0o600);
+    }
   });
 
   it('streams a round trip under object-bound AAD with strict metadata and hashes', async () => {
