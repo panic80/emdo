@@ -282,7 +282,9 @@ deploy_release() {
     # the one-use release record is consumed. It never becomes an argument,
     # remote environment variable, log entry, or on-host command line.
     mapfile -t finance_key_lines
-    [[ ${#finance_key_lines[0]:-} -ge 16 &&
+    [[ "${#finance_key_lines[@]}" -ge 1 ]] ||
+      die 'Finance staging extraction key is missing from protected stdin'
+    [[ ${#finance_key_lines[0]} -ge 16 &&
       ${#finance_key_lines[0]} -le 512 &&
       "${finance_key_lines[0]}" =~ ^[A-Za-z0-9_-]+$ ]] ||
       die 'Finance staging extraction key has an invalid protected stdin format'
