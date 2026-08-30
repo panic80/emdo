@@ -61,6 +61,14 @@ const MANAGER_PLAN_DATA_CLASS = 'agent.manager-plans';
 const DELEGATION_DATA_CLASS = 'agent.delegations';
 const SPECIALIST_OUTCOME_DATA_CLASS = 'agent.specialist-outcomes';
 
+const SYNTHESIS_LANGUAGE_BY_LOCALE: Readonly<Record<SupportedLocale, string>> =
+  Object.freeze({
+    'en-CA': 'English (Canada)',
+    'fr-CA': 'French (Canada)',
+    'ja-JP': 'Japanese',
+    'ko-KR': 'Korean',
+  });
+
 const SDK_CALL_ID_PATTERN = /^[A-Za-z0-9._:-]{1,256}$/;
 const DISCLOSURE_PATH_PATTERN = /^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$/;
 
@@ -2513,7 +2521,7 @@ export class OpenAiAgentsExecutionProvider implements AgentExecutionProvider {
       ...(effectivePhase === 'synthesize'
         ? {
             trustedInstructions: Object.freeze([
-              `Write the final EMDO synthesis in ${request.context.locale}. Keep evidence excerpts in their source language; do not translate those excerpts.`,
+              `Write the entire user-facing final EMDO synthesis in ${SYNTHESIS_LANGUAGE_BY_LOCALE[request.context.locale]} (${request.context.locale}), regardless of the language used in the user message or conversation history. The only exception is brief, bounded source-language evidence excerpts, which must remain in their original language and must not be translated.`,
             ]),
           }
         : {}),

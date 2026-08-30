@@ -80,7 +80,7 @@ const scopeRow = {
 };
 
 describe('PostgresFinanceImportRepository', () => {
-  it('reads only the current private-space manual CAD import destinations through the aggregate', async () => {
+  it('accepts an authenticated principal with its server-derived private space and reads only current manual CAD import destinations', async () => {
     const { pool, query } = poolFor((sql) =>
       sql.includes('read_finance_import_destinations')
         ? [
@@ -109,7 +109,7 @@ describe('PostgresFinanceImportRepository', () => {
 
     await expect(
       new PostgresFinanceImportRepository(pool).listDestinations({
-        principal,
+        principal: { ...principal, privateSpaceId: ids.space },
         requestId: ids.request,
       }),
     ).resolves.toEqual({

@@ -783,7 +783,7 @@ describeDatabase(
                 isManagerSynthesis:
                   typeof args[0].instructions === 'string' &&
                   args[0].instructions.includes(
-                    'Write the final EMDO synthesis in en-CA.',
+                    'Write the entire user-facing final EMDO synthesis in English (Canada) (en-CA), regardless of the language used in the user message or conversation history.',
                   ),
               });
               return result;
