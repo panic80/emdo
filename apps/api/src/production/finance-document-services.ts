@@ -2187,7 +2187,9 @@ export const createProductionFinanceDocumentGateway = (
           requestId: input.requestId,
           documentId: input.documentId,
         });
-        if (document === undefined) return error('document-not-found');
+        if (document === undefined || document.state === 'deleted') {
+          return error('document-not-found');
+        }
         const matches = await dependencies.repository.listMatches({
           principal,
           requestId: input.requestId,
