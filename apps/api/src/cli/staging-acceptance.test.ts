@@ -814,6 +814,7 @@ describe('staging acceptance CLI', () => {
     let commitRunFailureData: unknown;
     let deleteRunFailed = true;
     let evidenceExcerpt = 'Cobalt Lantern Receipt';
+    let directSafeWriteSummary = 'The manual transaction was recorded.';
     let initialTurnFailure:
       | 'turn-post-or-response-invalid'
       | 'turn-acceptance-json-or-schema-invalid'
@@ -1703,7 +1704,7 @@ describe('staging acceptance CLI', () => {
           manualTransaction = true;
           return completedEvents(
             runId,
-            financeOutput({ summary: 'The manual transaction was recorded.' }),
+            financeOutput({ summary: directSafeWriteSummary }),
           );
         }
       }
@@ -1772,6 +1773,7 @@ describe('staging acceptance CLI', () => {
       initialTurnFailure = undefined;
       commitRunFailureData = undefined;
       evidenceExcerpt = 'Cobalt Lantern Receipt';
+      directSafeWriteSummary = 'The manual transaction was recorded.';
     };
     for (const { fixtureFailure, outcome } of [
       {
@@ -2086,6 +2088,31 @@ describe('staging acceptance CLI', () => {
         sleep: async () => undefined,
       }),
     ).rejects.toThrow('Finance cited evidence readback is invalid');
+    resetFinanceFixture();
+
+    directSafeWriteSummary = 'The manual transaction was already recorded.';
+    const duplicateSafeWritePhase = await runStagingAcceptanceCommand({
+      argv: [
+        '--all-mvp-gates',
+        '--require-synthetic',
+        '--forbid-worker-provider-execution',
+        '--finance-synthetic-document-gates',
+      ],
+      environment: financeEnvironment,
+      fetch,
+      now: () => OBSERVED_AT,
+      sleep: async () => undefined,
+      financeRestoreVerifierHandoffWriter: async () => undefined,
+    });
+    expect(duplicateSafeWritePhase).toMatchObject({
+      proof: { directSafeWrite: 'passed' },
+    });
+    expect(
+      requests.some(
+        (request) =>
+          new URL(request.url).pathname === '/api/v1/experience/finance',
+      ),
+    ).toBe(true);
     resetFinanceFixture();
 
     const phaseOne = await runStagingAcceptanceCommand({
