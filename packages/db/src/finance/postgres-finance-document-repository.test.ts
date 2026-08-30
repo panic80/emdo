@@ -835,7 +835,7 @@ describe('PostgresFinanceDocumentRepository', () => {
     );
   });
 
-  it('binds pending, committed, and public review reads to session and scope instead of the current grant', async () => {
+  it('keeps review and match reads session-bound while delete-only committed reads remain owner-scoped', async () => {
     const pendingReview = reviewRow('CAD', { state: 'pending' });
     const committedReview = reviewRow('CAD', { state: 'committed' });
     const { pool, query } = poolFor((sql) => {
@@ -871,6 +871,14 @@ describe('PostgresFinanceDocumentRepository', () => {
       scopeFingerprint: principal.scopeFingerprint,
     });
     await expect(
+      repository.getCommittedReviewForGuardedDelete(documentInput),
+    ).resolves.toMatchObject({
+      id: ids.review,
+      authenticatedSessionId: ids.session,
+      spaceAccessGrantId: ids.grant,
+      scopeFingerprint: principal.scopeFingerprint,
+    });
+    await expect(
       repository.getCommittedReviewAuthorization({
         ...documentInput,
         reviewToken: 'A'.repeat(43),
@@ -885,14 +893,12 @@ describe('PostgresFinanceDocumentRepository', () => {
     const reviewLookups = query.mock.calls.filter(([sql]) =>
       String(sql).includes('from emdo.finance_document_review_batches'),
     );
-    expect(reviewLookups).toHaveLength(3);
+    expect(reviewLookups).toHaveLength(4);
     for (const [sql, values] of reviewLookups) {
       expect(String(sql)).toContain(
         'review.space_access_grant_id::text as "spaceAccessGrantId"',
       );
       expect(String(sql)).not.toContain('review.space_access_grant_id =');
-      expect(values).toContain(ids.session);
-      expect(values).toContain(principal.scopeFingerprint);
       expect(values).not.toContain(ids.grant);
       expect(values).not.toContain(ids.rotatedGrant);
     }
@@ -902,10 +908,35 @@ describe('PostgresFinanceDocumentRepository', () => {
     const currentCommittedLookup = reviewLookups.find(
       ([sql]) =>
         String(sql).includes("review.state = 'committed'") &&
-        !String(sql).includes('review.review_token_hash ='),
+        !String(sql).includes('review.review_token_hash =') &&
+        String(sql).includes('review.authenticated_session_id ='),
+    );
+    const deleteCommittedLookup = reviewLookups.find(
+      ([sql]) =>
+        String(sql).includes("review.state = 'committed'") &&
+        !String(sql).includes('review.review_token_hash =') &&
+        !String(sql).includes('review.authenticated_session_id ='),
     );
     const publicCommittedLookup = reviewLookups.find(([sql]) =>
       String(sql).includes('review.review_token_hash = $7'),
+    );
+    for (const lookup of [
+      pendingLookup,
+      currentCommittedLookup,
+      publicCommittedLookup,
+    ]) {
+      expect(String(lookup?.[0])).toContain(
+        'review.authenticated_session_id =',
+      );
+      expect(String(lookup?.[0])).toContain('review.scope_fingerprint =');
+      expect(lookup?.[1]).toContain(ids.session);
+      expect(lookup?.[1]).toContain(principal.scopeFingerprint);
+    }
+    expect(String(deleteCommittedLookup?.[0])).not.toContain(
+      'review.authenticated_session_id =',
+    );
+    expect(String(deleteCommittedLookup?.[0])).not.toContain(
+      'review.scope_fingerprint =',
     );
     expect(pendingLookup?.[1]).toEqual([
       ids.household,
@@ -922,6 +953,12 @@ describe('PostgresFinanceDocumentRepository', () => {
       ids.document,
       ids.session,
       principal.scopeFingerprint,
+    ]);
+    expect(deleteCommittedLookup?.[1]).toEqual([
+      ids.household,
+      ids.space,
+      ids.user,
+      ids.document,
     ]);
     expect(publicCommittedLookup?.[1]).toEqual([
       ids.household,

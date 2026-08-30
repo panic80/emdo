@@ -351,6 +351,9 @@ const createHarness = () => {
     getCurrentCommittedReview: vi.fn(async () =>
       reviewCommitted ? storedReview : undefined,
     ),
+    getCommittedReviewForGuardedDelete: vi.fn(async () =>
+      reviewCommitted ? storedReview : undefined,
+    ),
     replaceCurrentReviewDraft: vi.fn(async (input: Record<string, unknown>) => {
       const inputPrincipal = input.principal as {
         readonly sessionId: string;
@@ -1620,6 +1623,32 @@ describe('production Finance document gateway', () => {
       documentId: IDS.document,
     });
     expect(harness.repository.finalizeGuardedDelete).toHaveBeenCalledOnce();
+  });
+
+  it('uses the delete-only owner-scoped committed review reader for deletion targets', async () => {
+    const harness = createHarness();
+    await harness.gateway.getReview(
+      request({ documentId: IDS.document, principal }),
+    );
+    await executeGuardedDocumentAction(harness.gateway, {
+      operation: 'finance-document-review-commit',
+      intent: { kind: 'commit-document-review', documentId: IDS.document },
+    });
+    harness.repository.getCurrentCommittedReview.mockClear();
+    harness.repository.getCommittedReviewForGuardedDelete.mockClear();
+
+    await harness.gateway.createGuardedActionPort(principal).materializeTarget({
+      scope: guardedScope,
+      operation: 'finance-document-delete',
+      intent: { kind: 'delete-document', documentId: IDS.document },
+    });
+
+    expect(
+      harness.repository.getCommittedReviewForGuardedDelete,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: IDS.document }),
+    );
+    expect(harness.repository.getCurrentCommittedReview).not.toHaveBeenCalled();
   });
 
   it('authorizes exact match and evidence lookups and calculates reviewed CAD projections deterministically', async () => {
