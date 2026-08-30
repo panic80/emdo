@@ -15,6 +15,7 @@ const ApiServerConfigSchema = z
     allowLoopbackApiIngress: z.boolean(),
     enableSyntheticHttpSubsetReadiness: z.boolean(),
     enableFinanceSyntheticStagingReadiness: z.boolean(),
+    enableFinanceRestoreVerifierOnly: z.boolean(),
     edgeProxySecret: EdgeProxySecretSchema,
     publicOrigin: CanonicalAppOriginSchema,
   })
@@ -63,6 +64,17 @@ const ApiServerConfigSchema = z
         message: 'synthetic readiness profiles are mutually exclusive',
       });
     }
+    if (
+      value.enableFinanceRestoreVerifierOnly &&
+      !value.enableFinanceSyntheticStagingReadiness
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['enableFinanceRestoreVerifierOnly'],
+        message:
+          'Finance restore verifier mode requires exact Finance synthetic staging',
+      });
+    }
   });
 
 export type ApiServerConfig = z.infer<typeof ApiServerConfigSchema>;
@@ -86,6 +98,10 @@ export const loadApiServerConfig = (
     .enum(['true', 'false'])
     .default('false')
     .parse(environment.EMDO_FINANCE_DOCUMENTS_ENABLED);
+  const financeRestoreReadOnlyRequested = z
+    .enum(['true', 'false'])
+    .default('false')
+    .parse(environment.EMDO_FINANCE_RESTORE_READ_ONLY);
   const deploymentEnvironment = environment.EMDO_ENVIRONMENT ?? 'production';
   const loopbackEnabled = allowLoopbackApiIngress === 'true';
   const financeSyntheticStaging =
@@ -96,6 +112,14 @@ export const loadApiServerConfig = (
     financeDocumentsEnabled === 'true';
   if (financeSyntheticStagingRequested === 'true' && !financeSyntheticStaging) {
     throw new Error('api-finance-synthetic-staging-configuration-invalid');
+  }
+  const financeRestoreVerifierOnly =
+    financeRestoreReadOnlyRequested === 'true' && financeSyntheticStaging;
+  if (
+    financeRestoreReadOnlyRequested === 'true' &&
+    !financeRestoreVerifierOnly
+  ) {
+    throw new Error('api-finance-restore-verifier-configuration-invalid');
   }
   return Object.freeze(
     ApiServerConfigSchema.parse({
@@ -109,6 +133,7 @@ export const loadApiServerConfig = (
         syntheticDataOnly === 'true' &&
         !financeSyntheticStaging,
       enableFinanceSyntheticStagingReadiness: financeSyntheticStaging,
+      enableFinanceRestoreVerifierOnly: financeRestoreVerifierOnly,
       edgeProxySecret: environment.EMDO_EDGE_PROXY_SECRET,
       publicOrigin: environment.EMDO_PUBLIC_ORIGIN,
     }),
@@ -247,6 +272,7 @@ const startApiServer = async (input: {
       config.enableSyntheticHttpSubsetReadiness,
     enableFinanceSyntheticStagingReadiness:
       config.enableFinanceSyntheticStagingReadiness,
+    enableFinanceRestoreVerifierOnly: config.enableFinanceRestoreVerifierOnly,
     ...(syntheticFinanceAccountProvisioner === undefined
       ? {}
       : {

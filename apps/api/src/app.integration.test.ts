@@ -2176,6 +2176,12 @@ describe('Fastify API boundary', () => {
         enableFinanceSyntheticStagingReadiness: true,
       }),
     ).rejects.toThrow('synthetic-readiness-profiles-conflict');
+    await expect(
+      createApp({
+        services: buildServices(),
+        enableFinanceRestoreVerifierOnly: true,
+      }),
+    ).rejects.toThrow('finance-restore-verifier-requires-synthetic-staging');
   });
 
   it('fails closed when an internal readiness result contradicts its components', async () => {
@@ -2953,6 +2959,7 @@ describe('Fastify API boundary', () => {
       allowLoopbackApiIngress: false,
       enableSyntheticHttpSubsetReadiness: false,
       enableFinanceSyntheticStagingReadiness: false,
+      enableFinanceRestoreVerifierOnly: false,
       edgeProxySecret: EDGE_PROXY_SECRET,
       publicOrigin: 'https://emdo.example',
     });
@@ -2975,6 +2982,7 @@ describe('Fastify API boundary', () => {
       allowLoopbackApiIngress: true,
       enableSyntheticHttpSubsetReadiness: true,
       enableFinanceSyntheticStagingReadiness: false,
+      enableFinanceRestoreVerifierOnly: false,
     });
     expect(
       loadApiServerConfig({
@@ -2986,6 +2994,7 @@ describe('Fastify API boundary', () => {
     ).toMatchObject({
       enableSyntheticHttpSubsetReadiness: false,
       enableFinanceSyntheticStagingReadiness: false,
+      enableFinanceRestoreVerifierOnly: false,
     });
     expect(
       loadApiServerConfig({
@@ -3000,6 +3009,22 @@ describe('Fastify API boundary', () => {
     ).toMatchObject({
       enableSyntheticHttpSubsetReadiness: false,
       enableFinanceSyntheticStagingReadiness: true,
+      enableFinanceRestoreVerifierOnly: false,
+    });
+    expect(
+      loadApiServerConfig({
+        EMDO_ENVIRONMENT: 'staging',
+        EMDO_ALLOW_LOOPBACK_API_INGRESS: 'true',
+        EMDO_SYNTHETIC_DATA_ONLY: 'true',
+        EMDO_FINANCE_SYNTHETIC_STAGING: 'true',
+        EMDO_FINANCE_DOCUMENTS_ENABLED: 'true',
+        EMDO_FINANCE_RESTORE_READ_ONLY: 'true',
+        EMDO_EDGE_PROXY_SECRET: EDGE_PROXY_SECRET,
+        EMDO_PUBLIC_ORIGIN: 'https://staging.emdo.example',
+      }),
+    ).toMatchObject({
+      enableFinanceSyntheticStagingReadiness: true,
+      enableFinanceRestoreVerifierOnly: true,
     });
     expect(() =>
       loadApiServerConfig({
@@ -3011,6 +3036,13 @@ describe('Fastify API boundary', () => {
         EMDO_PUBLIC_ORIGIN: 'https://staging.emdo.example',
       }),
     ).toThrow('api-finance-synthetic-staging-configuration-invalid');
+    expect(() =>
+      loadApiServerConfig({
+        EMDO_FINANCE_RESTORE_READ_ONLY: 'true',
+        EMDO_EDGE_PROXY_SECRET: EDGE_PROXY_SECRET,
+        EMDO_PUBLIC_ORIGIN: 'https://emdo.example',
+      }),
+    ).toThrow('api-finance-restore-verifier-configuration-invalid');
     expect(() =>
       loadApiServerConfig({
         EMDO_ENVIRONMENT: 'production',

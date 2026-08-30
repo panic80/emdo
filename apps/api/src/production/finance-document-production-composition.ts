@@ -4,6 +4,7 @@ import { PostgresFinanceDocumentRepository } from '@emdo/db/api';
 import {
   FinanceDocumentPayloadCrypto,
   createFinanceDocumentStorage,
+  openFinanceDocumentStorageReadOnly,
 } from '@emdo/integrations/finance-documents';
 import {
   OpenAiFetchFinanceDocumentEmbeddingsAdapter,
@@ -126,6 +127,16 @@ export const createProductionFinanceDocumentComposition = async (input: {
   readonly fetch?: OpenAiFetch;
 }): Promise<ProductionFinanceDocumentComposition | undefined> => {
   const syntheticStaging = isExactSyntheticFinanceStaging(input.environment);
+  const restoreReadOnlySetting =
+    input.environment.EMDO_FINANCE_RESTORE_READ_ONLY;
+  if (
+    restoreReadOnlySetting !== undefined &&
+    restoreReadOnlySetting !== 'false' &&
+    !(syntheticStaging && restoreReadOnlySetting === 'true')
+  ) {
+    return undefined;
+  }
+  const restoreReadOnly = restoreReadOnlySetting === 'true';
   const encodedKeyring = input.environment.EMDO_FINANCE_DOCUMENT_KEYRING_B64URL;
   const reviewKey = decodeSecret32(
     input.environment.EMDO_FINANCE_DOCUMENT_REVIEW_HMAC_KEY_B64URL,
@@ -150,14 +161,17 @@ export const createProductionFinanceDocumentComposition = async (input: {
     keyProvider = createProductionFinanceDocumentKeyProvider(encodedKeyring, [
       reviewKey,
     ]);
-    const storage = await createFinanceDocumentStorage({
+    const storageOptions = {
       root: resolve(
         input.environment.EMDO_FINANCE_DOCUMENT_STORE_DIR ??
           DEFAULT_FINANCE_DOCUMENT_STORE_DIR,
       ),
       webRoot: resolve(input.webRoot),
       keyProvider,
-    });
+    };
+    const storage = restoreReadOnly
+      ? await openFinanceDocumentStorageReadOnly(storageOptions)
+      : await createFinanceDocumentStorage(storageOptions);
     const repository = new PostgresFinanceDocumentRepository(input.pool);
     let embeddings: FinanceDocumentEmbeddingsPort;
     let embeddingQuery: FinanceSpecialistEmbeddingQueryPort;

@@ -622,6 +622,7 @@ verify_backup_sidecars
       'assert_isolated_project_absent "$restore_project_name" "$restore_namespace"',
     );
     expect(source).toContain('read_only: true');
+    expect(source).toContain("EMDO_FINANCE_RESTORE_READ_ONLY: 'true'");
     expect(source).toContain('chmod 0500 "$restore_document_store"');
     expect(source).toContain('chmod 0400 "$restored_object"');
     expect(source).toContain('chown 10001:10001 "$restore_document_store"');

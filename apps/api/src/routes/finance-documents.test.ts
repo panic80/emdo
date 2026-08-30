@@ -510,6 +510,76 @@ describe('finance document HTTP boundary', () => {
     await app.close();
   });
 
+  it('exposes only bounded restore-verifier reads in the isolated read-only runtime', async () => {
+    const { services, auth, financeDocuments } = buildServices();
+    const app = await createApp({
+      services,
+      enableFinanceSyntheticStagingReadiness: true,
+      enableFinanceRestoreVerifierOnly: true,
+    });
+
+    expect(
+      (await app.inject({ method: 'GET', url: '/healthz' })).statusCode,
+    ).toBe(200);
+    const restoreReadiness = await app.inject({
+      method: 'GET',
+      url: '/finance-synthetic-staging/readyz',
+    });
+    expect(restoreReadiness.statusCode).not.toBe(404);
+    expect(restoreReadiness.json()).not.toMatchObject({
+      code: 'finance-restore-verifier-only',
+    });
+    for (const url of [
+      `/api/v1/finance/documents/${IDS.document}`,
+      `/api/v1/finance/documents/${IDS.document}/original`,
+      `/api/v1/finance/evidence/${IDS.evidence}`,
+    ]) {
+      const response = await app.inject({
+        method: 'GET',
+        url,
+        headers: { cookie: mutationHeaders.cookie },
+      });
+      expect(response.statusCode, response.body).toBe(200);
+    }
+
+    for (const request of [
+      { method: 'GET', url: '/api/v1/finance/documents' },
+      {
+        method: 'GET',
+        url: `/api/v1/finance/documents/${IDS.document}/review`,
+      },
+      {
+        method: 'GET',
+        url: `/api/v1/finance/documents/${IDS.document}/matches`,
+      },
+      {
+        method: 'POST',
+        url: `/api/v1/finance/documents/${IDS.document}/retry`,
+      },
+      { method: 'GET', url: '/api/auth/callback/google' },
+      { method: 'POST', url: '/api/v1/turns' },
+    ] as const) {
+      const response = await app.inject({
+        ...request,
+        headers: mutationHeaders,
+      });
+      expect(response.statusCode, response.body).toBe(503);
+      expect(response.json()).toMatchObject({
+        code: 'finance-restore-verifier-only',
+      });
+    }
+
+    expect(financeDocuments.get).toHaveBeenCalledOnce();
+    expect(financeDocuments.downloadOriginal).toHaveBeenCalledOnce();
+    expect(financeDocuments.getEvidence).toHaveBeenCalledOnce();
+    expect(financeDocuments.list).not.toHaveBeenCalled();
+    expect(financeDocuments.getReview).not.toHaveBeenCalled();
+    expect(financeDocuments.listMatches).not.toHaveBeenCalled();
+    expect(financeDocuments.retry).not.toHaveBeenCalled();
+    expect(auth.authenticate).toHaveBeenCalledTimes(3);
+    await app.close();
+  });
+
   it('denies inaccessible and deleting originals without returning their bytes', async () => {
     const { services, financeDocuments } = buildServices();
     financeDocuments.downloadOriginal
