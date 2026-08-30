@@ -1607,30 +1607,32 @@ export const createProductionFinanceDocumentGateway = (
       readonly executionBindingHash: string;
     }>;
   }) => {
-    const started = await dependencies.repository.beginGuardedDelete({
-      principal: input.principal,
-      requestId: input.requestId,
-      documentId: input.documentId,
-      receipt: input.receipt,
-    });
-    if (started.status === 'already-deleted') {
-      return Object.freeze({ status: 'deleted' as const });
-    }
-    try {
-      await dependencies.storage.purge(started.original.storageObjectId);
-      await dependencies.repository.finalizeGuardedDelete({
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const started = await dependencies.repository.beginGuardedDelete({
         principal: input.principal,
         requestId: input.requestId,
         documentId: input.documentId,
         receipt: input.receipt,
       });
-      return Object.freeze({ status: 'deleted' as const });
-    } catch {
-      // beginDelete revokes access before a provider call. The durable receipt
-      // binding added at the repository boundary makes a later permitted
-      // replay the only way to retry this purge.
-      return Object.freeze({ status: 'pending-purge' as const });
+      if (started.status === 'already-deleted') {
+        return Object.freeze({ status: 'deleted' as const });
+      }
+      try {
+        await dependencies.storage.purge(started.original.storageObjectId);
+        await dependencies.repository.finalizeGuardedDelete({
+          principal: input.principal,
+          requestId: input.requestId,
+          documentId: input.documentId,
+          receipt: input.receipt,
+        });
+        return Object.freeze({ status: 'deleted' as const });
+      } catch {
+        // The exact receipt-bound replay is safe because storage purge and
+        // tombstone finalization are both idempotent. Keep the retry bounded
+        // to this one approved execution.
+      }
     }
+    return Object.freeze({ status: 'pending-purge' as const });
   };
 
   const guardedActionPortFor = (

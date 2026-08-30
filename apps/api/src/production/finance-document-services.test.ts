@@ -1596,7 +1596,7 @@ describe('production Finance document gateway', () => {
     expect(retryHarness.payloadCrypto.decrypt).not.toHaveBeenCalled();
   });
 
-  it('leaves a deletion in pending-purge when object removal is indeterminate, then compensates safely', async () => {
+  it('retries an indeterminate object removal once and compensates safely', async () => {
     const harness = createHarness();
     harness.storage.purge.mockRejectedValueOnce(
       new Error('object store unavailable'),
@@ -1608,20 +1608,10 @@ describe('production Finance document gateway', () => {
         intent: { kind: 'delete-document', documentId: IDS.document },
       }),
     ).resolves.toEqual({
-      status: 'document-purge-pending',
-      documentId: IDS.document,
-    });
-    expect(harness.repository.finalizeGuardedDelete).not.toHaveBeenCalled();
-
-    await expect(
-      executeGuardedDocumentAction(harness.gateway, {
-        operation: 'finance-document-delete',
-        intent: { kind: 'delete-document', documentId: IDS.document },
-      }),
-    ).resolves.toEqual({
       status: 'document-deleted',
       documentId: IDS.document,
     });
+    expect(harness.storage.purge).toHaveBeenCalledTimes(2);
     expect(harness.repository.finalizeGuardedDelete).toHaveBeenCalledOnce();
   });
 
