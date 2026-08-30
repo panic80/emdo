@@ -198,8 +198,7 @@ require_command node
 require_command sha256sum
 require_command find
 
-secret_dir="$state_dir/$FINANCE_STAGING_SECRET_DIR"
-input_file="$secret_dir/$FINANCE_RESTORE_VERIFIER_INPUT_NAME"
+input_file="$(finance_staging_restore_verifier_input_path "$state_dir")"
 receipt_file="$state_dir/$FINANCE_RESTORE_VERIFIER_RECEIPT_NAME"
 [[ ! -e "$receipt_file" && ! -L "$receipt_file" ]] ||
   die 'Finance restore verifier receipt already exists for this staging run'
