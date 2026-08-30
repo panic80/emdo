@@ -290,9 +290,8 @@ describe('Finance synthetic staging agent service bundle', () => {
       get: providerKey,
     });
 
-    const services = createFinanceSyntheticStagingAgentServiceBundle(
-      restoreEnvironment,
-    );
+    const services =
+      createFinanceSyntheticStagingAgentServiceBundle(restoreEnvironment);
     if (services === undefined) throw new Error('restore bundle unavailable');
 
     expect(providerKey).not.toHaveBeenCalled();
