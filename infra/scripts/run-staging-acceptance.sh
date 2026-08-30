@@ -173,6 +173,12 @@ finance_staging_acceptance_failure_diagnostic() {
     'Staging acceptance failed at stage=qna-and-isolation:member-list.' | \
     'Staging acceptance failed at stage=qna-and-isolation:cross-user.' | \
     'Staging acceptance failed at stage=safe-write-and-handoff.' | \
+    'Staging acceptance failed at stage=safe-write-and-handoff:direct-turn.' | \
+    'Staging acceptance failed at stage=safe-write-and-handoff:sse-terminal.' | \
+    'Staging acceptance failed at stage=safe-write-and-handoff:completed-output-validation.' | \
+    'Staging acceptance failed at stage=safe-write-and-handoff:finance-experience-readback.' | \
+    'Staging acceptance failed at stage=safe-write-and-handoff:protected-handoff-precondition.' | \
+    'Staging acceptance failed at stage=safe-write-and-handoff:protected-handoff-write.' | \
     'Staging acceptance failed at stage=finalize-configuration.' | \
     'Staging acceptance failed at stage=finalize-attestation.' | \
     'Staging acceptance failed at stage=finalize-health-and-contract.' | \

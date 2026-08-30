@@ -109,6 +109,12 @@ const FinanceStagingAcceptanceStageSchema = z.enum([
   'qna-and-isolation:member-list',
   'qna-and-isolation:cross-user',
   'safe-write-and-handoff',
+  'safe-write-and-handoff:direct-turn',
+  'safe-write-and-handoff:sse-terminal',
+  'safe-write-and-handoff:completed-output-validation',
+  'safe-write-and-handoff:finance-experience-readback',
+  'safe-write-and-handoff:protected-handoff-precondition',
+  'safe-write-and-handoff:protected-handoff-write',
   'finalize-configuration',
   'finalize-attestation',
   'finalize-health-and-contract',
@@ -386,6 +392,18 @@ export type FinanceRestoreVerifierHandoff = Readonly<
   z.output<typeof FinanceRestoreVerifierHandoffSchema>
 >;
 
+type FinanceRestoreVerifierHandoffPhase = 'precondition' | 'write';
+type FinanceRestoreVerifierHandoffPhaseReporter = (
+  phase: FinanceRestoreVerifierHandoffPhase,
+) => void;
+type FinanceRestoreVerifierHandoffFileOperations = Readonly<{
+  lstat: typeof lstat;
+  open: typeof open;
+}>;
+
+const financeRestoreVerifierHandoffFileOperations: FinanceRestoreVerifierHandoffFileOperations =
+  Object.freeze({ lstat, open });
+
 const FinanceStagingPhase2RootAttestationSchema = z.strictObject({
   schema: z.literal(FINANCE_FINALIZE_INPUT_SCHEMA),
   sourceSha: z.string().regex(/^[0-9a-f]{40}$/u),
@@ -416,12 +434,15 @@ export type FinanceStagingPhase2RootAttestation = Readonly<{
 export const writeFinanceRestoreVerifierHandoff = async (
   input: FinanceRestoreVerifierHandoff,
   path = FINANCE_RESTORE_VERIFIER_HANDOFF_PATH,
+  phaseReporter?: FinanceRestoreVerifierHandoffPhaseReporter,
+  fileOperations = financeRestoreVerifierHandoffFileOperations,
 ): Promise<void> => {
+  phaseReporter?.('precondition');
   const value = FinanceRestoreVerifierHandoffSchema.parse(input);
   if (value.ownerCookie === value.memberCookie) {
     throw new Error('Finance restore verifier requires distinct sessions');
   }
-  const file = await lstat(path);
+  const file = await fileOperations.lstat(path);
   if (
     !file.isFile() ||
     file.isSymbolicLink() ||
@@ -446,7 +467,8 @@ export const writeFinanceRestoreVerifierHandoff = async (
     `member_cookie=${value.memberCookie}`,
     '',
   ].join('\n');
-  const handle = await open(
+  phaseReporter?.('write');
+  const handle = await fileOperations.open(
     path,
     constants.O_WRONLY | constants.O_TRUNC | constants.O_NOFOLLOW,
   );
@@ -2549,6 +2571,7 @@ const runFinanceStagingAcceptance = async (
   }
 
   input.financeStageReporter?.('safe-write-and-handoff');
+  input.financeStageReporter?.('safe-write-and-handoff:direct-turn');
   const directSafeWriteTurn = await acceptFinanceTurn({
     send,
     mutationHeaders,
@@ -2567,6 +2590,7 @@ const runFinanceStagingAcceptance = async (
       },
     }),
   });
+  input.financeStageReporter?.('safe-write-and-handoff:sse-terminal');
   const directSafeWriteEvents = await readFinanceTurnEvents({
     send,
     cookie: ownerCookie,
@@ -2574,6 +2598,9 @@ const runFinanceStagingAcceptance = async (
     afterSequence: 0,
     expectedTerminalType: 'run.completed',
   });
+  input.financeStageReporter?.(
+    'safe-write-and-handoff:completed-output-validation',
+  );
   const directSafeWriteOutput = financeOutputFromCompletedTerminal({
     event: directSafeWriteEvents.at(-1),
     runId: directSafeWriteTurn.runId,
@@ -2585,6 +2612,9 @@ const runFinanceStagingAcceptance = async (
   ) {
     throw new Error('Finance direct safe write result is invalid');
   }
+  input.financeStageReporter?.(
+    'safe-write-and-handoff:finance-experience-readback',
+  );
   const financeReadResponse = await send(
     '/api/v1/experience/finance?limit=50',
     { headers: { cookie: ownerCookie } },
@@ -2612,10 +2642,7 @@ const runFinanceStagingAcceptance = async (
     throw new Error('Finance direct safe write experience readback is invalid');
   }
 
-  await (
-    input.financeRestoreVerifierHandoffWriter ??
-    writeFinanceRestoreVerifierHandoff
-  )({
+  const handoff = {
     documentId,
     evidenceId,
     expectedPlaintextSha256: SYNTHETIC_FINANCE_PDF_SHA256,
@@ -2623,7 +2650,24 @@ const runFinanceStagingAcceptance = async (
     ownerCookie,
     sourceSha: config.sourceSha,
     workflowRunId: config.workflowRunId,
-  });
+  };
+  if (input.financeRestoreVerifierHandoffWriter === undefined) {
+    await writeFinanceRestoreVerifierHandoff(handoff, undefined, (phase) =>
+      input.financeStageReporter?.(
+        phase === 'precondition'
+          ? 'safe-write-and-handoff:protected-handoff-precondition'
+          : 'safe-write-and-handoff:protected-handoff-write',
+      ),
+    );
+  } else {
+    input.financeStageReporter?.(
+      'safe-write-and-handoff:protected-handoff-precondition',
+    );
+    input.financeStageReporter?.(
+      'safe-write-and-handoff:protected-handoff-write',
+    );
+    await input.financeRestoreVerifierHandoffWriter(handoff);
+  }
 
   return Object.freeze({
     schemaVersion: 1 as const,
