@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   formatStagingAcceptanceFailure,
   runStagingAcceptanceCommand,
+  writeFinanceRestoreVerifierHandoff,
 } from './staging-acceptance.js';
 
 type FinanceAcceptanceStage = Parameters<
@@ -680,6 +681,62 @@ describe('staging acceptance CLI', () => {
       '/synthetic-staging/readyz',
       '/metrics',
       '/openapi.json',
+    ]);
+  });
+
+  it('keeps protected handoff precondition and write failures in distinct content-safe phases', async () => {
+    const handoff = {
+      documentId: FINANCE_DOCUMENT_ID,
+      evidenceId: FINANCE_EVIDENCE_ID,
+      expectedPlaintextSha256: 'f'.repeat(64),
+      memberCookie: 'member=session-token',
+      ownerCookie: 'owner=session-token',
+      sourceSha: SOURCE_SHA,
+      workflowRunId: WORKFLOW_RUN_ID,
+    };
+    const handoffStage = (phase: string) =>
+      `safe-write-and-handoff:protected-handoff-${phase}`;
+    const preconditionPhases: string[] = [];
+    const lstat = vi.fn();
+    await expect(
+      writeFinanceRestoreVerifierHandoff(
+        { ...handoff, memberCookie: handoff.ownerCookie },
+        '/content-safe-test-path',
+        (phase) => preconditionPhases.push(phase),
+        { lstat, open: vi.fn() } as never,
+      ),
+    ).rejects.toThrow('Finance restore verifier requires distinct sessions');
+    expect(preconditionPhases.map(handoffStage)).toEqual([
+      'safe-write-and-handoff:protected-handoff-precondition',
+    ]);
+    expect(lstat).not.toHaveBeenCalled();
+
+    const writePhases: string[] = [];
+    const writeFailure = new Error('private write failure');
+    await expect(
+      writeFinanceRestoreVerifierHandoff(
+        handoff,
+        '/content-safe-test-path',
+        (phase) => writePhases.push(phase),
+        {
+          lstat: vi.fn(async () => ({
+            isFile: () => true,
+            isSymbolicLink: () => false,
+            uid: 10001,
+            gid: 10001,
+            mode: 0o100600,
+            nlink: 1,
+            size: 0,
+          })),
+          open: vi.fn(async () => {
+            throw writeFailure;
+          }),
+        } as never,
+      ),
+    ).rejects.toThrow(writeFailure);
+    expect(writePhases.map(handoffStage)).toEqual([
+      'safe-write-and-handoff:protected-handoff-precondition',
+      'safe-write-and-handoff:protected-handoff-write',
     ]);
   });
 
@@ -2053,6 +2110,12 @@ describe('staging acceptance CLI', () => {
       'qna-and-isolation:member-list',
       'qna-and-isolation:cross-user',
       'safe-write-and-handoff',
+      'safe-write-and-handoff:direct-turn',
+      'safe-write-and-handoff:sse-terminal',
+      'safe-write-and-handoff:completed-output-validation',
+      'safe-write-and-handoff:finance-experience-readback',
+      'safe-write-and-handoff:protected-handoff-precondition',
+      'safe-write-and-handoff:protected-handoff-write',
     ]);
     expect(JSON.stringify(phaseOne)).not.toContain('finance-owner-session');
     expect(JSON.stringify(phaseOne)).not.toContain('Cobalt Lantern Receipt');
