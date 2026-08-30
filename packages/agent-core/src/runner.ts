@@ -2108,9 +2108,7 @@ const parseManagerPlan = (
   }
   return Object.freeze({
     delegations,
-    ...(directResponse === undefined
-      ? {}
-      : { directResponse }),
+    ...(directResponse === undefined ? {} : { directResponse }),
   });
 };
 
