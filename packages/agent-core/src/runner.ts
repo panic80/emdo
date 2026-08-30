@@ -86,7 +86,7 @@ export const MANAGER_PLAN_OUTPUT_SCHEMA = z.strictObject({
       }),
     )
     .max(128),
-  directResponse: z.json().nullable(),
+  directResponse: z.string().max(MAX_MESSAGE_LENGTH).nullable(),
 });
 
 export type JsonValue =
@@ -983,7 +983,7 @@ interface Delegation {
 
 interface ManagerPlan {
   readonly delegations: readonly Delegation[];
-  readonly directResponse?: JsonValue;
+  readonly directResponse?: string | null;
 }
 
 interface CollectedPausedExecution {
@@ -2041,6 +2041,15 @@ const parseManagerPlan = (
   ) {
     throw new Error('invalid-manager-plan');
   }
+  const directResponse = value.directResponse;
+  if (
+    directResponse !== undefined &&
+    directResponse !== null &&
+    (typeof directResponse !== 'string' ||
+      directResponse.length > MAX_MESSAGE_LENGTH)
+  ) {
+    throw new Error('invalid-manager-plan');
+  }
   const delegations = Object.freeze(
     value.delegations.map((rawDelegation) => {
       const item = asObject(rawDelegation);
@@ -2099,9 +2108,9 @@ const parseManagerPlan = (
   }
   return Object.freeze({
     delegations,
-    ...(value.directResponse === undefined
+    ...(directResponse === undefined
       ? {}
-      : { directResponse: snapshotJson(value.directResponse) }),
+      : { directResponse }),
   });
 };
 
