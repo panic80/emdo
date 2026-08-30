@@ -186,6 +186,16 @@ finance_staging_acceptance_failure_diagnostic() {
     'Staging acceptance failed at stage=finalize-member-authentication.' | \
     'Staging acceptance failed at stage=finalize-document-and-evidence.' | \
     'Staging acceptance failed at stage=finalize-guarded-delete.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:turn.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:initial-sse.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:approval-parsing.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:proposal-read.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:visual-proof.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:decision-receipt.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:resumed-run.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:resumed-run-failed.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:completion-validation.' | \
+    'Staging acceptance failed at stage=finalize-guarded-delete:resumed-run-completed.' | \
     'Staging acceptance failed at stage=finalize-purge-and-revocation.' | \
     'Staging acceptance failed at stage=member-invitation outcome=request-or-network-failed.' | \
     'Staging acceptance failed at stage=member-invitation outcome=http-401-authentication-required.' | \

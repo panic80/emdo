@@ -2232,13 +2232,16 @@ describe('staging acceptance CLI', () => {
           backupRestoreReceiptSha256: 'f'.repeat(64),
         }),
       }),
-    ).rejects.toThrow('Acceptance run terminal event is ambiguous');
-    expect(failedDeleteStages.at(-1)).toBe('finalize-guarded-delete');
+    ).rejects.toThrow('Finance guarded turn failed after approval');
+    expect(failedDeleteStages.at(-1)).toBe(
+      'finalize-guarded-delete:resumed-run-failed',
+    );
     expect(failedDeleteStages).not.toContain('finalize-purge-and-revocation');
     deleted = false;
     deleteRunFailed = false;
     requests.length = requestsBeforeGuardedDeleteFailure;
 
+    const phaseTwoStages: FinanceAcceptanceStage[] = [];
     const phaseTwo = await runStagingAcceptanceCommand({
       argv: [
         '--all-mvp-gates',
@@ -2250,6 +2253,9 @@ describe('staging acceptance CLI', () => {
       environment: financeEnvironment,
       fetch,
       now: () => OBSERVED_AT,
+      financeStageReporter: (stage) => {
+        phaseTwoStages.push(stage);
+      },
       financePhase2RootAttestationReader: async () => ({
         sourceSha: SOURCE_SHA,
         workflowRunId: WORKFLOW_RUN_ID,
@@ -2276,6 +2282,20 @@ describe('staging acceptance CLI', () => {
       },
       blockers: [],
     });
+    expect(phaseTwoStages).toEqual(
+      expect.arrayContaining([
+        'finalize-guarded-delete:turn',
+        'finalize-guarded-delete:initial-sse',
+        'finalize-guarded-delete:approval-parsing',
+        'finalize-guarded-delete:proposal-read',
+        'finalize-guarded-delete:visual-proof',
+        'finalize-guarded-delete:decision-receipt',
+        'finalize-guarded-delete:resumed-run',
+        'finalize-guarded-delete:completion-validation',
+        'finalize-guarded-delete:resumed-run-completed',
+        'finalize-purge-and-revocation',
+      ]),
+    );
     expect(
       requests.every(
         (request) => new URL(request.url).origin === 'http://127.0.0.1:3000',

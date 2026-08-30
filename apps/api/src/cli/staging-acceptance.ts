@@ -122,6 +122,16 @@ const FinanceStagingAcceptanceStageSchema = z.enum([
   'finalize-member-authentication',
   'finalize-document-and-evidence',
   'finalize-guarded-delete',
+  'finalize-guarded-delete:turn',
+  'finalize-guarded-delete:initial-sse',
+  'finalize-guarded-delete:approval-parsing',
+  'finalize-guarded-delete:proposal-read',
+  'finalize-guarded-delete:visual-proof',
+  'finalize-guarded-delete:decision-receipt',
+  'finalize-guarded-delete:resumed-run',
+  'finalize-guarded-delete:resumed-run-failed',
+  'finalize-guarded-delete:completion-validation',
+  'finalize-guarded-delete:resumed-run-completed',
   'finalize-purge-and-revocation',
 ]);
 
@@ -1739,6 +1749,28 @@ const approveAndResumeFinanceTurn = async (input: {
   return resumedEvents;
 };
 
+const finalizeGuardedDeleteProgress = (
+  progress: FinanceStagingAcceptanceProgress,
+): FinanceStagingAcceptanceStage => {
+  switch (progress) {
+    case 'guarded-review-commit:proposal-read':
+      return 'finalize-guarded-delete:proposal-read';
+    case 'guarded-review-commit:visual-proof':
+      return 'finalize-guarded-delete:visual-proof';
+    case 'guarded-review-commit:decision-receipt':
+      return 'finalize-guarded-delete:decision-receipt';
+    case 'guarded-review-commit:resumed-run':
+      return 'finalize-guarded-delete:resumed-run';
+    case 'guarded-review-commit:resumed-run-failed':
+      return 'finalize-guarded-delete:resumed-run-failed';
+    default:
+      return FinanceResumedRunFailureDiagnosticSchema.safeParse(progress)
+        .success
+        ? 'finalize-guarded-delete:resumed-run-failed'
+        : 'finalize-guarded-delete';
+  }
+};
+
 const financeDocumentDetailFor = async (input: {
   readonly documentId: string;
   readonly send: (path: string, init?: RequestInit) => Promise<Response>;
@@ -2938,6 +2970,7 @@ const runFinanceStagingFinalize = async (
   }
 
   input.financeStageReporter?.('finalize-guarded-delete');
+  input.financeStageReporter?.('finalize-guarded-delete:turn');
   const guardedDeleteTurn = await acceptFinanceTurn({
     send,
     mutationHeaders: ownerMutationHeaders,
@@ -2948,6 +2981,7 @@ const runFinanceStagingFinalize = async (
       documentId: attestation.documentId,
     }),
   });
+  input.financeStageReporter?.('finalize-guarded-delete:initial-sse');
   const guardedDeleteInitialEvents = await readFinanceTurnEvents({
     send,
     cookie: ownerCookie,
@@ -2955,6 +2989,7 @@ const runFinanceStagingFinalize = async (
     afterSequence: 0,
     expectedTerminalType: 'approval.required',
   });
+  input.financeStageReporter?.('finalize-guarded-delete:approval-parsing');
   const guardedDeleteApproval = financeApprovalFromTerminal({
     event: guardedDeleteInitialEvents.at(-1),
     runId: guardedDeleteTurn.runId,
@@ -2971,11 +3006,23 @@ const runFinanceStagingFinalize = async (
     initialEvents: guardedDeleteInitialEvents,
     proposalId: guardedDeleteApproval.proposalId,
     decisionIdempotencyKey: 'finance-staging-guarded-delete-decision-v1',
+    allowRunFailedTerminal: true,
+    ...(input.financeStageReporter === undefined
+      ? {}
+      : {
+          guardedReviewStageReporter: (progress) => {
+            input.financeStageReporter?.(
+              finalizeGuardedDeleteProgress(progress),
+            );
+          },
+        }),
   });
+  input.financeStageReporter?.('finalize-guarded-delete:completion-validation');
   financeCompletedFromTerminal({
     event: guardedDeleteResumedEvents.at(-1),
     runId: guardedDeleteTurn.runId,
   });
+  input.financeStageReporter?.('finalize-guarded-delete:resumed-run-completed');
 
   input.financeStageReporter?.('finalize-purge-and-revocation');
   const tombstone = await financeDocumentDetailFor({
