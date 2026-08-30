@@ -46,7 +46,7 @@ assert_cookie_header() {
   # This permits the two cookie pairs minted by the existing acceptance
   # harness, but excludes quotes, backslashes, control characters, and
   # newlines so a value cannot alter the curl configuration file.
-  [[ "$value" =~ ^[A-Za-z0-9_.-]+=[A-Za-z0-9_.=-]+(\;\ [A-Za-z0-9_.-]+=[A-Za-z0-9_.=-]+)*$ ]] ||
+  [[ "$value" =~ ^[A-Za-z0-9_.-]+=(%[0-9A-Fa-f]{2}|[A-Za-z0-9_.=-])+(\;\ [A-Za-z0-9_.-]+=(%[0-9A-Fa-f]{2}|[A-Za-z0-9_.=-])+)*$ ]] ||
     die "$label has an invalid session-material format"
 }
 

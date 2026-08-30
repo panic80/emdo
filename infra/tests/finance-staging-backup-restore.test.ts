@@ -167,6 +167,38 @@ ${action}`,
         spawnSync('test', ['-e', chownMarker], { encoding: 'utf8' }).status,
       ).not.toBe(0);
 
+      const encodedHandoffPayload = handoffPayload
+        .replace(
+          'owner_cookie=owner_session=owner-value',
+          'owner_cookie=owner_session=owner%3Dvalue%2Bsignature%2Fchunk',
+        )
+        .replace(
+          'member_cookie=member_session=member-value',
+          'member_cookie=member_session=member%3Dvalue%2Bsignature%2Fchunk',
+        );
+      await writeFile(handoff, encodedHandoffPayload, { mode: 0o600 });
+      const encodedClaim = run(
+        `10001 10001 600 1 ${Buffer.byteLength(encodedHandoffPayload)}`,
+        'claim_finance_restore_verifier_handoff "$1/123456789"',
+      );
+      expect(encodedClaim.status, encodedClaim.stderr).toBe(0);
+
+      for (const malformedEscape of ['%', '%3', '%GG']) {
+        const malformedHandoffPayload = handoffPayload.replace(
+          'owner_cookie=owner_session=owner-value',
+          `owner_cookie=owner_session=owner${malformedEscape}`,
+        );
+        await writeFile(handoff, malformedHandoffPayload, { mode: 0o600 });
+        const malformedClaim = run(
+          `10001 10001 600 1 ${Buffer.byteLength(malformedHandoffPayload)}`,
+          'claim_finance_restore_verifier_handoff "$1/123456789"',
+        );
+        expect(malformedClaim.status).not.toBe(0);
+        expect(malformedClaim.stderr).toContain(
+          'handoff owner session is invalid',
+        );
+      }
+
       await writeFile(handoff, handoffPayload, { mode: 0o600 });
       const cleared = run(
         `10001 10001 600 1 ${Buffer.byteLength(handoffPayload)}`,
@@ -176,6 +208,49 @@ ${action}`,
       expect(await readFile(handoff, 'utf8')).toBe('');
     } finally {
       await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it('allows percent-encoded cookie values in the restore verifier only when each escape is complete', async () => {
+    const source = await read(
+      'infra/scripts/finance-staging-restore-verify.sh',
+    );
+    const functionStart = source.indexOf('assert_cookie_header() {');
+    const functionEnd = source.indexOf(
+      '\ndeclare -A verifier_input=()',
+      functionStart,
+    );
+    expect(functionStart).toBeGreaterThan(-1);
+    expect(functionEnd).toBeGreaterThan(functionStart);
+    const cookieAssertion = source.slice(functionStart, functionEnd);
+    const run = (value: string) =>
+      spawnSync(
+        'bash',
+        [
+          '-c',
+          `set -Eeuo pipefail
+die() { printf '%s\\n' "$*" >&2; exit 97; }
+${cookieAssertion}
+assert_cookie_header "$1" FINANCE_TEST_COOKIE`,
+          '_',
+          value,
+        ],
+        { encoding: 'utf8' },
+      );
+
+    const accepted = run(
+      '__Secure-emdo.session_token=value%3Dpayload%2Bsignature%2Fchunk; emdo.csrf_token=csrf%3Dtoken%2Bpart%2Fvalue',
+    );
+    expect(accepted.status, accepted.stderr).toBe(0);
+
+    for (const malformedEscape of ['%', '%3', '%GG']) {
+      const rejected = run(
+        `__Secure-emdo.session_token=value${malformedEscape}`,
+      );
+      expect(rejected.status).toBe(97);
+      expect(rejected.stderr).toContain(
+        'FINANCE_TEST_COOKIE has an invalid session-material format',
+      );
     }
   });
 

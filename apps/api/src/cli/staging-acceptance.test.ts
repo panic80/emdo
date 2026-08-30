@@ -740,6 +740,66 @@ describe('staging acceptance CLI', () => {
     ]);
   });
 
+  it('writes percent-encoded Better Auth cookie values and rejects malformed escapes', async () => {
+    const handoff = {
+      documentId: FINANCE_DOCUMENT_ID,
+      evidenceId: FINANCE_EVIDENCE_ID,
+      expectedPlaintextSha256: 'f'.repeat(64),
+      memberCookie:
+        '__Secure-emdo.session_token=member%3Dpayload%2Bsignature%2Fchunk; emdo.csrf_token=member%3Dcsrf%2Btoken%2Fpart',
+      ownerCookie:
+        '__Secure-emdo.session_token=owner%3Dpayload%2Bsignature%2Fchunk; emdo.csrf_token=owner%3Dcsrf%2Btoken%2Fpart',
+      sourceSha: SOURCE_SHA,
+      workflowRunId: WORKFLOW_RUN_ID,
+    };
+    const writeFile = vi.fn(async () => undefined);
+    const operations = {
+      lstat: vi.fn(async () => ({
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        uid: 10001,
+        gid: 10001,
+        mode: 0o100600,
+        nlink: 1,
+        size: 0,
+      })),
+      open: vi.fn(async () => ({
+        writeFile,
+        sync: vi.fn(async () => undefined),
+        close: vi.fn(async () => undefined),
+      })),
+    };
+
+    await expect(
+      writeFinanceRestoreVerifierHandoff(
+        handoff,
+        '/content-safe-test-path',
+        undefined,
+        operations as never,
+      ),
+    ).resolves.toBeUndefined();
+    expect(writeFile).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'owner_cookie=__Secure-emdo.session_token=owner%3Dpayload%2Bsignature%2Fchunk; emdo.csrf_token=owner%3Dcsrf%2Btoken%2Fpart',
+      ),
+      'utf8',
+    );
+
+    for (const malformedEscape of ['%', '%3', '%GG']) {
+      await expect(
+        writeFinanceRestoreVerifierHandoff(
+          {
+            ...handoff,
+            memberCookie: `member_session=member${malformedEscape}`,
+          },
+          '/content-safe-test-path',
+          undefined,
+          { lstat: vi.fn(), open: vi.fn() } as never,
+        ),
+      ).rejects.toThrow();
+    }
+  });
+
   it('replays an exact Finance visual proof through its guarded turn, then finalizes only from a receipt-bound root handoff', async () => {
     const requests: Request[] = [];
     const handoffs: unknown[] = [];

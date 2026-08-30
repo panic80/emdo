@@ -997,9 +997,9 @@ assert_finance_restore_verifier_handoff_payload() {
     die 'Finance restore verifier handoff evidence ID is invalid'
   [[ "$expected_plaintext_sha256" =~ ^[0-9a-f]{64}$ ]] ||
     die 'Finance restore verifier handoff plaintext digest is invalid'
-  [[ "$owner_cookie" =~ ^[A-Za-z0-9_.-]+=[A-Za-z0-9_.=-]+(\;\ [A-Za-z0-9_.-]+=[A-Za-z0-9_.=-]+)*$ ]] ||
+  [[ "$owner_cookie" =~ ^[A-Za-z0-9_.-]+=(%[0-9A-Fa-f]{2}|[A-Za-z0-9_.=-])+(\;\ [A-Za-z0-9_.-]+=(%[0-9A-Fa-f]{2}|[A-Za-z0-9_.=-])+)*$ ]] ||
     die 'Finance restore verifier handoff owner session is invalid'
-  [[ "$member_cookie" =~ ^[A-Za-z0-9_.-]+=[A-Za-z0-9_.=-]+(\;\ [A-Za-z0-9_.-]+=[A-Za-z0-9_.=-]+)*$ ]] ||
+  [[ "$member_cookie" =~ ^[A-Za-z0-9_.-]+=(%[0-9A-Fa-f]{2}|[A-Za-z0-9_.=-])+(\;\ [A-Za-z0-9_.-]+=(%[0-9A-Fa-f]{2}|[A-Za-z0-9_.=-])+)*$ ]] ||
     die 'Finance restore verifier handoff member session is invalid'
   [[ "$owner_cookie" != "$member_cookie" ]] ||
     die 'Finance restore verifier handoff requires distinct sessions'

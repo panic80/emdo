@@ -376,7 +376,7 @@ const FINANCE_RESTORE_VERIFIER_HANDOFF_SCHEMA =
   'emdo-finance-staging-restore-verifier-input-v1';
 const FINANCE_FINALIZE_INPUT_SCHEMA = 'emdo-finance-staging-finalize-input-v1';
 const FINANCE_RESTORE_VERIFIER_COOKIE_PATTERN =
-  /^[A-Za-z0-9_.-]+=[A-Za-z0-9_.=-]+(?:; [A-Za-z0-9_.-]+=[A-Za-z0-9_.=-]+)*$/u;
+  /^[A-Za-z0-9_.-]+=(?:[A-Za-z0-9_.=-]|%[0-9A-Fa-f]{2})+(?:; [A-Za-z0-9_.-]+=(?:[A-Za-z0-9_.=-]|%[0-9A-Fa-f]{2})+)*$/u;
 
 const FinanceRestoreVerifierHandoffSchema = z.strictObject({
   documentId: z.uuid(),
