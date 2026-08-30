@@ -46,6 +46,17 @@ die() {
 `;
 
 describe('Finance staging backup and isolated restore drill', () => {
+  it('resolves verifier input through the shared governed handoff path', async () => {
+    const source = await read(
+      'infra/scripts/finance-staging-restore-verify.sh',
+    );
+
+    expect(source).toContain(
+      'input_file="$(finance_staging_restore_verifier_input_path "$state_dir")"',
+    );
+    expect(source).not.toContain('FINANCE_RESTORE_VERIFIER_INPUT_NAME');
+  });
+
   it('accepts only the pre-created acceptance handoff and clears it after one use', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'emdo-finance-handoff-'));
     const stateRoot = join(directory, 'staging');
