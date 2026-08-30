@@ -1010,6 +1010,8 @@ interface ModelDisclosureBinding {
   readonly grantVersion: string;
   readonly invocationContext: AgentInvocationContext;
   readonly invocationContextHash: string;
+  /** True only after the one-run disclosure audit has been committed. */
+  readonly modelDispatched: boolean;
 }
 
 type RuntimeProviderResult =
@@ -3286,7 +3288,11 @@ export class AgentOrchestrator {
           lastPlanFailure = 'failed-output-validation';
         }
       }
-      if (attempt > 0 || activeResolution.resolvedModel !== 'gpt-5.6-luna') {
+      if (
+        attempt > 0 ||
+        activeResolution.resolvedModel !== 'gpt-5.6-luna' ||
+        planning?.disclosure?.modelDispatched === true
+      ) {
         break;
       }
       let fallback: ModelResolution;
@@ -4224,13 +4230,29 @@ export class AgentOrchestrator {
         }),
       );
     } catch (error) {
-      if (dispatchDisclosureDenial === undefined) throw error;
+      if (dispatchDisclosureDenial !== undefined) {
+        return Object.freeze({
+          status: 'failed',
+          reason: 'disclosure-denied',
+          replaySafety: 'safe',
+          usage: ZERO_USAGE,
+          capabilityCalls: options.priorCapabilityCalls ?? 0,
+        });
+      }
+      if (!modelDispatchRecorded) throw error;
       return Object.freeze({
         status: 'failed',
-        reason: 'disclosure-denied',
-        replaySafety: 'safe',
+        reason: 'execution-failed',
+        replaySafety: 'unsafe',
         usage: ZERO_USAGE,
         capabilityCalls: options.priorCapabilityCalls ?? 0,
+        disclosure: Object.freeze({
+          grantId: authorization.grantId,
+          grantVersion: authorization.grantVersion,
+          invocationContext: authorization.invocationContext,
+          invocationContextHash: authorization.invocationContextHash,
+          modelDispatched: true,
+        }),
       });
     }
     if (dispatchDisclosureDenial !== undefined) {
@@ -4269,6 +4291,7 @@ export class AgentOrchestrator {
           grantVersion: authorization.grantVersion,
           invocationContext: authorization.invocationContext,
           invocationContextHash: authorization.invocationContextHash,
+          modelDispatched: modelDispatchRecorded,
         }),
       });
     }
@@ -4279,6 +4302,7 @@ export class AgentOrchestrator {
         grantVersion: authorization.grantVersion,
         invocationContext: authorization.invocationContext,
         invocationContextHash: authorization.invocationContextHash,
+        modelDispatched: modelDispatchRecorded,
       }),
     });
   }
@@ -4376,6 +4400,7 @@ export class AgentOrchestrator {
         terminalFailure !== undefined ||
         attempt > 0 ||
         !replaySafe ||
+        result?.disclosure?.modelDispatched === true ||
         activeResolution.resolvedModel !== 'gpt-5.6-luna'
       ) {
         break;
@@ -5108,7 +5133,11 @@ export class AgentOrchestrator {
         }
         lastFailure = 'failed-output-validation';
       }
-      if (attempt > 0 || activeResolution.resolvedModel !== 'gpt-5.6-luna') {
+      if (
+        attempt > 0 ||
+        activeResolution.resolvedModel !== 'gpt-5.6-luna' ||
+        synthesis?.disclosure?.modelDispatched === true
+      ) {
         break;
       }
       let fallback: ModelResolution;

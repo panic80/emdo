@@ -400,7 +400,7 @@ export function ConversationPanel({
       <AskComposer
         compact
         onSubmit={async (message) => {
-          await conversation.submit(message, specialist);
+          return (await conversation.submit(message, specialist)) !== undefined;
         }}
         onVoiceRequest={() => setVoiceOpen(true)}
       />

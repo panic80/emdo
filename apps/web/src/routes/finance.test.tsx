@@ -129,4 +129,21 @@ describe('FinanceRoute helpers', () => {
     expect(source).toContain('description: parsed.data.description');
     expect(source).toContain('{item.label}');
   });
+
+  it('renders the shared EMDO conversation panel for Finance requests', async () => {
+    const source = await readFile(
+      resolve(
+        process.cwd(),
+        process.cwd().endsWith('/apps/web')
+          ? 'src/routes/finance.tsx'
+          : 'apps/web/src/routes/finance.tsx',
+      ),
+      'utf8',
+    );
+
+    expect(source).toContain('ConversationPanel');
+    expect(source).toContain('useConversation');
+    expect(source).toContain('<ConversationPanel specialist="finance" />');
+    expect(source).not.toContain('<AskComposer');
+  });
 });

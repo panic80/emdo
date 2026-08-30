@@ -32,6 +32,11 @@ on:
         required: true
         default: false
         type: boolean
+      finance_live_chat:
+        description: Explicitly enable real OpenAI Manager and Finance chat in the isolated Finance staging run
+        required: true
+        default: false
+        type: boolean
       live_test_window:
         description: Keep a successful staging deployment available until its server-enforced TTL expires
         required: true
@@ -182,13 +187,41 @@ jobs:
           VPS_USER: ${{ secrets.STAGING_SSH_USER }}
           INITIAL_STAGING_BOOTSTRAP: ${{ inputs.initial_deployment }}
           EMDO_OPENAI_FINANCE_API_KEY: ${{ secrets.EMDO_OPENAI_FINANCE_API_KEY }}
+          FINANCE_LIVE_CHAT: ${{ inputs.finance_live_chat }}
+          EMDO_OPENAI_AGENT_API_KEY: ${{ secrets.EMDO_OPENAI_AGENT_API_KEY }}
+          EMDO_OPENAI_AGENT_PRICING_VERSION: ${{ vars.EMDO_OPENAI_AGENT_PRICING_VERSION }}
+          EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: ${{ vars.EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS }}
+          EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: ${{ vars.EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS }}
+          EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: ${{ vars.EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS }}
+          EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: ${{ vars.EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS }}
         run: |
           [[ "$INITIAL_STAGING_BOOTSTRAP" == true || "$INITIAL_STAGING_BOOTSTRAP" == false ]]
+          [[ "$FINANCE_LIVE_CHAT" == true || "$FINANCE_LIVE_CHAT" == false ]]
           [[ ${#EMDO_OPENAI_FINANCE_API_KEY} -ge 16 && ${#EMDO_OPENAI_FINANCE_API_KEY} -le 512 ]]
-          # The Finance-only key travels solely over SSH stdin to the fixed
-          # root operator. It never becomes an SSH argument or remote env var.
-          printf '%s\n' "$EMDO_OPENAI_FINANCE_API_KEY" | ssh -T "$VPS_USER@$VPS_HOST" \
-            "sudo /usr/local/sbin/emdo-staging-operator deploy '${{ github.run_id }}' '$INITIAL_STAGING_BOOTSTRAP' '${{ inputs.ttl_minutes }}' true"
+          if [[ "$FINANCE_LIVE_CHAT" == true ]]; then
+            [[ ${#EMDO_OPENAI_AGENT_API_KEY} -ge 20 && ${#EMDO_OPENAI_AGENT_API_KEY} -le 512 && "$EMDO_OPENAI_AGENT_API_KEY" =~ ^sk-[A-Za-z0-9_-]+$ ]]
+            [[ ${#EMDO_OPENAI_AGENT_PRICING_VERSION} -ge 1 && ${#EMDO_OPENAI_AGENT_PRICING_VERSION} -le 128 && "$EMDO_OPENAI_AGENT_PRICING_VERSION" =~ ^[A-Za-z0-9._:-]+$ ]]
+            for rate in \
+              "$EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS" \
+              "$EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS" \
+              "$EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS" \
+              "$EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS"; do
+              [[ "$rate" =~ ^[1-9][0-9]{0,15}$ ]]
+            done
+            printf '%s\n' \
+              "$EMDO_OPENAI_FINANCE_API_KEY" \
+              "$EMDO_OPENAI_AGENT_API_KEY" \
+              "$EMDO_OPENAI_AGENT_PRICING_VERSION" \
+              "$EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS" \
+              "$EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS" \
+              "$EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS" \
+              "$EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS" | \
+              ssh -T "$VPS_USER@$VPS_HOST" \
+                "sudo /usr/local/sbin/emdo-staging-operator deploy '${{ github.run_id }}' '$INITIAL_STAGING_BOOTSTRAP' '${{ inputs.ttl_minutes }}' true true"
+          else
+            printf '%s\n' "$EMDO_OPENAI_FINANCE_API_KEY" | ssh -T "$VPS_USER@$VPS_HOST" \
+              "sudo /usr/local/sbin/emdo-staging-operator deploy '${{ github.run_id }}' '$INITIAL_STAGING_BOOTSTRAP' '${{ inputs.ttl_minutes }}' true false"
+          fi
       - name: Run staging health acceptance
         env:
           EMDO_ACCEPTANCE_ENVIRONMENT: staging

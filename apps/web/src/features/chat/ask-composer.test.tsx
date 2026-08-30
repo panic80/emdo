@@ -32,4 +32,19 @@ describe('AskComposer', () => {
       screen.getByRole('button', { name: 'Start push-to-talk' }),
     ).toHaveAccessibleName();
   });
+
+  it('retains the request when the shared conversation rejects it', async () => {
+    const onSubmit = vi.fn(async () => false);
+    const user = userEvent.setup();
+    render(<AskComposer onSubmit={onSubmit} />);
+
+    const message = screen.getByRole('textbox', { name: 'Ask EMDO' });
+    await user.type(message, 'Show my reviewed total');
+    await user.click(screen.getByRole('button', { name: 'Ask EMDO' }));
+
+    expect(onSubmit).toHaveBeenCalledWith('Show my reviewed total');
+    expect((message as HTMLTextAreaElement).value).toBe(
+      'Show my reviewed total',
+    );
+  });
 });
