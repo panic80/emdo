@@ -147,6 +147,63 @@ describe('FinanceImportPanel', () => {
     expect(api.listDestinations).toHaveBeenCalledOnce();
   });
 
+  it('clears a conflicting debit or credit column before previewing a CSV', async () => {
+    const api = createApi();
+    const user = userEvent.setup();
+    render(
+      <FinanceImportPanel
+        api={api}
+        online
+        csrfToken="csrf-current"
+        onCommitted={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Import statement' }));
+    await user.selectOptions(
+      await screen.findByLabelText('Import account'),
+      'account-a',
+    );
+    await user.upload(
+      screen.getByLabelText('Statement file'),
+      file(
+        'statement.csv',
+        'Date,Payment Type,Total Price\n2026-08-01,Card,10.00',
+      ),
+    );
+    await user.selectOptions(
+      screen.getByLabelText('Posted date column'),
+      'Date',
+    );
+    await user.selectOptions(
+      screen.getByLabelText('Description column'),
+      'Payment Type',
+    );
+    await user.selectOptions(
+      screen.getByLabelText('Debit column'),
+      'Total Price',
+    );
+    await user.selectOptions(
+      screen.getByLabelText('Credit column'),
+      'Total Price',
+    );
+
+    expect(
+      (screen.getByLabelText('Debit column') as HTMLSelectElement).value,
+    ).toBe('');
+    expect(
+      (screen.getByLabelText('Credit column') as HTMLSelectElement).value,
+    ).toBe('Total Price');
+
+    await user.click(screen.getByRole('button', { name: 'Preview import' }));
+    expect(
+      screen.getByText(
+        'Choose a date, description, and one signed amount or both debit and credit columns.',
+      ),
+    ).toBeVisible();
+    expect(api.preview).not.toHaveBeenCalled();
+  });
+
   it('keeps a CSV statement out of the DOM, previews bounded diagnostics, and commits after review', async () => {
     const api = createApi();
     const onRequestCommit = vi.fn(async () => true);

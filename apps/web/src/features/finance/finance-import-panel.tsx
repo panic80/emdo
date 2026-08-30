@@ -603,6 +603,9 @@ export function FinanceImportPanel({
                     ...current,
                     debit: value,
                     ...(value ? { amount: '' } : {}),
+                    ...(value && value === current.credit
+                      ? { credit: '' }
+                      : {}),
                   }));
                 }}
               />
@@ -618,6 +621,7 @@ export function FinanceImportPanel({
                     ...current,
                     credit: value,
                     ...(value ? { amount: '' } : {}),
+                    ...(value && value === current.debit ? { debit: '' } : {}),
                   }));
                 }}
               />
