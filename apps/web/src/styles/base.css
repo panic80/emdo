@@ -73,7 +73,7 @@ p {
   padding: 10px 14px;
   border-radius: 6px;
   background: var(--color-ink);
-  color: white;
+  color: var(--color-on-ink);
 }
 
 .button {
@@ -102,16 +102,16 @@ p {
 
 .button--primary {
   background: var(--color-ink);
-  color: white;
+  color: var(--color-on-ink);
 }
 
 .button--primary:hover:not(:disabled) {
-  background: #0b264e;
+  background: var(--color-ink-hover);
 }
 
 .button--secondary {
   border-color: var(--color-ink);
-  background: white;
+  background: var(--color-surface);
   color: var(--color-ink);
 }
 
@@ -125,7 +125,7 @@ p {
 
 .button--danger {
   border-color: var(--color-danger);
-  background: white;
+  background: var(--color-surface);
   color: var(--color-danger);
 }
 
