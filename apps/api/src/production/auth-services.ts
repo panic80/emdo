@@ -129,10 +129,24 @@ const OptionalProviderEnvironmentSchema = z.strictObject({
   transactionalEmailProvider: z.literal('resend'),
 });
 
+const FinanceSyntheticOnboardingEnvironmentSchema = z.strictObject({
+  allowLoopbackApiIngress: z.literal('true'),
+  environment: z.literal('staging'),
+  financeSyntheticStaging: z.literal('true'),
+  googleClientId: z.undefined(),
+  googleClientSecret: z.undefined(),
+  onboardingDatabaseUrl: databaseUrlSchema('emdo_onboarding_login'),
+  resendApiKey: z.undefined(),
+  resendFromEmail: z.undefined(),
+  syntheticDataOnly: z.literal('true'),
+  transactionalEmailProvider: z.undefined(),
+});
+
 interface ParsedEnvironment extends z.output<typeof CoreEnvironmentSchema> {
   readonly optionalProviders?: z.output<
     typeof OptionalProviderEnvironmentSchema
   >;
+  readonly financeSyntheticOnboardingDatabaseUrl?: string;
   readonly sessionSecretBytes: Uint8Array;
 }
 
@@ -157,11 +171,30 @@ const parseEnvironment = (
     resendFromEmail: environment.EMDO_RESEND_FROM_EMAIL,
     transactionalEmailProvider: environment.EMDO_TRANSACTIONAL_EMAIL_PROVIDER,
   });
+  const financeSyntheticOnboarding =
+    FinanceSyntheticOnboardingEnvironmentSchema.safeParse({
+      allowLoopbackApiIngress: environment.EMDO_ALLOW_LOOPBACK_API_INGRESS,
+      environment: environment.EMDO_ENVIRONMENT,
+      financeSyntheticStaging: environment.EMDO_FINANCE_SYNTHETIC_STAGING,
+      googleClientId: environment.EMDO_GOOGLE_IDENTITY_CLIENT_ID,
+      googleClientSecret: environment.EMDO_GOOGLE_IDENTITY_CLIENT_SECRET,
+      onboardingDatabaseUrl: environment.EMDO_ONBOARDING_DATABASE_URL,
+      resendApiKey: environment.EMDO_RESEND_AUTH_API_KEY,
+      resendFromEmail: environment.EMDO_RESEND_FROM_EMAIL,
+      syntheticDataOnly: environment.EMDO_SYNTHETIC_DATA_ONLY,
+      transactionalEmailProvider: environment.EMDO_TRANSACTIONAL_EMAIL_PROVIDER,
+    });
   const sessionSecretBytes = Buffer.from(core.data.sessionSecret, 'base64url');
   return Object.freeze({
     ...core.data,
     ...(optionalProviders.success
       ? { optionalProviders: optionalProviders.data }
+      : {}),
+    ...(financeSyntheticOnboarding.success && !optionalProviders.success
+      ? {
+          financeSyntheticOnboardingDatabaseUrl:
+            financeSyntheticOnboarding.data.onboardingDatabaseUrl,
+        }
       : {}),
     sessionSecretBytes,
   });
@@ -324,18 +357,23 @@ export const createProductionAuthenticationServiceBinding = async (
     let transport: ReadyTransactionalEmailTransport | undefined;
     let invitationReadiness: (() => Promise<boolean>) | undefined;
     let optionalDatabase: DatabaseRuntime | undefined;
-    if (parsed.optionalProviders !== undefined) {
+    const onboardingDatabaseUrl =
+      parsed.optionalProviders?.onboardingDatabaseUrl ??
+      parsed.financeSyntheticOnboardingDatabaseUrl;
+    if (onboardingDatabaseUrl !== undefined) {
       try {
-        transport = dependencies.createTransactionalEmailTransport({
-          apiKey: parsed.optionalProviders.resendApiKey,
-          fromEmail: parsed.optionalProviders.resendFromEmail,
-        });
-        emailCallbacks = dependencies.createEmailCallbacks(transport, {
-          applicationOrigin: parsed.publicOrigin,
-        });
+        if (parsed.optionalProviders !== undefined) {
+          transport = dependencies.createTransactionalEmailTransport({
+            apiKey: parsed.optionalProviders.resendApiKey,
+            fromEmail: parsed.optionalProviders.resendFromEmail,
+          });
+          emailCallbacks = dependencies.createEmailCallbacks(transport, {
+            applicationOrigin: parsed.publicOrigin,
+          });
+        }
         optionalDatabase = dependencies.createDatabaseClient({
           applicationName: 'emdo-api-onboarding',
-          connectionString: parsed.optionalProviders.onboardingDatabaseUrl,
+          connectionString: onboardingDatabaseUrl,
           max: 2,
         });
         const readyInvitationRedemptions =
@@ -393,8 +431,11 @@ export const createProductionAuthenticationServiceBinding = async (
       organizationClaimBridge.checkReady.bind(organizationClaimBridge),
       scopeResolver.checkReady.bind(scopeResolver),
     ];
-    if (transport !== undefined && invitationReadiness !== undefined) {
-      probes.push(invitationReadiness, transport.checkReady.bind(transport));
+    if (invitationReadiness !== undefined) {
+      probes.push(invitationReadiness);
+    }
+    if (transport !== undefined) {
+      probes.push(transport.checkReady.bind(transport));
     }
     const check = coalesceProbe(async () => {
       const results = await Promise.all(

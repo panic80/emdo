@@ -289,18 +289,36 @@ const normalizeKnownEvent = (
         dependsOn: stringArray(metadata, 'dependsOn'),
       };
     case 'specialist.outcome': {
-      exactKeys(metadata, ['delegationId', 'agentId', 'status'], ['errorCode']);
+      exactKeys(
+        metadata,
+        ['delegationId', 'agentId', 'status'],
+        ['errorCode', 'reasonCode'],
+      );
       const safeErrorCode = optionalString(metadata, 'errorCode');
+      const reasonCode = optionalString(metadata, 'reasonCode');
+      const status = enumValue(metadata, 'status', [
+        'completed',
+        'failed',
+        'blocked',
+        'unavailable',
+      ]);
+      if (
+        (status === 'failed' &&
+          (safeErrorCode === undefined || reasonCode !== undefined)) ||
+        (status === 'unavailable' &&
+          (reasonCode === undefined || safeErrorCode !== undefined)) ||
+        ((status === 'completed' || status === 'blocked') &&
+          (safeErrorCode !== undefined || reasonCode !== undefined))
+      ) {
+        return fail();
+      }
       return {
         type: 'specialist-outcome',
         delegationId: stringValue(metadata, 'delegationId'),
         agentId: stringValue(metadata, 'agentId'),
-        status: enumValue(metadata, 'status', [
-          'completed',
-          'failed',
-          'blocked',
-        ]),
+        status,
         ...(safeErrorCode === undefined ? {} : { safeErrorCode }),
+        ...(reasonCode === undefined ? {} : { reasonCode }),
       };
     }
     case 'capability.decided': {

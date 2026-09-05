@@ -207,11 +207,11 @@ const CI_RECEIPT_DEFINITIONS = Object.freeze({
   'postgres-integration': freezeDefinition({
     runner: 'ci',
     proof: {
-      postgresqlMajor: 17,
+      postgresqlMajor: 18,
       pgvectorExtension: 'passed',
       isolatedDatabases: true,
       sequentialSuites: 'passed',
-      suiteCount: 16,
+      suiteCount: 17,
       attackCaseCount: POSITIVE_INTEGER,
     },
   }),

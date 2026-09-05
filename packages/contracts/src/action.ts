@@ -8,12 +8,17 @@ import {
   OpaqueReferenceSchema,
   EffectiveAuthorizationScopeFingerprintSchema,
   SchemaVersionSchema,
+  SemanticVersionSchema,
   Sha256Schema,
   UuidSchema,
   deepFreeze,
   type DeepReadonly,
 } from './capability.js';
 import { DataDisclosureGrantSchema } from './disclosure.js';
+import {
+  isApprovedFinanceGuardedCapabilityOperation,
+  isFinanceDocumentGuardedOperation,
+} from './guarded-action.js';
 
 const ProposalTargetSchema = z.strictObject({
   kind: IdentifierSchema,
@@ -86,6 +91,39 @@ export type ActionProposalApprovalDisplay = DeepReadonly<
   z.input<typeof ActionProposalApprovalDisplayBaseSchema>
 >;
 
+/**
+ * Present only for an EMDO-owned local action that was dynamically determined
+ * to need visual approval. The execution binding itself stays server-owned;
+ * this immutable digest lets every later boundary detect a substituted actor,
+ * session, private space, grant, scope, or canonical action.
+ */
+const GuardedActionBindingSchema = z
+  .strictObject({
+    capabilityVersion: SemanticVersionSchema,
+    operation: IdentifierSchema,
+    actionHash: Sha256Schema,
+    executionBindingHash: Sha256Schema,
+    /** Present only when execution is bound to server-materialized target state. */
+    targetBindingHash: Sha256Schema.optional(),
+  })
+  .superRefine((value, context) => {
+    if (
+      isFinanceDocumentGuardedOperation(value.operation) !==
+      (value.targetBindingHash !== undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['targetBindingHash'],
+        message:
+          'Finance document guarded actions require an exact target binding',
+      });
+    }
+  });
+
+export type GuardedActionBinding = DeepReadonly<
+  z.input<typeof GuardedActionBindingSchema>
+>;
+
 const ActionProposalBaseSchema = z
   .strictObject({
     schemaVersion: SchemaVersionSchema,
@@ -103,6 +141,7 @@ const ActionProposalBaseSchema = z
     providerPreconditions: z.array(ProviderPreconditionSchema).max(64),
     providerAuthorityBindingHash: Sha256Schema,
     providerSdkCallId: OpaqueReferenceSchema,
+    guardedAction: GuardedActionBindingSchema.optional(),
     payloadHash: Sha256Schema,
     approvalHash: Sha256Schema,
     disclosureGrant: DataDisclosureGrantSchema,
@@ -153,6 +192,32 @@ const ActionProposalBaseSchema = z
         code: 'custom',
         path: ['disclosureGrant', 'expiresAt'],
         message: 'Disclosure grant must remain valid through proposal expiry',
+      });
+    }
+    if (
+      value.guardedAction !== undefined &&
+      (value.guardedAction.actionHash !== value.payloadHash ||
+        value.guardedAction.executionBindingHash !==
+          value.providerAuthorityBindingHash)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['guardedAction'],
+        message:
+          'Guarded action binding must match the canonical payload and execution binding',
+      });
+    }
+    if (
+      value.guardedAction !== undefined &&
+      !isApprovedFinanceGuardedCapabilityOperation(
+        value.capabilityId,
+        value.guardedAction.operation,
+      )
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['guardedAction', 'operation'],
+        message: 'Guarded Finance operation must match its approved capability',
       });
     }
   });

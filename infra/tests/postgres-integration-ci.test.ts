@@ -8,19 +8,22 @@ const readRepositoryFile = (path: string) =>
   readFile(resolve(repositoryRoot, path), 'utf8');
 
 describe('live PostgreSQL CI evidence boundary', () => {
-  it('runs the live suites against a digest-pinned PostgreSQL 17 pgvector service', async () => {
+  it('runs the live suites against a digest-pinned PostgreSQL 18 pgvector service', async () => {
     const workflow = await readRepositoryFile('.github/workflows/ci.yml');
 
     expect(workflow).toContain('postgres-integration:');
     expect(workflow).toContain(
-      'pgvector/pgvector@sha256:7ae6051efd0e60444282c27c7e141af07f322ce033300e727a49c3dd11075e38',
+      'pgvector/pgvector@sha256:2ba9ca5f2e7daa0f0e7723cba1ee9167bab54efd3640516a44ac1a928dd67e7a',
     );
     expect(workflow).toContain('--health-cmd pg_isready');
     expect(workflow).toContain('POSTGRES_INTEGRATION_ADMIN_URL:');
+    expect(workflow).toContain(
+      'Run isolated PostgreSQL 18 integration suites sequentially',
+    );
     expect(workflow).toContain('pnpm test:postgres-integration');
     expect(workflow).toContain('postgres-integration-non-release-raw-probe');
     expect(workflow).toContain('retention-days: 14');
-    expect(workflow).not.toMatch(/pgvector\/pgvector:(?:pg17|latest)\b/u);
+    expect(workflow).not.toMatch(/pgvector\/pgvector:(?:pg17|pg18|latest)\b/u);
   });
 
   it('keeps every suite explicit, sequential, and isolated', async () => {
@@ -50,6 +53,8 @@ describe('live PostgreSQL CI evidence boundary', () => {
       'audio-request-coordinator',
       'household-administration',
       'disclosure-authority',
+      'finance-import-receipts',
+      'finance-document-knowledge',
       'finance-import-retention-runner',
       'google-oauth-authority',
       'manager-run-event-replay',
@@ -57,8 +62,10 @@ describe('live PostgreSQL CI evidence boundary', () => {
       'proposal-lifecycle',
       'sync-conflict-runtime',
     ];
-    for (const suite of expectedSuites)
-      expect(runner).toContain(`id: '${suite}'`);
+    expect(expectedSuites).toHaveLength(17);
+    expect(
+      [...runner.matchAll(/\bid: '([^']+)'/gu)].map(([, id]) => id),
+    ).toEqual(expectedSuites);
     expect(runner).toContain(
       "file: 'packages/db/src/sync/sync-conflict-runtime.integration.test.ts'",
     );

@@ -25,8 +25,8 @@ export interface ProductionAgentPersistenceInput {
   readonly pool: EmdoDatabaseClient['scopedPool'];
   /** Complete request-scoped runtime, supplied only after every agent boundary exists. */
   readonly runtimeFactory: ProductionAgentRuntimeFactory;
-  /** Existing atomic visual-proof consume and decision authority. */
-  readonly visualDecisions: VisualProposalDecisionGateway;
+  /** Optional atomic visual-proof authority; ordinary EMDO turns do not require it. */
+  readonly visualDecisions?: VisualProposalDecisionGateway;
 }
 
 export interface ProviderFreeAgentPersistenceInput {
@@ -151,34 +151,45 @@ export const createProductionAgentPersistence = (
     typeof input?.pool?.connect !== 'function' ||
     typeof input.runtimeFactory?.create !== 'function' ||
     typeof input.runtimeFactory.check !== 'function' ||
-    typeof input.visualDecisions?.decideWithVisualProof !== 'function'
+    (input.visualDecisions !== undefined &&
+      typeof input.visualDecisions.decideWithVisualProof !== 'function')
   ) {
     throw new Error('api-production-agent-persistence-dependency-invalid');
   }
 
-  const approvalResume = new PostgresApprovalResumeBoundary({
-    pool: input.pool,
-    decideAndLink: (decisionInput) =>
-      input.visualDecisions.decideWithVisualProof({
-        ...decisionInput,
-        principal: AuthenticatedPrincipalSchema.parse(decisionInput.principal),
-      }),
-  });
+  const approvalResume =
+    input.visualDecisions === undefined
+      ? undefined
+      : new PostgresApprovalResumeBoundary({
+          pool: input.pool,
+          decideAndLink: (decisionInput) =>
+            input.visualDecisions!.decideWithVisualProof({
+              ...decisionInput,
+              principal: AuthenticatedPrincipalSchema.parse(
+                decisionInput.principal,
+              ),
+            }),
+        });
 
   const composition = createProductionAgentServiceBindingsFromDependencies({
     turns: new PostgresManagerTurnStore(input.pool),
     runEvents: new PostgresRunEventSource(input.pool),
     runtimeFactory: input.runtimeFactory,
-    approvalResume,
+    ...(approvalResume === undefined ? {} : { approvalResume }),
   });
-  if (composition.bindings.proposals === undefined) {
+  if (
+    input.visualDecisions !== undefined &&
+    composition.bindings.proposals === undefined
+  ) {
     throw new Error('api-production-agent-persistence-dependency-invalid');
   }
   return Object.freeze({
     bindings: Object.freeze({
       managerTurns: composition.bindings.managerTurns,
       runEvents: composition.bindings.runEvents,
-      proposals: composition.bindings.proposals,
+      ...(composition.bindings.proposals === undefined
+        ? {}
+        : { proposals: composition.bindings.proposals }),
     }),
   });
 };

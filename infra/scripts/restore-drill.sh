@@ -9,6 +9,7 @@ backup_file="${1:-}"
 restore_id="${RESTORE_RUN_ID:-}"
 digest_lock="${RESTORE_IMAGE_LOCK_FILE:-}"
 identity_file="${BACKUP_AGE_IDENTITY_FILE:-}"
+restore_finance_document_store_dir="${RESTORE_FINANCE_DOCUMENT_STORE_DIR:-}"
 
 [[ "${RESTORE_TARGET_ENVIRONMENT:-}" == staging ]] ||
   die 'RESTORE_TARGET_ENVIRONMENT must be exactly staging'
@@ -54,6 +55,8 @@ require_command docker
 require_command age
 require_command sha256sum
 require_command tar
+require_command head
+require_command stat
 assert_isolated_project_absent "$COMPOSE_PROJECT_NAME" "$DEPLOYMENT_NAMESPACE"
 
 backup_dir="$(cd -- "$(dirname -- "$backup_file")" && pwd -P)"
@@ -80,6 +83,7 @@ expected_completion="$(printf '%s\n' 'schema=emdo-logical-backup-v1' "bundle=$ba
 
 work_dir="$(mktemp -d "/tmp/emdo-restore-$restore_id.XXXXXX")"
 bundle_file="$work_dir/bundle.tar"
+finance_restore_directory=''
 restore_compose() {
   docker compose \
     --project-name "$COMPOSE_PROJECT_NAME" \
@@ -93,6 +97,11 @@ cleanup_restore() {
   if [[ "${RESTORE_KEEP:-false}" != true ]]; then
     restore_compose down --volumes --remove-orphans --timeout 30 || true
   fi
+  if [[ "${RESTORE_KEEP:-false}" != true && -n "$finance_restore_directory" &&
+    -d "$finance_restore_directory" && ! -L "$finance_restore_directory" ]]; then
+    find "$finance_restore_directory" -xdev -type f -delete 2>/dev/null || true
+    rmdir "$finance_restore_directory" 2>/dev/null || true
+  fi
   find "$work_dir" -xdev -type f -delete 2>/dev/null || true
   rmdir "$work_dir" 2>/dev/null || true
   exit "$exit_code"
@@ -102,11 +111,37 @@ trap cleanup_restore EXIT
 age --decrypt --identity "$identity_file" \
   --output "$bundle_file" "$backup_file"
 
+extract_bundle_member_limited() {
+  local entry="$1"
+  local destination="$2"
+  local maximum_bytes="$3"
+  local tar_status head_status actual_bytes
+  local -a pipeline_status
+
+  [[ ! -e "$destination" && ! -L "$destination" ]] ||
+    die "backup extraction destination already exists: $entry"
+  set +e
+  tar --extract --to-stdout --file "$bundle_file" -- "$entry" |
+    head --bytes="$((maximum_bytes + 1))" > "$destination"
+  pipeline_status=("${PIPESTATUS[@]}")
+  set -e
+  tar_status="${pipeline_status[0]}"
+  head_status="${pipeline_status[1]}"
+  actual_bytes="$(stat -c '%s' "$destination")"
+  (( actual_bytes <= maximum_bytes )) ||
+    die "backup archive entry exceeds its governed byte limit: $entry"
+  [[ "$tar_status" == 0 && "$head_status" == 0 ]] ||
+    die "could not safely extract backup archive entry: $entry"
+  require_regular_file "$destination"
+  [[ -s "$destination" ]] || die "backup archive entry is empty: $entry"
+  chmod 0600 "$destination"
+}
+
 declare -A archive_entries=()
 archive_entry_count=0
 while IFS= read -r entry; do
   case "$entry" in
-    metadata.txt | emdo_app.dump.age | emdo_powersync.dump.age) ;;
+    metadata.txt | emdo_app.dump.age | emdo_powersync.dump.age | finance-documents.manifest | finance-documents.tar) ;;
     *) die "backup contains unexpected archive entry: $entry" ;;
   esac
   [[ -z "${archive_entries[$entry]+present}" ]] ||
@@ -114,18 +149,33 @@ while IFS= read -r entry; do
   archive_entries[$entry]=present
   ((archive_entry_count += 1))
 done < <(tar --list --file "$bundle_file")
-[[ "$archive_entry_count" == 3 ]] ||
-  die 'backup does not contain the exact required archive entries'
+
+# Pre-Finance bundles have exactly the original three entries. Finance-enabled
+# bundles add the versioned manifest/archive pair atomically; one without the
+# other is never a valid recovery input.
+case "$archive_entry_count" in
+  3)
+    [[ -z "${archive_entries[finance-documents.manifest]+present}" &&
+      -z "${archive_entries[finance-documents.tar]+present}" ]] ||
+      die 'backup finance document entries are incomplete'
+    finance_backup_present=false
+    ;;
+  5)
+    [[ -n "${archive_entries[finance-documents.manifest]+present}" &&
+      -n "${archive_entries[finance-documents.tar]+present}" ]] ||
+      die 'backup finance document entries are incomplete'
+    finance_backup_present=true
+    ;;
+  *)
+    die 'backup does not contain an accepted legacy or finance-enabled entry set'
+    ;;
+esac
 for entry in metadata.txt emdo_app.dump.age emdo_powersync.dump.age; do
   [[ -n "${archive_entries[$entry]+present}" ]] ||
     die "backup is missing required archive entry: $entry"
   # Stream each allowlisted member into a fixed regular destination. Never let
   # tar materialize archive-controlled file types, links, modes, or paths.
-  tar --extract --to-stdout --file "$bundle_file" -- "$entry" > "$work_dir/$entry"
-  require_regular_file "$work_dir/$entry"
-  [[ -s "$work_dir/$entry" ]] ||
-    die "backup archive entry is empty: $entry"
-  chmod 0600 "$work_dir/$entry"
+  extract_bundle_member_limited "$entry" "$work_dir/$entry" 107374182400
 done
 
 declare -A metadata_values=()
@@ -153,6 +203,49 @@ done < "$work_dir/metadata.txt"
   die 'backup metadata source SHA is invalid'
 [[ "${metadata_values[postgres_image]:-}" == "$IMAGE_LOCK_POSTGRES_IMAGE" ]] ||
   die 'backup PostgreSQL image is incompatible with the restore image lock'
+
+finance_restore_object_count=0
+finance_restore_ciphertext_bytes=0
+if [[ "$finance_backup_present" == true ]]; then
+  finance_manifest="$work_dir/finance-documents.manifest"
+  finance_archive="$work_dir/finance-documents.tar"
+  finance_restore_directory="$restore_finance_document_store_dir"
+  finance_restore_parent="/var/lib/emdo/restore/$restore_id"
+  finance_restore_expected="$finance_restore_parent/finance-documents"
+  readonly finance_max_manifest_bytes=$((2 * 1024 * 1024))
+  readonly finance_max_archive_bytes=$((50 * 1024 * 1024 * 1024 + 10000 * 1024 + 10240))
+  [[ -n "$finance_restore_directory" ]] ||
+    die 'RESTORE_FINANCE_DOCUMENT_STORE_DIR is required for finance-enabled backups'
+  assert_absolute_scoped_directory \
+    "$finance_restore_directory" RESTORE_FINANCE_DOCUMENT_STORE_DIR
+  [[ "$finance_restore_directory" == "$finance_restore_expected" ]] ||
+    die 'RESTORE_FINANCE_DOCUMENT_STORE_DIR must be the exact run-scoped finance restore directory'
+  require_directory "$finance_restore_parent"
+  assert_directory_within \
+    "$finance_restore_parent" /var/lib/emdo/restore RESTORE_FINANCE_DOCUMENT_RESTORE_PARENT
+  assert_governed_parent_chain "$finance_restore_parent" /var/lib/emdo/restore
+  assert_root_owned_nonwritable_directory "$finance_restore_parent"
+  [[ "$(stat -c '%a' "$finance_restore_parent")" == 700 ]] ||
+    die 'finance document restore parent must have mode 0700'
+  [[ ! -e "$finance_restore_directory" && ! -L "$finance_restore_directory" ]] ||
+    die 'finance document restore destination must be absent and run-scoped'
+  extract_bundle_member_limited \
+    finance-documents.manifest "$finance_manifest" "$finance_max_manifest_bytes"
+  extract_bundle_member_limited \
+    finance-documents.tar "$finance_archive" "$finance_max_archive_bytes"
+  finance_restore_summary="$(
+    bash "$SCRIPT_DIR/finance-document-backup-verify.sh" \
+      restore-archive "$finance_manifest" "$finance_archive" \
+      "$finance_restore_directory"
+  )"
+  [[ "$finance_restore_summary" =~ ^objects=([0-9]+)\ bytes=([0-9]+)$ ]] ||
+    die 'finance document restore verification returned an invalid summary'
+  finance_restore_object_count="${BASH_REMATCH[1]}"
+  finance_restore_ciphertext_bytes="${BASH_REMATCH[2]}"
+  assert_root_owned_nonwritable_directory "$finance_restore_directory"
+  [[ "$(stat -c '%a' "$finance_restore_directory")" == 700 ]] ||
+    die 'finance document restore destination must have mode 0700'
+fi
 
 restore_compose config --quiet
 restore_compose up --detach postgres
@@ -187,4 +280,4 @@ printf '%s\t%s\t%s\t%s\t%s\n' \
   "$recorded_digest" \
   >> /var/lib/emdo/restore-drills/success.log
 chmod 0600 /var/lib/emdo/restore-drills/success.log
-log "logical restore drill $restore_id passed in isolated project $COMPOSE_PROJECT_NAME"
+log "logical restore drill $restore_id passed in isolated project $COMPOSE_PROJECT_NAME (finance_objects=$finance_restore_object_count finance_ciphertext_bytes=$finance_restore_ciphertext_bytes finance_store=${finance_restore_directory:-none})"

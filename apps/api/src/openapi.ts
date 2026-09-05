@@ -1,4 +1,16 @@
 import { ProblemDetailsSchema, deepFreeze } from '@emdo/contracts';
+import {
+  FinanceDocumentDetailSchema,
+  FinanceDocumentEvidenceListSchema,
+  FinanceDocumentListSchema,
+  FinanceDocumentMatchDecisionSchema,
+  FinanceDocumentMatchListSchema,
+  FinanceDocumentReviewCommitSchema,
+  FinanceDocumentReviewDraftSchema,
+  FinanceDocumentReviewPatchSchema,
+  FinanceDocumentSummarySchema,
+  FinanceExperienceV1Schema,
+} from '@emdo/domains/finance';
 import { z } from 'zod';
 
 import { GOOGLE_IDENTITY_CALLBACK_QUERY_NAMES } from './auth-surface.js';
@@ -148,6 +160,11 @@ const uuidPathParameter = {
   required: true,
   schema: { type: 'string', format: 'uuid' },
 };
+
+const FinanceExperienceResponseSchema = z.union([
+  FinanceExperienceV1Schema,
+  FinancePageSchema,
+]);
 
 export const createOpenApiDocument = () =>
   deepFreeze({
@@ -641,8 +658,8 @@ export const createOpenApiDocument = () =>
           ],
           responses: standardJsonResponses(
             '200',
-            'Principal-scoped finance page',
-            FinancePageSchema,
+            'Principal-scoped Finance v1 view or legacy paginated finance page',
+            FinanceExperienceResponseSchema,
           ),
         },
       },
@@ -680,6 +697,217 @@ export const createOpenApiDocument = () =>
             '200',
             'Committed or exactly replayed finance import',
             FinanceImportCommitResponseSchema,
+          ),
+        },
+      },
+      '/api/v1/finance/documents': {
+        get: {
+          operationId: 'listFinanceDocuments',
+          security: authenticated,
+          parameters: [
+            {
+              in: 'query',
+              name: 'cursor',
+              required: false,
+              schema: { type: 'string', minLength: 1, maxLength: 512 },
+            },
+            {
+              in: 'query',
+              name: 'limit',
+              required: false,
+              schema: {
+                type: 'integer',
+                minimum: 1,
+                maximum: 100,
+                default: 50,
+              },
+            },
+            {
+              in: 'query',
+              name: 'state',
+              required: false,
+              schema: { type: 'string' },
+            },
+            {
+              in: 'query',
+              name: 'documentType',
+              required: false,
+              schema: { type: 'string' },
+            },
+          ],
+          responses: standardJsonResponses(
+            '200',
+            'Uploader-scoped finance documents',
+            FinanceDocumentListSchema,
+          ),
+        },
+        post: {
+          operationId: 'uploadFinanceDocument',
+          security: authenticated,
+          parameters: mutationParameters,
+          requestBody: {
+            required: true,
+            content: {
+              'multipart/form-data': {
+                schema: {
+                  type: 'object',
+                  required: ['file'],
+                  additionalProperties: false,
+                  properties: {
+                    file: { type: 'string', format: 'binary' },
+                  },
+                },
+              },
+            },
+          },
+          responses: standardJsonResponses(
+            '201',
+            'Encrypted finance document accepted for extraction',
+            FinanceDocumentSummarySchema,
+          ),
+        },
+      },
+      '/api/v1/finance/documents/{id}': {
+        get: {
+          operationId: 'getFinanceDocument',
+          security: authenticated,
+          parameters: [uuidPathParameter],
+          responses: standardJsonResponses(
+            '200',
+            'Uploader-scoped finance document metadata',
+            FinanceDocumentDetailSchema,
+          ),
+        },
+        delete: {
+          operationId: 'deleteFinanceDocument',
+          security: authenticated,
+          parameters: [
+            uuidPathParameter,
+            ...mutationParameters,
+            {
+              in: 'header',
+              name: 'X-EMDO-Approval-Decision-ID',
+              required: true,
+              schema: { type: 'string', format: 'uuid' },
+            },
+          ],
+          responses: standardResponses(
+            '202',
+            'Finance document access revoked and purge started',
+          ),
+        },
+      },
+      '/api/v1/finance/documents/{id}/original': {
+        get: {
+          operationId: 'downloadFinanceDocumentOriginal',
+          security: authenticated,
+          parameters: [uuidPathParameter],
+          responses: {
+            ...standardResponses('200', 'Decrypted no-store attachment stream'),
+            '200': {
+              description: 'Decrypted no-store attachment stream',
+              headers: {
+                'Cache-Control': { schema: { type: 'string' } },
+                'Content-Disposition': { schema: { type: 'string' } },
+                'X-Content-Type-Options': { schema: { type: 'string' } },
+              },
+              content: {
+                'application/pdf': {
+                  schema: { type: 'string', format: 'binary' },
+                },
+                'image/jpeg': {
+                  schema: { type: 'string', format: 'binary' },
+                },
+                'image/png': {
+                  schema: { type: 'string', format: 'binary' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/finance/documents/{id}/retry': {
+        post: {
+          operationId: 'retryFinanceDocumentExtraction',
+          security: authenticated,
+          parameters: [uuidPathParameter, ...mutationParameters],
+          responses: standardJsonResponses(
+            '202',
+            'Eligible extraction revision queued',
+            FinanceDocumentDetailSchema,
+          ),
+        },
+      },
+      '/api/v1/finance/documents/{id}/review': {
+        get: {
+          operationId: 'getFinanceDocumentReview',
+          security: authenticated,
+          parameters: [uuidPathParameter],
+          responses: standardJsonResponses(
+            '200',
+            'Current uploader-scoped review draft',
+            FinanceDocumentReviewDraftSchema,
+          ),
+        },
+        patch: {
+          operationId: 'updateFinanceDocumentReview',
+          security: authenticated,
+          parameters: [uuidPathParameter, ...mutationParameters],
+          requestBody: jsonBody(FinanceDocumentReviewPatchSchema),
+          responses: standardJsonResponses(
+            '200',
+            'Updated hash-bound review draft',
+            FinanceDocumentReviewDraftSchema,
+          ),
+        },
+      },
+      '/api/v1/finance/documents/{id}/review/commit': {
+        post: {
+          operationId: 'commitFinanceDocumentReview',
+          security: authenticated,
+          parameters: [uuidPathParameter, ...mutationParameters],
+          requestBody: jsonBody(FinanceDocumentReviewCommitSchema),
+          responses: standardJsonResponses(
+            '200',
+            'Reviewed redacted finance facts committed',
+            FinanceDocumentDetailSchema,
+          ),
+        },
+      },
+      '/api/v1/finance/documents/{id}/matches': {
+        get: {
+          operationId: 'listFinanceDocumentMatches',
+          security: authenticated,
+          parameters: [uuidPathParameter],
+          responses: standardJsonResponses(
+            '200',
+            'Suggested finance document matches',
+            FinanceDocumentMatchListSchema,
+          ),
+        },
+      },
+      '/api/v1/finance/matches/{id}/decision': {
+        post: {
+          operationId: 'decideFinanceDocumentMatch',
+          security: authenticated,
+          parameters: [uuidPathParameter, ...mutationParameters],
+          requestBody: jsonBody(FinanceDocumentMatchDecisionSchema),
+          responses: standardJsonResponses(
+            '200',
+            'Guarded finance document match decision',
+            FinanceDocumentMatchListSchema,
+          ),
+        },
+      },
+      '/api/v1/finance/evidence/{id}': {
+        get: {
+          operationId: 'getFinanceDocumentEvidence',
+          security: authenticated,
+          parameters: [uuidPathParameter],
+          responses: standardJsonResponses(
+            '200',
+            'Bounded uploader-authorized finance evidence',
+            FinanceDocumentEvidenceListSchema,
           ),
         },
       },

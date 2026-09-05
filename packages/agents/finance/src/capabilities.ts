@@ -17,7 +17,22 @@ export const financeCapabilityReferences = deepFreeze([
     kind: 'import',
   },
   {
-    id: 'finance.budget.calculate',
+    id: 'finance.analytics.calculate',
+    version: '1.0.0',
+    kind: 'read',
+  },
+  {
+    id: 'finance.documents.search',
+    version: '1.0.0',
+    kind: 'read',
+  },
+  {
+    id: 'finance.documents.read',
+    version: '1.0.0',
+    kind: 'read',
+  },
+  {
+    id: 'finance.matches.read',
     version: '1.0.0',
     kind: 'read',
   },

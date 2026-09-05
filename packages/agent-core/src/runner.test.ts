@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
@@ -28,6 +30,7 @@ import {
   type ModelDisclosureGateway,
   type ModelDisclosureSource,
   type ProviderWriteProposalGateway,
+  type RegisteredSpecialistRuntimeDescriptor,
   type TurnInput,
 } from './runner.js';
 import { LocalTraceRecorder, type LocalTraceEvent } from './trace.js';
@@ -43,9 +46,12 @@ const ids = Object.freeze({
   authorizationScopeFingerprint:
     EffectiveAuthorizationScopeFingerprintSchema.parse('e'.repeat(64)),
   disclosureGrantId: '018f1f5e-1000-7000-8000-000000000007',
+  rootManagerInvocationId: '018f1f5e-1000-7000-8000-000000000009',
 });
 
 const graphHash = 'a'.repeat(64);
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const providerAuthorityBindingHash = 'b'.repeat(64);
 const sdkVersion = '0.14.3';
 const proposalId = '018f1f5e-1000-7000-8000-000000000060';
@@ -247,6 +253,8 @@ const turn = (overrides: Partial<TurnInput> = {}): TurnInput => {
     conversationId: ids.conversationId,
     spaceAccessGrantId: ids.spaceAccessGrantId,
     authorizationScopeFingerprint: ids.authorizationScopeFingerprint,
+    locale: 'en-CA',
+    rootManagerInvocationId: ids.rootManagerInvocationId,
     message: 'Schedule a dentist visit and update my shopping plan.',
     escalationTriggers: [],
     abortSignal: new AbortController().signal,
@@ -316,6 +324,44 @@ const canonicalProjection = (
   };
 };
 
+const canonicalHash = (value: unknown): string => {
+  const canonicalize = (entry: unknown): unknown => {
+    if (Array.isArray(entry)) return entry.map(canonicalize);
+    if (entry !== null && typeof entry === 'object') {
+      return Object.fromEntries(
+        Object.entries(entry as Record<string, unknown>)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, child]) => [key, canonicalize(child)]),
+      );
+    }
+    return entry;
+  };
+  return createHash('sha256')
+    .update(JSON.stringify(canonicalize(value)))
+    .digest('hex');
+};
+
+const authorizedInvocation = (
+  input: Parameters<ModelDisclosureGateway['authorize']>[0],
+  records: ModelDisclosureAuthorization['records'],
+) => {
+  const invocationContext = {
+    ...input.invocation,
+    disclosedContextRefs: records
+      .map(
+        ({ dataClass, recordId }) =>
+          `context-ref-${canonicalHash({ dataClass, recordId })}`,
+      )
+      .sort(),
+    deadline: '2026-08-09T22:35:00.000Z',
+    idempotencyScope: 'd'.repeat(64),
+  } as const;
+  return {
+    invocationContext,
+    invocationContextHash: canonicalHash(invocationContext),
+  } as const;
+};
+
 const setup = (
   execute: AgentExecutionProvider['execute'],
   overrides: {
@@ -333,8 +379,11 @@ const setup = (
     readonly schedulerInputSchema?: z.ZodObject;
     readonly schedulerOutputSchema?: z.ZodObject;
     readonly schedulerCapabilities?: readonly ResolvedAgentCapability[];
+    readonly financeCapabilities?: readonly ResolvedAgentCapability[];
     readonly managerOutputSchema?: z.ZodObject;
     readonly clock?: () => Date;
+    readonly createInvocationId?: () => string;
+    readonly registeredSpecialists?: readonly RegisteredSpecialistRuntimeDescriptor[];
   } = {},
 ) => {
   const retrieveForManager = vi.fn(async () =>
@@ -426,9 +475,16 @@ const setup = (
             capability('google-calendar.event.create', 'provider-write'),
           ]),
       ),
-      agent('finance', 'specialist'),
+      agent(
+        'finance',
+        'specialist',
+        z.looseObject({}),
+        z.looseObject({}),
+        overrides.financeCapabilities,
+      ),
       agent('shopping', 'specialist'),
     ],
+    registeredSpecialists: overrides.registeredSpecialists,
     executionProvider: {
       execute: async (request) => {
         await request.beforeModelDispatch?.();
@@ -531,6 +587,7 @@ const setup = (
             agentId: input.agentId,
             phasePurpose: input.phasePurpose,
             phaseInvocationId: input.phaseInvocationId,
+            ...authorizedInvocation(input, projection.records),
             disclosurePurpose:
               input.agentId === 'scheduler'
                 ? 'schedule one appointment'
@@ -548,6 +605,7 @@ const setup = (
     createCheckpointId:
       overrides.createCheckpointId ??
       (() => '018f1f5e-1000-7000-8000-000000000030'),
+    createInvocationId: overrides.createInvocationId,
     clock: overrides.clock ?? (() => new Date('2026-08-09T22:30:00.000Z')),
   });
   return {
@@ -599,6 +657,11 @@ describe('AgentOrchestrator', () => {
       'specialist',
       'synthesize',
     ]);
+    expect(requests.map((request) => request.context.locale)).toEqual([
+      'en-CA',
+      'en-CA',
+      'en-CA',
+    ]);
     expect(requests[0]!.input).toMatchObject({
       schemaVersion: 1,
       records: [
@@ -625,13 +688,13 @@ describe('AgentOrchestrator', () => {
   });
 
   it('binds every model call to a distinct phase invocation and canonical durable records', async () => {
-    const authorizationInputs: Readonly<Record<string, unknown>>[] = [];
+    const authorizationInputs: Array<
+      Parameters<ModelDisclosureGateway['authorize']>[0]
+    > = [];
     const providerInputs: AgentProviderRequest[] = [];
     const authorize = vi.fn<ModelDisclosureGateway['authorize']>(
       async (input) => {
-        authorizationInputs.push(
-          input as unknown as Readonly<Record<string, unknown>>,
-        );
+        authorizationInputs.push(input);
         const projection = canonicalProjection(input.sources);
         return {
           status: 'authorized',
@@ -646,6 +709,7 @@ describe('AgentOrchestrator', () => {
           agentId: input.agentId,
           phasePurpose: input.phasePurpose,
           phaseInvocationId: input.phaseInvocationId,
+          ...authorizedInvocation(input, projection.records),
           disclosurePurpose: 'authorize one exact model dispatch',
           provider: input.provider,
           expiresAt: '2026-08-09T22:40:00.000Z',
@@ -668,7 +732,7 @@ describe('AgentOrchestrator', () => {
               },
               {
                 id: 'schedule-optometrist',
-                specialistId: 'scheduler',
+                specialistId: 'finance',
                 input: { request: 'optometrist' },
                 dependsOn: [],
               },
@@ -687,14 +751,33 @@ describe('AgentOrchestrator', () => {
       status: 'completed',
     });
 
-    expect(authorizationInputs.map((input) => input.phaseInvocationId)).toEqual(
-      [
-        'manager-plan',
-        'schedule-dentist',
-        'schedule-optometrist',
-        'manager-synthesis',
-      ],
-    );
+    expect(
+      authorizationInputs
+        .map((input) => input.phaseInvocationId)
+        .every((id) => UUID_PATTERN.test(String(id))),
+    ).toBe(true);
+    expect(
+      new Set(authorizationInputs.map((input) => input.phaseInvocationId)).size,
+    ).toBe(4);
+    expect(
+      authorizationInputs
+        .filter((input) => input.agentId === 'manager')
+        .every(
+          (input) =>
+            input.invocation.parentInvocationId === ids.runId &&
+            input.invocation.agentInvocationId === ids.rootManagerInvocationId,
+        ),
+    ).toBe(true);
+    expect(
+      authorizationInputs
+        .filter((input) => input.agentId !== 'manager')
+        .every(
+          (input) =>
+            input.invocation.parentInvocationId ===
+              ids.rootManagerInvocationId &&
+            input.invocation.agentInvocationId !== input.phaseInvocationId,
+        ),
+    ).toBe(true);
     expect(
       authorizationInputs.every(
         (input) => !Object.hasOwn(input, 'requestedGrantId'),
@@ -725,6 +808,66 @@ describe('AgentOrchestrator', () => {
     });
   });
 
+  it('uses server-minted child identities and readiness without provider dispatch', async () => {
+    const providerCalls: AgentProviderRequest[] = [];
+    const invocationIds = [
+      '018f1f5e-1000-7000-8000-000000000101',
+      '018f1f5e-1000-7000-8000-000000000102',
+      '018f1f5e-1000-7000-8000-000000000103',
+      '018f1f5e-1000-7000-8000-000000000104',
+    ];
+    const { orchestrator } = setup(
+      async (request) => {
+        providerCalls.push(request);
+        if (request.phase === 'plan') {
+          return completed({
+            delegations: [
+              {
+                id: 'finance-ready-check',
+                specialistId: 'finance',
+                input: { request: 'review documents' },
+                dependsOn: [],
+              },
+            ],
+          });
+        }
+        return completed({ message: 'Finance is unavailable.' });
+      },
+      {
+        createInvocationId: () => invocationIds.shift()!,
+        registeredSpecialists: [
+          {
+            id: 'finance',
+            readiness: async () => ({
+              status: 'unavailable' as const,
+              reasonCode: 'finance-not-ready',
+            }),
+          },
+        ],
+      },
+    );
+
+    await expect(orchestrator.runTurn(turn())).resolves.toMatchObject({
+      status: 'completed',
+      specialistOutcomes: [
+        {
+          delegationId: 'finance-ready-check',
+          status: 'unavailable',
+          reasonCode: 'finance-not-ready',
+          invocationContext: {
+            parentInvocationId: ids.rootManagerInvocationId,
+            agentInvocationId: '018f1f5e-1000-7000-8000-000000000102',
+            phaseInvocationId: '018f1f5e-1000-7000-8000-000000000103',
+            disclosedContextRefs: [],
+          },
+        },
+      ],
+    });
+    expect(providerCalls.filter(({ phase }) => phase === 'specialist')).toEqual(
+      [],
+    );
+  });
+
   it('sends only the gateway-filtered payload and audits authoritative record fields at dispatch', async () => {
     const providerInputs: AgentProviderRequest[] = [];
     const authorize = vi.fn<ModelDisclosureGateway['authorize']>(
@@ -744,6 +887,7 @@ describe('AgentOrchestrator', () => {
           agentId: input.agentId,
           phasePurpose: input.phasePurpose,
           phaseInvocationId: input.phaseInvocationId,
+          ...authorizedInvocation(input, projection.records),
           disclosurePurpose:
             input.agentId === 'scheduler'
               ? 'schedule one appointment'
@@ -810,7 +954,7 @@ describe('AgentOrchestrator', () => {
       .find((input) => input.agentId === 'scheduler');
     expect(specialistAuthorization).toMatchObject({
       phasePurpose: 'specialist-execution',
-      phaseInvocationId: 'schedule-safe',
+      phaseInvocationId: expect.stringMatching(UUID_PATTERN),
       provider: 'openai',
       sources: [{ kind: 'specialist-delegation' }],
     });
@@ -823,7 +967,7 @@ describe('AgentOrchestrator', () => {
           agentId: 'scheduler',
           purpose: 'schedule one appointment',
           phasePurpose: 'specialist-execution',
-          phaseInvocationId: 'schedule-safe',
+          phaseInvocationId: expect.stringMatching(UUID_PATTERN),
           dataClass: 'agent.delegations',
           recordId: 'schedule-safe',
           fields: ['delegation'],
@@ -854,6 +998,10 @@ describe('AgentOrchestrator', () => {
               agentId: input.agentId,
               phasePurpose: input.phasePurpose,
               phaseInvocationId: input.phaseInvocationId,
+              ...authorizedInvocation(
+                input,
+                canonicalProjection(input.sources).records,
+              ),
               disclosurePurpose: 'manage this assistant turn',
               provider: input.provider,
               expiresAt: '2026-08-09T22:40:00.000Z',
@@ -887,11 +1035,8 @@ describe('AgentOrchestrator', () => {
       specialistOutcomes: [
         {
           specialistId: 'scheduler',
-          status: 'failed',
-          safeError: {
-            code: 'model-disclosure-denied',
-            retryable: false,
-          },
+          status: 'unavailable',
+          reasonCode: 'model-disclosure-denied',
         },
       ],
     });
@@ -905,6 +1050,18 @@ describe('AgentOrchestrator', () => {
         grantId: ids.disclosureGrantId,
         agentId: 'scheduler',
         reason: 'grant-run-mismatch',
+      },
+    });
+    expect(
+      traceEvents.find(
+        (event) =>
+          event.type === 'specialist.outcome' &&
+          event.metadata.delegationId === 'schedule-denied',
+      ),
+    ).toMatchObject({
+      metadata: {
+        status: 'unavailable',
+        reasonCode: 'model-disclosure-denied',
       },
     });
   });
@@ -965,6 +1122,7 @@ describe('AgentOrchestrator', () => {
               agentId: input.agentId,
               phasePurpose: input.phasePurpose,
               phaseInvocationId: input.phaseInvocationId,
+              ...authorizedInvocation(input, projection.records),
               disclosurePurpose: 'manage this assistant turn',
               provider: input.provider,
               expiresAt: '2026-08-09T22:40:00.000Z',
@@ -1033,6 +1191,7 @@ describe('AgentOrchestrator', () => {
           agentId: input.agentId,
           phasePurpose: input.phasePurpose,
           phaseInvocationId: input.phaseInvocationId,
+          ...authorizedInvocation(input, projection.records),
           disclosurePurpose: 'manage this assistant turn',
           provider: input.provider,
           expiresAt: '2026-08-09T22:40:00.000Z',
@@ -1093,6 +1252,7 @@ describe('AgentOrchestrator', () => {
           agentId: input.agentId,
           phasePurpose: input.phasePurpose,
           phaseInvocationId: input.phaseInvocationId,
+          ...authorizedInvocation(input, projection.records),
           disclosurePurpose: 'prepare a redacted household plan',
           provider: input.provider,
           expiresAt: '2026-08-09T22:40:00.000Z',
@@ -1176,15 +1336,20 @@ describe('AgentOrchestrator', () => {
     ).not.toContain('privateAccountNumber');
   });
 
-  it('caps independent Promise.allSettled specialist execution at three', async () => {
+  it('runs three unique specialists concurrently within the ceiling', async () => {
     let active = 0;
     let maximumActive = 0;
     const { orchestrator, traceEvents } = setup(async (request) => {
       if (request.phase === 'plan') {
         return completed({
-          delegations: ['one', 'two', 'three', 'four'].map((id) => ({
+          delegations: ['one', 'two', 'three'].map((id) => ({
             id,
-            specialistId: id === 'two' ? 'finance' : 'scheduler',
+            specialistId:
+              id === 'one'
+                ? 'scheduler'
+                : id === 'two'
+                  ? 'finance'
+                  : 'shopping',
             input: { id },
             dependsOn: [],
           })),
@@ -1197,7 +1362,7 @@ describe('AgentOrchestrator', () => {
         active -= 1;
         return completed({ ok: true });
       }
-      return completed({ message: 'All four tasks completed.' });
+      return completed({ message: 'All three tasks completed.' });
     });
 
     const result = await orchestrator.runTurn(turn());
@@ -1206,7 +1371,7 @@ describe('AgentOrchestrator', () => {
     expect(maximumActive).toBe(3);
     expect(
       traceEvents.filter((event) => event.type === 'specialist.dispatched'),
-    ).toHaveLength(4);
+    ).toHaveLength(3);
   });
 
   it('sequences dependencies and synthesizes independent partial failures', async () => {
@@ -1284,9 +1449,6 @@ describe('AgentOrchestrator', () => {
             outcome: expect.objectContaining({
               delegationId: 'budget',
               status: 'failed',
-              safeError: expect.objectContaining({
-                code: 'specialist-execution-failed',
-              }),
             }),
           }),
         }),
@@ -1338,14 +1500,8 @@ describe('AgentOrchestrator', () => {
   });
 
   it.each(['invalid-output', 'provider-failure'] as const)(
-    'retries a side-effect-free Luna plan once on Terra after %s',
+    'does not replay a disclosed Luna plan on Terra after %s',
     async (failureMode) => {
-      const terraResolution: ModelResolution = Object.freeze({
-        status: 'resolved',
-        requestedModel: 'gpt-5.6-terra',
-        resolvedModel: 'gpt-5.6-terra',
-        reason: 'failed-output-validation',
-      });
       const planModels: string[] = [];
       let specialistCalls = 0;
       const { orchestrator, resolveModel, traceEvents } = setup(
@@ -1358,16 +1514,7 @@ describe('AgentOrchestrator', () => {
               }
               return completed({ unexpected: true });
             }
-            return completed({
-              delegations: [
-                {
-                  id: 'schedule-once',
-                  specialistId: 'scheduler',
-                  input: { request: 'dentist' },
-                  dependsOn: [],
-                },
-              ],
-            });
+            throw new Error('Terra must not receive a replayed disclosure');
           }
           if (request.phase === 'specialist') {
             specialistCalls += 1;
@@ -1375,73 +1522,88 @@ describe('AgentOrchestrator', () => {
           }
           return completed({ message: 'Tuesday works.' });
         },
-        { modelResolutions: [defaultResolution, terraResolution] },
+        { modelResolution: defaultResolution },
       );
 
       await expect(orchestrator.runTurn(turn())).resolves.toMatchObject({
-        status: 'completed',
-        modelResolution: terraResolution,
+        status: 'failed',
+        safeError: {
+          code:
+            failureMode === 'invalid-output'
+              ? 'invalid-manager-plan'
+              : 'manager-execution-failed',
+        },
+        modelResolution: defaultResolution,
       });
-      expect(planModels).toEqual(['gpt-5.6-luna', 'gpt-5.6-terra']);
-      expect(specialistCalls).toBe(1);
-      expect(resolveModel).toHaveBeenNthCalledWith(2, {
-        triggers: [
-          failureMode === 'provider-failure'
-            ? 'luna-unavailable'
-            : 'failed-output-validation',
-        ],
-        policy: expect.objectContaining({
-          defaultModel: 'gpt-5.6-luna',
-          complexModel: 'gpt-5.6-terra',
-        }),
-      });
+      expect(planModels).toEqual(['gpt-5.6-luna']);
+      expect(specialistCalls).toBe(0);
+      expect(resolveModel).toHaveBeenCalledOnce();
+      const planDisclosureEvents = traceEvents.filter(
+        (event) =>
+          event.type === 'disclosure.sent' &&
+          event.metadata.agentId === 'manager' &&
+          event.metadata.phasePurpose === 'manager-plan',
+      );
+      expect(planDisclosureEvents.length).toBeGreaterThan(0);
       expect(
-        traceEvents.filter(
-          (event) =>
-            event.type === 'model.resolved' &&
-            event.metadata.resolvedModel === 'gpt-5.6-terra',
+        new Set(
+          planDisclosureEvents.map((event) => event.metadata.phaseInvocationId),
         ),
       ).toHaveLength(1);
     },
   );
 
-  it('fails clearly after the single Terra planning retry also fails', async () => {
+  it('uses the pre-dispatch Luna-unavailable fallback with one bound Terra disclosure', async () => {
     const terraResolution: ModelResolution = Object.freeze({
       status: 'resolved',
-      requestedModel: 'gpt-5.6-terra',
+      requestedModel: 'gpt-5.6-luna',
       resolvedModel: 'gpt-5.6-terra',
-      reason: 'failed-output-validation',
+      reason: 'luna-unavailable',
     });
-    let specialistCalls = 0;
-    const { orchestrator } = setup(
+    const models: string[] = [];
+    const { orchestrator, resolveModel, traceEvents } = setup(
       async (request) => {
+        models.push(request.model);
         if (request.phase === 'plan') {
-          if (request.model === 'gpt-5.6-luna') {
-            return completed({ invalid: true });
-          }
-          throw new Error('Terra failed');
+          return completed({
+            delegations: [
+              {
+                id: 'schedule-once',
+                specialistId: 'scheduler',
+                input: { request: 'dentist' },
+                dependsOn: [],
+              },
+            ],
+          });
         }
-        specialistCalls += 1;
-        return completed({ message: 'must not run' });
+        if (request.phase === 'specialist') {
+          return completed({ alternatives: ['Tuesday'] });
+        }
+        return completed({ message: 'Tuesday works.' });
       },
-      { modelResolutions: [defaultResolution, terraResolution] },
+      { modelResolution: terraResolution },
     );
 
     await expect(orchestrator.runTurn(turn())).resolves.toMatchObject({
-      status: 'failed',
-      safeError: { code: 'manager-execution-failed' },
+      status: 'completed',
       modelResolution: terraResolution,
     });
-    expect(specialistCalls).toBe(0);
+    expect(models).toEqual(['gpt-5.6-terra', 'gpt-5.6-terra', 'gpt-5.6-terra']);
+    expect(resolveModel).toHaveBeenCalledOnce();
+    const planDisclosureEvents = traceEvents.filter(
+      (event) =>
+        event.type === 'disclosure.sent' &&
+        event.metadata.phasePurpose === 'manager-plan',
+    );
+    expect(planDisclosureEvents.length).toBeGreaterThan(0);
+    expect(
+      new Set(
+        planDisclosureEvents.map((event) => event.metadata.phaseInvocationId),
+      ),
+    ).toHaveLength(1);
   });
 
-  it('retries only synthesis on Terra after invalid Luna output without repeating specialists', async () => {
-    const terraResolution: ModelResolution = Object.freeze({
-      status: 'resolved',
-      requestedModel: 'gpt-5.6-terra',
-      resolvedModel: 'gpt-5.6-terra',
-      reason: 'failed-output-validation',
-    });
+  it('does not replay a disclosed Luna synthesis on Terra after invalid output', async () => {
     let specialistCalls = 0;
     const synthesisModels: string[] = [];
     const { orchestrator } = setup(
@@ -1463,34 +1625,26 @@ describe('AgentOrchestrator', () => {
           return completed({ alternatives: ['Tuesday'] });
         }
         synthesisModels.push(request.model);
-        return request.model === 'gpt-5.6-luna'
-          ? completed({ wrong: true })
-          : completed({ message: 'Tuesday works.' });
+        return completed({ wrong: true });
       },
       {
-        modelResolutions: [defaultResolution, terraResolution],
+        modelResolution: defaultResolution,
         managerOutputSchema: z.strictObject({ message: z.string() }),
       },
     );
 
     await expect(orchestrator.runTurn(turn())).resolves.toMatchObject({
-      status: 'completed',
-      output: { message: 'Tuesday works.' },
-      modelResolution: terraResolution,
+      status: 'failed',
+      safeError: { code: 'manager-output-validation-failed' },
+      modelResolution: defaultResolution,
     });
     expect(specialistCalls).toBe(1);
-    expect(synthesisModels).toEqual(['gpt-5.6-luna', 'gpt-5.6-terra']);
+    expect(synthesisModels).toEqual(['gpt-5.6-luna']);
   });
 
   it.each(['invalid-output', 'provider-failure'] as const)(
-    'retries a mixed-capability specialist on Terra after a replay-safe Luna %s',
+    'does not replay a disclosed Luna specialist on Terra after %s',
     async (failureMode) => {
-      const terraResolution: ModelResolution = Object.freeze({
-        status: 'resolved',
-        requestedModel: 'gpt-5.6-terra',
-        resolvedModel: 'gpt-5.6-terra',
-        reason: 'failed-output-validation',
-      });
       const specialistModels: string[] = [];
       const { orchestrator } = setup(
         async (request) => {
@@ -1513,12 +1667,12 @@ describe('AgentOrchestrator', () => {
                 ? completed({ wrong: true }, 'safe')
                 : failedProviderResult('safe');
             }
-            return completed({ alternatives: ['Tuesday'] }, 'safe');
+            throw new Error('Terra must not receive a replayed disclosure');
           }
           return completed({ message: 'Tuesday works.' });
         },
         {
-          modelResolutions: [defaultResolution, terraResolution],
+          modelResolution: defaultResolution,
           schedulerOutputSchema: z.strictObject({
             alternatives: z.array(z.string()),
           }),
@@ -1531,16 +1685,15 @@ describe('AgentOrchestrator', () => {
 
       await expect(orchestrator.runTurn(turn())).resolves.toMatchObject({
         status: 'completed',
-        modelResolution: terraResolution,
+        modelResolution: defaultResolution,
         specialistOutcomes: [
           {
             delegationId: 'schedule-once',
-            status: 'completed',
-            output: { alternatives: ['Tuesday'] },
+            status: failureMode === 'invalid-output' ? 'unavailable' : 'failed',
           },
         ],
       });
-      expect(specialistModels).toEqual(['gpt-5.6-luna', 'gpt-5.6-terra']);
+      expect(specialistModels).toEqual(['gpt-5.6-luna']);
     },
   );
 
@@ -1583,8 +1736,8 @@ describe('AgentOrchestrator', () => {
       specialistOutcomes: [
         {
           delegationId: 'schedule-once',
-          status: 'failed',
-          safeError: { code: 'specialist-output-validation-failed' },
+          status: 'unavailable',
+          reasonCode: 'specialist-dispatch-unavailable',
         },
       ],
     });
@@ -1773,10 +1926,8 @@ describe('AgentOrchestrator', () => {
       specialistOutcomes: [
         {
           status: 'failed',
-          safeError: {
-            code: 'multiple-provider-writes-require-separate-turns',
-            retryable: false,
-          },
+          safeMessage:
+            'Each provider write requires a separate assistant turn and visual approval.',
         },
       ],
     });
@@ -2107,7 +2258,7 @@ describe('AgentOrchestrator', () => {
               },
               {
                 id: 'calendar-write-b',
-                specialistId: 'scheduler',
+                specialistId: 'finance',
                 input: { request: 'create optometrist event' },
                 dependsOn: [],
               },
@@ -2146,7 +2297,13 @@ describe('AgentOrchestrator', () => {
         }
         return completed({ message: 'must not synthesize' });
       },
-      { abandonPrepared, checkpointCreate },
+      {
+        abandonPrepared,
+        checkpointCreate,
+        financeCapabilities: Object.freeze([
+          capability('google-calendar.event.create', 'provider-write'),
+        ]),
+      },
     );
 
     await expect(orchestrator.runTurn(turn())).resolves.toMatchObject({
@@ -2294,7 +2451,7 @@ describe('AgentOrchestrator', () => {
             },
             {
               id: 'calendar-write-second',
-              specialistId: 'scheduler',
+              specialistId: 'finance',
               input: { request: 'create optometrist event' },
               dependsOn: ['calendar-write-first'],
             },
@@ -2342,7 +2499,12 @@ describe('AgentOrchestrator', () => {
       }
       return completed({ message: 'must not synthesize' });
     });
-    const { orchestrator, traceEvents } = setup(execute, { executeDecision });
+    const { orchestrator, traceEvents } = setup(execute, {
+      executeDecision,
+      financeCapabilities: Object.freeze([
+        capability('google-calendar.event.create', 'provider-write'),
+      ]),
+    });
 
     const paused = await orchestrator.runTurn(turn());
     if (paused.status !== 'needs-approval') throw new Error('expected pause');
@@ -2423,10 +2585,8 @@ describe('AgentOrchestrator', () => {
       specialistOutcomes: [
         {
           status: 'failed',
-          safeError: {
-            code: 'provider-write-proposal-finalization-pending',
-            retryable: false,
-          },
+          safeMessage:
+            'A prepared external action could not be terminalized safely. Reconciliation is required before retrying.',
         },
       ],
     });
@@ -2875,6 +3035,7 @@ describe('AgentOrchestrator', () => {
           },
         });
         expect(request.context.approvalDecisionId).toBe(approvalDecisionId);
+        expect(request.context.locale).toBe('en-CA');
         return completed({ eventProposal: 'ready' });
       }
       if (request.phase === 'synthesize') {
@@ -2882,6 +3043,7 @@ describe('AgentOrchestrator', () => {
         expect(request.context.spaceAccessGrantId).toBe(
           resumeSpaceAccessGrantId,
         );
+        expect(request.context.locale).toBe('en-CA');
       }
       return completed({
         message: 'The calendar proposal is ready to review.',
@@ -3048,6 +3210,249 @@ describe('AgentOrchestrator', () => {
     ).resolves.toMatchObject({
       status: 'failed',
       safeError: { code: 'approval-checkpoint-already-consumed' },
+    });
+  });
+
+  it('resumes an approved write by dispatching its ready dependent specialist', async () => {
+    const requests: AgentProviderRequest[] = [];
+    const execute = vi.fn(async (request: AgentProviderRequest) => {
+      requests.push(request);
+      if (request.phase === 'plan') {
+        return completed({
+          delegations: [
+            {
+              id: 'calendar-write',
+              specialistId: 'scheduler',
+              input: { title: 'Dentist' },
+              dependsOn: [],
+            },
+            {
+              id: 'finance-after-calendar',
+              specialistId: 'finance',
+              input: { request: 'update the monthly budget' },
+              dependsOn: ['calendar-write'],
+            },
+          ],
+        });
+      }
+      if (request.phase === 'specialist') {
+        const records = (
+          request.input as Readonly<{
+            readonly records: readonly Readonly<{
+              readonly fields: Readonly<{
+                readonly delegation?: Readonly<{ readonly id: string }>;
+              }>;
+            }>[];
+          }>
+        ).records;
+        const delegationId = records.find(
+          (record) => record.fields.delegation !== undefined,
+        )?.fields.delegation?.id;
+        if (delegationId === 'calendar-write') {
+          return Object.freeze({
+            status: 'interrupted' as const,
+            serializedState: JSON.stringify({ sdk: 'pending-calendar-write' }),
+            interruptions: Object.freeze([
+              Object.freeze({
+                id: 'approval-calendar-1',
+                agentId: 'scheduler',
+                capabilityId: 'google-calendar.event.create',
+                proposalId,
+                argumentsPreview: Object.freeze({ title: 'Dentist' }),
+                sdkCallId: 'call-calendar-approved-dependency',
+                providerAuthorityBindingHash,
+                authorizationScopeFingerprint:
+                  ids.authorizationScopeFingerprint,
+              }),
+            ]),
+            usage: Object.freeze({
+              inputTokens: 10,
+              outputTokens: 2,
+              modelCostCadMinor: 1,
+            }),
+          });
+        }
+        expect(delegationId).toBe('finance-after-calendar');
+        expect(records).toHaveLength(2);
+        expect(records).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              dataClass: 'agent.delegations',
+              fields: expect.objectContaining({
+                delegation: expect.objectContaining({
+                  id: 'finance-after-calendar',
+                }),
+              }),
+            }),
+            expect.objectContaining({
+              dataClass: 'agent.specialist-outcomes',
+              fields: expect.objectContaining({
+                outcome: expect.objectContaining({
+                  delegationId: 'calendar-write',
+                  status: 'completed',
+                  facts: { eventProposal: 'ready' },
+                }),
+              }),
+            }),
+          ]),
+        );
+        return completed({ budgetUpdated: true });
+      }
+      return completed({ message: 'Calendar and budget are up to date.' });
+    });
+    const { orchestrator } = setup(execute);
+
+    const paused = await orchestrator.runTurn(turn());
+    if (paused.status !== 'needs-approval') throw new Error('not paused');
+
+    await expect(
+      orchestrator.resumeTurn({
+        requestId: '018f1f5e-1000-7000-8000-000000000071',
+        runId: ids.runId,
+        householdId: ids.householdId,
+        userId: ids.userId,
+        conversationId: ids.conversationId,
+        spaceAccessGrantId: ids.spaceAccessGrantId,
+        ...resumeAuthority,
+        checkpointId: paused.checkpoint.checkpointId,
+        interruptionId: paused.interruptions[0]!.id,
+        proposalId,
+        approvalDecisionId,
+        decision: 'approve',
+        approvalChannel: 'authenticated-visual',
+        abortSignal: new AbortController().signal,
+      }),
+    ).resolves.toMatchObject({
+      status: 'completed',
+      specialistOutcomes: [
+        { delegationId: 'calendar-write', status: 'completed' },
+        { delegationId: 'finance-after-calendar', status: 'completed' },
+      ],
+    });
+    expect(requests.map((request) => request.phase)).toEqual([
+      'plan',
+      'specialist',
+      'specialist',
+      'synthesize',
+    ]);
+  });
+
+  it('synthesizes rejected and blocked delegations without dispatching unfinished specialists', async () => {
+    let synthesisInput: JsonValue | undefined;
+    const execute = vi.fn(async (request: AgentProviderRequest) => {
+      if (request.phase === 'plan') {
+        return completed({
+          delegations: [
+            {
+              id: 'calendar-write',
+              specialistId: 'scheduler',
+              input: { title: 'Dentist' },
+              dependsOn: [],
+            },
+            {
+              id: 'finance-after-calendar',
+              specialistId: 'finance',
+              input: { request: 'update the monthly budget' },
+              dependsOn: ['calendar-write'],
+            },
+          ],
+        });
+      }
+      if (request.phase === 'specialist') {
+        return Object.freeze({
+          status: 'interrupted' as const,
+          serializedState: JSON.stringify({ sdk: 'pending-calendar-write' }),
+          interruptions: Object.freeze([
+            Object.freeze({
+              id: 'approval-calendar-1',
+              agentId: 'scheduler',
+              capabilityId: 'google-calendar.event.create',
+              proposalId,
+              argumentsPreview: Object.freeze({ title: 'Dentist' }),
+              sdkCallId: 'call-calendar-rejected-dependency',
+              providerAuthorityBindingHash,
+              authorizationScopeFingerprint: ids.authorizationScopeFingerprint,
+            }),
+          ]),
+          usage: Object.freeze({
+            inputTokens: 10,
+            outputTokens: 2,
+            modelCostCadMinor: 1,
+          }),
+        });
+      }
+      synthesisInput = request.input;
+      return completed({ message: 'The calendar action was not approved.' });
+    });
+    const { orchestrator, traceEvents } = setup(execute);
+
+    const paused = await orchestrator.runTurn(turn());
+    if (paused.status !== 'needs-approval') throw new Error('not paused');
+
+    const result = await orchestrator.resumeTurn({
+      requestId: '018f1f5e-1000-7000-8000-000000000072',
+      runId: ids.runId,
+      householdId: ids.householdId,
+      userId: ids.userId,
+      conversationId: ids.conversationId,
+      spaceAccessGrantId: ids.spaceAccessGrantId,
+      ...resumeAuthority,
+      checkpointId: paused.checkpoint.checkpointId,
+      interruptionId: paused.interruptions[0]!.id,
+      proposalId,
+      approvalDecisionId,
+      decision: 'reject',
+      approvalChannel: 'authenticated-visual',
+      abortSignal: new AbortController().signal,
+    });
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      hasPartialFailures: true,
+      specialistOutcomes: [
+        {
+          delegationId: 'calendar-write',
+          status: 'failed',
+          safeMessage: 'The requested provider action was not approved.',
+        },
+        {
+          delegationId: 'finance-after-calendar',
+          status: 'unavailable',
+          reasonCode: 'approval-rejected-dependency-unavailable',
+        },
+      ],
+    });
+    expect(execute.mock.calls.map(([request]) => request.phase)).toEqual([
+      'plan',
+      'specialist',
+      'synthesize',
+    ]);
+    expect(
+      traceEvents.filter((event) => event.type === 'action.executed'),
+    ).toHaveLength(0);
+    expect(synthesisInput).toMatchObject({
+      records: expect.arrayContaining([
+        expect.objectContaining({
+          dataClass: 'agent.specialist-outcomes',
+          fields: expect.objectContaining({
+            outcome: expect.objectContaining({
+              delegationId: 'calendar-write',
+              status: 'failed',
+              safeMessage: 'The requested provider action was not approved.',
+            }),
+          }),
+        }),
+        expect.objectContaining({
+          dataClass: 'agent.specialist-outcomes',
+          fields: expect.objectContaining({
+            outcome: expect.objectContaining({
+              delegationId: 'finance-after-calendar',
+              status: 'unavailable',
+              reasonCode: 'approval-rejected-dependency-unavailable',
+            }),
+          }),
+        }),
+      ]),
     });
   });
 

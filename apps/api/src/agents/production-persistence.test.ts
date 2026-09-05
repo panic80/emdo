@@ -58,6 +58,9 @@ const poolFixture = () => {
               claimId: values?.[4],
               runId: values?.[2],
               conversationId: values?.[3],
+              rootManagerInvocationId: (
+                values?.[7] as { readonly rootManagerInvocationId: string }
+              ).rootManagerInvocationId,
               authorizationScopeFingerprint: 'e'.repeat(64),
               escalationTriggers: [],
             },
@@ -165,6 +168,7 @@ describe('production agent persistence bridge', () => {
     await composition.bindings.managerTurns.service.start({
       request: {
         schemaVersion: 1,
+        locale: 'en-CA',
         message: 'add 2 each Milk to shopping list',
         routeHint: 'shopping',
       },
@@ -230,6 +234,7 @@ describe('production agent persistence bridge', () => {
       request: {
         schemaVersion: 1,
         conversationId: ids.conversation,
+        locale: 'en-CA',
         message: 'What is on my schedule?',
       },
       principal,
@@ -249,6 +254,7 @@ describe('production agent persistence bridge', () => {
         requestId: ids.request,
         runId: accepted.runId,
         conversationId: ids.conversation,
+        authorizationScopeFingerprint: 'e'.repeat(64),
       }),
     );
     expect(runTurn).toHaveBeenCalledWith(
@@ -280,6 +286,26 @@ describe('production agent persistence bridge', () => {
     await expect(composition.bindings.runEvents.check()).resolves.toBe(true);
   });
 
+  it('keeps ordinary EMDO turns available without a visual-decision provider', async () => {
+    const { pool } = poolFixture();
+    const runtimeFactory = {
+      create: vi.fn(async () => ({
+        orchestrator: { runTurn: vi.fn(), resumeTurn: vi.fn() },
+      })),
+      check: vi.fn(async () => true),
+    } as unknown as ProductionAgentRuntimeFactory;
+
+    const composition = createProductionAgentPersistence({
+      pool,
+      runtimeFactory,
+    });
+
+    expect(composition.bindings.managerTurns).toBeDefined();
+    expect(composition.bindings.runEvents).toBeDefined();
+    expect(composition.bindings.proposals).toBeUndefined();
+    await expect(composition.bindings.managerTurns.check()).resolves.toBe(true);
+  });
+
   it('routes visual decisions through the existing trusted decision gateway', async () => {
     const { pool } = poolFixture();
     const decideWithVisualProof = vi.fn(async () => ({
@@ -308,7 +334,7 @@ describe('production agent persistence bridge', () => {
     };
 
     await expect(
-      composition.bindings.proposals.service.decideWithVisualProof(request),
+      composition.bindings.proposals!.service.decideWithVisualProof(request),
     ).resolves.toEqual({ status: 'proposal-not-found' });
     expect(decideWithVisualProof).toHaveBeenCalledOnce();
     expect(decideWithVisualProof).toHaveBeenCalledWith(request);
@@ -332,7 +358,7 @@ describe('production agent persistence bridge', () => {
     await expect(composition.bindings.managerTurns.check()).resolves.toBe(
       false,
     );
-    await expect(composition.bindings.proposals.check()).resolves.toBe(false);
+    await expect(composition.bindings.proposals!.check()).resolves.toBe(false);
     await expect(composition.bindings.runEvents.check()).resolves.toBe(true);
   });
 

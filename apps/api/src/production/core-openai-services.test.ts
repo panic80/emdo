@@ -35,6 +35,15 @@ const validEnvironment = Object.freeze({
   EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: '404',
 });
 
+const financeSyntheticEnvironment = Object.freeze({
+  EMDO_ENVIRONMENT: 'staging',
+  EMDO_ALLOW_LOOPBACK_API_INGRESS: 'true',
+  EMDO_SYNTHETIC_DATA_ONLY: 'true',
+  EMDO_FINANCE_SYNTHETIC_STAGING: 'true',
+  EMDO_FINANCE_DOCUMENTS_ENABLED: 'true',
+  EMDO_OPENAI_FINANCE_API_KEY: `sk-proj-${'f'.repeat(40)}`,
+});
+
 const deferred = <Value>() => {
   let resolve!: (value: Value) => void;
   let reject!: (error?: unknown) => void;
@@ -148,6 +157,38 @@ describe('production OpenAI agent service bundle', () => {
         createProductionOpenAiAgentServiceBundle({ environment }, dependencies),
       ).toBeUndefined();
     }
+  });
+
+  it('never uses a Finance embedding key to construct an agent provider or runner', () => {
+    const { dependencies } = makeDependencies();
+    expect(
+      createProductionOpenAiAgentServiceBundle(
+        { environment: financeSyntheticEnvironment },
+        dependencies,
+      ),
+    ).toBeUndefined();
+    expect(dependencies.createProvider).not.toHaveBeenCalled();
+    expect(dependencies.createRunner).not.toHaveBeenCalled();
+  });
+
+  it('uses only the exact agent environment bundle when a Finance key is also present', async () => {
+    const { dependencies } = makeDependencies();
+    const bundle = createProductionOpenAiAgentServiceBundle(
+      {
+        environment: {
+          ...validEnvironment,
+          EMDO_OPENAI_FINANCE_API_KEY:
+            financeSyntheticEnvironment.EMDO_OPENAI_FINANCE_API_KEY,
+        },
+      },
+      dependencies,
+    );
+
+    expect(bundle).toBeDefined();
+    expect(dependencies.createProvider).toHaveBeenCalledWith({
+      apiKey: validEnvironment.EMDO_OPENAI_AGENT_API_KEY,
+    });
+    await bundle?.close();
   });
 
   it('constructs with an injected provider and runner without provider I/O', async () => {

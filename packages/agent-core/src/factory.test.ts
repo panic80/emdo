@@ -284,6 +284,26 @@ describe('AgentFactory', () => {
     expect(Object.isFrozen(compiled.capabilities)).toBe(true);
   });
 
+  it('appends server-owned response guidance without changing the compiled agent instructions', () => {
+    const { createAgent, factory } = setup('delegation');
+    const compiled = factory.compile(definition('manager', 'manager'));
+    const trustedInstruction =
+      'Write the final EMDO synthesis in ja-JP. Keep evidence excerpts in their source language; do not translate those excerpts.';
+
+    compiled.materialize('gpt-5.6-luna', {
+      exposeCapabilities: false,
+      trustedInstructions: [trustedInstruction],
+    });
+
+    expect(compiled.instructions).not.toContain('ja-JP');
+    expect(createAgent).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        instructions: `${compiled.instructions}\n\n${trustedInstruction}`,
+        tools: [],
+      }),
+    );
+  });
+
   it('rejects malformed manifests through the canonical validator', () => {
     const { factory, validateManifest } = setup();
     const malformed = {

@@ -20,7 +20,9 @@ export function AskComposer({
   compact = false,
   initialValue = '',
 }: {
-  readonly onSubmit: (message: string) => Promise<void> | void;
+  readonly onSubmit: (
+    message: string,
+  ) => Promise<boolean | void> | boolean | void;
   readonly onVoiceRequest?: () => void;
   readonly compact?: boolean;
   readonly initialValue?: string;
@@ -39,8 +41,8 @@ export function AskComposer({
     <form
       className={`ask-composer ${compact ? 'ask-composer--compact' : ''}`.trim()}
       onSubmit={handleSubmit(async ({ message }) => {
-        await onSubmit(message.trim());
-        reset({ message: '' });
+        const accepted = await onSubmit(message.trim());
+        if (accepted !== false) reset({ message: '' });
       })}
       noValidate
     >

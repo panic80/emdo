@@ -1,9 +1,13 @@
 import {
+  AgentInvocationContextSchema,
   ActionDecisionRequestSchema,
   ActionDecisionSchema,
   EffectiveAuthorizationScopeFingerprintSchema,
+  IdentifierSchema,
   JsonValueSchema,
+  ModelResolutionSchema,
   OpaqueReferenceSchema,
+  ReviewedActionSchema,
   Sha256Schema,
   UuidSchema,
   deepFreeze,
@@ -11,6 +15,7 @@ import {
   type EffectiveAuthorizationScopeFingerprint,
   type JsonValue,
 } from '@emdo/contracts';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
 import type { DatabasePool } from '../scoped-repository.js';
@@ -44,6 +49,7 @@ const PrincipalSchema = z.strictObject({
 const ApprovalResumeBindingSchema = z.strictObject({
   turnRequestId: UuidSchema,
   runId: UuidSchema,
+  rootManagerInvocationId: UuidSchema,
   conversationId: UuidSchema,
   checkpointId: UuidSchema,
   interruptionId: InterruptionIdSchema,
@@ -89,28 +95,116 @@ const CompletionResultSchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('conflict') }),
 ]);
 
-const TurnResultSchema = z
-  .record(z.string(), JsonValueSchema)
+const AgentUsageSchema = z.strictObject({
+  inputTokens: z.number().int().nonnegative().safe(),
+  outputTokens: z.number().int().nonnegative().safe(),
+  modelCostCadMinor: z.number().int().nonnegative().safe(),
+  spendWarning: z.literal(true).optional(),
+});
+
+const SafeAgentErrorSchema = z.strictObject({
+  code: z.string().trim().min(1).max(256),
+  message: z.string().trim().min(1).max(4_096),
+  retryable: z.boolean(),
+});
+
+const canonicalJson = (value: unknown): string => {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalJson(entry)).join(',')}]`;
+  }
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+    .join(',')}}`;
+};
+
+const canonicalInvocationContextHash = (value: unknown): string =>
+  createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex');
+
+const SpecialistOutcomeCommon = {
+  delegationId: OpaqueReferenceSchema,
+  specialistId: IdentifierSchema,
+  invocationContext: AgentInvocationContextSchema,
+  invocationContextHash: Sha256Schema,
+  usage: AgentUsageSchema,
+} as const;
+
+/**
+ * The persisted manager result is the sole specialist-result collection.
+ * Each outcome is exact and carries the immutable dispatch authority that
+ * produced it; a generic output/safeError bag would permit type widening.
+ */
+const SpecialistOutcomeSchema = z
+  .discriminatedUnion('status', [
+    z.strictObject({
+      ...SpecialistOutcomeCommon,
+      status: z.literal('completed'),
+      facts: JsonValueSchema,
+      evidence: z.array(IdentifierSchema).max(512),
+    }),
+    z.strictObject({
+      ...SpecialistOutcomeCommon,
+      status: z.literal('needs_confirmation'),
+      proposedAction: ReviewedActionSchema,
+    }),
+    z.strictObject({
+      ...SpecialistOutcomeCommon,
+      status: z.literal('needs_input'),
+      question: z.string().trim().min(1).max(500),
+    }),
+    z.strictObject({
+      ...SpecialistOutcomeCommon,
+      status: z.literal('unavailable'),
+      reasonCode: IdentifierSchema,
+    }),
+    z.strictObject({
+      ...SpecialistOutcomeCommon,
+      status: z.literal('failed'),
+      safeMessage: z.string().trim().min(1).max(4_096),
+    }),
+  ])
   .superRefine((value, context) => {
-    if (!UuidSchema.safeParse(value.runId).success) {
-      context.addIssue({
-        code: 'custom',
-        path: ['runId'],
-        message: 'Turn result run ID is invalid',
-      });
-    }
     if (
-      value.status !== 'completed' &&
-      value.status !== 'needs-approval' &&
-      value.status !== 'failed'
+      value.invocationContextHash !==
+      canonicalInvocationContextHash(value.invocationContext)
     ) {
       context.addIssue({
         code: 'custom',
-        path: ['status'],
-        message: 'Turn result status is invalid',
+        path: ['invocationContextHash'],
+        message: 'Specialist outcome invocation context hash is invalid',
       });
     }
   });
+
+const ResolvedModelResolutionSchema = ModelResolutionSchema.refine(
+  (value) => value.status === 'resolved',
+  'Completed approval resumes require a resolved model',
+);
+
+const TurnResultBaseShape = {
+  runId: UuidSchema,
+  localTraceReference: OpaqueReferenceSchema,
+  specialistOutcomes: z.array(SpecialistOutcomeSchema).max(128),
+  usage: AgentUsageSchema,
+} as const;
+
+const TurnResultSchema = z.discriminatedUnion('status', [
+  z.strictObject({
+    ...TurnResultBaseShape,
+    status: z.literal('completed'),
+    output: JsonValueSchema,
+    hasPartialFailures: z.boolean(),
+    modelResolution: ResolvedModelResolutionSchema,
+  }),
+  z.strictObject({
+    ...TurnResultBaseShape,
+    status: z.literal('failed'),
+    safeError: SafeAgentErrorSchema,
+    modelResolution: ModelResolutionSchema.optional(),
+  }),
+]);
 
 const DecisionLinkResultSchema = z.discriminatedUnion('status', [
   z.strictObject({
@@ -156,6 +250,7 @@ export interface PostgresApprovalResumePrincipal {
 export interface PostgresApprovalResumeBinding {
   readonly turnRequestId: string;
   readonly runId: string;
+  readonly rootManagerInvocationId: string;
   readonly conversationId: string;
   readonly checkpointId: string;
   readonly interruptionId: string;
@@ -333,7 +428,7 @@ export class PostgresApprovalResumeBoundary {
       ...parsed,
       mode: 'complete',
       reasonCode: null,
-      result: parsed.result,
+      result: JsonValueSchema.parse(parsed.result),
     });
   }
 

@@ -82,6 +82,7 @@ const TransactionRecordSchema = z.strictObject({
   categoryId: OpaqueReferenceSchema.nullable(),
   postedOn: DateOnlySchema,
   description: DescriptionSchema,
+  annotation: DescriptionSchema.nullable().optional(),
   currency: z.literal('CAD'),
   originalAmountCadMinor: CadMinorUnitsSchema,
   effectiveAmountCadMinor: CadMinorUnitsSchema,
@@ -89,6 +90,7 @@ const TransactionRecordSchema = z.strictObject({
   reversal: FinanceReversalSchema.nullable(),
   appliedOperationIds: z.array(UuidSchema).max(10_001),
   source: FinanceTransactionSourceSchema,
+  revision: z.number().int().safe().nonnegative().optional(),
 });
 
 export const BudgetAllocationSchema = z.strictObject({
@@ -314,7 +316,7 @@ const ALLOWED_FINANCE_OPERATIONS = new Set([
   'finance.transaction.adjust',
   'finance.transaction.reverse',
   'finance.statement.import',
-  'finance.budget.calculate',
+  'finance.analytics.calculate',
   'finance.categorization.suggest',
   'finance.explain',
 ]);

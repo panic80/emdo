@@ -1,13 +1,17 @@
 import { randomUUID } from 'node:crypto';
 
 import Fastify, { LogController, type FastifyInstance } from 'fastify';
+import multipart from '@fastify/multipart';
+
+import { FINANCE_DOCUMENT_LIMITS } from '@emdo/domains/finance';
 
 import { resolveApiLimits, type ApiLimits } from './config.js';
 import { createOpenApiDocument } from './openapi.js';
-import { installProblemHandler } from './problem.js';
+import { ApiProblem, installProblemHandler } from './problem.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerExperienceRoutes } from './routes/experience.js';
 import { registerFinanceImportRoutes } from './routes/finance-imports.js';
+import { registerFinanceDocumentRoutes } from './routes/finance-documents.js';
 import { registerGoogleRoutes } from './routes/google.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerHouseholdAdministrationRoutes } from './routes/household-admin.js';
@@ -15,9 +19,13 @@ import { registerMetricsRoutes } from './routes/metrics.js';
 import { registerProposalRoutes } from './routes/proposals.js';
 import { registerRunRoutes } from './routes/runs.js';
 import { registerSyncRoutes } from './routes/sync.js';
+import { registerSyntheticFinanceAccountProvisionerRoute } from './routes/synthetic-finance-account-provisioner.js';
+import { registerSyntheticFinanceInvitationHandoffRoute } from './routes/synthetic-finance-invitation-handoff.js';
 import { registerTurnRoutes } from './routes/turns.js';
 import { registerVoiceRoutes } from './routes/voice.js';
 import { CanonicalAppOriginSchema } from './schemas.js';
+import type { SyntheticFinanceAccountProvisioner } from './production/synthetic-finance-account-provisioner.js';
+import type { SyntheticFinanceInvitationHandoff } from './production/synthetic-finance-invitation-handoff.js';
 import type {
   ApiServices,
   AuthenticatedPrincipal,
@@ -37,7 +45,27 @@ export interface CreateAppOptions {
   readonly edgeProxySecret?: string;
   readonly allowLoopbackApiIngress?: boolean;
   readonly enableSyntheticHttpSubsetReadiness?: boolean;
+  readonly enableFinanceSyntheticStagingReadiness?: boolean;
+  readonly enableFinanceRestoreVerifierOnly?: boolean;
+  readonly syntheticFinanceAccountProvisioner?: SyntheticFinanceAccountProvisioner;
+  readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
 }
+
+const FINANCE_RESTORE_UUID =
+  '[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+const FINANCE_RESTORE_VERIFIER_READ_PATH = new RegExp(
+  `^/api/v1/finance/(?:documents/${FINANCE_RESTORE_UUID}(?:/original)?|evidence/${FINANCE_RESTORE_UUID})$`,
+  'u',
+);
+
+const isFinanceRestoreVerifierRequest = (input: {
+  readonly method: string;
+  readonly url: string;
+}): boolean =>
+  input.method === 'GET' &&
+  (input.url === '/healthz' ||
+    input.url === '/finance-synthetic-staging/readyz' ||
+    FINANCE_RESTORE_VERIFIER_READ_PATH.test(input.url));
 
 const requestId = (request: { readonly headers: Record<string, unknown> }) => {
   const candidate = request.headers['x-request-id'];
@@ -96,6 +124,38 @@ export const createApp = async (
   });
 
   installProblemHandler(app);
+  if (options.enableFinanceRestoreVerifierOnly === true) {
+    if (options.enableFinanceSyntheticStagingReadiness !== true) {
+      throw new Error('finance-restore-verifier-requires-synthetic-staging');
+    }
+    app.addHook('onRequest', async (request) => {
+      if (
+        !isFinanceRestoreVerifierRequest({
+          method: request.method,
+          url: request.url,
+        })
+      ) {
+        throw new ApiProblem({
+          status: 503,
+          code: 'finance-restore-verifier-only',
+          title: 'Finance restore verifier only',
+          detail:
+            'This isolated Finance restore accepts only its bounded verification reads.',
+        });
+      }
+    });
+  }
+  await app.register(multipart, {
+    limits: {
+      fieldNameSize: 100,
+      fieldSize: 1,
+      fields: 0,
+      files: 1,
+      parts: 1,
+      headerPairs: 100,
+      fileSize: FINANCE_DOCUMENT_LIMITS.maximumBytesPerFile,
+    },
+  });
   registerAuthRoutes(
     app,
     options.services,
@@ -110,10 +170,12 @@ export const createApp = async (
     options.services,
     limits.maximumJsonBodyBytes,
   );
+  registerFinanceDocumentRoutes(app, options.services);
   registerHealthRoutes(
     app,
     options.services,
     options.enableSyntheticHttpSubsetReadiness,
+    options.enableFinanceSyntheticStagingReadiness,
   );
   registerMetricsRoutes(app, options.services);
   registerTurnRoutes(app, options.services, limits);
@@ -132,6 +194,20 @@ export const createApp = async (
     options.services,
     limits.maximumJsonBodyBytes,
   );
+  if (options.syntheticFinanceAccountProvisioner !== undefined) {
+    registerSyntheticFinanceAccountProvisionerRoute(
+      app,
+      options.services,
+      options.syntheticFinanceAccountProvisioner,
+    );
+  }
+  if (options.syntheticFinanceInvitationHandoff !== undefined) {
+    registerSyntheticFinanceInvitationHandoffRoute(
+      app,
+      options.services,
+      options.syntheticFinanceInvitationHandoff,
+    );
+  }
   app.get('/openapi.json', async (_request, reply) =>
     reply
       .header('cache-control', 'public, max-age=300')

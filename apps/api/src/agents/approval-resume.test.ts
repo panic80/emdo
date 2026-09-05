@@ -27,6 +27,8 @@ const ids = Object.freeze({
   decisionSpaceGrant: '018f1f5e-3000-7000-8000-00000000000b',
   disclosureGrant: '018f1f5e-3000-7000-8000-00000000000c',
   resumeSpaceGrant: '018f1f5e-3000-7000-8000-00000000000d',
+  privateSpace: '018f1f5e-3000-7000-8000-00000000000e',
+  rootManagerInvocation: '018f1f5e-3000-7000-8000-00000000000f',
 });
 
 const payloadHash = 'a'.repeat(64);
@@ -80,6 +82,7 @@ const claimed = Object.freeze({
   turnRequestId: ids.turnRequest,
   runId: ids.run,
   conversationId: ids.conversation,
+  rootManagerInvocationId: ids.rootManagerInvocation,
   checkpointId: ids.checkpoint,
   interruptionId: 'delegation-1:approval:call-1',
   proposalId: ids.proposal,
@@ -195,6 +198,8 @@ describe('production approval resume binding', () => {
       requestId: ids.turnRequest,
       runId: ids.run,
       conversationId: ids.conversation,
+      rootManagerInvocationId: ids.rootManagerInvocation,
+      authorizationScopeFingerprint: runScopeFingerprint,
       approvalResume: {
         checkpointId: ids.checkpoint,
         proposalId: ids.proposal,
@@ -236,6 +241,40 @@ describe('production approval resume binding', () => {
     expect(ids.resumeSpaceGrant).not.toBe(ids.decisionSpaceGrant);
     expect(collectionScopeFingerprint).not.toBe(
       principal.collectionAuthorizationScopeFingerprint,
+    );
+  });
+
+  it('projects private-space metadata out of strict durable boundaries while preserving it for the resumed runtime', async () => {
+    const configured = setup();
+    const privatePrincipal: AuthenticatedPrincipal = Object.freeze({
+      ...principal,
+      privateSpaceId: ids.privateSpace,
+    });
+
+    await expect(
+      configured.binding.service.decideWithVisualProof({
+        ...request,
+        principal: privatePrincipal,
+      }),
+    ).resolves.toEqual({ status: 'decided', decision });
+
+    expect(configured.decideAndLink).toHaveBeenCalledWith({
+      ...request,
+      principal,
+    });
+    expect(configured.claim).toHaveBeenCalledWith({
+      decision,
+      principal,
+      decisionRequestId: ids.decisionRequest,
+    });
+    expect(configured.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        principal: {
+          ...privatePrincipal,
+          spaceAccessGrantId: ids.resumeSpaceGrant,
+          collectionAuthorizationScopeFingerprint: collectionScopeFingerprint,
+        },
+      }),
     );
   });
 

@@ -717,7 +717,7 @@ const seedAuthorityFixtures = async (client: import('pg').Client) => {
 };
 
 describeDatabase(
-  'PostgreSQL 17 workflow authority (requires isolated TEST_DATABASE_URL)',
+  'PostgreSQL 18 workflow authority (requires isolated TEST_DATABASE_URL)',
   () => {
     let client: import('pg').Client;
 
@@ -731,8 +731,8 @@ describeDatabase(
       );
       expect(
         Number(version.rows[0]?.server_version_num),
-      ).toBeGreaterThanOrEqual(170_000);
-      expect(Number(version.rows[0]?.server_version_num)).toBeLessThan(180_000);
+      ).toBeGreaterThanOrEqual(180_000);
+      expect(Number(version.rows[0]?.server_version_num)).toBeLessThan(190_000);
 
       const existingSchema = await client.query<{ emdo_schema: string | null }>(
         `select pg_catalog.to_regnamespace('emdo')::text as emdo_schema`,

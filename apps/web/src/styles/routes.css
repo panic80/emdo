@@ -412,6 +412,7 @@
 
 .message p {
   margin: 0;
+  overflow-wrap: anywhere;
   font-size: 16px;
   line-height: 1.6;
 }
@@ -563,6 +564,12 @@
 .finance-budgets {
   padding: 28px 0;
   border-bottom: 1px solid var(--color-divider);
+}
+
+.finance-view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .budget-row {

@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 import { createApp, type ApiServices } from './app.js';
 import { createProductionApiServices } from './production/create-services.js';
+import type { SyntheticFinanceAccountProvisioner } from './production/synthetic-finance-account-provisioner.js';
+import type { SyntheticFinanceInvitationHandoff } from './production/synthetic-finance-invitation-handoff.js';
 import { CanonicalAppOriginSchema } from './schemas.js';
 import { EdgeProxySecretSchema } from './trusted-ingress.js';
 
@@ -12,6 +14,8 @@ const ApiServerConfigSchema = z
     port: z.number().int().min(1).max(65_535),
     allowLoopbackApiIngress: z.boolean(),
     enableSyntheticHttpSubsetReadiness: z.boolean(),
+    enableFinanceSyntheticStagingReadiness: z.boolean(),
+    enableFinanceRestoreVerifierOnly: z.boolean(),
     edgeProxySecret: EdgeProxySecretSchema,
     publicOrigin: CanonicalAppOriginSchema,
   })
@@ -38,6 +42,39 @@ const ApiServerConfigSchema = z
           'synthetic HTTP subset readiness requires staging loopback ingress',
       });
     }
+    if (
+      value.enableFinanceSyntheticStagingReadiness &&
+      (value.deploymentEnvironment !== 'staging' ||
+        !value.allowLoopbackApiIngress)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['enableFinanceSyntheticStagingReadiness'],
+        message:
+          'Finance synthetic staging readiness requires staging loopback ingress',
+      });
+    }
+    if (
+      value.enableSyntheticHttpSubsetReadiness &&
+      value.enableFinanceSyntheticStagingReadiness
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['enableSyntheticHttpSubsetReadiness'],
+        message: 'synthetic readiness profiles are mutually exclusive',
+      });
+    }
+    if (
+      value.enableFinanceRestoreVerifierOnly &&
+      !value.enableFinanceSyntheticStagingReadiness
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['enableFinanceRestoreVerifierOnly'],
+        message:
+          'Finance restore verifier mode requires exact Finance synthetic staging',
+      });
+    }
   });
 
 export type ApiServerConfig = z.infer<typeof ApiServerConfigSchema>;
@@ -53,8 +90,37 @@ export const loadApiServerConfig = (
     .enum(['true', 'false'])
     .default('false')
     .parse(environment.EMDO_SYNTHETIC_DATA_ONLY);
+  const financeSyntheticStagingRequested = z
+    .enum(['true', 'false'])
+    .default('false')
+    .parse(environment.EMDO_FINANCE_SYNTHETIC_STAGING);
+  const financeDocumentsEnabled = z
+    .enum(['true', 'false'])
+    .default('false')
+    .parse(environment.EMDO_FINANCE_DOCUMENTS_ENABLED);
+  const financeRestoreReadOnlyRequested = z
+    .enum(['true', 'false'])
+    .default('false')
+    .parse(environment.EMDO_FINANCE_RESTORE_READ_ONLY);
   const deploymentEnvironment = environment.EMDO_ENVIRONMENT ?? 'production';
   const loopbackEnabled = allowLoopbackApiIngress === 'true';
+  const financeSyntheticStaging =
+    financeSyntheticStagingRequested === 'true' &&
+    deploymentEnvironment === 'staging' &&
+    loopbackEnabled &&
+    syntheticDataOnly === 'true' &&
+    financeDocumentsEnabled === 'true';
+  if (financeSyntheticStagingRequested === 'true' && !financeSyntheticStaging) {
+    throw new Error('api-finance-synthetic-staging-configuration-invalid');
+  }
+  const financeRestoreVerifierOnly =
+    financeRestoreReadOnlyRequested === 'true' && financeSyntheticStaging;
+  if (
+    financeRestoreReadOnlyRequested === 'true' &&
+    !financeRestoreVerifierOnly
+  ) {
+    throw new Error('api-finance-restore-verifier-configuration-invalid');
+  }
   return Object.freeze(
     ApiServerConfigSchema.parse({
       deploymentEnvironment,
@@ -64,7 +130,10 @@ export const loadApiServerConfig = (
       enableSyntheticHttpSubsetReadiness:
         deploymentEnvironment === 'staging' &&
         loopbackEnabled &&
-        syntheticDataOnly === 'true',
+        syntheticDataOnly === 'true' &&
+        !financeSyntheticStaging,
+      enableFinanceSyntheticStagingReadiness: financeSyntheticStaging,
+      enableFinanceRestoreVerifierOnly: financeRestoreVerifierOnly,
       edgeProxySecret: environment.EMDO_EDGE_PROXY_SECRET,
       publicOrigin: environment.EMDO_PUBLIC_ORIGIN,
     }),
@@ -83,6 +152,21 @@ const REQUIRED_SERVICE_METHODS = Object.freeze({
   activityRead: ['list'],
   financeRead: ['list'],
   financeImports: ['listDestinations', 'preview', 'commit'],
+  financeDocuments: [
+    'list',
+    'get',
+    'upload',
+    'downloadOriginal',
+    'retry',
+    'getReview',
+    'updateReview',
+    'commitReview',
+    'listMatches',
+    'decideMatch',
+    'getEvidence',
+    'delete',
+    'readExperience',
+  ],
   managerTurns: ['start'],
   notificationPreferences: ['get', 'update'],
   runEvents: ['open'],
@@ -163,6 +247,22 @@ const startApiServer = async (input: {
   const config = ApiServerConfigSchema.parse(
     input.config ?? loadApiServerConfig(input.environment ?? process.env),
   );
+  const syntheticFinanceInvitationHandoff =
+    input.services !== null && typeof input.services === 'object'
+      ? (
+          input.services as {
+            readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
+          }
+        ).syntheticFinanceInvitationHandoff
+      : undefined;
+  const syntheticFinanceAccountProvisioner =
+    input.services !== null && typeof input.services === 'object'
+      ? (
+          input.services as {
+            readonly syntheticFinanceAccountProvisioner?: SyntheticFinanceAccountProvisioner;
+          }
+        ).syntheticFinanceAccountProvisioner
+      : undefined;
   const app = await createApp({
     services,
     publicOrigin: config.publicOrigin,
@@ -170,6 +270,20 @@ const startApiServer = async (input: {
     allowLoopbackApiIngress: config.allowLoopbackApiIngress,
     enableSyntheticHttpSubsetReadiness:
       config.enableSyntheticHttpSubsetReadiness,
+    enableFinanceSyntheticStagingReadiness:
+      config.enableFinanceSyntheticStagingReadiness,
+    enableFinanceRestoreVerifierOnly: config.enableFinanceRestoreVerifierOnly,
+    ...(syntheticFinanceAccountProvisioner === undefined
+      ? {}
+      : {
+          syntheticFinanceAccountProvisioner:
+            syntheticFinanceAccountProvisioner,
+        }),
+    ...(syntheticFinanceInvitationHandoff === undefined
+      ? {}
+      : {
+          syntheticFinanceInvitationHandoff: syntheticFinanceInvitationHandoff,
+        }),
   });
   const close = (services as ApiServices & { readonly close?: unknown }).close;
   if (typeof close === 'function') {
@@ -184,6 +298,7 @@ const startApiServer = async (input: {
 export const startApiFromEnvironment = async (
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ) => {
+  const config = loadApiServerConfig(environment);
   const services = await loadProductionApiServices(environment);
-  return startApiServer({ services, environment });
+  return startApiServer({ services, config });
 };

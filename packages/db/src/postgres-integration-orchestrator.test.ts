@@ -6,11 +6,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   POSTGRES_INTEGRATION_SUITES,
+  POSTGRES_INTEGRATION_DATABASE_ATTESTATION_ENVIRONMENT,
+  buildPostgresSuiteVitestArguments,
   readPostgresSuiteFailureSummary,
   runPostgresIntegrationSuites,
   summarizePostgresProcessFailure,
   summarizePostgresSuiteFailure,
   type PostgresIntegrationDependencies,
+  type PostgresServerInspection,
 } from './postgres-integration-orchestrator.js';
 
 const sourceSha = 'a'.repeat(40);
@@ -23,6 +26,13 @@ const attackProof = Object.freeze({
   signedClaimScope: 'passed' as const,
   attackCaseCount: 15,
 });
+const validServer = Object.freeze({
+  adminDatabase: 'postgres',
+  adminIsSuperuser: true,
+  emdoRoleCount: 0,
+  pgvectorExtensionVersion: '0.8.6',
+  serverVersionNum: 180_010,
+} satisfies PostgresServerInspection);
 
 const expectedDatabaseName = (
   suite: (typeof POSTGRES_INTEGRATION_SUITES)[number],
@@ -35,21 +45,23 @@ const createDependencies = (
   events: string[],
 ): PostgresIntegrationDependencies => {
   const dependencies = {
-    inspectServer: vi.fn(async () => ({
-      emdoRoleCount: 0,
-      pgvectorExtensionVersion: '0.8.6',
-      serverVersionNum: 170_010,
-    })),
-    createDatabase: vi.fn(async ({ suite }) => {
+    inspectServer: vi.fn(async () => validServer),
+    createDatabase: vi.fn(async ({ databaseAttestation, suite }) => {
       events.push(`create:${suite.id}`);
+      expect(databaseAttestation).toMatch(
+        new RegExp(`^emdo-postgres-suite-v1:${suite.id}:[0-9a-f]{32}$`, 'u'),
+      );
       const databaseName = expectedDatabaseName(suite);
       return {
         databaseName,
         databaseUrl: `postgresql://postgres:test@127.0.0.1:5432/${databaseName}`,
       };
     }),
-    runSuite: vi.fn(async ({ databaseName, suite }) => {
+    runSuite: vi.fn(async ({ databaseAttestation, databaseName, suite }) => {
       events.push(`run:${suite.id}:${databaseName}`);
+      expect(databaseAttestation).toMatch(
+        new RegExp(`^emdo-postgres-suite-v1:${suite.id}:[0-9a-f]{32}$`, 'u'),
+      );
       return {
         numFailedTests: 0,
         numPassedTests: suite.id === 'rls-cross-household-attacks' ? 1 : 2,
@@ -166,6 +178,7 @@ describe('PostgreSQL integration orchestrator', () => {
   });
 
   it('enrolls every dedicated live database authority suite', () => {
+    expect(POSTGRES_INTEGRATION_SUITES).toHaveLength(17);
     expect(POSTGRES_INTEGRATION_SUITES).toEqual(
       expect.arrayContaining([
         {
@@ -182,6 +195,15 @@ describe('PostgreSQL integration orchestrator', () => {
           id: 'finance-import-receipts',
           file: 'packages/db/src/finance/postgres-finance-import-repository.integration.test.ts',
           databaseEnvironment: 'TEST_FINANCE_IMPORT_DATABASE_URL',
+        },
+        {
+          id: 'finance-document-knowledge',
+          file: 'packages/db/src/finance/postgres-finance-document-repository.integration.test.ts',
+          files: [
+            'packages/db/src/finance/postgres-finance-document-repository.integration.test.ts',
+            'apps/api/src/production/finance-synthetic-staging-runtime.integration.test.ts',
+          ],
+          databaseEnvironment: 'TEST_FINANCE_DOCUMENT_DATABASE_URL',
         },
         {
           id: 'finance-import-retention-runner',
@@ -219,6 +241,30 @@ describe('PostgreSQL integration orchestrator', () => {
     );
   });
 
+  it('invokes both grouped finance document files in one isolated Vitest child', () => {
+    const suite = POSTGRES_INTEGRATION_SUITES.find(
+      ({ id }) => id === 'finance-document-knowledge',
+    );
+    if (suite === undefined || !('files' in suite)) {
+      throw new Error('The finance document suite must declare grouped files.');
+    }
+
+    expect(POSTGRES_INTEGRATION_SUITES).toHaveLength(17);
+    expect(
+      buildPostgresSuiteVitestArguments(suite, '/tmp/finance-document.json'),
+    ).toEqual([
+      'exec',
+      'vitest',
+      'run',
+      ...suite.files,
+      '--no-file-parallelism',
+      '--cache=false',
+      '--reporter=verbose',
+      '--reporter=json',
+      '--outputFile.json=/tmp/finance-document.json',
+    ]);
+  });
+
   it('runs every suite sequentially in a fresh database instance and writes a non-release report last', async () => {
     const events: string[] = [];
     const dependencies = createDependencies(events);
@@ -239,8 +285,8 @@ describe('PostgreSQL integration orchestrator', () => {
       sourceSha,
       observedAt: '2026-08-10T14:00:00.000Z',
       database: {
-        postgresqlMajor: 17,
-        serverVersionNum: 170_010,
+        postgresqlMajor: 18,
+        serverVersionNum: 180_010,
         pgvectorExtensionVersion: '0.8.6',
       },
       execution: 'sequential',
@@ -260,6 +306,9 @@ describe('PostgreSQL integration orchestrator', () => {
     ).toBe(new Set(POSTGRES_INTEGRATION_SUITES.map(expectedDatabaseName)).size);
     expect(dependencies.runSuite).toHaveBeenCalledWith(
       expect.objectContaining({
+        databaseAttestation: expect.stringMatching(
+          /^emdo-postgres-suite-v1:rls-cross-household-attacks:[0-9a-f]{32}$/u,
+        ),
         probeContext: {
           environment: 'ci',
           event,
@@ -282,6 +331,39 @@ describe('PostgreSQL integration orchestrator', () => {
       }),
       `report:${POSTGRES_INTEGRATION_SUITES.length}`,
     ]);
+  });
+
+  it('uses a single minted attestation for the database creation and child suite', async () => {
+    const events: string[] = [];
+    const dependencies = createDependencies(events);
+
+    await runPostgresIntegrationSuites({
+      adminUrl: 'postgresql://postgres:test@127.0.0.1:5432/postgres',
+      dependencies,
+      event,
+      runId,
+      sourceSha,
+    });
+
+    const financeSuite = POSTGRES_INTEGRATION_SUITES.find(
+      ({ id }) => id === 'finance-document-knowledge',
+    );
+    const createCall = vi
+      .mocked(dependencies.createDatabase)
+      .mock.calls.find(([{ suite }]) => suite.id === financeSuite?.id);
+    const runCall = vi
+      .mocked(dependencies.runSuite)
+      .mock.calls.find(([{ suite }]) => suite.id === financeSuite?.id);
+    const createdAttestation = createCall?.[0].databaseAttestation;
+    const suppliedAttestation = runCall?.[0].databaseAttestation;
+
+    expect(POSTGRES_INTEGRATION_DATABASE_ATTESTATION_ENVIRONMENT).toBe(
+      'EMDO_POSTGRES_INTEGRATION_DATABASE_ATTESTATION',
+    );
+    expect(createdAttestation).toMatch(
+      /^emdo-postgres-suite-v1:finance-document-knowledge:[0-9a-f]{32}$/u,
+    );
+    expect(suppliedAttestation).toBe(createdAttestation);
   });
 
   it('keeps every generated suite database name within the PostgreSQL identifier limit', () => {
@@ -322,16 +404,24 @@ describe('PostgreSQL integration orchestrator', () => {
     expect(dependencies.writeRawReport).not.toHaveBeenCalled();
   });
 
-  it('refuses a server outside PostgreSQL 17 or without pgvector before creating a database', async () => {
+  it('refuses PostgreSQL 17, PostgreSQL 19, or a server without pgvector before creating a database', async () => {
     for (const server of [
-      { pgvectorExtensionVersion: '0.8.6', serverVersionNum: 160_009 },
-      { pgvectorExtensionVersion: null, serverVersionNum: 170_010 },
-      { pgvectorExtensionVersion: '0.8.6', serverVersionNum: Number.NaN },
-      { pgvectorExtensionVersion: 'not-a-version', serverVersionNum: 170_010 },
+      { ...validServer, serverVersionNum: 170_010 },
+      { ...validServer, serverVersionNum: 190_000 },
+      { ...validServer, pgvectorExtensionVersion: null },
+      { ...validServer, serverVersionNum: Number.NaN },
+      { ...validServer, pgvectorExtensionVersion: 'not-a-version' },
       {
+        ...validServer,
         emdoRoleCount: 1,
-        pgvectorExtensionVersion: '0.8.6',
-        serverVersionNum: 170_010,
+      },
+      {
+        ...validServer,
+        adminDatabase: 'emdo_app',
+      },
+      {
+        ...validServer,
+        adminIsSuperuser: false,
       },
     ] as const) {
       const events: string[] = [];
@@ -347,7 +437,7 @@ describe('PostgreSQL integration orchestrator', () => {
           runId,
           sourceSha,
         }),
-      ).rejects.toThrow('PostgreSQL 17 with pgvector');
+      ).rejects.toThrow('PostgreSQL 18 with pgvector');
       expect(dependencies.createDatabase).not.toHaveBeenCalled();
     }
   });

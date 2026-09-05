@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { FinanceImportApi } from './finance-import-api.js';
 import { FinanceImportPanel } from './finance-import-panel.js';
+import { financeCopy } from '../finance-v1/finance-locales.js';
 
 const rawStatement = 'DATE,DESC,AMOUNT\n2026-08-01,PRIVATE-COFFEE,-4.50';
 
@@ -56,17 +57,6 @@ function createApi(
         duplicateRows: [{ sourceRow: 3, reason: 'existing' }],
       },
     })),
-    commit: vi.fn<FinanceImportApi['commit']>(async () => ({
-      schemaVersion: 1 as const,
-      status: 'committed' as const,
-      receipt: {
-        id: 'receipt-a',
-        planId: 'plan-a',
-        transactionCount: 2,
-        verified: true as const,
-      },
-      sourceDeletionAuthorized: true as const,
-    })),
     ...overrides,
   };
 }
@@ -74,6 +64,30 @@ function createApi(
 afterEach(cleanup);
 
 describe('FinanceImportPanel', () => {
+  it.each(['en-CA', 'fr-CA', 'ja-JP', 'ko-KR'] as const)(
+    'uses the typed localized import catalog for %s',
+    async (locale) => {
+      const user = userEvent.setup();
+      const copy = financeCopy[locale].importPanel;
+      render(
+        <FinanceImportPanel
+          api={createApi()}
+          copy={copy}
+          online
+          csrfToken="csrf-current"
+          onCommitted={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText(copy.description)).toBeVisible();
+      await user.click(screen.getByRole('button', { name: copy.open }));
+      expect(await screen.findByLabelText(copy.accountLabel)).toBeVisible();
+      expect(screen.getByLabelText(copy.statementFileLabel)).toBeVisible();
+      expect(screen.getByRole('button', { name: copy.preview })).toBeVisible();
+      expect(screen.getByRole('button', { name: copy.cancel })).toBeVisible();
+    },
+  );
+
   it('fails closed while offline or without an in-memory CSRF proof', () => {
     const api = createApi();
     const { rerender } = render(
@@ -133,16 +147,73 @@ describe('FinanceImportPanel', () => {
     expect(api.listDestinations).toHaveBeenCalledOnce();
   });
 
-  it('keeps a CSV statement out of the DOM, previews bounded diagnostics, and commits after review', async () => {
+  it('clears a conflicting debit or credit column before previewing a CSV', async () => {
     const api = createApi();
-    const onCommitted = vi.fn();
     const user = userEvent.setup();
     render(
       <FinanceImportPanel
         api={api}
         online
         csrfToken="csrf-current"
-        onCommitted={onCommitted}
+        onCommitted={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Import statement' }));
+    await user.selectOptions(
+      await screen.findByLabelText('Import account'),
+      'account-a',
+    );
+    await user.upload(
+      screen.getByLabelText('Statement file'),
+      file(
+        'statement.csv',
+        'Date,Payment Type,Total Price\n2026-08-01,Card,10.00',
+      ),
+    );
+    await user.selectOptions(
+      screen.getByLabelText('Posted date column'),
+      'Date',
+    );
+    await user.selectOptions(
+      screen.getByLabelText('Description column'),
+      'Payment Type',
+    );
+    await user.selectOptions(
+      screen.getByLabelText('Debit column'),
+      'Total Price',
+    );
+    await user.selectOptions(
+      screen.getByLabelText('Credit column'),
+      'Total Price',
+    );
+
+    expect(
+      (screen.getByLabelText('Debit column') as HTMLSelectElement).value,
+    ).toBe('');
+    expect(
+      (screen.getByLabelText('Credit column') as HTMLSelectElement).value,
+    ).toBe('Total Price');
+
+    await user.click(screen.getByRole('button', { name: 'Preview import' }));
+    expect(
+      screen.getByText(
+        'Choose a date, description, and one signed amount or both debit and credit columns.',
+      ),
+    ).toBeVisible();
+    expect(api.preview).not.toHaveBeenCalled();
+  });
+
+  it('keeps a CSV statement out of the DOM, previews bounded diagnostics, and commits after review', async () => {
+    const api = createApi();
+    const onRequestCommit = vi.fn(async () => true);
+    const user = userEvent.setup();
+    render(
+      <FinanceImportPanel
+        api={api}
+        online
+        csrfToken="csrf-current"
+        onRequestCommit={onRequestCommit}
       />,
     );
 
@@ -201,14 +272,11 @@ describe('FinanceImportPanel', () => {
     await user.click(
       screen.getByRole('button', { name: 'Commit 2 transactions' }),
     );
-    await screen.findByText('Imported 2 transactions.');
-    expect(api.commit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        planId: 'plan-a',
-        idempotencyKey: expect.stringMatching(/^finance-import:/u),
-      }),
+    await screen.findByText(/EMDO received the reviewed import request/u);
+    expect(onRequestCommit).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'plan-a' }),
     );
-    expect(onCommitted).toHaveBeenCalledOnce();
+    expect(api).not.toHaveProperty('commit');
     expect(document.body.textContent).not.toContain('PRIVATE-COFFEE');
   });
 
@@ -244,30 +312,15 @@ describe('FinanceImportPanel', () => {
     expect(document.body.textContent).not.toContain('PRIVATE-COFFEE');
   });
 
-  it('uses the same plan idempotency key for a retry', async () => {
-    const api = createApi({
-      commit: vi
-        .fn<FinanceImportApi['commit']>()
-        .mockRejectedValueOnce(new Error('transport'))
-        .mockResolvedValueOnce({
-          schemaVersion: 1 as const,
-          status: 'replayed' as const,
-          receipt: {
-            id: 'receipt-a',
-            planId: 'plan-a',
-            transactionCount: 2,
-            verified: true as const,
-          },
-          sourceDeletionAuthorized: true as const,
-        }),
-    });
+  it('does not clear a reviewed statement or call a direct commit for a request', async () => {
+    const api = createApi();
     const user = userEvent.setup();
     render(
       <FinanceImportPanel
         api={api}
         online
         csrfToken="csrf-current"
-        onCommitted={vi.fn()}
+        onRequestCommit={vi.fn(async () => true)}
       />,
     );
     await user.click(screen.getByRole('button', { name: 'Import statement' }));
@@ -288,13 +341,9 @@ describe('FinanceImportPanel', () => {
     await user.click(
       screen.getByRole('button', { name: 'Commit 2 transactions' }),
     );
-    await screen.findByRole('alert');
-    await user.click(
-      screen.getByRole('button', { name: 'Commit 2 transactions' }),
-    );
-    await waitFor(() => expect(api.commit).toHaveBeenCalledTimes(2));
-    const calls = vi.mocked(api.commit).mock.calls;
-    expect(calls[0]?.[0].idempotencyKey).toBe(calls[1]?.[0].idempotencyKey);
+    await screen.findByText(/EMDO received the reviewed import request/u);
+    expect(api).not.toHaveProperty('commit');
+    expect(screen.getByLabelText('Statement file')).toBeInTheDocument();
   });
 
   it('ignores a file read that resolves after cancel or replacement', async () => {
@@ -393,17 +442,16 @@ describe('FinanceImportPanel', () => {
     ).toBeVisible();
   });
 
-  it('does not let a stale commit wipe a replacement statement', async () => {
-    const pendingCommit =
-      deferred<Awaited<ReturnType<FinanceImportApi['commit']>>>();
-    const api = createApi({ commit: vi.fn(() => pendingCommit.promise) });
+  it('does not let a stale EMDO request wipe a replacement statement', async () => {
+    const pendingCommit = deferred<boolean>();
+    const api = createApi();
     const user = userEvent.setup();
     render(
       <FinanceImportPanel
         api={api}
         online
         csrfToken="csrf-current"
-        onCommitted={vi.fn()}
+        onRequestCommit={() => pendingCommit.promise}
       />,
     );
     await user.click(screen.getByRole('button', { name: 'Import statement' }));
@@ -428,17 +476,7 @@ describe('FinanceImportPanel', () => {
       screen.getByLabelText('Statement file'),
       file('second.ofx', '<OFX>second', 'application/x-ofx'),
     );
-    pendingCommit.resolve({
-      schemaVersion: 1,
-      status: 'committed',
-      receipt: {
-        id: 'receipt-a',
-        planId: 'plan-a',
-        transactionCount: 2,
-        verified: true,
-      },
-      sourceDeletionAuthorized: true,
-    });
+    pendingCommit.resolve(true);
     await Promise.resolve();
     await user.click(screen.getByRole('button', { name: 'Preview import' }));
     await waitFor(() =>

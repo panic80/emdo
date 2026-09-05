@@ -19,6 +19,8 @@ now_epoch="$(date +%s)"
   exit 1
 }
 
+cleanup_failed=false
+
 while IFS= read -r -d '' state_dir; do
   run_id="$(basename -- "$state_dir")"
   [[ "$run_id" =~ ^[0-9]{1,20}$ ]] || {
@@ -39,6 +41,11 @@ while IFS= read -r -d '' state_dir; do
     continue
   }
   if ((now_epoch >= deadline_epoch)); then
-    /usr/local/sbin/emdo-staging-operator teardown "$run_id"
+    if ! /usr/local/sbin/emdo-staging-operator teardown "$run_id"; then
+      printf '[emdo-staging-sweeper] operator teardown failed for expired run %s; protected state was retained for a verified retry\n' "$run_id" >&2
+      cleanup_failed=true
+    fi
   fi
 done < <(find "$state_root" -mindepth 1 -maxdepth 1 -type d -print0)
+
+[[ "$cleanup_failed" == false ]] || exit 1

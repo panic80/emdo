@@ -457,23 +457,34 @@ export class AesGcmApprovalCheckpointCipher implements ApprovalCheckpointCipher 
     ) {
       throw new Error('approval-checkpoint-decryption-failed');
     }
-    const parts = sealed.split('.');
+    const ciphertextSeparator = sealed.lastIndexOf('.');
+    const tagSeparator = sealed.lastIndexOf('.', ciphertextSeparator - 1);
+    const nonceSeparator = sealed.lastIndexOf('.', tagSeparator - 1);
     if (
-      parts.length !== 5 ||
-      parts[0] !== 'v1' ||
-      !KEY_ID_PATTERN.test(parts[1] ?? '')
+      !sealed.startsWith('v1.') ||
+      nonceSeparator <= 3 ||
+      !KEY_ID_PATTERN.test(sealed.slice(3, nonceSeparator)) ||
+      sealed.slice(3, nonceSeparator).length > 80
     ) {
       throw new Error('approval-checkpoint-decryption-failed');
     }
-    const keyId = parts[1] ?? '';
+    const keyId = sealed.slice(3, nonceSeparator);
     const key = this.#keys.get(keyId);
     if (key === undefined) {
       throw new Error('approval-checkpoint-decryption-failed');
     }
-    const nonce = decodeBase64Url(parts[2] ?? '', 12, 12);
-    const tag = decodeBase64Url(parts[3] ?? '', 16, 16);
+    const nonce = decodeBase64Url(
+      sealed.slice(nonceSeparator + 1, tagSeparator),
+      12,
+      12,
+    );
+    const tag = decodeBase64Url(
+      sealed.slice(tagSeparator + 1, ciphertextSeparator),
+      16,
+      16,
+    );
     const ciphertext = decodeBase64Url(
-      parts[4] ?? '',
+      sealed.slice(ciphertextSeparator + 1),
       undefined,
       MAX_SERIALIZED_STATE_BYTES + 16,
     );

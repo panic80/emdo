@@ -58,9 +58,9 @@ describeDatabase(
       }
 
       const migrations = await loadOrderedMigrations();
-      expect(migrations).toHaveLength(16);
+      expect(migrations).toHaveLength(23);
       expect(migrations.at(-1)?.id).toBe(
-        '0015_single_household_session_activation',
+        '0022_registered_agent_invocation_lineage',
       );
       for (const migration of migrations) await admin.query(migration.sql);
 

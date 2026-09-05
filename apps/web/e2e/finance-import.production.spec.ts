@@ -17,22 +17,22 @@ async function installFinanceImportMocks(page: Page): Promise<{
     financeReads: number;
     optionsRequests: number;
     previewRequest: unknown;
-    commitRequest: unknown;
-    commitIdempotencyKey: string | undefined;
+    turnRequests: unknown[];
+    directCommitRequests: number;
   };
 }> {
   const observations: {
     financeReads: number;
     optionsRequests: number;
     previewRequest: unknown;
-    commitRequest: unknown;
-    commitIdempotencyKey: string | undefined;
+    turnRequests: unknown[];
+    directCommitRequests: number;
   } = {
     financeReads: 0,
     optionsRequests: 0,
     previewRequest: undefined,
-    commitRequest: undefined,
-    commitIdempotencyKey: undefined,
+    turnRequests: [],
+    directCommitRequests: 0,
   };
 
   await page.route('**/api/v1/experience/finance?*', async (route) => {
@@ -115,38 +115,47 @@ async function installFinanceImportMocks(page: Page): Promise<{
     });
   });
   await page.route('**/api/v1/finance/imports/commit', async (route) => {
+    observations.directCommitRequests += 1;
+    await route.fulfill({
+      status: 409,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'approval-required' }),
+    });
+  });
+  await page.route('**/api/v1/turns', async (route) => {
     const request = route.request();
     expect(request.method()).toBe('POST');
     expect(request.headers()['x-csrf-token']).toBe(csrfToken);
-    expect(request.headers()['idempotency-key']).toMatch(
-      new RegExp(`^finance-import:${planId}:[0-9a-f-]{36}$`, 'u'),
-    );
-    observations.commitIdempotencyKey = request.headers()['idempotency-key'];
-    observations.commitRequest = request.postDataJSON();
-    expect(observations.commitRequest).toEqual({ schemaVersion: 1, planId });
-    expect(request.postData()).not.toContain('PRIVATE-COFFEE');
+    expect(request.headers()['idempotency-key']).toMatch(/^turn-/u);
+    const body = request.postDataJSON();
+    observations.turnRequests.push(body);
+    const runId = `finance-import-run-${observations.turnRequests.length}`;
     await route.fulfill({
-      status: 200,
+      status: 202,
       contentType: 'application/json',
-      headers: { 'cache-control': 'no-store, private' },
       body: JSON.stringify({
         schemaVersion: 1,
-        status: 'committed',
-        receipt: {
-          id: 'finance-import-receipt-e2e',
-          planId,
-          transactionCount: 2,
-          verified: true,
-        },
-        sourceDeletionAuthorized: true,
+        runId,
+        status: 'accepted',
+        replayed: false,
+        eventsPath: `/api/v1/runs/${runId}/events`,
       }),
+    });
+  });
+  await page.route('**/api/v1/runs/*/events', async (route) => {
+    await route.fulfill({
+      contentType: 'text/event-stream',
+      body: `id: 1\nevent: approval.required\ndata: ${JSON.stringify({
+        type: 'approval.required',
+        data: { status: 'needs_confirmation' },
+      })}\n\n`,
     });
   });
 
   return { observations };
 }
 
-test('commits a reviewed CSV import against the production browser contract', async ({
+test('requests EMDO approval for a reviewed CSV import against the production browser contract', async ({
   page,
 }) => {
   await mockAuthenticatedSession(page);
@@ -201,23 +210,29 @@ test('commits a reviewed CSV import against the production browser contract', as
   await commit.click();
 
   await expect(
-    page.getByText('Imported 2 transactions.', { exact: true }),
-  ).toBeVisible();
-  expect(observations.commitRequest).toEqual({ schemaVersion: 1, planId });
-  expect(observations.commitIdempotencyKey).toMatch(
-    new RegExp(`^finance-import:${planId}:[0-9a-f-]{36}$`, 'u'),
-  );
-  await expect.poll(() => observations.financeReads).toBeGreaterThanOrEqual(2);
-
-  expect(
-    await statementFile.evaluate(
-      (input) => (input as HTMLInputElement).files?.length,
+    page.getByText(
+      'EMDO received the reviewed import request. The statement remains in memory until completion is verified.',
+      { exact: true },
     ),
-  ).toBe(0);
-  await expect(page.getByText('CSV column mapping')).toHaveCount(0);
+  ).toBeVisible();
+  expect(observations.directCommitRequests).toBe(0);
+  expect(observations.turnRequests).toHaveLength(1);
+  expect(observations.turnRequests[0]).toMatchObject({
+    schemaVersion: 1,
+    locale: 'en-CA',
+    routeHint: 'finance',
+  });
+  const guardedMessage = String(
+    (observations.turnRequests[0] as { readonly message?: unknown }).message,
+  );
+  expect(guardedMessage).toContain('"action":"commit-statement-import"');
+  expect(guardedMessage).toContain(`"planId":"${planId}"`);
+  expect(guardedMessage).not.toContain('PRIVATE-COFFEE');
+
+  await expect(page.getByText('CSV column mapping')).toBeVisible();
   await expect(
     page.getByRole('heading', { name: 'Review import', exact: true }),
-  ).toHaveCount(0);
+  ).toBeVisible();
   expect(await page.locator('body').textContent()).not.toContain(
     'PRIVATE-COFFEE',
   );

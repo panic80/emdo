@@ -15,6 +15,53 @@ import {
   type DeepReadonly,
   type RuntimeSchemaRegistry,
 } from './capability.js';
+export {
+  AgentInvocationContextSchema,
+  type AgentInvocationContext,
+} from './invocation-context.js';
+
+export const ReviewedActionSchema = z
+  .strictObject({
+    proposalId: UuidSchema,
+    capabilityId: IdentifierSchema,
+    argumentsPreview: JsonValueSchema,
+  })
+  .transform(deepFreeze);
+
+export type ReviewedAction = DeepReadonly<
+  z.output<typeof ReviewedActionSchema>
+>;
+
+const AgentOutcomeBaseSchema = z.discriminatedUnion('status', [
+  z.strictObject({
+    status: z.literal('completed'),
+    facts: JsonValueSchema,
+    evidence: z.array(IdentifierSchema).max(512),
+  }),
+  z.strictObject({
+    status: z.literal('needs_confirmation'),
+    proposedAction: ReviewedActionSchema,
+  }),
+  z.strictObject({
+    status: z.literal('needs_input'),
+    question: z.string().trim().min(1).max(500),
+  }),
+  z.strictObject({
+    status: z.literal('unavailable'),
+    reasonCode: IdentifierSchema,
+  }),
+  z.strictObject({
+    status: z.literal('failed'),
+    safeMessage: z.string().trim().min(1).max(4_096),
+  }),
+]);
+
+/** Exact registered-specialist result returned to EMDO for synthesis. */
+export const AgentOutcomeSchema = AgentOutcomeBaseSchema.transform(deepFreeze);
+
+export type AgentOutcome = DeepReadonly<
+  z.output<typeof AgentOutcomeBaseSchema>
+>;
 
 export const ModelIdSchema = z.enum(['gpt-5.6-luna', 'gpt-5.6-terra']);
 

@@ -95,4 +95,16 @@ export const assertCapabilityAllowed = (
       'Provider writes require an authenticated visual proposal',
     );
   }
+
+  if (
+    descriptor.approval.rule === 'authenticated-visual-proposal' &&
+    descriptor.capabilityKind !== 'provider-write' &&
+    descriptor.capabilityKind !== 'local-write' &&
+    descriptor.capabilityKind !== 'import'
+  ) {
+    throw new ToolboxPolicyError(
+      'capability-registration-invalid',
+      'Only local writes, imports, and provider writes may require visual approval',
+    );
+  }
 };

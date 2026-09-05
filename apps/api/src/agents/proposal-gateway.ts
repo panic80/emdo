@@ -6,6 +6,8 @@ import type {
 import {
   ActionDecisionSchema,
   ActionProposalSchema,
+  DataDisclosureGrantSchema,
+  GuardedActionPermitSchema,
   IdentifierSchema,
   JsonValueSchema,
   ProviderWriteAuthorizationSchema,
@@ -22,30 +24,18 @@ import {
   type StoredDecision,
   type StoredProposalPreparation,
   type StoredProviderWriteAttempt,
+  type TrustedDisclosureGrantResolver,
 } from '@emdo/domains/server/provider-proposals';
 import {
   ProviderWriteCompletionSchema,
   hashCanonicalJson,
+  hashCapabilityDescriptorBinding,
   hashProviderWriteApprovalBinding,
   type ProviderWriteApprovalStore,
 } from '@emdo/toolbox';
 import { z } from 'zod';
 
-import {
-  parseProductionProviderWriteCapabilityId,
-  type ProductionCapabilityRuntime,
-  type ProviderWriteCapabilityId,
-} from './capability-runtime.js';
-
-const asProviderWriteCapabilityId = (
-  capabilityId: string,
-): ProviderWriteCapabilityId => {
-  try {
-    return parseProductionProviderWriteCapabilityId(capabilityId);
-  } catch {
-    throw new Error('api-provider-proposal-capability-invalid');
-  }
-};
+import type { ProductionCapabilityRuntime } from './capability-runtime.js';
 
 const hashPreparationBinding = (
   binding: StoredProposalPreparation['binding'],
@@ -71,7 +61,7 @@ export interface DurableDecisionProposalRecord extends DurablePreparedProposalRe
 export interface DurableProviderProposalLookup {
   resolvePreparedBySdkBinding(input: {
     readonly runId: string;
-    readonly capabilityId: ProviderWriteCapabilityId;
+    readonly capabilityId: string;
     readonly providerSdkCallId: string;
   }): Promise<DurablePreparedProposalRecord | undefined>;
   resolveDecisionById(input: {
@@ -119,7 +109,7 @@ export interface ProductionProviderProposalComposition {
 const isExactPreparation = (input: {
   readonly proposal: ActionProposal;
   readonly preparation: StoredProposalPreparation;
-  readonly capabilityId: ProviderWriteCapabilityId;
+  readonly capabilityId: string;
   readonly sdkCallId: string;
   readonly context: AgentExecutionContext;
 }): boolean => {
@@ -161,7 +151,10 @@ const isExactPreparation = (input: {
     proposal.disclosureGrant.userId === parsedBinding.userId &&
     proposal.disclosureGrant.agentId === context.agentId &&
     proposal.disclosureGrant.agentId === parsedBinding.agentId &&
-    context.agentId === 'scheduler' &&
+    hashCanonicalJson(proposal.disclosureGrant.invocationContext) ===
+      hashCanonicalJson(context.invocationContext) &&
+    proposal.disclosureGrant.invocationContextHash ===
+      context.invocationContextHash &&
     parsedBinding.originRequestId === context.requestId &&
     parsedBinding.originSessionId === context.authenticatedSessionId &&
     parsedBinding.originSpaceAccessGrantId === context.spaceAccessGrantId
@@ -220,9 +213,10 @@ const exactDecisionRecord = (
   const expectedDecision =
     input.decision === 'approve' ? 'approved' : 'rejected';
   if (
+    !IdentifierSchema.safeParse(input.capabilityId).success ||
     !isExactPreparation({
       ...prepared,
-      capabilityId: asProviderWriteCapabilityId(input.capabilityId),
+      capabilityId: input.capabilityId,
       sdkCallId: prepared.proposal.providerSdkCallId,
       context: input.preparationContext,
     }) ||
@@ -239,6 +233,14 @@ const exactDecisionRecord = (
       input.preparationContext.disclosureGrantId ||
     input.context.disclosureGrantVersion !==
       input.preparationContext.disclosureGrantVersion ||
+    input.context.invocationContextHash !==
+      input.preparationContext.invocationContextHash ||
+    hashCanonicalJson(input.context.invocationContext) !==
+      input.context.invocationContextHash ||
+    hashCanonicalJson(input.preparationContext.invocationContext) !==
+      input.preparationContext.invocationContextHash ||
+    hashCanonicalJson(input.context.invocationContext) !==
+      hashCanonicalJson(input.preparationContext.invocationContext) ||
     prepared.proposal.id !== input.proposalId ||
     prepared.proposal.state !== expectedDecision ||
     decision.data.id !== input.approvalDecisionId ||
@@ -337,9 +339,80 @@ const validateApprovalStore = (store: ProviderWriteApprovalStore): void => {
   }
 };
 
+const createUnregisteredProviderWriteGateway =
+  (): ProviderWriteProposalGateway =>
+    Object.freeze({
+      prepare: async () => {
+        throw new Error('api-provider-write-capability-unregistered');
+      },
+      resolvePrepared: async () => undefined,
+      abandonPrepared: async () =>
+        Object.freeze({ status: 'not-abandonable' as const }),
+      validateDecision: async () => false,
+      executeDecision: async () => {
+        throw new Error('api-provider-write-capability-unregistered');
+      },
+    });
+
+const assertRuntimeHasNoGuardedActions = (
+  capabilityRuntime: ProductionCapabilityRuntime,
+): void => {
+  if (
+    typeof capabilityRuntime?.materializeGuardedActionProposal !== 'function' ||
+    typeof capabilityRuntime.registry?.resolveForAgent !== 'function'
+  ) {
+    throw new Error('api-provider-proposal-runtime-invalid');
+  }
+  const manifests = Object.values(capabilityRuntime.manifests ?? {}).filter(
+    (manifest): manifest is typeof capabilityRuntime.manifests.manager =>
+      manifest !== undefined,
+  );
+  if (
+    manifests.length === 0 ||
+    manifests.some((manifest) =>
+      capabilityRuntime.registry
+        .resolveForAgent({
+          manifest,
+          requestedCapabilityIds: manifest.capabilityAllowlist,
+        })
+        .some(
+          ({ descriptor }) =>
+            descriptor.approval.rule === 'authenticated-visual-proposal',
+        ),
+    )
+  ) {
+    throw new Error('api-provider-proposal-runtime-invalid');
+  }
+};
+
+/**
+ * Fail-closed proposal boundary for registered profiles that expose no guarded
+ * capability. The inert approval store is unreachable by construction;
+ * retaining it satisfies the shared runtime contract without creating a
+ * workflow-database dependency for EMDO-only or Finance-only startup.
+ */
+export const createNoProviderWriteProposalComposition =
+  (): ProductionProviderProposalComposition => {
+    const approvalStore: ProviderWriteApprovalStore = Object.freeze({
+      acquire: async () => Object.freeze({ status: 'not-found' as const }),
+      markDispatching: async () =>
+        Object.freeze({ status: 'not-found' as const }),
+      finalize: async () => 'not-found' as const,
+      reconcile: async () => 'not-found' as const,
+    });
+    return Object.freeze({
+      approvalStore,
+      createGateway: (capabilityRuntime: ProductionCapabilityRuntime) => {
+        assertRuntimeHasNoGuardedActions(capabilityRuntime);
+        return createUnregisteredProviderWriteGateway();
+      },
+    });
+  };
+
 export const createProductionProviderProposalComposition = (input: {
   readonly proposalService: ProductionProviderProposalService;
   readonly lookup: DurableProviderProposalLookup;
+  readonly disclosureGrantResolver: TrustedDisclosureGrantResolver;
   readonly presenter: TrustedProviderWriteDecisionPresenter;
   readonly authenticatedSessionId: string;
   readonly now?: () => Date;
@@ -351,6 +424,7 @@ export const createProductionProviderProposalComposition = (input: {
     typeof input.lookup.resolveDecisionById !== 'function' ||
     typeof input.lookup.resolveProviderWriteCompletionByDecisionId !==
       'function' ||
+    typeof input.disclosureGrantResolver?.resolve !== 'function' ||
     typeof input.presenter?.present !== 'function' ||
     (input.now !== undefined && typeof input.now !== 'function')
   ) {
@@ -367,44 +441,116 @@ export const createProductionProviderProposalComposition = (input: {
   );
   const resolveProviderWriteCompletionByDecisionId =
     input.lookup.resolveProviderWriteCompletionByDecisionId.bind(input.lookup);
+  const resolveDisclosureGrant = input.disclosureGrantResolver.resolve.bind(
+    input.disclosureGrantResolver,
+  );
   const present = input.presenter.present.bind(input.presenter);
   const authenticatedSessionId = UuidSchema.parse(input.authenticatedSessionId);
   const currentTime = input.now?.bind(undefined) ?? (() => new Date());
 
+  const isBeforeApprovedExecutionExpiry = (
+    record: DurableDecisionProposalRecord,
+  ): boolean => {
+    const now = currentTime();
+    const nowMs = now.getTime();
+    const proposalExpiresAt = Date.parse(record.proposal.expiresAt);
+    const invocationDeadline = Date.parse(
+      record.proposal.disclosureGrant.invocationContext.deadline,
+    );
+    return (
+      Number.isFinite(nowMs) &&
+      Number.isFinite(proposalExpiresAt) &&
+      Number.isFinite(invocationDeadline) &&
+      nowMs < proposalExpiresAt &&
+      nowMs < invocationDeadline
+    );
+  };
+
+  const revalidateApprovedExecutionGrant = async (
+    record: DurableDecisionProposalRecord,
+  ): Promise<void> => {
+    if (!isBeforeApprovedExecutionExpiry(record)) {
+      throw new Error('api-provider-proposal-approval-expired');
+    }
+    let resolved: unknown;
+    try {
+      resolved = await resolveDisclosureGrant(
+        record.proposal.disclosureGrant.id,
+        {
+          invocationContext: record.proposal.disclosureGrant.invocationContext,
+          invocationContextHash:
+            record.proposal.disclosureGrant.invocationContextHash,
+        },
+      );
+    } catch {
+      throw new Error('api-provider-proposal-disclosure-invalid');
+    }
+    const grant = DataDisclosureGrantSchema.safeParse(resolved);
+    if (
+      !grant.success ||
+      hashCanonicalJson(grant.data) !==
+        hashCanonicalJson(record.proposal.disclosureGrant)
+    ) {
+      throw new Error('api-provider-proposal-disclosure-invalid');
+    }
+    if (!isBeforeApprovedExecutionExpiry(record)) {
+      throw new Error('api-provider-proposal-approval-expired');
+    }
+  };
+
   const createGateway = (
     capabilityRuntime: ProductionCapabilityRuntime,
   ): ProviderWriteProposalGateway => {
-    if (
-      typeof capabilityRuntime?.materializeProviderWriteProposal !==
-        'function' ||
-      typeof capabilityRuntime.registry?.resolveForAgent !== 'function' ||
-      capabilityRuntime.manifests?.scheduler === undefined
-    ) {
+    if (typeof capabilityRuntime.registry?.resolveForAgent !== 'function') {
       throw new Error('api-provider-proposal-runtime-invalid');
     }
-    const materializeProviderWriteProposal =
-      capabilityRuntime.materializeProviderWriteProposal.bind(
-        capabilityRuntime,
-      );
-    const resolveSchedulerCapability =
-      capabilityRuntime.registry.resolveForAgent.bind(
-        capabilityRuntime.registry,
-      );
-    const schedulerManifest = capabilityRuntime.manifests.scheduler;
+    const manifests = Object.values(capabilityRuntime.manifests ?? {});
+    if (manifests.length === 0) {
+      assertRuntimeHasNoGuardedActions(capabilityRuntime);
+      return createUnregisteredProviderWriteGateway();
+    }
+    const materializeGuardedActionProposal =
+      typeof capabilityRuntime.materializeGuardedActionProposal === 'function'
+        ? capabilityRuntime.materializeGuardedActionProposal.bind(
+            capabilityRuntime,
+          )
+        : undefined;
+    if (
+      materializeGuardedActionProposal === undefined &&
+      capabilityRuntime.manifests.scheduler === undefined
+    ) {
+      return createUnregisteredProviderWriteGateway();
+    }
+    const resolveForAgent = capabilityRuntime.registry.resolveForAgent.bind(
+      capabilityRuntime.registry,
+    );
+    const resolveCapability = (capabilityId: string, agentId: string) => {
+      const manifest = manifests.find((candidate) => candidate.id === agentId);
+      if (manifest === undefined) {
+        throw new Error('api-provider-proposal-agent-invalid');
+      }
+      const [capability] = resolveForAgent({
+        manifest,
+        requestedCapabilityIds: [capabilityId],
+      });
+      if (
+        capability === undefined ||
+        capability.descriptor.id !== capabilityId
+      ) {
+        throw new Error('api-provider-proposal-capability-invalid');
+      }
+      return capability;
+    };
 
     const resolvePrepared = async (
       rawInput: Parameters<ProviderWriteProposalGateway['resolvePrepared']>[0],
     ): Promise<PreparedProviderWriteProposal | undefined> => {
-      let capabilityId: ProviderWriteCapabilityId;
-      try {
-        capabilityId = asProviderWriteCapabilityId(rawInput.capabilityId);
-      } catch {
-        return undefined;
-      }
+      const capabilityId = IdentifierSchema.safeParse(rawInput.capabilityId);
+      if (!capabilityId.success) return undefined;
       const record = parsePreparedRecord(
         await resolvePreparedBySdkBinding({
           runId: rawInput.context.runId,
-          capabilityId,
+          capabilityId: capabilityId.data,
           providerSdkCallId: rawInput.sdkCallId,
         }),
       );
@@ -413,7 +559,7 @@ export const createProductionProviderProposalComposition = (input: {
         record.proposal.state !== 'pending' ||
         !isExactPreparation({
           ...record,
-          capabilityId,
+          capabilityId: capabilityId.data,
           sdkCallId: rawInput.sdkCallId,
           context: rawInput.context,
         })
@@ -446,32 +592,53 @@ export const createProductionProviderProposalComposition = (input: {
       prepare: async (
         rawInput: Parameters<ProviderWriteProposalGateway['prepare']>[0],
       ) => {
-        const capabilityId = asProviderWriteCapabilityId(rawInput.capabilityId);
         if (
-          rawInput.context.agentId !== 'scheduler' ||
           rawInput.context.disclosureGrantId === undefined ||
           rawInput.context.disclosureGrantVersion === undefined
         ) {
           throw new Error('api-provider-proposal-scope-invalid');
         }
-        const materialized = await materializeProviderWriteProposal({
-          capabilityId,
-          arguments: rawInput.canonicalArguments,
-          context: {
-            requestId: rawInput.context.requestId,
-            runId: rawInput.context.runId,
-            householdId: rawInput.context.householdId,
-            userId: rawInput.context.userId,
-            authenticatedSessionId: rawInput.context.authenticatedSessionId,
-            spaceAccessGrantId: rawInput.context.spaceAccessGrantId,
-            authorizationScopeFingerprint:
-              rawInput.context.authorizationScopeFingerprint,
-            disclosureGrantId: rawInput.context.disclosureGrantId,
-            disclosureGrantVersion: rawInput.context.disclosureGrantVersion,
-            sdkCallId: rawInput.sdkCallId,
-            abortSignal: rawInput.context.abortSignal,
-          },
-        });
+        const capability = resolveCapability(
+          rawInput.capabilityId,
+          rawInput.context.agentId,
+        );
+        const materializationContext = {
+          requestId: rawInput.context.requestId,
+          runId: rawInput.context.runId,
+          householdId: rawInput.context.householdId,
+          userId: rawInput.context.userId,
+          authenticatedSessionId: rawInput.context.authenticatedSessionId,
+          spaceAccessGrantId: rawInput.context.spaceAccessGrantId,
+          authorizationScopeFingerprint:
+            rawInput.context.authorizationScopeFingerprint,
+          disclosureGrantId: rawInput.context.disclosureGrantId,
+          disclosureGrantVersion: rawInput.context.disclosureGrantVersion,
+          invocationContext: rawInput.context.invocationContext,
+          invocationContextHash: rawInput.context.invocationContextHash,
+          sdkCallId: rawInput.sdkCallId,
+          abortSignal: rawInput.context.abortSignal,
+        } as const;
+        const materialized =
+          materializeGuardedActionProposal === undefined
+            ? await (() => {
+                if (capability.descriptor.capabilityKind !== 'provider-write') {
+                  throw new Error('api-guarded-action-runtime-unavailable');
+                }
+                return capabilityRuntime.materializeProviderWriteProposal({
+                  capabilityId: rawInput.capabilityId as never,
+                  arguments: rawInput.canonicalArguments,
+                  context: materializationContext,
+                });
+              })()
+            : await materializeGuardedActionProposal({
+                capabilityId: rawInput.capabilityId,
+                arguments: rawInput.canonicalArguments,
+                context: {
+                  ...materializationContext,
+                  agentId: rawInput.context.agentId,
+                },
+              });
+        if (materialized === undefined) return undefined;
         const parsed = ActionProposalSchema.parse(materialized.proposal);
         const expectedPreparationBinding = {
           proposalId: parsed.id,
@@ -497,7 +664,7 @@ export const createProductionProviderProposalComposition = (input: {
               binding: expectedPreparationBinding,
               bindingHash: hashPreparationBinding(expectedPreparationBinding),
             },
-            capabilityId,
+            capabilityId: rawInput.capabilityId,
             sdkCallId: rawInput.sdkCallId,
             context: rawInput.context,
           }) ||
@@ -514,8 +681,8 @@ export const createProductionProviderProposalComposition = (input: {
           ProviderWriteProposalGateway['abandonPrepared']
         >[0],
       ) => {
-        const capabilityId = asProviderWriteCapabilityId(rawInput.capabilityId);
-        if (rawInput.scope.agentId !== 'scheduler') {
+        const capabilityId = IdentifierSchema.safeParse(rawInput.capabilityId);
+        if (!capabilityId.success) {
           return Object.freeze({ status: 'not-abandonable' });
         }
         const now = currentTime();
@@ -533,7 +700,7 @@ export const createProductionProviderProposalComposition = (input: {
           originSpaceAccessGrantId: rawInput.scope.spaceAccessGrantId,
           disclosureGrantId: rawInput.scope.disclosureGrantId,
           disclosurePolicyVersion: rawInput.scope.disclosurePolicyVersion,
-          capabilityId,
+          capabilityId: capabilityId.data,
           sdkCallId: rawInput.sdkCallId,
           providerAuthorityBindingHash: rawInput.providerAuthorityBindingHash,
           reason: rawInput.reason,
@@ -558,20 +725,49 @@ export const createProductionProviderProposalComposition = (input: {
           throw new Error('api-provider-proposal-decision-invalid');
         }
         let capabilityOutput: JsonValue | undefined;
+        const capability = resolveCapability(
+          rawInput.capabilityId,
+          record.proposal.disclosureGrant.agentId,
+        );
+        if (
+          rawInput.context.agentId !==
+            record.proposal.disclosureGrant.agentId ||
+          capability.descriptor.id !== record.proposal.capabilityId
+        ) {
+          throw new Error('api-provider-proposal-capability-invalid');
+        }
+        const guardedActionPermit =
+          capability.descriptor.capabilityKind === 'provider-write'
+            ? undefined
+            : (() => {
+                const guardedAction = record.proposal.guardedAction;
+                if (guardedAction === undefined) {
+                  throw new Error('api-guarded-action-binding-invalid');
+                }
+                if (
+                  guardedAction.capabilityVersion !==
+                    capability.descriptor.version ||
+                  hashCapabilityDescriptorBinding(capability.descriptor) !==
+                    record.proposal.capabilityFingerprint
+                ) {
+                  throw new Error('api-guarded-action-binding-invalid');
+                }
+                return GuardedActionPermitSchema.parse({
+                  proposalId: record.proposal.id,
+                  decisionId: record.decision.decision.id,
+                  capabilityId: record.proposal.capabilityId,
+                  capabilityVersion: guardedAction.capabilityVersion,
+                  capabilityFingerprint: record.proposal.capabilityFingerprint,
+                  operation: guardedAction.operation,
+                  actionHash: guardedAction.actionHash,
+                  executionBindingHash: guardedAction.executionBindingHash,
+                  ...(guardedAction.targetBindingHash === undefined
+                    ? {}
+                    : { targetBindingHash: guardedAction.targetBindingHash }),
+                });
+              })();
         if (rawInput.decision === 'approve') {
-          const [capability] = resolveSchedulerCapability({
-            manifest: schedulerManifest,
-            requestedCapabilityIds: [
-              asProviderWriteCapabilityId(rawInput.capabilityId),
-            ],
-          });
-          if (
-            capability === undefined ||
-            capability.descriptor.id !== rawInput.capabilityId ||
-            capability.descriptor.capabilityKind !== 'provider-write'
-          ) {
-            throw new Error('api-provider-proposal-capability-invalid');
-          }
+          await revalidateApprovedExecutionGrant(record);
           capabilityOutput = JsonValueSchema.parse(
             await capability.invoke(record.proposal.canonicalArguments, {
               requestId: rawInput.context.requestId,
@@ -580,30 +776,42 @@ export const createProductionProviderProposalComposition = (input: {
               householdId: rawInput.context.householdId,
               sessionId: rawInput.context.authenticatedSessionId,
               agentId: rawInput.context.agentId,
+              invocationContext: rawInput.context.invocationContext,
               spaceAccessGrantId: rawInput.context.spaceAccessGrantId,
+              locale: rawInput.context.locale,
               disclosureGrantId: rawInput.context.disclosureGrantId,
               approvalDecisionId: rawInput.approvalDecisionId,
+              ...(guardedActionPermit === undefined
+                ? {}
+                : { guardedActionPermit }),
               abortSignal: rawInput.context.abortSignal,
             }),
           );
         }
         let idempotencyKey: string;
         if (rawInput.decision === 'approve') {
-          const providerIdempotencyKey = exactAppliedProviderCompletion({
-            raw: await resolveProviderWriteCompletionByDecisionId({
-              proposalId: rawInput.proposalId,
-              decisionId: rawInput.approvalDecisionId,
-            }),
-            record,
-            capabilityOutput: capabilityOutput!,
-          });
-          if (providerIdempotencyKey === undefined) {
-            throw new Error('api-provider-write-completion-invalid');
+          if (capability.descriptor.capabilityKind === 'provider-write') {
+            const providerIdempotencyKey = exactAppliedProviderCompletion({
+              raw: await resolveProviderWriteCompletionByDecisionId({
+                proposalId: rawInput.proposalId,
+                decisionId: rawInput.approvalDecisionId,
+              }),
+              record,
+              capabilityOutput: capabilityOutput!,
+            });
+            if (providerIdempotencyKey === undefined) {
+              throw new Error('api-provider-write-completion-invalid');
+            }
+            idempotencyKey = providerIdempotencyKey;
+          } else {
+            idempotencyKey = record.proposal.idempotencyKey;
           }
-          idempotencyKey = providerIdempotencyKey;
         } else {
           idempotencyKey = hashCanonicalJson({
-            domain: 'emdo.provider-write-rejection.v1',
+            domain:
+              record.proposal.guardedAction === undefined
+                ? 'emdo.provider-write-rejection.v1'
+                : 'emdo.guarded-action-rejection.v1',
             proposalId: record.proposal.id,
             decisionId: record.decision.decision.id,
             decisionIdempotencyKey: record.decision.decision.idempotencyKey,

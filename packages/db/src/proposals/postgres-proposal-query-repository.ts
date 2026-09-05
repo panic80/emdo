@@ -46,6 +46,7 @@ const ApiPrincipalSchema = z.strictObject({
   userId: UuidSchema,
   sessionId: UuidSchema,
   householdId: UuidSchema,
+  privateSpaceId: UuidSchema.optional(),
   role: z.enum(['owner', 'member']),
   emailVerified: z.literal(true),
   spaceAccessGrantId: UuidSchema,
@@ -194,6 +195,7 @@ export interface ProposalApiPrincipal {
   readonly userId: string;
   readonly sessionId: string;
   readonly householdId: string;
+  readonly privateSpaceId?: string;
   readonly role: 'owner' | 'member';
   readonly emailVerified: true;
   readonly spaceAccessGrantId: string;

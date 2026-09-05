@@ -82,7 +82,7 @@ const applicationPool = (pool: import('pg').Pool): DatabasePool => ({
 });
 
 describeDatabase(
-  'PostgreSQL 17 deterministic sync conflicts (requires isolated TEST_SYNC_CONFLICT_DATABASE_URL)',
+  'PostgreSQL 18 deterministic sync conflicts (requires isolated TEST_SYNC_CONFLICT_DATABASE_URL)',
   () => {
     let admin: import('pg').Client;
     let pool: import('pg').Pool;
@@ -102,9 +102,9 @@ describeDatabase(
           where role.rolname = current_user`,
       );
       const version = Number(identity.rows[0]?.server_version_num);
-      if (version < 170_000 || version >= 180_000) {
+      if (version < 180_000 || version >= 190_000) {
         throw new Error(
-          'TEST_SYNC_CONFLICT_DATABASE_URL must use PostgreSQL 17',
+          'TEST_SYNC_CONFLICT_DATABASE_URL must use PostgreSQL 18',
         );
       }
       if (identity.rows[0]?.is_superuser !== true) {

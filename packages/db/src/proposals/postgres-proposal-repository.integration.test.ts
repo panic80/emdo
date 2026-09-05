@@ -7,12 +7,16 @@ import {
   type ActionDecision,
   type ActionProposal,
   type EffectiveAuthorizationScopeFingerprint,
+  type JsonValue,
 } from '@emdo/contracts';
 import {
   ProposalPreparationBindingSchema,
+  ProposalService,
   hashActionProposalApproval,
   type ProposalActivityEvent,
   type ProposalOperationScopeAssertion,
+  type ProposalRepository,
+  type ProposalRepositoryTransaction as DomainProposalRepositoryTransaction,
   type StoredProviderWriteCompletion,
 } from '@emdo/domains/server/provider-proposals';
 import {
@@ -29,10 +33,15 @@ import {
   it,
 } from 'vitest';
 
+import { PostgresManagerTurnStore } from '../agent/manager-turn-store.js';
 import { loadOrderedMigrations } from '../migrations.js';
 import type { DatabasePool } from '../scoped-repository.js';
+import { ProposalQueryCursorCodec } from './proposal-query-cursor-codec.js';
+import { PostgresProposalQueryRepository } from './postgres-proposal-query-repository.js';
 import {
   PostgresProposalRepository,
+  checkPostgresProposalWorkflowReadiness,
+  checkPostgresVisualDecisionReadiness,
   type ProposalRepositoryTransaction,
 } from './postgres-proposal-repository.js';
 import {
@@ -44,9 +53,11 @@ import { VisualDecisionProofTokenCodec } from './visual-decision-proof-token-cod
 const databaseUrl = process.env.POSTGRES_TEST_DATABASE_URL;
 const describeDatabase = databaseUrl ? describe.sequential : describe.skip;
 
+const API_LOGIN = 'emdo_api_login';
 const APP_LOGIN = 'emdo_proposal_integration_app';
 const WORKER_LOGIN = 'emdo_proposal_integration_worker';
 const WORKFLOW_LOGIN = 'emdo_workflow_login';
+const VISUAL_DECISION_LOGIN = 'emdo_visual_decision_login';
 const appPassword = `P${randomBytes(24).toString('hex')}`;
 const workerPassword = `P${randomBytes(24).toString('hex')}`;
 const workflowPassword = `P${randomBytes(24).toString('hex')}`;
@@ -77,6 +88,8 @@ const ids = Object.freeze({
     queue: '96000000-0000-4000-8000-000000000022',
     lease: '96000000-0000-4000-8000-000000000023',
     membership: '96000000-0000-4000-8000-000000000024',
+    rootManagerInvocationId: '96000000-0000-4000-8000-000000000025',
+    managerConversationId: '96000000-0000-4000-8000-000000000026',
   }),
   b: Object.freeze({
     user: '97000000-0000-4000-8000-000000000001',
@@ -103,10 +116,74 @@ const ids = Object.freeze({
     queue: '97000000-0000-4000-8000-000000000022',
     lease: '97000000-0000-4000-8000-000000000023',
     membership: '97000000-0000-4000-8000-000000000024',
+    rootManagerInvocationId: '97000000-0000-4000-8000-000000000025',
+    managerConversationId: '97000000-0000-4000-8000-000000000026',
+  }),
+  c: Object.freeze({
+    user: '98000000-0000-4000-8000-000000000001',
+    session: '98000000-0000-4000-8000-000000000002',
+    otherSession: '98000000-0000-4000-8000-000000000003',
+    request: '98000000-0000-4000-8000-000000000004',
+    rotatedRequest: '98000000-0000-4000-8000-000000000005',
+    otherSessionRequest: '98000000-0000-4000-8000-000000000006',
+    household: '98000000-0000-4000-8000-000000000007',
+    space: '98000000-0000-4000-8000-000000000008',
+    run: '98000000-0000-4000-8000-000000000009',
+    grant: '98000000-0000-4000-8000-000000000010',
+    rotatedGrant: '98000000-0000-4000-8000-000000000011',
+    otherSessionGrant: '98000000-0000-4000-8000-000000000012',
+    disclosure: '98000000-0000-4000-8000-000000000013',
+    proposal: '98000000-0000-4000-8000-000000000014',
+    attackProposal: '98000000-0000-4000-8000-000000000015',
+    decision: '98000000-0000-4000-8000-000000000016',
+    attackDecision: '98000000-0000-4000-8000-000000000017',
+    attempt: '98000000-0000-4000-8000-000000000018',
+    attackAttempt: '98000000-0000-4000-8000-000000000019',
+    outbox: '98000000-0000-4000-8000-000000000020',
+    execution: '98000000-0000-4000-8000-000000000021',
+    queue: '98000000-0000-4000-8000-000000000022',
+    lease: '98000000-0000-4000-8000-000000000023',
+    membership: '98000000-0000-4000-8000-000000000024',
+    rootManagerInvocationId: '98000000-0000-4000-8000-000000000025',
+    managerConversationId: '98000000-0000-4000-8000-000000000026',
+  }),
+  d: Object.freeze({
+    user: '99000000-0000-4000-8000-000000000001',
+    session: '99000000-0000-4000-8000-000000000002',
+    otherSession: '99000000-0000-4000-8000-000000000003',
+    request: '99000000-0000-4000-8000-000000000004',
+    rotatedRequest: '99000000-0000-4000-8000-000000000005',
+    otherSessionRequest: '99000000-0000-4000-8000-000000000006',
+    household: '99000000-0000-4000-8000-000000000007',
+    space: '99000000-0000-4000-8000-000000000008',
+    run: '99000000-0000-4000-8000-000000000009',
+    grant: '99000000-0000-4000-8000-000000000010',
+    rotatedGrant: '99000000-0000-4000-8000-000000000011',
+    otherSessionGrant: '99000000-0000-4000-8000-000000000012',
+    disclosure: '99000000-0000-4000-8000-000000000013',
+    proposal: '99000000-0000-4000-8000-000000000014',
+    attackProposal: '99000000-0000-4000-8000-000000000015',
+    decision: '99000000-0000-4000-8000-000000000016',
+    attackDecision: '99000000-0000-4000-8000-000000000017',
+    attempt: '99000000-0000-4000-8000-000000000018',
+    attackAttempt: '99000000-0000-4000-8000-000000000019',
+    outbox: '99000000-0000-4000-8000-000000000020',
+    execution: '99000000-0000-4000-8000-000000000021',
+    queue: '99000000-0000-4000-8000-000000000022',
+    lease: '99000000-0000-4000-8000-000000000023',
+    membership: '99000000-0000-4000-8000-000000000024',
+    rootManagerInvocationId: '99000000-0000-4000-8000-000000000025',
+    managerConversationId: '99000000-0000-4000-8000-000000000026',
   }),
 });
 
-type ActorIds = (typeof ids)[keyof typeof ids];
+const managerReviewIds = Object.freeze({
+  disclosure: '96500000-0000-4000-8000-000000000001',
+  proposal: '96500000-0000-4000-8000-000000000002',
+  checkpoint: '96500000-0000-4000-8000-000000000003',
+});
+
+type ActorIds = Readonly<Record<keyof (typeof ids)['a'], string>>;
 type PgClient = import('pg').Client;
 type PgPool = import('pg').Pool;
 
@@ -123,6 +200,7 @@ interface Fixture {
     providerGrantReference: string;
     authorizationEpoch: number;
   }>;
+  readonly collectionAuthorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
   readonly providerAuthorityBindingHash: string;
   readonly proposal: ActionProposal;
   readonly preparation: Readonly<{
@@ -152,6 +230,62 @@ interface ExecutingLifecycle extends PreparedLifecycle {
 const isoOffset = (milliseconds: number): string =>
   new Date(Date.now() + milliseconds).toISOString();
 
+const schedulerCapabilities = ['google-calendar.event.create'] as const;
+const financeCapabilities = [
+  'finance.analytics.calculate',
+  'finance.documents.read',
+  'finance.documents.search',
+  'finance.matches.read',
+  'finance.records.read',
+  'finance.records.write',
+  'finance.statement.import',
+] as const;
+
+const invocationContextFor = (
+  actor: ActorIds,
+  agentId: 'scheduler' | 'finance',
+  grantedCapabilities: readonly string[],
+  recordAllowlist: readonly Readonly<{
+    dataClass: string;
+    recordId: string;
+    fields: readonly string[];
+  }>[],
+  deadline: string,
+) => {
+  const parentInvocationId = actor.rootManagerInvocationId;
+  const agentInvocationId = randomUUID();
+  const phaseInvocationId = randomUUID();
+  const disclosedContextRefs = recordAllowlist
+    .map(
+      ({ dataClass, recordId }) =>
+        `context-ref-${hashCanonicalJson({ dataClass, recordId })}`,
+    )
+    .sort();
+  return {
+    orchestrationRunId: actor.run,
+    parentInvocationId,
+    agentInvocationId,
+    phaseInvocationId,
+    actorId: actor.user,
+    locale: 'en-CA' as const,
+    grantedCapabilities,
+    disclosedContextRefs,
+    deadline,
+    idempotencyScope: hashCanonicalJson({
+      domain: 'emdo.agent-invocation-scope.v1',
+      agentId,
+      orchestrationRunId: actor.run,
+      parentInvocationId,
+      agentInvocationId,
+      phaseInvocationId,
+      actorId: actor.user,
+      locale: 'en-CA',
+      grantedCapabilities,
+      disclosedContextRefs,
+    }),
+  };
+};
+
 const operationId = (phase: string, marker = randomUUID()): string =>
   `proposal_${phase}_${marker.replaceAll('-', '_')}`;
 
@@ -169,17 +303,45 @@ const connectionUrl = (
 const databasePool = (pool: PgPool): DatabasePool =>
   pool as unknown as DatabasePool;
 
+const singleClientDatabasePool = (client: PgClient): DatabasePool => ({
+  connect: async () => ({
+    query: async (text, values) => {
+      const result = await client.query(
+        text,
+        values === undefined ? [] : [...values],
+      );
+      return { rowCount: result.rowCount, rows: result.rows };
+    },
+    release: () => undefined,
+  }),
+});
+
 const buildFixture = (
   actor: ActorIds,
   options: Readonly<{
     proposalId?: string;
     sdkCallSuffix?: string;
+    disclosure?: ActionProposal['disclosureGrant'];
   }> = {},
 ): Fixture => {
   const disclosureCreatedAt = isoOffset(-60_000);
   const proposalCreatedAt = isoOffset(-1_000);
-  const expiresAt = isoOffset(8 * 60_000);
+  const expiresAt = options.disclosure?.expiresAt ?? isoOffset(8 * 60_000);
   const providerGrantReference = `calendar-grant-${actor.user}`;
+  const recordAllowlist = [
+    {
+      dataClass: 'calendar.event',
+      recordId: 'calendar-event:dinner',
+      fields: ['title'],
+    },
+  ];
+  const invocationContext = invocationContextFor(
+    actor,
+    'scheduler',
+    schedulerCapabilities,
+    recordAllowlist,
+    expiresAt,
+  );
   const authorizationScopeFingerprint =
     EffectiveAuthorizationScopeFingerprintSchema.parse(
       hashCanonicalJson({
@@ -195,6 +357,21 @@ const buildFixture = (
         writableSpaceIds: [actor.space],
       }),
     );
+  const collectionAuthorizationScopeFingerprint =
+    EffectiveAuthorizationScopeFingerprintSchema.parse(
+      hashCanonicalJson({
+        domain: 'emdo.authorization-scope.v1',
+        householdId: actor.household,
+        userId: actor.user,
+        sessionId: actor.session,
+        membershipId: actor.membership,
+        membershipAdministrationVersion: 1,
+        role: 'owner',
+        privateSpaceId: actor.space,
+        proposalSpaceId: null,
+        writableSpaceIds: [actor.space],
+      }),
+    );
   const authorityBinding = Object.freeze({
     kind: 'google-calendar-grant-v2' as const,
     householdId: actor.household,
@@ -204,27 +381,25 @@ const buildFixture = (
     authorizationEpoch: 0,
   });
   const providerAuthorityBindingHash = hashCanonicalJson(authorityBinding);
-  const disclosure = Object.freeze({
-    schemaVersion: 1 as const,
-    id: actor.disclosure,
-    version: 1,
-    userId: actor.user,
-    householdId: actor.household,
-    agentId: 'scheduler',
-    purpose: 'Create the exact visually approved calendar event',
-    runId: actor.run,
-    recordAllowlist: [
-      {
-        dataClass: 'calendar.event',
-        recordId: 'calendar-event:dinner',
-        fields: ['title'],
-      },
-    ],
-    provider: 'google-calendar',
-    createdAt: disclosureCreatedAt,
-    expiresAt,
-    oneRunOnly: true,
-  });
+  const disclosure =
+    options.disclosure ??
+    Object.freeze({
+      schemaVersion: 1 as const,
+      id: actor.disclosure,
+      version: 1,
+      userId: actor.user,
+      householdId: actor.household,
+      agentId: 'scheduler',
+      purpose: 'Create the exact visually approved calendar event',
+      runId: actor.run,
+      invocationContext,
+      invocationContextHash: hashCanonicalJson(invocationContext),
+      recordAllowlist,
+      provider: 'google-calendar',
+      createdAt: disclosureCreatedAt,
+      expiresAt,
+      oneRunOnly: true,
+    });
   const proposalWithoutApproval = {
     schemaVersion: 1 as const,
     id: options.proposalId ?? actor.proposal,
@@ -290,6 +465,237 @@ const buildFixture = (
     disclosureHash: hashCanonicalJson(disclosure),
     providerGrantReference,
     authorityBinding,
+    collectionAuthorizationScopeFingerprint,
+    providerAuthorityBindingHash,
+    proposal,
+    preparation: Object.freeze({
+      binding,
+      bindingHash: hashCanonicalJson({
+        domain: 'emdo.provider-proposal-preparation.v1',
+        binding,
+      }),
+    }),
+  });
+};
+
+const buildFinanceFixture = (
+  actor: ActorIds,
+  options: Readonly<{
+    proposalId?: string;
+    sdkCallSuffix?: string;
+    action?: 'delete-document' | 'commit-document-review';
+    disclosure?: ActionProposal['disclosureGrant'];
+  }> = {},
+): Fixture => {
+  const disclosureCreatedAt = isoOffset(-60_000);
+  const proposalCreatedAt = isoOffset(-1_000);
+  const expiresAt = options.disclosure?.expiresAt ?? isoOffset(8 * 60_000);
+  const proposalId = options.proposalId ?? actor.proposal;
+  const documentId = `finance-document:${actor.proposal}`;
+  const recordAllowlist = [
+    {
+      dataClass: 'finance.document',
+      recordId: documentId,
+      fields: ['status'],
+    },
+  ];
+  const invocationContext = invocationContextFor(
+    actor,
+    'finance',
+    financeCapabilities,
+    recordAllowlist,
+    expiresAt,
+  );
+  const action = options.action ?? 'delete-document';
+  const isReviewCommit = action === 'commit-document-review';
+  const guardedOperation = isReviewCommit
+    ? 'finance-document-review-commit'
+    : 'finance-document-delete';
+  const authorizationScopeFingerprint =
+    EffectiveAuthorizationScopeFingerprintSchema.parse(
+      hashCanonicalJson({
+        domain: 'emdo.authorization-scope.v1',
+        householdId: actor.household,
+        userId: actor.user,
+        sessionId: actor.session,
+        membershipId: actor.membership,
+        membershipAdministrationVersion: 1,
+        role: 'owner',
+        privateSpaceId: actor.space,
+        proposalSpaceId: actor.space,
+        writableSpaceIds: [actor.space],
+      }),
+    );
+  const collectionAuthorizationScopeFingerprint =
+    EffectiveAuthorizationScopeFingerprintSchema.parse(
+      hashCanonicalJson({
+        domain: 'emdo.authorization-scope.v1',
+        householdId: actor.household,
+        userId: actor.user,
+        sessionId: actor.session,
+        membershipId: actor.membership,
+        membershipAdministrationVersion: 1,
+        role: 'owner',
+        privateSpaceId: actor.space,
+        proposalSpaceId: null,
+        writableSpaceIds: [actor.space],
+      }),
+    );
+  const canonicalArguments: JsonValue = isReviewCommit
+    ? ({
+        schemaVersion: 1,
+        mutation: {
+          kind: 'commit-document-review',
+          documentId,
+        },
+      } as const)
+    : ({
+        schemaVersion: 1,
+        action: 'delete-document',
+        documentId,
+      } as const);
+  const payloadHash = hashCanonicalJson(canonicalArguments);
+  const capabilityFingerprint = hashCanonicalJson({
+    schemaVersion: 1,
+    capabilityId: 'finance.records.write',
+    version: '1.0.0',
+  });
+  const targetBindingHash = hashCanonicalJson({
+    schemaVersion: 1,
+    domain: 'emdo.finance-document-target-binding.v1',
+    documentId,
+    expectedVersion: 'current',
+  });
+  const providerAuthorityBindingHash = hashCanonicalJson({
+    schemaVersion: 1,
+    domain: 'emdo.finance-guarded-action-execution-binding.v2',
+    proposalId,
+    runId: actor.run,
+    householdId: actor.household,
+    userId: actor.user,
+    authenticatedSessionId: actor.session,
+    privateSpaceId: actor.space,
+    authorizationScopeFingerprint: collectionAuthorizationScopeFingerprint,
+    disclosureGrantId: actor.disclosure,
+    capabilityId: 'finance.records.write',
+    capabilityVersion: '1.0.0',
+    capabilityFingerprint,
+    operation: guardedOperation,
+    actionHash: payloadHash,
+    targetBindingHash,
+  });
+  const guardedAction = {
+    capabilityVersion: '1.0.0',
+    operation: guardedOperation,
+    actionHash: payloadHash,
+    executionBindingHash: providerAuthorityBindingHash,
+    targetBindingHash,
+  } as const;
+  const disclosure =
+    options.disclosure ??
+    Object.freeze({
+      schemaVersion: 1 as const,
+      id: actor.disclosure,
+      version: 1,
+      userId: actor.user,
+      householdId: actor.household,
+      agentId: 'finance',
+      purpose: isReviewCommit
+        ? 'Commit one visually approved Finance document review'
+        : 'Delete one visually approved Finance document',
+      runId: actor.run,
+      invocationContext,
+      invocationContextHash: hashCanonicalJson(invocationContext),
+      recordAllowlist,
+      provider: 'openai',
+      createdAt: disclosureCreatedAt,
+      expiresAt,
+      oneRunOnly: true,
+    });
+  const proposalWithoutApproval = {
+    schemaVersion: 1 as const,
+    id: proposalId,
+    version: 1,
+    runId: actor.run,
+    capabilityId: 'finance.records.write',
+    capabilityFingerprint,
+    authorizationScopeFingerprint,
+    canonicalArguments,
+    targets: [
+      {
+        kind: 'finance.document',
+        id: documentId,
+        expectedVersion: 'current',
+      },
+    ],
+    beforePreview: { status: 'ready' },
+    afterPreview: { status: isReviewCommit ? 'committed' : 'deleted' },
+    approvalDisplay: {
+      schemaVersion: 1 as const,
+      title: isReviewCommit
+        ? 'Commit Finance document review'
+        : 'Delete Finance document',
+      summary: isReviewCommit
+        ? 'Commit one manually uploaded Finance document review.'
+        : 'Delete one manually uploaded Finance document.',
+      beforeSummary: isReviewCommit
+        ? 'The document review is awaiting commitment.'
+        : 'The document remains available.',
+      afterSummary: isReviewCommit
+        ? 'The document review is committed.'
+        : 'The document is deleted.',
+      fields: [{ label: 'Document', value: documentId }],
+    },
+    providerPreconditions: [
+      {
+        kind: 'finance.document',
+        targetId: documentId,
+        expectedValue: 'current',
+      },
+    ],
+    providerAuthorityBindingHash,
+    providerSdkCallId: `sdk-finance-${isReviewCommit ? 'review' : 'delete'}-${options.sdkCallSuffix ?? 'main'}-${actor.user}`,
+    guardedAction,
+    payloadHash,
+    disclosureGrant: disclosure,
+    createdAt: proposalCreatedAt,
+    expiresAt,
+    idempotencyKey: `proposal:finance:${isReviewCommit ? 'review:' : ''}${options.sdkCallSuffix ?? 'main'}:${actor.user}`,
+    state: 'pending' as const,
+  };
+  const proposal = ActionProposalSchema.parse({
+    ...proposalWithoutApproval,
+    approvalHash: hashActionProposalApproval(proposalWithoutApproval),
+  });
+  const binding = ProposalPreparationBindingSchema.parse({
+    proposalId: proposal.id,
+    originRequestId: actor.request,
+    originSpaceAccessGrantId: actor.grant,
+    originSessionId: actor.session,
+    runId: actor.run,
+    householdId: actor.household,
+    userId: actor.user,
+    agentId: disclosure.agentId,
+    disclosureGrantId: actor.disclosure,
+    disclosurePolicyVersion: '1.0.0',
+    capabilityId: proposal.capabilityId,
+    sdkCallId: proposal.providerSdkCallId,
+    providerAuthorityBindingHash,
+  });
+  return Object.freeze({
+    actor,
+    disclosure,
+    disclosureHash: hashCanonicalJson(disclosure),
+    providerGrantReference: `unused-finance-grant-${actor.user}`,
+    authorityBinding: Object.freeze({
+      kind: 'google-calendar-grant-v2' as const,
+      householdId: actor.household,
+      privateSpaceId: actor.space,
+      authorizationScopeFingerprint: collectionAuthorizationScopeFingerprint,
+      providerGrantReference: `unused-finance-grant-${actor.user}`,
+      authorizationEpoch: 0,
+    }),
+    collectionAuthorizationScopeFingerprint,
     providerAuthorityBindingHash,
     proposal,
     preparation: Object.freeze({
@@ -419,7 +825,7 @@ const completionRecord = (
 };
 
 describeDatabase(
-  'PostgreSQL 17 provider proposal lifecycle (requires isolated POSTGRES_TEST_DATABASE_URL)',
+  'PostgreSQL 18 provider proposal lifecycle (requires isolated POSTGRES_TEST_DATABASE_URL)',
   () => {
     let admin: PgClient;
     let appPool: PgPool;
@@ -429,6 +835,8 @@ describeDatabase(
     let workflowUrl: string;
     let fixtureA: Fixture;
     let fixtureB: Fixture;
+    let createdApiLogin = false;
+    let grantedApiMembership = false;
 
     const repositoryFor = (
       fixture: Fixture,
@@ -479,10 +887,45 @@ describeDatabase(
       emailVerified: true as const,
       spaceAccessGrantId: options.spaceAccessGrantId ?? fixture.actor.grant,
       collectionAuthorizationScopeFingerprint:
-        fixture.authorityBinding.authorizationScopeFingerprint,
+        fixture.collectionAuthorizationScopeFingerprint,
     });
 
-    const seedActor = async (fixture: Fixture, label: string) => {
+    const seedDisclosureGrant = async (fixture: Fixture): Promise<void> => {
+      const actor = fixture.actor;
+      await admin.query(
+        `insert into emdo.disclosure_grants
+           (id, schema_version, version, household_id, space_id, user_id,
+            run_id, agent_id, purpose, phase_purpose, provider,
+            record_allowlist, invocation_context, invocation_context_hash,
+            grant_hash, created_at, expires_at, one_run_only)
+         values ($1, 1, $2, $3, $4, $5, $6, $7, $8,
+                 'specialist-execution', $9, $10::jsonb, $11::jsonb, $12,
+                 $13, $14::timestamptz, $15::timestamptz, true)`,
+        [
+          fixture.disclosure.id,
+          fixture.disclosure.version,
+          fixture.disclosure.householdId,
+          actor.space,
+          fixture.disclosure.userId,
+          fixture.disclosure.runId,
+          fixture.disclosure.agentId,
+          fixture.disclosure.purpose,
+          fixture.disclosure.provider,
+          JSON.stringify(fixture.disclosure.recordAllowlist),
+          JSON.stringify(fixture.disclosure.invocationContext),
+          fixture.disclosure.invocationContextHash,
+          fixture.disclosureHash,
+          fixture.disclosure.createdAt,
+          fixture.disclosure.expiresAt,
+        ],
+      );
+    };
+
+    const seedActor = async (
+      fixture: Fixture,
+      label: string,
+      options: Readonly<{ includeGoogle?: boolean }> = {},
+    ) => {
       const actor = fixture.actor;
       await admin.query(
         `insert into emdo.auth_users (id, name, email, email_verified)
@@ -533,9 +976,9 @@ describeDatabase(
         `insert into emdo.agent_runs
            (id, household_id, space_id, original_owner_user_id, agent_id,
             agent_version, requested_model, status)
-         values ($1, $2, $3, $4, 'scheduler', '1.0.0',
+         values ($1, $2, $3, $4, $5, '1.0.0',
                  'gpt-5.6-luna', 'running')`,
-        [actor.run, actor.household, actor.space, actor.user],
+        [actor.run, actor.household, actor.space, actor.user, 'manager'],
       );
       await admin.query(
         `insert into emdo.space_access_grants
@@ -571,62 +1014,88 @@ describeDatabase(
           actor.user,
         ],
       );
+      const managerRequest = {
+        schemaVersion: 1,
+        message: `Prepare a ${fixture.disclosure.agentId} proposal lifecycle fixture.`,
+        routeHint: fixture.disclosure.agentId,
+        locale: 'en-CA',
+        rootManagerInvocationId: actor.rootManagerInvocationId,
+      } as const;
       await admin.query(
-        `insert into emdo.google_oauth_authorization_epochs
-           (household_id, private_space_id, original_owner_user_id,
-            authorization_epoch, created_at, updated_at)
-         values ($1, $2, $3, 0, pg_catalog.clock_timestamp(),
-                 pg_catalog.clock_timestamp())`,
-        [actor.household, actor.space, actor.user],
-      );
-      await admin.query(
-        `insert into emdo.encrypted_google_calendar_grants
-           (record_id, household_id, private_space_id, original_owner_user_id,
-            provider, grant_type, revision, authorization_epoch,
-            provider_grant_reference, encrypted_payload, created_at, updated_at)
-         values ($1, $2, $3, $4, 'google', 'calendar-authorization', 1, 0,
-                 $5, $6::jsonb, pg_catalog.clock_timestamp(),
-                 pg_catalog.clock_timestamp())`,
+        `insert into emdo.manager_turns
+           (run_id, schema_version, household_id, space_id, user_id,
+            conversation_id, origin_session_id, origin_request_id,
+            origin_space_access_grant_id,
+            origin_collection_authorization_scope_fingerprint,
+            origin_operation_authorization_scope_fingerprint,
+            idempotency_key, request_payload, request_hash,
+            manager_agent_version, requested_model, claim_id,
+            ownership_token_hash, state, revision, created_at, updated_at,
+            retain_until)
+         values ($1, 1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                 $12::jsonb, $13, '1.0.0', 'gpt-5.6-luna', $14, $15,
+                 'claimed', 1, pg_catalog.clock_timestamp(),
+                 pg_catalog.clock_timestamp(),
+                 pg_catalog.clock_timestamp() + interval '89 days')`,
         [
-          `google-calendar-oauth-v1-${hashCanonicalJson({ label })}`,
+          actor.run,
           actor.household,
           actor.space,
           actor.user,
-          fixture.providerGrantReference,
-          {
-            algorithm: 'aes-256-gcm',
-            aadVersion: 1,
-            ciphertext: Buffer.from(`proposal-${label}`).toString('base64url'),
-            nonce: Buffer.alloc(12, 1).toString('base64url'),
-            authenticationTag: Buffer.alloc(16, 2).toString('base64url'),
-            wrappedKey: Buffer.alloc(60, 3).toString('base64url'),
-            keyVersion: 'proposal-integration-key-v1',
-          },
+          actor.managerConversationId,
+          actor.session,
+          actor.request,
+          actor.grant,
+          fixture.collectionAuthorizationScopeFingerprint,
+          fixture.proposal.authorizationScopeFingerprint,
+          `proposal-lifecycle-root:${actor.run}`,
+          JSON.stringify(managerRequest),
+          hashCanonicalJson(managerRequest),
+          randomUUID(),
+          hashCanonicalJson({
+            domain: 'emdo.manager-turn-owner.v1',
+            runId: actor.run,
+          }),
         ],
       );
-      await admin.query(
-        `insert into emdo.disclosure_grants
-           (id, version, household_id, space_id, user_id, run_id, agent_id,
-            purpose, provider, record_allowlist, grant_hash, created_at,
-            expires_at, one_run_only)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11,
-                 $12::timestamptz, $13::timestamptz, true)`,
-        [
-          fixture.disclosure.id,
-          fixture.disclosure.version,
-          fixture.disclosure.householdId,
-          actor.space,
-          fixture.disclosure.userId,
-          fixture.disclosure.runId,
-          fixture.disclosure.agentId,
-          fixture.disclosure.purpose,
-          fixture.disclosure.provider,
-          JSON.stringify(fixture.disclosure.recordAllowlist),
-          fixture.disclosureHash,
-          fixture.disclosure.createdAt,
-          fixture.disclosure.expiresAt,
-        ],
-      );
+      if (options.includeGoogle !== false) {
+        await admin.query(
+          `insert into emdo.google_oauth_authorization_epochs
+             (household_id, private_space_id, original_owner_user_id,
+              authorization_epoch, created_at, updated_at)
+           values ($1, $2, $3, 0, pg_catalog.clock_timestamp(),
+                   pg_catalog.clock_timestamp())`,
+          [actor.household, actor.space, actor.user],
+        );
+        await admin.query(
+          `insert into emdo.encrypted_google_calendar_grants
+             (record_id, household_id, private_space_id, original_owner_user_id,
+              provider, grant_type, revision, authorization_epoch,
+              provider_grant_reference, encrypted_payload, created_at, updated_at)
+           values ($1, $2, $3, $4, 'google', 'calendar-authorization', 1, 0,
+                   $5, $6::jsonb, pg_catalog.clock_timestamp(),
+                   pg_catalog.clock_timestamp())`,
+          [
+            `google-calendar-oauth-v1-${hashCanonicalJson({ label })}`,
+            actor.household,
+            actor.space,
+            actor.user,
+            fixture.providerGrantReference,
+            {
+              algorithm: 'aes-256-gcm',
+              aadVersion: 1,
+              ciphertext: Buffer.from(`proposal-${label}`).toString(
+                'base64url',
+              ),
+              nonce: Buffer.alloc(12, 1).toString('base64url'),
+              authenticationTag: Buffer.alloc(16, 2).toString('base64url'),
+              wrappedKey: Buffer.alloc(60, 3).toString('base64url'),
+              keyVersion: 'proposal-integration-key-v1',
+            },
+          ],
+        );
+      }
+      await seedDisclosureGrant(fixture);
     };
 
     const directWorkflowCommit = async (
@@ -686,8 +1155,8 @@ describeDatabase(
       );
       expect(
         Number(version.rows[0]?.server_version_num),
-      ).toBeGreaterThanOrEqual(170_000);
-      expect(Number(version.rows[0]?.server_version_num)).toBeLessThan(180_000);
+      ).toBeGreaterThanOrEqual(180_000);
+      expect(Number(version.rows[0]?.server_version_num)).toBeLessThan(190_000);
       const existing = await admin.query<{ emdo_schema: string | null }>(
         `select pg_catalog.to_regnamespace('emdo')::text as emdo_schema`,
       );
@@ -711,11 +1180,9 @@ describeDatabase(
         `alter role ${WORKER_LOGIN} password '${workerPassword}'`,
       );
 
-      const proposalMigrations = (await loadOrderedMigrations()).filter(
-        ({ index }) => index <= 3,
-      );
+      const proposalMigrations = await loadOrderedMigrations();
       expect(proposalMigrations.at(-1)?.id).toBe(
-        '0003_durable_runtime_repositories',
+        '0022_registered_agent_invocation_lineage',
       );
       for (const migration of proposalMigrations) {
         try {
@@ -723,6 +1190,61 @@ describeDatabase(
         } catch (error) {
           throw new Error(`Migration ${migration.id} failed`, { cause: error });
         }
+      }
+
+      const existingApiLogin = await admin.query<{
+        rolbypassrls: boolean;
+        rolcanlogin: boolean;
+        rolcreatedb: boolean;
+        rolcreaterole: boolean;
+        rolinherit: boolean;
+        rolreplication: boolean;
+        rolsuper: boolean;
+      }>(
+        `select rolcanlogin, rolsuper, rolcreatedb, rolcreaterole,
+                rolinherit, rolbypassrls, rolreplication
+           from pg_catalog.pg_roles
+          where rolname = $1`,
+        [API_LOGIN],
+      );
+      if (existingApiLogin.rowCount === 0) {
+        await admin.query(`create role ${API_LOGIN} login inherit nosuperuser
+          nocreatedb nocreaterole nobypassrls noreplication`);
+        createdApiLogin = true;
+      } else {
+        expect(existingApiLogin.rows).toEqual([
+          {
+            rolbypassrls: false,
+            rolcanlogin: true,
+            rolcreatedb: false,
+            rolcreaterole: false,
+            rolinherit: true,
+            rolreplication: false,
+            rolsuper: false,
+          },
+        ]);
+      }
+      const apiMemberships = await admin.query<{ parentRole: string }>(
+        `select parent.rolname as "parentRole"
+           from pg_catalog.pg_auth_members as membership
+           join pg_catalog.pg_roles as parent
+             on parent.oid = membership.roleid
+           join pg_catalog.pg_roles as child
+             on child.oid = membership.member
+          where child.rolname = $1
+          order by parent.rolname`,
+        [API_LOGIN],
+      );
+      expect(
+        apiMemberships.rows.every(
+          ({ parentRole }) => parentRole === 'emdo_app',
+        ),
+      ).toBe(true);
+      if (
+        !apiMemberships.rows.some(({ parentRole }) => parentRole === 'emdo_app')
+      ) {
+        await admin.query(`grant emdo_app to ${API_LOGIN}`);
+        grantedApiMembership = true;
       }
 
       await admin.query(`do $roles$
@@ -781,6 +1303,11 @@ describeDatabase(
         workerPool?.end(),
       ]);
       if (admin !== undefined) {
+        if (grantedApiMembership) {
+          await admin
+            .query(`revoke emdo_app from ${API_LOGIN}`)
+            .catch(() => undefined);
+        }
         await admin
           .query(`revoke emdo_app from ${APP_LOGIN}`)
           .catch(() => undefined);
@@ -793,6 +1320,11 @@ describeDatabase(
         await admin
           .query(`drop role if exists ${WORKER_LOGIN}`)
           .catch(() => undefined);
+        if (createdApiLogin) {
+          await admin
+            .query(`drop role if exists ${API_LOGIN}`)
+            .catch(() => undefined);
+        }
         await admin
           .query('drop schema if exists emdo cascade')
           .catch(() => undefined);
@@ -850,7 +1382,7 @@ describeDatabase(
           expiresAt,
           retainUntil,
           randomUUID(),
-          randomUUID(),
+          fixture.actor.managerConversationId,
           `proposal-interruption:${proposal.id}`,
           proposal.id,
           proposal.capabilityId,
@@ -891,6 +1423,7 @@ describeDatabase(
       pending: ActionProposal,
       proofToken: string,
       marker: string,
+      decisionOperationId: string = operationId(`decision_${marker}`),
     ): Promise<ApprovedLifecycle> => {
       const decidedAt = new Date().toISOString();
       const decision: ActionDecision = {
@@ -908,10 +1441,7 @@ describeDatabase(
       };
       const approved = transition(pending, 'approved');
       const scope = scopeFor(fixture, 'visual-decision', decidedAt);
-      const result = await repositoryFor(
-        fixture,
-        operationId(`decision_${marker}`),
-      )
+      const result = await repositoryFor(fixture, decisionOperationId)
         .withVisualDecisionProof(proofToken, fixture.actor.grant)
         .transaction((transaction) =>
           transaction.commitDecision({
@@ -1104,6 +1634,833 @@ describeDatabase(
       return { next, input, commit };
     };
 
+    it('executes every proposal readiness probe as its exact runtime principal', async () => {
+      const { Client } = await import('pg');
+      const apiClient = new Client({ connectionString: databaseUrl });
+      const readinessWorkflowClient = new Client({
+        connectionString: databaseUrl,
+      });
+      const decisionClient = new Client({ connectionString: databaseUrl });
+      try {
+        await Promise.all([
+          apiClient.connect(),
+          readinessWorkflowClient.connect(),
+          decisionClient.connect(),
+        ]);
+        await Promise.all([
+          apiClient.query(`set session authorization ${API_LOGIN}`),
+          readinessWorkflowClient.query(
+            `set session authorization ${WORKFLOW_LOGIN}`,
+          ),
+          decisionClient.query(
+            `set session authorization ${VISUAL_DECISION_LOGIN}`,
+          ),
+        ]);
+        const apiRolePool = singleClientDatabasePool(apiClient);
+        const workflowRolePool = singleClientDatabasePool(
+          readinessWorkflowClient,
+        );
+        const decisionRolePool = singleClientDatabasePool(decisionClient);
+        const proposalQueries = new PostgresProposalQueryRepository(
+          apiRolePool,
+          new ProposalQueryCursorCodec({
+            current: {
+              keyId: 'proposal-readiness-v1',
+              secret: new Uint8Array(32).fill(23),
+            },
+            previous: [],
+          }),
+        );
+        const visualProofs = new PostgresVisualDecisionProofStore(
+          apiRolePool,
+          new VisualDecisionProofTokenCodec({
+            current: {
+              keyId: 'proposal-readiness-v1',
+              secret: new Uint8Array(32).fill(29),
+            },
+            previous: [],
+          }),
+        );
+
+        await expect(proposalQueries.check()).resolves.toBe(true);
+        await expect(visualProofs.check()).resolves.toBe(true);
+        await expect(
+          checkPostgresProposalWorkflowReadiness(workflowRolePool),
+        ).resolves.toBe(true);
+        await expect(
+          checkPostgresVisualDecisionReadiness(apiRolePool, decisionRolePool),
+        ).resolves.toBe(true);
+      } finally {
+        await Promise.allSettled([
+          apiClient.query('reset session authorization'),
+          readinessWorkflowClient.query('reset session authorization'),
+          decisionClient.query('reset session authorization'),
+        ]);
+        await Promise.allSettled([
+          apiClient.end(),
+          readinessWorkflowClient.end(),
+          decisionClient.end(),
+        ]);
+      }
+    });
+
+    it('accepts guarded Finance create and visual decision without Google, but rejects forged Finance and Calendar without Google', async () => {
+      const managerTurns = new PostgresManagerTurnStore(databasePool(appPool));
+      const managerClaim = await managerTurns.claim({
+        request: {
+          schemaVersion: 1,
+          message: 'Commit this reviewed Finance document.',
+          routeHint: 'finance',
+          locale: 'en-CA',
+        },
+        principal: visualPrincipal(fixtureA),
+        requestId: fixtureA.actor.request,
+        idempotencyKey: 'proposal-lifecycle-finance-review-0001',
+      });
+      expect(managerClaim.status).toBe('claimed');
+      if (managerClaim.status !== 'claimed') {
+        throw new Error('expected a newly claimed manager turn');
+      }
+
+      const managerReviewDocumentId = `finance-document:${managerReviewIds.proposal}`;
+      const managerReviewFixture = buildFinanceFixture(
+        Object.freeze({
+          ...fixtureA.actor,
+          disclosure: managerReviewIds.disclosure,
+          proposal: managerReviewIds.proposal,
+          run: managerClaim.runId,
+          rootManagerInvocationId: managerClaim.rootManagerInvocationId,
+          managerConversationId: managerClaim.conversationId,
+        }),
+        {
+          sdkCallSuffix: 'manager-review',
+          action: 'commit-document-review',
+        },
+      );
+      expect(managerReviewFixture.proposal.authorizationScopeFingerprint).toBe(
+        managerClaim.authorizationScopeFingerprint,
+      );
+      expect(managerReviewFixture.proposal).toMatchObject({
+        canonicalArguments: {
+          mutation: {
+            kind: 'commit-document-review',
+            documentId: managerReviewDocumentId,
+          },
+        },
+        guardedAction: {
+          operation: 'finance-document-review-commit',
+          targetBindingHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        },
+      });
+      await seedDisclosureGrant(managerReviewFixture);
+      await expect(
+        repositoryFor(
+          managerReviewFixture,
+          operationId('finance_manager_review_create'),
+        ).transaction((transaction) =>
+          transaction.insertProposal({
+            proposal: managerReviewFixture.proposal,
+            preparation: managerReviewFixture.preparation,
+            scope: scopeFor(
+              managerReviewFixture,
+              'proposal-create',
+              new Date().toISOString(),
+            ),
+            event: createdEventFor(managerReviewFixture),
+          }),
+        ),
+      ).resolves.toBe('created');
+
+      const checkpointCreatedAt = new Date().toISOString();
+      const checkpointExpiresAt = new Date(
+        Date.parse(checkpointCreatedAt) + 5 * 60_000,
+      ).toISOString();
+      const checkpointRetainUntil = new Date(
+        Date.parse(checkpointCreatedAt) + 89 * 24 * 60 * 60_000,
+      ).toISOString();
+      const checkpoint = Object.freeze({
+        checkpointId: managerReviewIds.checkpoint,
+        householdId: managerReviewFixture.actor.household,
+        userId: managerReviewFixture.actor.user,
+        runId: managerReviewFixture.actor.run,
+        agentGraphHash: 'a'.repeat(64),
+        sdkVersion: 'proposal-lifecycle-integration',
+        formatVersion: 1,
+        revision: 1,
+        state: 'pending' as const,
+        createdAt: checkpointCreatedAt,
+        expiresAt: checkpointExpiresAt,
+        updatedAt: checkpointCreatedAt,
+      });
+      await admin.query(
+        `insert into emdo.approval_checkpoints
+           (checkpoint_id, household_id, space_id, user_id, run_id,
+            format_version, revision, state, agent_graph_hash, sdk_version,
+            sealed_state, created_at, expires_at, updated_at, retain_until)
+         values ($1, $2, $3, $4, $5, 1, 1, 'pending', $6, $7,
+                 'sealed-manager-review-checkpoint', $8::timestamptz,
+                 $9::timestamptz, $8::timestamptz, $10::timestamptz)`,
+        [
+          checkpoint.checkpointId,
+          checkpoint.householdId,
+          managerReviewFixture.actor.space,
+          checkpoint.userId,
+          checkpoint.runId,
+          checkpoint.agentGraphHash,
+          checkpoint.sdkVersion,
+          checkpoint.createdAt,
+          checkpoint.expiresAt,
+          checkpointRetainUntil,
+        ],
+      );
+      const beforeCompletion = await admin.query(
+        `select 1
+           from emdo.approval_resume_jobs
+          where run_id = $1`,
+        [managerClaim.runId],
+      );
+      expect(beforeCompletion.rows).toEqual([]);
+
+      const interruptionId = `finance-review:${managerReviewFixture.proposal.id}`;
+      const managerApprovalResult = {
+        status: 'needs-approval',
+        runId: managerClaim.runId,
+        localTraceReference: 'proposal-lifecycle-finance-review',
+        checkpoint,
+        interruptions: [
+          {
+            id: interruptionId,
+            agentId: 'finance',
+            capabilityId: managerReviewFixture.proposal.capabilityId,
+            proposalId: managerReviewFixture.proposal.id,
+            argumentsPreview: {
+              mutation: {
+                kind: 'commit-document-review',
+                documentId: managerReviewDocumentId,
+              },
+            },
+          },
+        ],
+        specialistOutcomes: [
+          {
+            delegationId: 'finance-manager-review-delegation',
+            specialistId: 'finance',
+            invocationContext:
+              managerReviewFixture.disclosure.invocationContext,
+            invocationContextHash:
+              managerReviewFixture.disclosure.invocationContextHash,
+            status: 'needs_confirmation',
+            proposedAction: {
+              proposalId: managerReviewFixture.proposal.id,
+              capabilityId: managerReviewFixture.proposal.capabilityId,
+              argumentsPreview: {
+                mutation: {
+                  kind: 'commit-document-review',
+                  documentId: managerReviewDocumentId,
+                },
+              },
+            },
+            usage: {
+              inputTokens: 0,
+              outputTokens: 0,
+              modelCostCadMinor: 0,
+            },
+          },
+        ],
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          modelCostCadMinor: 0,
+          spendWarning: true,
+        },
+        modelResolution: {
+          status: 'resolved',
+          requestedModel: 'gpt-5.6-luna',
+          resolvedModel: 'gpt-5.6-luna',
+          reason: 'default',
+        },
+      } as const;
+
+      await expect(
+        managerTurns.complete({
+          claimId: managerClaim.claimId,
+          ownershipToken: managerClaim.ownershipToken,
+          runId: managerClaim.runId,
+          result: managerApprovalResult,
+        }),
+      ).resolves.toEqual({ status: 'completed', terminalEventSequence: 3 });
+
+      const managerEvents = await admin.query<{
+        sequence: number;
+        eventType: string;
+        payload: unknown;
+      }>(
+        `select sequence::integer as sequence, event_type as "eventType", payload
+           from emdo.agent_run_events
+          where run_id = $1
+          order by sequence`,
+        [managerClaim.runId],
+      );
+      expect(
+        managerEvents.rows.map(({ sequence, eventType }) => ({
+          sequence,
+          eventType,
+        })),
+      ).toEqual([
+        { sequence: 1, eventType: 'run.accepted' },
+        { sequence: 2, eventType: 'specialist.needs_confirmation' },
+        { sequence: 3, eventType: 'approval.required' },
+      ]);
+      expect(managerEvents.rows.at(-1)?.payload).toMatchObject({
+        status: 'needs-approval',
+        runId: managerClaim.runId,
+        interruptions: [
+          {
+            id: interruptionId,
+            proposalId: managerReviewFixture.proposal.id,
+          },
+        ],
+      });
+      const approvalResumeJobs = await admin.query<{
+        checkpointId: string;
+        proposalId: string;
+        capabilityId: string;
+        approvalEventSequence: number;
+        state: string;
+      }>(
+        `select checkpoint_id::text as "checkpointId",
+                proposal_id::text as "proposalId",
+                capability_id as "capabilityId",
+                approval_event_sequence::integer as "approvalEventSequence",
+                state
+           from emdo.approval_resume_jobs
+          where run_id = $1`,
+        [managerClaim.runId],
+      );
+      expect(approvalResumeJobs.rows).toEqual([
+        {
+          checkpointId: checkpoint.checkpointId,
+          proposalId: managerReviewFixture.proposal.id,
+          capabilityId: 'finance.records.write',
+          approvalEventSequence: 3,
+          state: 'awaiting-decision',
+        },
+      ]);
+
+      const financeFixture = buildFinanceFixture(ids.c);
+      await seedActor(financeFixture, 'finance-no-google', {
+        includeGoogle: false,
+      });
+
+      const createOperation = operationId('finance_no_google_create');
+      const createInput = {
+        proposal: financeFixture.proposal,
+        preparation: financeFixture.preparation,
+        scope: scopeFor(
+          financeFixture,
+          'proposal-create',
+          new Date().toISOString(),
+        ),
+        event: createdEventFor(financeFixture),
+      } as const;
+      await expect(
+        repositoryFor(financeFixture, createOperation).transaction(
+          (transaction) => transaction.insertProposal(createInput),
+        ),
+      ).resolves.toBe('created');
+      await expect(
+        repositoryFor(financeFixture, createOperation).transaction(
+          (transaction) => transaction.insertProposal(createInput),
+        ),
+      ).resolves.toBe('duplicate');
+      const alteredScopeOperation = operationId('finance_altered_scope');
+      await expect(
+        directWorkflowCommit(
+          'commit_provider_proposal_create',
+          alteredScopeOperation,
+          {
+            ...createInput,
+            scope: {
+              ...createInput.scope,
+              authorizationScopeFingerprint: 'e'.repeat(64),
+            },
+          },
+        ),
+      ).resolves.toBe('conflict');
+      await expectUnclaimed(alteredScopeOperation);
+      await expect(
+        repositoryFor(
+          financeFixture,
+          operationId('finance_no_google_read'),
+        ).getProposal(financeFixture.proposal.id),
+      ).resolves.toEqual(financeFixture.proposal);
+
+      await stageApprovalResume(financeFixture, financeFixture.proposal);
+      const issuedProof = await proofStore().issue({
+        proposalId: financeFixture.proposal.id,
+        expectedProposalVersion: financeFixture.proposal.version,
+        expectedPayloadHash: financeFixture.proposal.payloadHash,
+        expectedApprovalHash: financeFixture.proposal.approvalHash,
+        principal: visualPrincipal(financeFixture),
+        requestId: financeFixture.actor.request,
+        idempotencyKey: `visual-proof:finance-no-google:${financeFixture.proposal.id}`,
+      });
+      expect(issuedProof.status).toBe('issued');
+      if (issuedProof.status !== 'issued') {
+        throw new Error('expected Finance visual proof issuance');
+      }
+      const visualDecisionOperation = operationId('finance_no_google_decision');
+      const approved = await commitApprovedDecision(
+        financeFixture,
+        financeFixture.proposal,
+        issuedProof.proof.proofToken,
+        'finance-no-google',
+        visualDecisionOperation,
+      );
+      await expect(
+        repositoryFor(financeFixture, visualDecisionOperation)
+          .withVisualDecisionProof(
+            issuedProof.proof.proofToken,
+            financeFixture.actor.grant,
+          )
+          .transaction((transaction) =>
+            transaction.commitDecision({
+              expected: expectedRevision(financeFixture.proposal),
+              next: approved.proposal,
+              decision: approved.decision,
+              scope: scopeFor(
+                financeFixture,
+                'visual-decision',
+                approved.decision.decidedAt,
+              ),
+              event: {
+                proposalId: approved.proposal.id,
+                eventType: 'proposal.approved',
+                occurredAt: approved.decision.decidedAt,
+                decisionId: approved.decision.id,
+                actorUserId: approved.decision.userId,
+                authenticatedSessionId:
+                  approved.decision.authenticatedSessionId,
+                approvalHash: approved.decision.approvalHash,
+                decisionIdempotencyKey: approved.decision.idempotencyKey,
+              },
+            }),
+          ),
+      ).resolves.toBe('duplicate');
+      await expect(
+        repositoryFor(
+          financeFixture,
+          operationId('finance_no_google_approved_read'),
+        ).getProposal(approved.proposal.id),
+      ).resolves.toEqual(approved.proposal);
+
+      const rejectedIssuedAt = new Date().toISOString();
+      const rejectedAuthorization = authorizationFor(
+        approved,
+        rejectedIssuedAt,
+        financeFixture.actor.attackAttempt,
+      );
+      const rejectedPrepared = transition(approved.proposal, 'prepared');
+      const prepareOperation = operationId('finance_prepare_rejected');
+      await expect(
+        directWorkflowCommit(
+          'commit_provider_proposal_prepare',
+          prepareOperation,
+          {
+            expected: expectedRevision(approved.proposal),
+            next: rejectedPrepared,
+            decisionId: approved.decision.id,
+            bindingHash: rejectedAuthorization.approvalBindingHash,
+            authorization: rejectedAuthorization,
+            approvalBinding: rejectedAuthorization.approvalBinding,
+            scope: scopeFor(
+              financeFixture,
+              'provider-write-prepare',
+              rejectedIssuedAt,
+            ),
+            event: {
+              proposalId: approved.proposal.id,
+              eventType: 'proposal.prepared',
+              occurredAt: rejectedIssuedAt,
+              decisionId: approved.decision.id,
+              actorUserId: approved.decision.userId,
+              authenticatedSessionId: approved.decision.authenticatedSessionId,
+              approvalHash: approved.decision.approvalHash,
+              decisionIdempotencyKey: approved.decision.idempotencyKey,
+              providerIdempotencyKey:
+                rejectedAuthorization.providerIdempotencyKey,
+              attemptId: rejectedAuthorization.attemptId,
+              attemptVersion: rejectedAuthorization.attemptVersion,
+            },
+          },
+        ),
+      ).resolves.toBe('conflict');
+      await expectUnclaimed(prepareOperation);
+
+      const rejectedDispatchedAt = new Date().toISOString();
+      const dispatchOperation = operationId('finance_dispatch_rejected');
+      await expect(
+        directWorkflowCommit(
+          'commit_provider_proposal_dispatch',
+          dispatchOperation,
+          {
+            expected: expectedRevision(approved.proposal),
+            next: transition(approved.proposal, 'executing'),
+            decisionId: approved.decision.id,
+            bindingHash: rejectedAuthorization.approvalBindingHash,
+            attemptId: rejectedAuthorization.attemptId,
+            dispatchedAt: rejectedDispatchedAt,
+            scope: scopeFor(
+              financeFixture,
+              'provider-write-dispatch',
+              rejectedDispatchedAt,
+            ),
+            event: {
+              proposalId: approved.proposal.id,
+              eventType: 'proposal.executing',
+              occurredAt: rejectedDispatchedAt,
+              decisionId: approved.decision.id,
+              actorUserId: approved.decision.userId,
+              authenticatedSessionId: approved.decision.authenticatedSessionId,
+              approvalHash: approved.decision.approvalHash,
+              decisionIdempotencyKey: approved.decision.idempotencyKey,
+              providerIdempotencyKey:
+                rejectedAuthorization.providerIdempotencyKey,
+              attemptId: rejectedAuthorization.attemptId,
+              attemptVersion: rejectedAuthorization.attemptVersion,
+            },
+          },
+        ),
+      ).resolves.toBe('conflict');
+      await expectUnclaimed(dispatchOperation);
+      await expect(
+        repositoryFor(
+          financeFixture,
+          operationId('finance_provider_reject_read'),
+        ).getProposal(approved.proposal.id),
+      ).resolves.toEqual(approved.proposal);
+
+      const financeClaims = await admin.query<{
+        phase: string;
+        finance_guarded_authority: {
+          schemaVersion: number;
+          capabilityId: string;
+          capabilityFingerprint: string;
+          guardedAction: unknown;
+        } | null;
+      }>(
+        `select phase, finance_guarded_authority
+           from emdo.workflow_operation_claims
+          where proposal_id = $1
+          order by phase`,
+        [financeFixture.proposal.id],
+      );
+      expect(financeClaims.rows).toHaveLength(2);
+      for (const claim of financeClaims.rows) {
+        expect(claim.finance_guarded_authority).toEqual({
+          schemaVersion: 1,
+          capabilityId: financeFixture.proposal.capabilityId,
+          capabilityFingerprint: financeFixture.proposal.capabilityFingerprint,
+          guardedAction: financeFixture.proposal.guardedAction,
+        });
+      }
+      await expect(
+        admin.query(
+          `update emdo.workflow_operation_claims
+              set finance_guarded_authority = null
+            where proposal_id = $1 and phase = 'proposal-create'`,
+          [financeFixture.proposal.id],
+        ),
+      ).rejects.toMatchObject({ code: '55000' });
+
+      const forgedFixture = buildFinanceFixture(ids.c, {
+        proposalId: ids.c.attackProposal,
+        sdkCallSuffix: 'forged-binding',
+        disclosure: financeFixture.disclosure,
+      });
+      const forgedBindingHash = 'f'.repeat(64);
+      const forgedProposal = ActionProposalSchema.parse({
+        ...forgedFixture.proposal,
+        providerAuthorityBindingHash: forgedBindingHash,
+        guardedAction: {
+          ...forgedFixture.proposal.guardedAction,
+          executionBindingHash: forgedBindingHash,
+        },
+      });
+      const forgedOperation = operationId('finance_forged_binding');
+      await expect(
+        directWorkflowCommit(
+          'commit_provider_proposal_create',
+          forgedOperation,
+          {
+            proposal: forgedProposal,
+            preparation: forgedFixture.preparation,
+            scope: scopeFor(
+              forgedFixture,
+              'proposal-create',
+              new Date().toISOString(),
+            ),
+            event: createdEventFor(forgedFixture),
+          },
+        ),
+      ).resolves.toBe('conflict');
+      await expectUnclaimed(forgedOperation);
+
+      const targetSubstitutionFixture = buildFinanceFixture(ids.c, {
+        proposalId: randomUUID(),
+        sdkCallSuffix: 'substituted-target',
+        disclosure: financeFixture.disclosure,
+      });
+      const targetSubstitutionProposal = ActionProposalSchema.parse({
+        ...targetSubstitutionFixture.proposal,
+        guardedAction: {
+          ...targetSubstitutionFixture.proposal.guardedAction,
+          targetBindingHash: 'd'.repeat(64),
+        },
+      });
+      const targetSubstitutionOperation = operationId(
+        'finance_substituted_target',
+      );
+      await expect(
+        directWorkflowCommit(
+          'commit_provider_proposal_create',
+          targetSubstitutionOperation,
+          {
+            proposal: targetSubstitutionProposal,
+            preparation: targetSubstitutionFixture.preparation,
+            scope: scopeFor(
+              targetSubstitutionFixture,
+              'proposal-create',
+              new Date().toISOString(),
+            ),
+            event: createdEventFor(targetSubstitutionFixture),
+          },
+        ),
+      ).resolves.toBe('conflict');
+      await expectUnclaimed(targetSubstitutionOperation);
+
+      const calendarWithoutGoogle = buildFixture(ids.d);
+      await seedActor(calendarWithoutGoogle, 'calendar-no-google', {
+        includeGoogle: false,
+      });
+      const calendarOperation = operationId('calendar_no_google');
+      await expect(
+        directWorkflowCommit(
+          'commit_provider_proposal_create',
+          calendarOperation,
+          {
+            proposal: calendarWithoutGoogle.proposal,
+            preparation: calendarWithoutGoogle.preparation,
+            scope: scopeFor(
+              calendarWithoutGoogle,
+              'proposal-create',
+              new Date().toISOString(),
+            ),
+            event: createdEventFor(calendarWithoutGoogle),
+          },
+        ),
+      ).resolves.toBe('conflict');
+      await expectUnclaimed(calendarOperation);
+
+      await createPending(fixtureA, 'calendar-null-guarded-authority');
+      const calendarClaim = await admin.query<{
+        finance_guarded_authority: unknown;
+      }>(
+        `select finance_guarded_authority
+           from emdo.workflow_operation_claims
+          where proposal_id = $1 and phase = 'proposal-create'`,
+        [fixtureA.proposal.id],
+      );
+      expect(calendarClaim.rows).toEqual([{ finance_guarded_authority: null }]);
+    });
+
+    it('converges overlapping exact visual decisions after a PostgreSQL commit conflict', async () => {
+      const pending = await createPending(
+        fixtureA,
+        'concurrent-exact-decision',
+      );
+      const issued = await proofStore().issue({
+        proposalId: pending.id,
+        expectedProposalVersion: pending.version,
+        expectedPayloadHash: pending.payloadHash,
+        expectedApprovalHash: pending.approvalHash,
+        principal: visualPrincipal(fixtureA),
+        requestId: fixtureA.actor.request,
+        idempotencyKey: `visual-proof:concurrent:${pending.id}`,
+      });
+      if (issued.status !== 'issued') {
+        throw new Error('expected concurrent visual proof');
+      }
+
+      let absentReplayReads = 0;
+      let decisionCommits = 0;
+      const decisionCommitResults: Array<
+        Awaited<
+          ReturnType<DomainProposalRepositoryTransaction['commitDecision']>
+        >
+      > = [];
+      let releaseAbsentReplayReads!: () => void;
+      let releaseDecisionCommits!: () => void;
+      const bothAbsentReplayReads = new Promise<void>((resolve) => {
+        releaseAbsentReplayReads = resolve;
+      });
+      const bothDecisionCommits = new Promise<void>((resolve) => {
+        releaseDecisionCommits = resolve;
+      });
+      const wrapForConcurrentDecision = (
+        repository: ProposalRepository,
+      ): ProposalRepository => ({
+        getProposal: (id) => repository.getProposal(id),
+        listEvents: () => repository.listEvents(),
+        transaction: async <Result>(
+          work: (
+            transaction: DomainProposalRepositoryTransaction,
+          ) => Promise<Result>,
+        ): Promise<Result> => {
+          let observedAbsentReplay = false;
+          const result = await repository.transaction((transaction) =>
+            work(
+              Object.freeze({
+                ...transaction,
+                findDecisionByIdempotencyKey: async (
+                  lookup: Parameters<
+                    DomainProposalRepositoryTransaction['findDecisionByIdempotencyKey']
+                  >[0],
+                ) => {
+                  const stored =
+                    await transaction.findDecisionByIdempotencyKey(lookup);
+                  if (stored === undefined) observedAbsentReplay = true;
+                  return stored;
+                },
+                commitDecision: async (
+                  input: Parameters<
+                    DomainProposalRepositoryTransaction['commitDecision']
+                  >[0],
+                ) => {
+                  decisionCommits += 1;
+                  if (decisionCommits === 2) releaseDecisionCommits();
+                  await bothDecisionCommits;
+                  const commitResult = await transaction.commitDecision(input);
+                  decisionCommitResults.push(commitResult);
+                  return commitResult;
+                },
+              }),
+            ),
+          );
+          if (observedAbsentReplay && absentReplayReads < 2) {
+            absentReplayReads += 1;
+            if (absentReplayReads === 2) releaseAbsentReplayReads();
+            await bothAbsentReplayReads;
+          }
+          return result;
+        },
+      });
+      const repositoryA = wrapForConcurrentDecision(
+        repositoryFor(
+          fixtureA,
+          operationId('concurrent_exact_decision_a'),
+        ).withVisualDecisionProof(
+          issued.proof.proofToken,
+          fixtureA.actor.grant,
+        ),
+      );
+      const repositoryB = wrapForConcurrentDecision(
+        repositoryFor(
+          fixtureA,
+          operationId('concurrent_exact_decision_b'),
+        ).withVisualDecisionProof(
+          issued.proof.proofToken,
+          fixtureA.actor.grant,
+        ),
+      );
+      const unusedMaterializer = {
+        materialize: async () => {
+          throw new Error('concurrent decision must not materialize');
+        },
+      };
+      const unusedDisclosureResolver = {
+        resolve: async () => undefined,
+      };
+      const serviceA = new ProposalService(
+        unusedMaterializer,
+        unusedDisclosureResolver,
+        repositoryA,
+        () => new Date(),
+      );
+      const serviceB = new ProposalService(
+        unusedMaterializer,
+        unusedDisclosureResolver,
+        repositoryB,
+        () => new Date(),
+      );
+      const idempotencyKey = `decision:concurrent:${pending.id}`;
+      const decisionRequest = {
+        schemaVersion: 1 as const,
+        proposalId: pending.id,
+        payloadHash: pending.payloadHash,
+        approvalHash: pending.approvalHash,
+        decision: 'approved' as const,
+        idempotencyKey,
+      };
+      const operationScope = {
+        requestId: fixtureA.actor.request,
+        sessionId: fixtureA.actor.session,
+        householdId: fixtureA.actor.household,
+        userId: fixtureA.actor.user,
+        spaceAccessGrantId: fixtureA.actor.grant,
+        authorizationScopeFingerprint: pending.authorizationScopeFingerprint,
+      };
+      const firstDecisionId = randomUUID();
+      const secondDecisionId = randomUUID();
+      const [first, second] = await Promise.all([
+        serviceA.decide(decisionRequest, {
+          decisionId: firstDecisionId,
+          operationScope,
+          channel: 'authenticated-visual',
+          now: new Date(),
+        }),
+        serviceB.decide(decisionRequest, {
+          decisionId: secondDecisionId,
+          operationScope,
+          channel: 'authenticated-visual',
+          now: new Date(Date.now() + 1),
+        }),
+      ]);
+
+      expect(second).toEqual(first);
+      expect([firstDecisionId, secondDecisionId]).toContain(first.id);
+      expect(absentReplayReads).toBe(2);
+      expect(decisionCommits).toBe(2);
+      expect([...decisionCommitResults].sort()).toEqual([
+        'conflict',
+        'created',
+      ]);
+      const persisted = await admin.query<{
+        decision_count: string;
+        approval_event_count: string;
+        proposal_state: string;
+      }>(
+        `select
+           (select pg_catalog.count(*)::text
+              from emdo.action_decisions where proposal_id = $1)
+             as decision_count,
+           (select pg_catalog.count(*)::text
+              from emdo.proposal_events
+             where proposal_id = $1 and event_type = 'proposal.approved')
+             as approval_event_count,
+           (select state from emdo.proposal_states where proposal_id = $1)
+             as proposal_state`,
+        [pending.id],
+      );
+      expect(persisted.rows).toEqual([
+        {
+          decision_count: '1',
+          approval_event_count: '1',
+          proposal_state: 'approved',
+        },
+      ]);
+    });
+
     it('denies direct claim issuance and aggregate access while app reads remain household scoped', async () => {
       await createPending(fixtureA, 'acl-a');
       await createPending(fixtureB, 'acl-b');
@@ -1183,6 +2540,7 @@ describeDatabase(
       const attackFixture = buildFixture(fixtureA.actor, {
         proposalId: fixtureA.actor.attackProposal,
         sdkCallSuffix: 'claim-swap',
+        disclosure: fixtureA.disclosure,
       });
       const createScope = scopeFor(
         attackFixture,
@@ -1202,9 +2560,9 @@ describeDatabase(
           createOperation,
           {
             ...createMutation,
-            event: {
-              ...createMutation.event,
-              occurredAt: isoOffset(1_000),
+            scope: {
+              ...createMutation.scope,
+              providerSdkCallId: `${createMutation.scope.providerSdkCallId}-scope-tamper`,
             },
           },
         ),

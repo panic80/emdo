@@ -7,11 +7,17 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/_common.sh"
 run_id="${1:-}"
 digest_lock="${2:-}"
 ttl_minutes="${3:-60}"
+finance_synthetic_staging="${4:-false}"
+finance_live_chat="${5:-false}"
 assert_safe_identifier "$run_id" STAGING_RUN_ID
 [[ "$run_id" =~ ^[0-9]{1,20}$ ]] || die 'STAGING_RUN_ID must be numeric'
 [[ "$ttl_minutes" =~ ^[0-9]+$ ]] || die 'staging TTL must be an integer'
 ((ttl_minutes >= 15 && ttl_minutes <= 240)) ||
   die 'staging TTL must be between 15 and 240 minutes'
+assert_finance_synthetic_staging_flag "$finance_synthetic_staging"
+assert_finance_synthetic_staging_live_chat_flag "$finance_live_chat"
+[[ "$finance_synthetic_staging" == true || "$finance_live_chat" == false ]] ||
+  die 'Finance live chat requires Finance synthetic staging'
 
 staging_capacity_lock_fd=''
 acquire_host_lock /var/lib/emdo/locks/capacity.lock staging_capacity_lock_fd
@@ -48,20 +54,31 @@ assert_isolated_project_absent "$COMPOSE_PROJECT_NAME" "$DEPLOYMENT_NAMESPACE"
 install -d -o 0 -g 0 -m 0700 "$state_dir"
 assert_governed_parent_chain "$state_dir" "$STAGING_STATE_ROOT"
 install -m 0600 "$digest_lock" "$state_dir/images.env"
+
+cleanup_failed_deploy() {
+  local exit_code=$?
+  trap - EXIT
+  if ((exit_code != 0)); then
+    log "staging deployment failed; removing only run $run_id"
+    flock --unlock "$staging_capacity_lock_fd" || true
+    "$SCRIPT_DIR/teardown-staging.sh" "$run_id" || true
+  fi
+  exit "$exit_code"
+}
+trap cleanup_failed_deploy EXIT
+
+if [[ "$finance_synthetic_staging" == true ]]; then
+  export EMDO_FINANCE_SYNTHETIC_STAGING=true
+  export EMDO_FINANCE_SYNTHETIC_STAGING_LIVE_CHAT="$finance_live_chat"
+  prepare_finance_synthetic_staging_state "$state_dir"
+else
+  export EMDO_FINANCE_SYNTHETIC_STAGING_LIVE_CHAT=false
+  disable_finance_synthetic_staging
+fi
 deadline_pending="$(mktemp "$state_dir/.expires-at-epoch.XXXXXX")"
 printf '%s\n' "$(( $(date +%s) + 3600 ))" > "$deadline_pending"
 chmod 0600 "$deadline_pending"
 mv -- "$deadline_pending" "$state_dir/expires-at-epoch"
-
-cleanup_failed_deploy() {
-  local exit_code=$?
-  trap - ERR
-  log "staging deployment failed; removing only run $run_id"
-  flock --unlock "$staging_capacity_lock_fd" || true
-  "$SCRIPT_DIR/teardown-staging.sh" "$run_id" || true
-  exit "$exit_code"
-}
-trap cleanup_failed_deploy ERR
 
 staging_compose config --quiet
 staging_compose pull
@@ -85,5 +102,5 @@ printf '%s\n' "$(( $(date +%s) + ttl_minutes * 60 ))" > "$deadline_pending"
 chmod 0600 "$deadline_pending"
 mv -- "$deadline_pending" "$state_dir/expires-at-epoch"
 
-trap - ERR
+trap - EXIT
 log "staging run $run_id is healthy on loopback port $STAGING_HTTP_PORT; persistent expiry is $ttl_minutes minutes from health"

@@ -9,11 +9,15 @@ import type {
   OpenAiAgentsRunnerPort,
   ProviderWriteProposalGateway,
 } from '@emdo/agent-core';
-import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
+import {
+  AgentInvocationContextSchema,
+  EffectiveAuthorizationScopeFingerprintSchema,
+} from '@emdo/contracts';
 import type {
   ProviderWriteApprovalStore,
   TrustedProviderWriteAuthorityResolver,
 } from '@emdo/toolbox';
+import { hashCanonicalJson } from '@emdo/toolbox';
 
 import type {
   AuthenticatedPrincipal,
@@ -22,6 +26,9 @@ import type {
 import {
   PRODUCTION_AGENT_RUNTIME_BLOCKERS,
   createCoreProductionAgentRuntime,
+  createFinanceOnlyProductionAgentRuntime,
+  createFinanceV1ProductionAgentRuntime,
+  createManagerOnlyProductionAgentRuntime,
   createProductionAgentRuntime,
   createProductionAgentServiceBindings,
   createProductionAgentServiceBindingsFromDependencies,
@@ -44,6 +51,7 @@ const ids = Object.freeze({
   household: '018f1f5e-2000-7000-8000-000000000006',
   spaceGrant: '018f1f5e-2000-7000-8000-000000000007',
   privateSpace: '018f1f5e-2000-7000-8000-000000000008',
+  rootManagerInvocation: '018f1f5e-2000-7000-8000-000000000009',
 });
 
 const principal: AuthenticatedPrincipal = Object.freeze({
@@ -87,6 +95,9 @@ const capabilityServices = (): TrustedProductionCapabilityServices => ({
     writeFinanceRecord: notInvoked,
     executeStatementImport: notInvoked,
     loadFinanceBudgetInputs: notInvoked,
+    searchFinanceDocuments: notInvoked,
+    readFinanceDocument: notInvoked,
+    readFinanceMatches: notInvoked,
     readShoppingItems: notInvoked,
     writeShoppingItem: notInvoked,
     readOffers: notInvoked,
@@ -187,7 +198,12 @@ const costCalculator: OpenAiAgentCostCalculator = {
   calculateCadMinor: () => 1,
 };
 
-const runtimeDependencies = (): ProductionAgentRuntimeDependencies => ({
+const runtimeDependencies = (): ProductionAgentRuntimeDependencies & {
+  readonly registeredAgentReadiness: Readonly<{
+    scheduler: () => Promise<{ readonly status: 'ready' }>;
+    finance: () => Promise<{ readonly status: 'ready' }>;
+  }>;
+} => ({
   capabilityServices: capabilityServices(),
   proposals: proposalComposition(),
   trustedProviderWriteAuthorityResolver: authorityResolver,
@@ -198,6 +214,10 @@ const runtimeDependencies = (): ProductionAgentRuntimeDependencies => ({
   approvalCheckpoints,
   disclosureGateway,
   costCalculator,
+  registeredAgentReadiness: {
+    scheduler: async () => ({ status: 'ready' }),
+    finance: async () => ({ status: 'ready' }),
+  },
   spendGuard: {
     reserve: async () => ({
       status: 'blocked',
@@ -315,6 +335,17 @@ describe('production agent runtime', () => {
                 `${right.dataClass}\0${right.recordId}`,
               ),
             );
+          const invocationContext = AgentInvocationContextSchema.parse({
+            ...input.invocation,
+            disclosedContextRefs: records
+              .map(
+                ({ dataClass, recordId }) =>
+                  `context-ref-${hashCanonicalJson({ dataClass, recordId })}`,
+              )
+              .sort(),
+            deadline: '2099-01-01T00:00:00.000Z',
+            idempotencyScope: 'c'.repeat(64),
+          });
           return {
             status: 'authorized' as const,
             grantId: '018f1f5e-2000-7000-8000-000000000008',
@@ -325,6 +356,8 @@ describe('production agent runtime', () => {
             agentId: input.agentId,
             phasePurpose: input.phasePurpose,
             phaseInvocationId: input.phaseInvocationId,
+            invocationContext,
+            invocationContextHash: hashCanonicalJson(invocationContext),
             disclosurePurpose: 'test-core-runner-injection',
             provider: 'openai' as const,
             expiresAt: '2099-01-01T00:00:00.000Z',
@@ -376,8 +409,10 @@ describe('production agent runtime', () => {
         userId: ids.user,
         authenticatedSessionId: ids.session,
         conversationId: ids.conversation,
+        rootManagerInvocationId: ids.rootManagerInvocation,
         spaceAccessGrantId: ids.spaceGrant,
         authorizationScopeFingerprint: runScopeFingerprint,
+        locale: 'en-CA',
         message: 'Schedule a dentist appointment.',
         escalationTriggers: [],
         abortSignal: new AbortController().signal,
@@ -446,7 +481,210 @@ describe('production agent runtime', () => {
     );
   });
 
-  it('constructs the canonical four-agent OpenAI SDK graph with all 19 capabilities', () => {
+  it('constructs the finite manager-scheduler-finance registered graph', () => {
+    const fullServices = capabilityServices();
+    const createGateway = vi.fn(() => proposalGateway);
+    const dependencies = runtimeDependencies();
+
+    const runtime = createFinanceV1ProductionAgentRuntime({
+      ...dependencies,
+      capabilityServices: {
+        schedulerDelegation:
+          fullServices.delegations['agent.scheduler.delegate'],
+        financeDelegation: fullServices.delegations['agent.finance.delegate'],
+        calendarEventCreate: calendarCreateBinding(
+          'google-calendar.event.create',
+        ),
+        finance: {
+          readFinanceRecords: fullServices.specialists.readFinanceRecords,
+          writeFinanceRecord: fullServices.specialists.writeFinanceRecord,
+          executeStatementImport:
+            fullServices.specialists.executeStatementImport,
+          loadFinanceBudgetInputs:
+            fullServices.specialists.loadFinanceBudgetInputs,
+          searchFinanceDocuments:
+            fullServices.specialists.searchFinanceDocuments,
+          readFinanceDocument: fullServices.specialists.readFinanceDocument,
+          readFinanceMatches: fullServices.specialists.readFinanceMatches,
+        },
+      },
+      executionRunner: {
+        run: async () => {
+          throw new Error('test-finance-v1-runner-must-not-run');
+        },
+      },
+      proposals: { approvalStore, createGateway },
+    });
+
+    expect(runtime.agentIds).toEqual(['manager', 'scheduler', 'finance']);
+    expect(runtime.capabilityIds).toEqual([
+      'agent.scheduler.delegate',
+      'agent.finance.delegate',
+      'google-calendar.event.create',
+      'finance.records.read',
+      'finance.records.write',
+      'finance.statement.import',
+      'finance.analytics.calculate',
+      'finance.documents.search',
+      'finance.documents.read',
+      'finance.matches.read',
+    ]);
+    expect(runtime.capabilityIds).not.toContain('agent.shopping.delegate');
+    expect(createGateway).toHaveBeenCalledWith(
+      expect.objectContaining({
+        registry: expect.objectContaining({ size: 10 }),
+        manifests: {
+          manager: expect.objectContaining({
+            capabilityAllowlist: [
+              'agent.scheduler.delegate',
+              'agent.finance.delegate',
+            ],
+          }),
+          scheduler: expect.objectContaining({
+            capabilityAllowlist: ['google-calendar.event.create'],
+          }),
+          finance: expect.objectContaining({
+            capabilityAllowlist: expect.arrayContaining([
+              'finance.records.read',
+              'finance.documents.search',
+            ]),
+          }),
+        },
+      }),
+    );
+  });
+
+  it.each(['finance', 'scheduler'] as const)(
+    'strips the %s structural route hint before the strict model-backed orchestrator',
+    async (routeHint) => {
+      const fullServices = capabilityServices();
+      const executionRunner: OpenAiAgentsRunnerPort = {
+        run: vi.fn(async () => {
+          throw new Error('test-model-runner-must-not-run');
+        }),
+      };
+      const runtime = createFinanceV1ProductionAgentRuntime({
+        ...runtimeDependencies(),
+        capabilityServices: {
+          schedulerDelegation:
+            fullServices.delegations['agent.scheduler.delegate'],
+          financeDelegation: fullServices.delegations['agent.finance.delegate'],
+          calendarEventCreate: calendarCreateBinding(
+            'google-calendar.event.create',
+          ),
+          finance: {
+            readFinanceRecords: fullServices.specialists.readFinanceRecords,
+            writeFinanceRecord: fullServices.specialists.writeFinanceRecord,
+            executeStatementImport:
+              fullServices.specialists.executeStatementImport,
+            loadFinanceBudgetInputs:
+              fullServices.specialists.loadFinanceBudgetInputs,
+            searchFinanceDocuments:
+              fullServices.specialists.searchFinanceDocuments,
+            readFinanceDocument: fullServices.specialists.readFinanceDocument,
+            readFinanceMatches: fullServices.specialists.readFinanceMatches,
+          },
+        },
+        executionRunner,
+      });
+
+      await expect(
+        runtime.orchestrator.runTurn({
+          requestId: ids.request,
+          runId: ids.run,
+          householdId: ids.household,
+          userId: ids.user,
+          authenticatedSessionId: ids.session,
+          conversationId: ids.conversation,
+          rootManagerInvocationId: ids.rootManagerInvocation,
+          spaceAccessGrantId: ids.spaceGrant,
+          authorizationScopeFingerprint: runScopeFingerprint,
+          locale: 'en-CA',
+          message: 'Review this request.',
+          escalationTriggers: [],
+          routeHint,
+          abortSignal: new AbortController().signal,
+        }),
+      ).resolves.toMatchObject({
+        status: 'failed',
+        safeError: { code: 'agent-model-unavailable' },
+      });
+      expect(executionRunner.run).not.toHaveBeenCalled();
+    },
+  );
+
+  it('constructs the manager-only and manager-finance startup combinations', () => {
+    const fullServices = capabilityServices();
+    const dependencies = runtimeDependencies();
+    const managerGateway = vi.fn(() => proposalGateway);
+    const managerOnly = createManagerOnlyProductionAgentRuntime({
+      ...dependencies,
+      executionRunner: {
+        run: async () => {
+          throw new Error('test-manager-only-runner-must-not-run');
+        },
+      },
+      proposals: { approvalStore, createGateway: managerGateway },
+    });
+    expect(managerOnly.agentIds).toEqual(['manager']);
+    expect(managerOnly.capabilityIds).toEqual([]);
+    expect(managerGateway).toHaveBeenCalledWith(
+      expect.objectContaining({
+        registry: expect.objectContaining({ size: 0 }),
+        manifests: {
+          manager: expect.objectContaining({ capabilityAllowlist: [] }),
+        },
+      }),
+    );
+
+    const financeGateway = vi.fn(() => proposalGateway);
+    const financeOnly = createFinanceOnlyProductionAgentRuntime({
+      ...dependencies,
+      capabilityServices: {
+        financeDelegation: fullServices.delegations['agent.finance.delegate'],
+        finance: {
+          readFinanceRecords: fullServices.specialists.readFinanceRecords,
+          writeFinanceRecord: fullServices.specialists.writeFinanceRecord,
+          executeStatementImport:
+            fullServices.specialists.executeStatementImport,
+          loadFinanceBudgetInputs:
+            fullServices.specialists.loadFinanceBudgetInputs,
+          searchFinanceDocuments:
+            fullServices.specialists.searchFinanceDocuments,
+          readFinanceDocument: fullServices.specialists.readFinanceDocument,
+          readFinanceMatches: fullServices.specialists.readFinanceMatches,
+        },
+      },
+      executionRunner: {
+        run: async () => {
+          throw new Error('test-finance-only-runner-must-not-run');
+        },
+      },
+      proposals: { approvalStore, createGateway: financeGateway },
+    });
+    expect(financeOnly.agentIds).toEqual(['manager', 'finance']);
+    expect(financeOnly.capabilityIds).toHaveLength(8);
+    expect(financeOnly.capabilityIds).not.toContain('agent.scheduler.delegate');
+    expect(financeOnly.capabilityIds).not.toContain('agent.shopping.delegate');
+    expect(financeGateway).toHaveBeenCalledWith(
+      expect.objectContaining({
+        registry: expect.objectContaining({ size: 8 }),
+        manifests: {
+          manager: expect.objectContaining({
+            capabilityAllowlist: ['agent.finance.delegate'],
+          }),
+          finance: expect.objectContaining({
+            capabilityAllowlist: expect.arrayContaining([
+              'finance.records.read',
+              'finance.documents.search',
+            ]),
+          }),
+        },
+      }),
+    );
+  });
+
+  it('constructs the canonical four-agent OpenAI SDK graph with all 22 capabilities', () => {
     const createGateway = vi.fn(() => proposalGateway);
     const dependencies = runtimeDependencies();
     const runtime = createProductionAgentRuntime({
@@ -460,13 +698,17 @@ describe('production agent runtime', () => {
       'finance',
       'shopping',
     ]);
-    expect(runtime.capabilityIds).toHaveLength(19);
-    expect(new Set(runtime.capabilityIds).size).toBe(19);
+    expect(runtime.capabilityIds).toHaveLength(22);
+    expect(new Set(runtime.capabilityIds).size).toBe(22);
     expect(runtime.capabilityIds).toEqual(
       expect.arrayContaining([
         'agent.scheduler.delegate',
         'scheduler.tasks.read',
         'finance.statement.import',
+        'finance.analytics.calculate',
+        'finance.documents.search',
+        'finance.documents.read',
+        'finance.matches.read',
         'commerce.offers.refresh',
         'google-calendar.event.create',
       ]),
@@ -476,7 +718,7 @@ describe('production agent runtime', () => {
     expect(createGateway).toHaveBeenCalledOnce();
     expect(createGateway).toHaveBeenCalledWith(
       expect.objectContaining({
-        registry: expect.objectContaining({ size: 19 }),
+        registry: expect.objectContaining({ size: 22 }),
         manifests: expect.objectContaining({
           manager: expect.objectContaining({ id: 'manager' }),
           scheduler: expect.objectContaining({ id: 'scheduler' }),
@@ -495,6 +737,7 @@ describe('production agent runtime', () => {
       ownershipToken: 'turn-owner-00000001',
       runId: ids.run,
       conversationId: ids.conversation,
+      rootManagerInvocationId: ids.rootManagerInvocation,
       authorizationScopeFingerprint: runScopeFingerprint,
       escalationTriggers: [],
     }));
@@ -528,18 +771,23 @@ describe('production agent runtime', () => {
         })(),
       check: async () => true,
     };
+    const create = vi.fn(async () => runtime);
     const services = createProductionAgentServiceBindingsFromDependencies({
       turns,
       runEvents: source,
       runtimeFactory: {
-        create: async () => runtime,
+        create,
         check: async () => true,
       },
     });
 
     await expect(
       services.bindings.managerTurns.service.start({
-        request: { schemaVersion: 1, message: 'What is on my schedule?' },
+        request: {
+          schemaVersion: 1,
+          locale: 'en-CA',
+          message: 'What is on my schedule?',
+        },
         principal,
         requestId: ids.request,
         idempotencyKey: 'turn-idempotency-00000001',
@@ -558,6 +806,14 @@ describe('production agent runtime', () => {
         idempotencyKey: 'turn-idempotency-00000001',
       }),
     );
+    expect(create).toHaveBeenCalledWith({
+      principal,
+      requestId: ids.request,
+      runId: ids.run,
+      conversationId: ids.conversation,
+      rootManagerInvocationId: ids.rootManagerInvocation,
+      authorizationScopeFingerprint: runScopeFingerprint,
+    });
     expect(complete).toHaveBeenCalledWith(
       expect.objectContaining({
         claimId: 'turn-claim-00000001',
@@ -597,6 +853,7 @@ describe('production agent runtime', () => {
         status: 'replay' as const,
         runId: ids.run,
         conversationId: ids.conversation,
+        rootManagerInvocationId: ids.rootManagerInvocation,
       };
     });
     const open = vi.fn(async (input: { readonly principal: unknown }) => {
@@ -625,7 +882,11 @@ describe('production agent runtime', () => {
 
     await expect(
       services.bindings.managerTurns.service.start({
-        request: { schemaVersion: 1, message: 'Schedule a meeting' },
+        request: {
+          schemaVersion: 1,
+          locale: 'en-CA',
+          message: 'Schedule a meeting',
+        },
         principal: authenticatedPrincipal,
         requestId: ids.request,
         idempotencyKey: 'turn-idempotency-00000011',
@@ -665,6 +926,7 @@ describe('production agent runtime', () => {
         status: 'replay' as const,
         runId: ids.run,
         conversationId: ids.conversation,
+        rootManagerInvocationId: ids.rootManagerInvocation,
       };
     });
     const services = createProductionAgentServiceBindingsFromDependencies({
@@ -689,7 +951,11 @@ describe('production agent runtime', () => {
 
     await expect(
       services.bindings.managerTurns.service.start({
-        request: { schemaVersion: 1, message: 'Schedule a meeting' },
+        request: {
+          schemaVersion: 1,
+          locale: 'en-CA',
+          message: 'Schedule a meeting',
+        },
         principal: authenticatedPrincipal,
         requestId: ids.request,
         idempotencyKey: 'turn-idempotency-00000012',
@@ -744,6 +1010,7 @@ describe('production agent runtime', () => {
             ownershipToken: 'turn-owner-00000001',
             runId: 'model-controlled-run-id',
             conversationId: ids.conversation,
+            rootManagerInvocationId: ids.rootManagerInvocation,
             escalationTriggers: ['unknown-model-escalation'],
           }) as never,
         complete: async () => ({
@@ -765,7 +1032,7 @@ describe('production agent runtime', () => {
 
     await expect(
       services.bindings.managerTurns.service.start({
-        request: { schemaVersion: 1, message: 'Hello' },
+        request: { schemaVersion: 1, locale: 'en-CA', message: 'Hello' },
         principal,
         requestId: ids.request,
         idempotencyKey: 'turn-idempotency-00000001',
@@ -796,6 +1063,7 @@ describe('production agent runtime', () => {
           ownershipToken: 'turn-owner-00000001',
           runId: ids.run,
           conversationId: ids.conversation,
+          rootManagerInvocationId: ids.rootManagerInvocation,
           authorizationScopeFingerprint: runScopeFingerprint,
           escalationTriggers: [],
         }),
@@ -818,7 +1086,7 @@ describe('production agent runtime', () => {
 
     await expect(
       services.bindings.managerTurns.service.start({
-        request: { schemaVersion: 1, message: 'Hello' },
+        request: { schemaVersion: 1, locale: 'en-CA', message: 'Hello' },
         principal,
         requestId: ids.request,
         idempotencyKey: 'turn-idempotency-00000001',
@@ -842,6 +1110,7 @@ describe('production agent runtime', () => {
           ownershipToken: 'turn-owner-00000001',
           runId: ids.run,
           conversationId: ids.conversation,
+          rootManagerInvocationId: ids.rootManagerInvocation,
           authorizationScopeFingerprint: runScopeFingerprint,
           escalationTriggers: [],
         }),
@@ -879,7 +1148,7 @@ describe('production agent runtime', () => {
 
     await expect(
       services.bindings.managerTurns.service.start({
-        request: { schemaVersion: 1, message: 'Hello' },
+        request: { schemaVersion: 1, locale: 'en-CA', message: 'Hello' },
         principal,
         requestId: ids.request,
         idempotencyKey: 'turn-idempotency-00000001',
@@ -909,6 +1178,7 @@ describe('production agent runtime', () => {
           ownershipToken: 'turn-owner-00000001',
           runId: ids.run,
           conversationId: ids.conversation,
+          rootManagerInvocationId: ids.rootManagerInvocation,
           authorizationScopeFingerprint: runScopeFingerprint,
           escalationTriggers: [],
         }),
@@ -946,6 +1216,7 @@ describe('production agent runtime', () => {
     await services.bindings.managerTurns.service.start({
       request: {
         schemaVersion: 1,
+        locale: 'en-CA',
         message: 'add 2 each apples to shopping list',
         routeHint: 'shopping',
       },

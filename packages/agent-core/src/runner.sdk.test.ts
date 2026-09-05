@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { Agent, RunContext, RunToolApprovalItem } from '@openai/agents';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -74,6 +76,22 @@ const providerWriteCapabilityDescriptor =
     executorId: 'google-calendar.event.create.v1',
   });
 const providerWriteCapabilityId = providerWriteCapabilityDescriptor.id;
+const canonicalHash = (value: Record<string, unknown>): string =>
+  createHash('sha256')
+    .update(JSON.stringify(Object.fromEntries(Object.entries(value).sort())))
+    .digest('hex');
+const invocationContext = Object.freeze({
+  orchestrationRunId: '018f1f5e-1000-7000-8000-000000000002',
+  parentInvocationId: '018f1f5e-1000-7000-8000-000000000009',
+  agentInvocationId: '018f1f5e-1000-7000-8000-000000000010',
+  phaseInvocationId: '018f1f5e-1000-7000-8000-000000000011',
+  actorId: '018f1f5e-1000-7000-8000-000000000004',
+  locale: 'en-CA' as const,
+  grantedCapabilities: [providerWriteCapabilityId],
+  disclosedContextRefs: [],
+  deadline: new Date(Date.now() + 60_000).toISOString(),
+  idempotencyScope: 'd'.repeat(64),
+});
 
 const context: AgentExecutionContext = Object.freeze({
   requestId: '018f1f5e-1000-7000-8000-000000000001',
@@ -83,11 +101,28 @@ const context: AgentExecutionContext = Object.freeze({
   authenticatedSessionId: '018f1f5e-1000-7000-8000-000000000008',
   spaceAccessGrantId: '018f1f5e-1000-7000-8000-000000000006',
   authorizationScopeFingerprint,
+  locale: 'en-CA',
+  invocationContext,
+  invocationContextHash: canonicalHash(invocationContext),
   disclosureGrantId: '018f1f5e-1000-7000-8000-000000000007',
   disclosureGrantVersion: '1.0.0',
   agentId: 'scheduler',
   abortSignal: new AbortController().signal,
 });
+
+const contextWithInvocationDeadline = (
+  deadline: string,
+): AgentExecutionContext => {
+  const updatedInvocationContext = Object.freeze({
+    ...invocationContext,
+    deadline,
+  });
+  return Object.freeze({
+    ...context,
+    invocationContext: updatedInvocationContext,
+    invocationContextHash: canonicalHash(updatedInvocationContext),
+  });
+};
 
 const proposalGateway = (): ProviderWriteProposalGateway => ({
   prepare: vi.fn(async () => ({
@@ -171,6 +206,9 @@ const spendGuard = (
 const compiledAgentWithCapability = (
   capabilityKind: AgentCapabilityReference['kind'],
   gateway: ProviderWriteProposalGateway,
+  execute: (input: unknown, context: unknown) => Promise<unknown> = vi.fn(
+    async () => ({ ok: true }),
+  ),
 ): CompiledAgent<Agent<AgentExecutionContext, z.ZodObject>> => {
   const capabilityId =
     capabilityKind === 'provider-write'
@@ -191,7 +229,7 @@ const compiledAgentWithCapability = (
           parameters,
           needsApproval: true,
           timeoutMs: 10_000,
-          execute: vi.fn(async () => ({ ok: true })),
+          execute,
         })
       : facade.createTool({
           canonicalCapabilityId: capabilityId,
@@ -201,7 +239,7 @@ const compiledAgentWithCapability = (
           parameters,
           needsApproval: false,
           timeoutMs: 10_000,
-          execute: vi.fn(async () => ({ ok: true })),
+          execute,
         });
   const resolvedCapability =
     capabilityKind === 'provider-write'
@@ -298,8 +336,75 @@ const turnProviderWriteLedger = (
 });
 
 describe('OpenAI Agents SDK boundary', () => {
+  it.each([
+    ['en-CA', 'English (Canada)'],
+    ['fr-CA', 'French (Canada)'],
+    ['ja-JP', 'Japanese'],
+    ['ko-KR', 'Korean'],
+  ] as const)(
+    'mints fixed %s synthesis guidance while preserving evidence source language',
+    async (locale, language) => {
+      const gateway = proposalGateway();
+      const base = compiledAgentWithCapability('read', gateway);
+      const materialize = vi.fn(base.materialize);
+      const agent: CompiledAgent<Agent<AgentExecutionContext, z.ZodObject>> = {
+        ...base,
+        materialize,
+      };
+      const runner: OpenAiAgentsRunnerPort = {
+        run: vi.fn(async () => ({
+          state: {
+            usage: { inputTokens: 1, outputTokens: 1 },
+            getInterruptions: () => [],
+            approve: vi.fn(),
+            reject: vi.fn(),
+            toString: () => JSON.stringify({ sdk: 'complete' }),
+          },
+          finalOutput: { summary: '完了しました。' },
+        })),
+      };
+      const provider = new OpenAiAgentsExecutionProvider({
+        proposalGateway: gateway,
+        costCalculator: { calculateCadMinor: () => 1 },
+        spendGuard: spendGuard(),
+        inputTokenCounter: { countUpperBound: () => 1 },
+        runner,
+      });
+
+      await expect(
+        provider.execute({
+          phase: 'synthesize',
+          agent,
+          model: 'gpt-5.6-luna',
+          input: { sourceExcerpt: 'facture originale' },
+          context: { ...context, locale },
+          maxTurns: 12,
+        }),
+      ).resolves.toMatchObject({ status: 'completed' });
+
+      expect(materialize).toHaveBeenCalledWith(
+        'gpt-5.6-luna',
+        expect.objectContaining({
+          trustedInstructions: [
+            `Write the entire user-facing final EMDO synthesis in ${language} (${locale}), regardless of the language used in the user message or conversation history. The only exception is brief, bounded source-language evidence excerpts, which must remain in their original language and must not be translated.`,
+          ],
+        }),
+      );
+    },
+  );
+
   it('materializes real SDK agents and strict approval-aware function tools', async () => {
-    const execute = vi.fn(async () => ({ ok: true }));
+    const execute = vi.fn(
+      async (input: unknown, capabilityContext: unknown) => {
+        void input;
+        void capabilityContext;
+        return { ok: true };
+      },
+    );
+    const executionContext: AgentExecutionContext = Object.freeze({
+      ...context,
+      approvalDecisionId: '018f1f5e-1000-7000-8000-000000000009',
+    });
     const facade = createOpenAiAgentsSdkFacade();
     const parameters = z.strictObject({ request: z.string().min(1) });
     const toolOutputSchema = z.strictObject({ ok: z.boolean() });
@@ -343,10 +448,34 @@ describe('OpenAI Agents SDK boundary', () => {
     );
     await expect(
       functionTool.invoke(
-        new RunContext(context),
+        new RunContext(executionContext),
         JSON.stringify({ request: 'appointments' }),
       ),
     ).resolves.toEqual({ ok: true });
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledWith(
+      { request: 'appointments' },
+      {
+        requestId: executionContext.requestId,
+        runId: executionContext.runId,
+        userId: executionContext.userId,
+        householdId: executionContext.householdId,
+        sessionId: executionContext.authenticatedSessionId,
+        agentId: executionContext.agentId,
+        invocationContext: executionContext.invocationContext,
+        spaceAccessGrantId: executionContext.spaceAccessGrantId,
+        locale: executionContext.locale,
+        disclosureGrantId: executionContext.disclosureGrantId,
+        approvalDecisionId: executionContext.approvalDecisionId,
+        abortSignal: executionContext.abortSignal,
+      },
+    );
+    const capabilityContext = execute.mock.calls[0]?.[1];
+    expect(capabilityContext).not.toHaveProperty('authenticatedSessionId');
+    expect(capabilityContext).not.toHaveProperty(
+      'authorizationScopeFingerprint',
+    );
+    expect(capabilityContext).not.toHaveProperty('disclosureGrantVersion');
   });
 
   it('rejects capability results that violate the SDK-facing output schema', async () => {
@@ -388,11 +517,23 @@ describe('OpenAI Agents SDK boundary', () => {
       delegations: [{ specialistId: 'scheduler' }],
       directResponse: null,
     });
+    expect(
+      MANAGER_PLAN_OUTPUT_SCHEMA.parse({
+        delegations: [],
+        directResponse: 'Local summary ready.',
+      }),
+    ).toMatchObject({ directResponse: 'Local summary ready.' });
     expect(() =>
       MANAGER_PLAN_OUTPUT_SCHEMA.parse({
         delegations: [],
         directResponse: null,
         rawCredential: 'forbidden',
+      }),
+    ).toThrow();
+    expect(() =>
+      MANAGER_PLAN_OUTPUT_SCHEMA.parse({
+        delegations: [],
+        directResponse: { message: 'unsupported' },
       }),
     ).toThrow();
   });
@@ -1179,6 +1320,183 @@ describe('OpenAI Agents SDK boundary', () => {
         reason: 'execution-ended-before-checkpoint',
       }),
     );
+  });
+
+  it('blocks provider-write proposal preparation after the server-minted deadline expires during model work', async () => {
+    vi.useFakeTimers();
+    try {
+      const now = new Date('2026-08-09T22:30:00.000Z');
+      vi.setSystemTime(now);
+      const gateway = proposalGateway();
+      const compiled = compiledAgentWithCapability('provider-write', gateway);
+      const runner: OpenAiAgentsRunnerPort = {
+        run: vi.fn(async (sdkAgent, _input, options) => {
+          const functionTool = sdkAgent.tools[0];
+          if (functionTool?.type !== 'function') {
+            throw new Error('expected function tool');
+          }
+          const runContext =
+            options.context instanceof RunContext
+              ? options.context
+              : new RunContext(options.context ?? context);
+          await vi.advanceTimersByTimeAsync(5_000);
+          expect(options.signal.aborted).toBe(true);
+          await functionTool.needsApproval(
+            runContext,
+            { request: 'dentist' },
+            'call-calendar-expired',
+          );
+          throw new Error('expired provider write must not prepare');
+        }),
+      };
+      const provider = new OpenAiAgentsExecutionProvider({
+        proposalGateway: gateway,
+        costCalculator: { calculateCadMinor: () => 1 },
+        spendGuard: spendGuard(),
+        inputTokenCounter: { countUpperBound: () => 1 },
+        runner,
+      });
+
+      await expect(
+        provider.execute({
+          phase: 'specialist',
+          agent: compiled,
+          model: 'gpt-5.6-luna',
+          input: { request: 'dentist' },
+          context: contextWithInvocationDeadline(
+            new Date(now.getTime() + 5_000).toISOString(),
+          ),
+          maxTurns: 12,
+        }),
+      ).resolves.toMatchObject({
+        status: 'failed',
+        reason: 'timeout',
+        replaySafety: 'safe',
+        capabilityCalls: 0,
+      });
+      expect(gateway.prepare).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('blocks direct capability execution after the server-minted deadline expires during model work', async () => {
+    vi.useFakeTimers();
+    try {
+      const now = new Date('2026-08-09T22:30:00.000Z');
+      vi.setSystemTime(now);
+      const gateway = proposalGateway();
+      const execute = vi.fn(async () => ({ ok: true }));
+      const compiled = compiledAgentWithCapability('read', gateway, execute);
+      const runner: OpenAiAgentsRunnerPort = {
+        run: vi.fn(async (sdkAgent, _input, options) => {
+          const functionTool = sdkAgent.tools[0];
+          if (functionTool?.type !== 'function') {
+            throw new Error('expected function tool');
+          }
+          const runContext =
+            options.context instanceof RunContext
+              ? options.context
+              : new RunContext(options.context ?? context);
+          await vi.advanceTimersByTimeAsync(5_000);
+          expect(options.signal.aborted).toBe(true);
+          await functionTool.invoke(
+            runContext,
+            JSON.stringify({ request: 'dentist' }),
+          );
+          throw new Error('expired direct capability must not execute');
+        }),
+      };
+      const provider = new OpenAiAgentsExecutionProvider({
+        proposalGateway: gateway,
+        costCalculator: { calculateCadMinor: () => 1 },
+        spendGuard: spendGuard(),
+        inputTokenCounter: { countUpperBound: () => 1 },
+        runner,
+      });
+
+      await expect(
+        provider.execute({
+          phase: 'specialist',
+          agent: compiled,
+          model: 'gpt-5.6-luna',
+          input: { request: 'dentist' },
+          context: contextWithInvocationDeadline(
+            new Date(now.getTime() + 5_000).toISOString(),
+          ),
+          maxTurns: 12,
+        }),
+      ).resolves.toMatchObject({
+        status: 'failed',
+        reason: 'timeout',
+        replaySafety: 'safe',
+        capabilityCalls: 0,
+      });
+      expect(execute).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses the shorter manifest timeout before a later server-minted deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const now = new Date('2026-08-09T22:30:00.000Z');
+      vi.setSystemTime(now);
+      const gateway = proposalGateway();
+      const execute = vi.fn(async () => ({ ok: true }));
+      const compiled = withBudget(
+        compiledAgentWithCapability('read', gateway, execute),
+        { timeoutMs: 5_000 },
+      );
+      const runner: OpenAiAgentsRunnerPort = {
+        run: vi.fn(async (sdkAgent, _input, options) => {
+          const functionTool = sdkAgent.tools[0];
+          if (functionTool?.type !== 'function') {
+            throw new Error('expected function tool');
+          }
+          const runContext =
+            options.context instanceof RunContext
+              ? options.context
+              : new RunContext(options.context ?? context);
+          await vi.advanceTimersByTimeAsync(5_000);
+          expect(options.signal.aborted).toBe(true);
+          await functionTool.invoke(
+            runContext,
+            JSON.stringify({ request: 'dentist' }),
+          );
+          throw new Error('manifest timeout must block direct capability');
+        }),
+      };
+      const provider = new OpenAiAgentsExecutionProvider({
+        proposalGateway: gateway,
+        costCalculator: { calculateCadMinor: () => 1 },
+        spendGuard: spendGuard(),
+        inputTokenCounter: { countUpperBound: () => 1 },
+        runner,
+      });
+
+      await expect(
+        provider.execute({
+          phase: 'specialist',
+          agent: compiled,
+          model: 'gpt-5.6-luna',
+          input: { request: 'dentist' },
+          context: contextWithInvocationDeadline(
+            new Date(now.getTime() + 60_000).toISOString(),
+          ),
+          maxTurns: 12,
+        }),
+      ).resolves.toMatchObject({
+        status: 'failed',
+        reason: 'timeout',
+        replaySafety: 'safe',
+        capabilityCalls: 0,
+      });
+      expect(execute).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('terminalizes a prepared proposal on timeout before returning the timeout', async () => {

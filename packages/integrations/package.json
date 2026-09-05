@@ -7,6 +7,9 @@
     ".": "./src/index.ts",
     "./commerce": "./src/commerce/index.ts",
     "./email": "./src/email/index.ts",
+    "./finance-documents": {
+      "node": "./src/finance-documents/index.ts"
+    },
     "./google-calendar": "./src/google/calendar.ts",
     "./google-oauth-routes": "./src/google/oauth/routes.ts",
     "./google-oauth-server": {

@@ -10,8 +10,15 @@ import {
   type RunToolApprovalItem,
 } from '@openai/agents';
 import {
+  AgentInvocationContextSchema,
+  AgentOutcomeSchema,
   EffectiveAuthorizationScopeFingerprintSchema,
+  SupportedLocaleSchema,
+  type AgentInvocationContext,
+  type AgentOutcome,
+  type CapabilityInvocationContext,
   type EffectiveAuthorizationScopeFingerprint,
+  type SupportedLocale,
 } from '@emdo/contracts';
 import { z } from 'zod';
 
@@ -48,14 +55,31 @@ const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const MAX_MESSAGE_LENGTH = 32_000;
 const CHECKPOINT_TTL_MS = 10 * 60 * 1_000;
-const RUNTIME_STATE_VERSION = 5 as const;
+const RUNTIME_STATE_VERSION = 6 as const;
 const CONVERSATION_DATA_CLASS = 'conversation.messages';
 const MANAGER_PLAN_DATA_CLASS = 'agent.manager-plans';
 const DELEGATION_DATA_CLASS = 'agent.delegations';
 const SPECIALIST_OUTCOME_DATA_CLASS = 'agent.specialist-outcomes';
 
+const SYNTHESIS_LANGUAGE_BY_LOCALE: Readonly<Record<SupportedLocale, string>> =
+  Object.freeze({
+    'en-CA': 'English (Canada)',
+    'fr-CA': 'French (Canada)',
+    'ja-JP': 'Japanese',
+    'ko-KR': 'Korean',
+  });
+
 const SDK_CALL_ID_PATTERN = /^[A-Za-z0-9._:-]{1,256}$/;
 const DISCLOSURE_PATH_PATTERN = /^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$/;
+
+class AgentInvocationDeadlineExceededError extends Error {
+  readonly code = 'agent-invocation-deadline-exceeded';
+
+  constructor() {
+    super('agent-invocation-deadline-exceeded');
+    this.name = 'AgentInvocationDeadlineExceededError';
+  }
+}
 
 export const MANAGER_PLAN_OUTPUT_SCHEMA = z.strictObject({
   delegations: z
@@ -70,7 +94,7 @@ export const MANAGER_PLAN_OUTPUT_SCHEMA = z.strictObject({
       }),
     )
     .max(128),
-  directResponse: z.json().nullable(),
+  directResponse: z.string().max(MAX_MESSAGE_LENGTH).nullable(),
 });
 
 export type JsonValue =
@@ -149,6 +173,12 @@ export interface AgentExecutionContext {
   readonly authenticatedSessionId: string;
   readonly spaceAccessGrantId: string;
   readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
+  /** Fixed server-derived response locale for this turn; models cannot alter it. */
+  readonly locale: SupportedLocale;
+  /** Exact server-minted registered-agent lineage and authority envelope. */
+  readonly invocationContext: AgentInvocationContext;
+  /** SHA-256 of the canonical invocation context. */
+  readonly invocationContextHash: string;
   readonly disclosureGrantId?: string;
   readonly disclosureGrantVersion?: string;
   readonly approvalDecisionId?: string;
@@ -158,6 +188,17 @@ export interface AgentExecutionContext {
 
 export type ModelDisclosurePurpose =
   'manager-plan' | 'specialist-execution' | 'manager-synthesis';
+
+/** Server-minted identity presented to the durable disclosure gateway. */
+export interface ModelDisclosureInvocationRequest {
+  readonly orchestrationRunId: string;
+  readonly parentInvocationId: string;
+  readonly agentInvocationId: string;
+  readonly phaseInvocationId: string;
+  readonly actorId: string;
+  readonly locale: SupportedLocale;
+  readonly grantedCapabilities: readonly string[];
+}
 
 export interface ModelDisclosureAuthorization {
   readonly status: 'authorized';
@@ -169,6 +210,8 @@ export interface ModelDisclosureAuthorization {
   readonly agentId: string;
   readonly phasePurpose: ModelDisclosurePurpose;
   readonly phaseInvocationId: string;
+  readonly invocationContext: AgentInvocationContext;
+  readonly invocationContextHash: string;
   /** Exact user-authorized purpose stored on the durable disclosure grant. */
   readonly disclosurePurpose: string;
   readonly provider: 'openai';
@@ -248,6 +291,8 @@ export interface ModelDisclosureGateway {
       phasePurpose: ModelDisclosurePurpose;
       /** Stable server-derived key for exactly one logical model dispatch. */
       phaseInvocationId: string;
+      /** Identity only; the durable gateway supplies the full authority context. */
+      invocation: ModelDisclosureInvocationRequest;
       provider: 'openai';
       /** Trusted inputs projected to durable canonical records by the gateway. */
       sources: readonly ModelDisclosureSource[];
@@ -297,6 +342,11 @@ export interface ProviderWriteDecisionExecution {
  * must persist the SDK call binding; the model never supplies proposal IDs.
  */
 export interface ProviderWriteProposalGateway {
+  /**
+   * Local-write/import materializers may return undefined after trusted
+   * classification, which lets the same capability execute a safe input
+   * directly. Provider writes must always return a proposal.
+   */
   prepare(
     input: Readonly<{
       capabilityId: string;
@@ -304,7 +354,7 @@ export interface ProviderWriteProposalGateway {
       canonicalArguments: JsonValue;
       context: AgentExecutionContext;
     }>,
-  ): Promise<PreparedProviderWriteProposal>;
+  ): Promise<PreparedProviderWriteProposal | undefined>;
   resolvePrepared(
     input: Readonly<{
       capabilityId: string;
@@ -409,7 +459,7 @@ interface TurnProviderWriteEffectLedger {
   providerWriteSdkCallId?: string;
   providerWriteCanonicalArgumentsHash?: string;
   multipleProviderWritesRequested: boolean;
-  providerWritePreparation?: Promise<PreparedProviderWriteBinding>;
+  providerWritePreparation?: Promise<PreparedProviderWriteBinding | undefined>;
   proposalFinalizationPending: boolean;
   proposalAbandonmentAttempted: boolean;
   proposalAbandonmentConfirmed: boolean;
@@ -497,6 +547,9 @@ const abandonPreparedProviderWrite = async (
     ledger.proposalFinalizationPending = true;
     return false;
   }
+  if (prepared === undefined) {
+    return ledger.providerWriteProposalCount === 0 || ledger.priorWriteTerminal;
+  }
   try {
     const abandonment = snapshotPreparedProposalAbandonment(
       await gateway.abandonPrepared(
@@ -537,6 +590,58 @@ const createTurnProviderWriteEffectLedger = (
   priorWriteTerminal,
 });
 
+const invocationDeadlineAt = (context: AgentExecutionContext): number => {
+  const deadlineAt = Date.parse(context.invocationContext.deadline);
+  if (!Number.isFinite(deadlineAt)) {
+    throw new Error('invalid-agent-invocation-deadline');
+  }
+  return deadlineAt;
+};
+
+const assertInvocationDeadlineNotExceeded = (
+  context: AgentExecutionContext,
+): void => {
+  if (context.abortSignal.aborted) {
+    if (
+      context.abortSignal.reason instanceof AgentInvocationDeadlineExceededError
+    ) {
+      throw context.abortSignal.reason;
+    }
+    throw new Error('agent-capability-execution-aborted');
+  }
+  if (invocationDeadlineAt(context) <= Date.now()) {
+    throw new AgentInvocationDeadlineExceededError();
+  }
+};
+
+const createAbortDeadline = (
+  context: AgentExecutionContext,
+  manifestTimeoutMs: number,
+): AbortSignal => {
+  if (!Number.isSafeInteger(manifestTimeoutMs) || manifestTimeoutMs <= 0) {
+    throw new Error('invalid-agent-manifest-timeout');
+  }
+  const now = Date.now();
+  const manifestDeadlineAt = now + manifestTimeoutMs;
+  if (!Number.isSafeInteger(manifestDeadlineAt)) {
+    throw new Error('invalid-agent-manifest-deadline');
+  }
+  const deadlineAt = Math.min(
+    invocationDeadlineAt(context),
+    manifestDeadlineAt,
+  );
+  const controller = new AbortController();
+  const abort = () =>
+    controller.abort(new AgentInvocationDeadlineExceededError());
+  if (deadlineAt <= now) {
+    abort();
+  } else {
+    const timer = setTimeout(abort, deadlineAt - now);
+    if (typeof timer === 'object' && 'unref' in timer) timer.unref();
+  }
+  return controller.signal;
+};
+
 export const createOpenAiAgentsSdkFacade = (
   options: {
     readonly proposalGateway?: ProviderWriteProposalGateway;
@@ -574,6 +679,7 @@ export const createOpenAiAgentsSdkFacade = (
             throw new Error('provider-write-live-execution-ledger-required');
           }
           const turnLedger = ledger.turnProviderWrites;
+          const isProviderWrite = config.capabilityKind === 'provider-write';
           const canonicalArgumentsHash = createHash('sha256')
             .update(JSON.stringify(snapshotJson(input)))
             .digest('hex');
@@ -586,8 +692,7 @@ export const createOpenAiAgentsSdkFacade = (
                 canonicalArgumentsHash &&
               turnLedger.providerWritePreparation !== undefined
             ) {
-              await turnLedger.providerWritePreparation;
-              return true;
+              return (await turnLedger.providerWritePreparation) !== undefined;
             }
             turnLedger.multipleProviderWritesRequested = true;
             if (
@@ -609,22 +714,23 @@ export const createOpenAiAgentsSdkFacade = (
           turnLedger.providerWriteSdkCallId = callId;
           turnLedger.providerWriteCanonicalArgumentsHash =
             canonicalArgumentsHash;
-          recordCapabilityInvocation(
-            runContext.context,
-            'provider-write',
-            callId,
-          );
           const preparation = (async () => {
-            const proposal = snapshotPreparedProposal(
-              await gateway.prepare(
-                Object.freeze({
-                  capabilityId: config.canonicalCapabilityId,
-                  sdkCallId: callId,
-                  canonicalArguments: snapshotJson(input),
-                  context,
-                }),
-              ),
+            assertInvocationDeadlineNotExceeded(context);
+            recordCapabilityInvocation(
+              runContext.context,
+              config.capabilityKind,
+              callId,
             );
+            const rawProposal = await gateway.prepare(
+              Object.freeze({
+                capabilityId: config.canonicalCapabilityId,
+                sdkCallId: callId,
+                canonicalArguments: snapshotJson(input),
+                context,
+              }),
+            );
+            if (rawProposal === undefined) return undefined;
+            const proposal = snapshotPreparedProposal(rawProposal);
             return Object.freeze({
               capabilityId: config.canonicalCapabilityId,
               sdkCallId: callId,
@@ -634,8 +740,27 @@ export const createOpenAiAgentsSdkFacade = (
           })();
           turnLedger.providerWritePreparation = preparation;
           try {
-            await preparation;
+            const prepared = await preparation;
+            if (prepared === undefined) {
+              if (isProviderWrite) {
+                throw new Error('provider-write-proposal-required');
+              }
+              turnLedger.providerWriteProposalCount = 0;
+              turnLedger.providerWriteCapabilityId = undefined;
+              turnLedger.providerWriteSdkCallId = undefined;
+              turnLedger.providerWriteCanonicalArgumentsHash = undefined;
+              turnLedger.providerWritePreparation = undefined;
+              return false;
+            }
           } catch (error) {
+            if (error instanceof AgentInvocationDeadlineExceededError) {
+              turnLedger.providerWriteProposalCount = 0;
+              turnLedger.providerWriteCapabilityId = undefined;
+              turnLedger.providerWriteSdkCallId = undefined;
+              turnLedger.providerWriteCanonicalArgumentsHash = undefined;
+              turnLedger.providerWritePreparation = undefined;
+              throw error;
+            }
             turnLedger.proposalFinalizationPending = true;
             throw error;
           }
@@ -661,13 +786,18 @@ export const createOpenAiAgentsSdkFacade = (
         if (runContext?.context == null) {
           throw new Error('agent-execution-context-required');
         }
+        const context = snapshotExecutionContext(runContext.context);
+        assertInvocationDeadlineNotExceeded(context);
         const detailsCallId = details?.toolCall?.callId;
         recordCapabilityInvocation(
           runContext.context,
           config.capabilityKind,
           typeof detailsCallId === 'string' ? detailsCallId : undefined,
         );
-        return config.execute(input, runContext.context);
+        return config.execute(
+          input,
+          snapshotCapabilityInvocationContext(context),
+        );
       },
     }) as OpenAiSdkFunctionTool;
   };
@@ -695,6 +825,9 @@ export interface TurnInput {
   readonly conversationId: string;
   readonly spaceAccessGrantId: string;
   readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
+  readonly locale: SupportedLocale;
+  /** Durable claim-owned manager invocation identity for this run. */
+  readonly rootManagerInvocationId: string;
   readonly message: string;
   readonly escalationTriggers: readonly RequestedModelEscalationTrigger[];
   readonly abortSignal: AbortSignal;
@@ -723,14 +856,14 @@ export interface ResumeTurnInput {
   readonly abortSignal: AbortSignal;
 }
 
-export interface SpecialistOutcome {
+export type SpecialistOutcome = Readonly<{
   readonly delegationId: string;
   readonly specialistId: string;
-  readonly status: 'completed' | 'failed' | 'blocked';
-  readonly output?: JsonValue;
-  readonly safeError?: SafeAgentError;
+  readonly invocationContext: AgentInvocationContext;
+  readonly invocationContextHash: string;
   readonly usage: AgentUsage;
-}
+}> &
+  AgentOutcome;
 
 export interface RuntimeInterruption {
   readonly id: string;
@@ -819,6 +952,11 @@ export interface ApprovalCheckpointGateway {
 export interface AgentOrchestratorOptions {
   readonly manager: CompiledAgent;
   readonly specialists: readonly CompiledAgent[];
+  /**
+   * Server-owned runtime readiness for registered specialists. Capabilities
+   * intentionally remain on the effective compiled manifest, never here.
+   */
+  readonly registeredSpecialists?: readonly RegisteredSpecialistRuntimeDescriptor[];
   readonly executionProvider: AgentExecutionProvider;
   readonly modelRouter: ModelResolver;
   readonly memory: ManagerConversationMemory;
@@ -829,8 +967,19 @@ export interface AgentOrchestratorOptions {
   readonly agentGraphHash: string;
   readonly sdkVersion: string;
   readonly createCheckpointId?: () => string;
+  /** Server-owned UUID factory for invocation lineage. */
+  readonly createInvocationId?: () => string;
   readonly checkpointTtlMs?: number;
   readonly clock?: () => Date;
+}
+
+export type RegisteredSpecialistReadiness =
+  | Readonly<{ readonly status: 'ready' }>
+  | Readonly<{ readonly status: 'unavailable'; readonly reasonCode: string }>;
+
+export interface RegisteredSpecialistRuntimeDescriptor {
+  readonly id: string;
+  readonly readiness: () => Promise<RegisteredSpecialistReadiness>;
 }
 
 interface Delegation {
@@ -842,7 +991,7 @@ interface Delegation {
 
 interface ManagerPlan {
   readonly delegations: readonly Delegation[];
-  readonly directResponse?: JsonValue;
+  readonly directResponse?: string | null;
 }
 
 interface CollectedPausedExecution {
@@ -856,6 +1005,8 @@ interface CollectedPausedExecution {
   readonly disclosureGrantId: string;
   readonly disclosureGrantVersion: string;
   readonly authorizationScopeFingerprint?: EffectiveAuthorizationScopeFingerprint;
+  readonly invocationContext: AgentInvocationContext;
+  readonly invocationContextHash: string;
 }
 
 interface PausedExecution extends CollectedPausedExecution {
@@ -865,6 +1016,10 @@ interface PausedExecution extends CollectedPausedExecution {
 interface ModelDisclosureBinding {
   readonly grantId: string;
   readonly grantVersion: string;
+  readonly invocationContext: AgentInvocationContext;
+  readonly invocationContextHash: string;
+  /** True only after the one-run disclosure audit has been committed. */
+  readonly modelDispatched: boolean;
 }
 
 type RuntimeProviderResult =
@@ -878,7 +1033,11 @@ type RuntimeProviderResult =
         readonly disclosure: ModelDisclosureBinding;
       }
     >
-  | Extract<AgentProviderResult, { status: 'failed' }>;
+  | Readonly<
+      Extract<AgentProviderResult, { status: 'failed' }> & {
+        readonly disclosure?: ModelDisclosureBinding;
+      }
+    >;
 
 type RuntimeFallbackCause =
   'failed-output-validation' | 'luna-execution-failed';
@@ -900,6 +1059,15 @@ type SpecialistProviderExecution =
       status: 'failed';
       safeError: SafeAgentError;
       usage: AgentUsage;
+      invocationContext?: AgentInvocationContext;
+      invocationContextHash?: string;
+    }>
+  | Readonly<{
+      status: 'unavailable';
+      reasonCode: string;
+      usage: AgentUsage;
+      invocationContext: AgentInvocationContext;
+      invocationContextHash: string;
     }>;
 
 interface PersistedTurnScope {
@@ -911,6 +1079,7 @@ interface PersistedTurnScope {
   readonly conversationId: string;
   readonly spaceAccessGrantId: string;
   readonly authorizationScopeFingerprint: EffectiveAuthorizationScopeFingerprint;
+  readonly locale: SupportedLocale;
   readonly message: string;
   readonly currentMessage: ConversationMemoryEntry;
 }
@@ -920,8 +1089,9 @@ interface PreparedTurnInput extends TurnInput {
 }
 
 interface RuntimeCheckpointState {
-  readonly version: 5;
+  readonly version: 6;
   readonly turn: PersistedTurnScope;
+  readonly rootManagerInvocationId: string;
   readonly modelResolution: Extract<ModelResolution, { status: 'resolved' }>;
   readonly plan?: ManagerPlan;
   readonly outcomes: readonly SpecialistOutcome[];
@@ -1080,6 +1250,16 @@ const snapshotJson = (raw: unknown): JsonValue => {
   };
   return visit(raw, 0);
 };
+
+/** Stable JSON encoding for hashes and idempotency scopes; never hash raw text. */
+const canonicalJson = (value: JsonValue): string =>
+  JSON.stringify(snapshotJson(value));
+
+const canonicalJsonSha256 = (value: JsonValue): string =>
+  createHash('sha256').update(canonicalJson(value)).digest('hex');
+
+const sameCanonicalJson = (left: JsonValue, right: JsonValue): boolean =>
+  canonicalJson(left) === canonicalJson(right);
 
 const isJsonArray = (value: JsonValue): value is readonly JsonValue[] =>
   Array.isArray(value);
@@ -1274,6 +1454,8 @@ const snapshotDisclosureAuthorization = (
     'agentId',
     'phasePurpose',
     'phaseInvocationId',
+    'invocationContext',
+    'invocationContextHash',
     'disclosurePurpose',
     'provider',
     'expiresAt',
@@ -1337,7 +1519,12 @@ const snapshotDisclosureAuthorization = (
     userId: assertUuid(value.userId),
     agentId: assertIdentifier(value.agentId),
     phasePurpose: value.phasePurpose,
-    phaseInvocationId: assertIdentifier(value.phaseInvocationId),
+    phaseInvocationId: assertUuid(value.phaseInvocationId),
+    invocationContext: snapshotInvocationContext(value.invocationContext),
+    invocationContextHash: snapshotInvocationContextHash(
+      value.invocationContextHash,
+      snapshotInvocationContext(value.invocationContext),
+    ),
     disclosurePurpose: value.disclosurePurpose,
     provider: value.provider,
     expiresAt: value.expiresAt,
@@ -1387,6 +1574,27 @@ const assertDisclosurePath = (value: unknown): string => {
   return value;
 };
 
+const snapshotInvocationContext = (raw: unknown): AgentInvocationContext => {
+  try {
+    return AgentInvocationContextSchema.parse(snapshotJson(raw));
+  } catch {
+    throw new Error('invalid-agent-invocation-context');
+  }
+};
+
+const snapshotInvocationContextHash = (
+  raw: unknown,
+  context: AgentInvocationContext,
+): string => {
+  if (typeof raw !== 'string' || !SHA256_PATTERN.test(raw)) {
+    throw new Error('invalid-agent-invocation-context-hash');
+  }
+  if (raw !== canonicalJsonSha256(context as unknown as JsonValue)) {
+    throw new Error('agent-invocation-context-hash-mismatch');
+  }
+  return raw;
+};
+
 const snapshotExecutionContext = (raw: unknown): AgentExecutionContext => {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('invalid-agent-execution-context');
@@ -1406,6 +1614,12 @@ const snapshotExecutionContext = (raw: unknown): AgentExecutionContext => {
       EffectiveAuthorizationScopeFingerprintSchema.parse(
         value.authorizationScopeFingerprint,
       ),
+    locale: SupportedLocaleSchema.parse(value.locale),
+    invocationContext: snapshotInvocationContext(value.invocationContext),
+    invocationContextHash: snapshotInvocationContextHash(
+      value.invocationContextHash,
+      snapshotInvocationContext(value.invocationContext),
+    ),
     ...(value.disclosureGrantId === undefined
       ? {}
       : { disclosureGrantId: assertUuid(value.disclosureGrantId) }),
@@ -1425,6 +1639,30 @@ const snapshotExecutionContext = (raw: unknown): AgentExecutionContext => {
       : { approvalDecisionId: assertUuid(value.approvalDecisionId) }),
     agentId: assertIdentifier(value.agentId),
     abortSignal: value.abortSignal,
+  });
+};
+
+const snapshotCapabilityInvocationContext = (
+  raw: unknown,
+): CapabilityInvocationContext => {
+  const context = snapshotExecutionContext(raw);
+  return Object.freeze({
+    requestId: context.requestId,
+    runId: context.runId,
+    userId: context.userId,
+    householdId: context.householdId,
+    sessionId: context.authenticatedSessionId,
+    agentId: context.agentId,
+    invocationContext: context.invocationContext,
+    spaceAccessGrantId: context.spaceAccessGrantId,
+    locale: context.locale,
+    ...(context.disclosureGrantId === undefined
+      ? {}
+      : { disclosureGrantId: context.disclosureGrantId }),
+    ...(context.approvalDecisionId === undefined
+      ? {}
+      : { approvalDecisionId: context.approvalDecisionId }),
+    abortSignal: context.abortSignal,
   });
 };
 
@@ -1613,6 +1851,8 @@ const snapshotTurn = (input: TurnInput): TurnInput => {
     'conversationId',
     'spaceAccessGrantId',
     'authorizationScopeFingerprint',
+    'locale',
+    'rootManagerInvocationId',
     'message',
     'escalationTriggers',
     'abortSignal',
@@ -1661,6 +1901,8 @@ const snapshotTurn = (input: TurnInput): TurnInput => {
       EffectiveAuthorizationScopeFingerprintSchema.parse(
         input.authorizationScopeFingerprint,
       ),
+    locale: SupportedLocaleSchema.parse(input.locale),
+    rootManagerInvocationId: assertUuid(input.rootManagerInvocationId),
     message: input.message,
     escalationTriggers: Object.freeze([...input.escalationTriggers]),
     abortSignal: input.abortSignal,
@@ -1759,6 +2001,26 @@ const disclosureSourceDataClass = (source: ModelDisclosureSource): string => {
   }
 };
 
+const disclosedContextRefsForRecords = (
+  records: ModelDisclosureAuthorization['records'],
+): readonly string[] => {
+  const refs = records
+    .map(
+      (record) =>
+        `context-ref-${canonicalJsonSha256(
+          Object.freeze({
+            dataClass: record.dataClass,
+            recordId: record.recordId,
+          }),
+        )}`,
+    )
+    .sort();
+  if (new Set(refs).size !== refs.length) {
+    throw new Error('duplicate-agent-disclosure-context-reference');
+  }
+  return Object.freeze(refs);
+};
+
 const persistedScope = (turn: PreparedTurnInput): PersistedTurnScope =>
   Object.freeze({
     requestId: turn.requestId,
@@ -1769,6 +2031,7 @@ const persistedScope = (turn: PreparedTurnInput): PersistedTurnScope =>
     conversationId: turn.conversationId,
     spaceAccessGrantId: turn.spaceAccessGrantId,
     authorizationScopeFingerprint: turn.authorizationScopeFingerprint,
+    locale: turn.locale,
     message: turn.message,
     currentMessage: snapshotConversationEntry(turn.currentMessage),
   });
@@ -1783,6 +2046,15 @@ const parseManagerPlan = (
   if (
     !Array.isArray(value.delegations) ||
     value.delegations.length > maximumDelegations
+  ) {
+    throw new Error('invalid-manager-plan');
+  }
+  const directResponse = value.directResponse;
+  if (
+    directResponse !== undefined &&
+    directResponse !== null &&
+    (typeof directResponse !== 'string' ||
+      directResponse.length > MAX_MESSAGE_LENGTH)
   ) {
     throw new Error('invalid-manager-plan');
   }
@@ -1821,6 +2093,10 @@ const parseManagerPlan = (
   );
   const ids = new Set(delegations.map((item) => item.id));
   if (ids.size !== delegations.length) throw new Error('invalid-manager-plan');
+  const specialistIds = new Set(delegations.map((item) => item.specialistId));
+  if (specialistIds.size !== delegations.length) {
+    throw new Error('invalid-manager-plan');
+  }
   if (
     delegations.some((item) =>
       item.dependsOn.some((dependency) => !ids.has(dependency)),
@@ -1840,9 +2116,7 @@ const parseManagerPlan = (
   }
   return Object.freeze({
     delegations,
-    ...(value.directResponse === undefined
-      ? {}
-      : { directResponse: snapshotJson(value.directResponse) }),
+    ...(directResponse === undefined ? {} : { directResponse }),
   });
 };
 
@@ -2215,7 +2489,8 @@ export class OpenAiAgentsExecutionProvider implements AgentExecutionProvider {
       throw new Error('agent-run-aborted');
     const turnProviderWrites =
       request.turnProviderWriteLedger ?? createTurnProviderWriteEffectLedger();
-    const deadlineSignal = AbortSignal.timeout(
+    const deadlineSignal = createAbortDeadline(
+      request.context,
       request.agent.manifest.executionBudget.timeoutMs,
     );
     const dispatchAuditAbort = new AbortController();
@@ -2243,6 +2518,13 @@ export class OpenAiAgentsExecutionProvider implements AgentExecutionProvider {
     const materialized = request.agent.materialize(request.model, {
       exposeCapabilities,
       outputType,
+      ...(effectivePhase === 'synthesize'
+        ? {
+            trustedInstructions: Object.freeze([
+              `Write the entire user-facing final EMDO synthesis in ${SYNTHESIS_LANGUAGE_BY_LOCALE[request.context.locale]} (${request.context.locale}), regardless of the language used in the user message or conversation history. The only exception is brief, bounded source-language evidence excerpts, which must remain in their original language and must not be translated.`,
+            ]),
+          }
+        : {}),
     });
     if (!(materialized instanceof Agent)) {
       throw new Error('invalid-openai-sdk-agent');
@@ -2574,6 +2856,9 @@ export class OpenAiAgentsExecutionProvider implements AgentExecutionProvider {
         );
         if (turnProviderWrites.providerWritePreparation !== undefined) {
           const prepared = await turnProviderWrites.providerWritePreparation;
+          if (prepared === undefined) {
+            throw new Error('prepared-proposal-interruption-missing');
+          }
           if (
             normalized.sdkCallId !== prepared.sdkCallId ||
             normalized.capabilityId !== prepared.capabilityId ||
@@ -2680,8 +2965,10 @@ export class OpenAiAgentsExecutionProvider implements AgentExecutionProvider {
     );
     if (
       capability === undefined ||
-      capability.descriptor.capabilityKind !== 'provider-write' ||
-      capability.descriptor.approval.rule !== 'authenticated-visual-proposal'
+      capability.descriptor.approval.rule !== 'authenticated-visual-proposal' ||
+      (capability.descriptor.capabilityKind !== 'provider-write' &&
+        capability.descriptor.capabilityKind !== 'local-write' &&
+        capability.descriptor.capabilityKind !== 'import')
     ) {
       throw new Error('invalid-sdk-interruption-capability');
     }
@@ -2709,6 +2996,10 @@ export class OpenAiAgentsExecutionProvider implements AgentExecutionProvider {
 export class AgentOrchestrator {
   readonly #manager: CompiledAgent;
   readonly #specialists: ReadonlyMap<string, CompiledAgent>;
+  readonly #specialistReadiness: ReadonlyMap<
+    string,
+    RegisteredSpecialistRuntimeDescriptor['readiness']
+  >;
   readonly #execute: AgentExecutionProvider['execute'];
   readonly #resolveModel: ModelResolver['resolve'];
   readonly #memory: ManagerConversationMemory;
@@ -2719,6 +3010,7 @@ export class AgentOrchestrator {
   readonly #agentGraphHash: string;
   readonly #sdkVersion: string;
   readonly #createCheckpointId: () => string;
+  readonly #createInvocationId: () => string;
   readonly #checkpointTtlMs: number;
   readonly #clock: () => Date;
 
@@ -2741,6 +3033,8 @@ export class AgentOrchestrator {
       typeof options.proposalGateway.executeDecision !== 'function' ||
       typeof options.disclosureGateway?.authorize !== 'function' ||
       (options.clock !== undefined && typeof options.clock !== 'function') ||
+      (options.createInvocationId !== undefined &&
+        typeof options.createInvocationId !== 'function') ||
       !SHA256_PATTERN.test(options.agentGraphHash) ||
       !SEMVER_PATTERN.test(options.sdkVersion)
     ) {
@@ -2760,12 +3054,33 @@ export class AgentOrchestrator {
       }
       specialists.set(specialist.manifest.id, specialist);
     }
+    const readiness = new Map<
+      string,
+      RegisteredSpecialistRuntimeDescriptor['readiness']
+    >();
+    for (const descriptor of options.registeredSpecialists ?? []) {
+      const id = assertIdentifier(descriptor?.id);
+      if (
+        readiness.has(id) ||
+        !specialists.has(id) ||
+        typeof descriptor.readiness !== 'function'
+      ) {
+        throw new Error('invalid-registered-specialist-runtime');
+      }
+      readiness.set(id, descriptor.readiness);
+    }
+    for (const id of specialists.keys()) {
+      if (!readiness.has(id)) {
+        readiness.set(id, async () => Object.freeze({ status: 'ready' }));
+      }
+    }
     const ttl = options.checkpointTtlMs ?? CHECKPOINT_TTL_MS;
     if (!Number.isSafeInteger(ttl) || ttl <= 0 || ttl > CHECKPOINT_TTL_MS) {
       throw new Error('invalid-agent-orchestrator-dependency');
     }
     this.#manager = options.manager;
     this.#specialists = specialists;
+    this.#specialistReadiness = readiness;
     this.#execute = options.executionProvider.execute.bind(
       options.executionProvider,
     );
@@ -2780,6 +3095,7 @@ export class AgentOrchestrator {
     this.#agentGraphHash = options.agentGraphHash;
     this.#sdkVersion = options.sdkVersion;
     this.#createCheckpointId = options.createCheckpointId ?? randomUUID;
+    this.#createInvocationId = options.createInvocationId ?? randomUUID;
     this.#checkpointTtlMs = ttl;
     this.#clock = options.clock ?? (() => new Date());
   }
@@ -2918,6 +3234,7 @@ export class AgentOrchestrator {
       ...input,
       currentMessage,
     });
+    const managerPlanPhaseInvocationId = this.#newInvocationId();
     let activeResolution = modelResolution;
     let planningUsage = ZERO_USAGE;
     let plan: ManagerPlan | undefined;
@@ -2937,7 +3254,9 @@ export class AgentOrchestrator {
           preparedTurn,
           trace,
           {
-            phaseInvocationId: 'manager-plan',
+            parentInvocationId: preparedTurn.runId,
+            agentInvocationId: preparedTurn.rootManagerInvocationId,
+            phaseInvocationId: managerPlanPhaseInvocationId,
             sources: planningSources,
           },
         );
@@ -2984,7 +3303,11 @@ export class AgentOrchestrator {
           lastPlanFailure = 'failed-output-validation';
         }
       }
-      if (attempt > 0 || activeResolution.resolvedModel !== 'gpt-5.6-luna') {
+      if (
+        attempt > 0 ||
+        activeResolution.resolvedModel !== 'gpt-5.6-luna' ||
+        planning?.disclosure?.modelDispatched === true
+      ) {
         break;
       }
       let fallback: ModelResolution;
@@ -3078,7 +3401,10 @@ export class AgentOrchestrator {
         ),
       );
     }
-    let scope: Omit<TurnInput, 'message' | 'escalationTriggers'> &
+    let scope: Omit<
+      TurnInput,
+      'message' | 'escalationTriggers' | 'locale' | 'rootManagerInvocationId'
+    > &
       Readonly<{
         disclosureGrantId: string;
         disclosureGrantVersion: string;
@@ -3200,6 +3526,9 @@ export class AgentOrchestrator {
               spaceAccessGrantId: scope.spaceAccessGrantId,
               authorizationScopeFingerprint:
                 scope.operationAuthorizationScopeFingerprint,
+              locale: state.turn.locale,
+              invocationContext: selected.execution.invocationContext,
+              invocationContextHash: selected.execution.invocationContextHash,
               disclosureGrantId: scope.disclosureGrantId,
               disclosureGrantVersion: scope.disclosureGrantVersion,
               approvalDecisionId: rawInput.approvalDecisionId,
@@ -3215,6 +3544,9 @@ export class AgentOrchestrator {
               spaceAccessGrantId: state.turn.spaceAccessGrantId,
               authorizationScopeFingerprint:
                 selected.execution.authorizationScopeFingerprint,
+              locale: state.turn.locale,
+              invocationContext: selected.execution.invocationContext,
+              invocationContextHash: selected.execution.invocationContextHash,
               disclosureGrantId: selected.execution.disclosureGrantId,
               disclosureGrantVersion: selected.execution.disclosureGrantVersion,
               approvalDecisionId: rawInput.approvalDecisionId,
@@ -3296,6 +3628,8 @@ export class AgentOrchestrator {
       conversationId: scope.conversationId,
       spaceAccessGrantId: scope.spaceAccessGrantId,
       authorizationScopeFingerprint: scope.authorizationScopeFingerprint,
+      locale: state.turn.locale,
+      rootManagerInvocationId: state.rootManagerInvocationId,
       abortSignal: scope.abortSignal,
       message: state.turn.message,
       escalationTriggers: Object.freeze([]),
@@ -3324,6 +3658,9 @@ export class AgentOrchestrator {
       spaceAccessGrantId: scope.spaceAccessGrantId,
       authorizationScopeFingerprint:
         scope.operationAuthorizationScopeFingerprint,
+      locale: state.turn.locale,
+      invocationContext: selected.execution.invocationContext,
+      invocationContextHash: selected.execution.invocationContextHash,
       disclosureGrantId: scope.disclosureGrantId,
       disclosureGrantVersion: scope.disclosureGrantVersion,
       approvalDecisionId: rawInput.approvalDecisionId,
@@ -3339,6 +3676,9 @@ export class AgentOrchestrator {
       spaceAccessGrantId: state.turn.spaceAccessGrantId,
       authorizationScopeFingerprint:
         selected.execution.authorizationScopeFingerprint,
+      locale: state.turn.locale,
+      invocationContext: selected.execution.invocationContext,
+      invocationContextHash: selected.execution.invocationContextHash,
       disclosureGrantId: selected.execution.disclosureGrantId,
       disclosureGrantVersion: selected.execution.disclosureGrantVersion,
       approvalDecisionId: rawInput.approvalDecisionId,
@@ -3407,26 +3747,22 @@ export class AgentOrchestrator {
       return this.#failed(
         scope.runId,
         trace,
-        safeError(
-          'approved-action-result-invalid',
-          'The provider action was recorded, but its readback result did not match the specialist contract.',
-          false,
-        ),
+        rawInput.decision === 'approve'
+          ? safeError(
+              'approved-action-result-invalid',
+              'The provider action was recorded, but its readback result did not match the specialist contract.',
+              false,
+            )
+          : safeError(
+              'approval-rejection-result-invalid',
+              'The proposal rejection was recorded, but its result did not match the specialist contract.',
+              false,
+            ),
         state.outcomes,
         state.usage,
         state.modelResolution,
       );
     }
-    const outcomes = [
-      ...state.outcomes,
-      Object.freeze({
-        delegationId: selected.execution.executionKey,
-        specialistId: selected.execution.agentId,
-        status: 'completed' as const,
-        output: snapshotJson(parsed.data),
-        usage: ZERO_USAGE,
-      }),
-    ];
     if (state.plan === undefined) {
       return this.#failed(
         scope.runId,
@@ -3436,11 +3772,81 @@ export class AgentOrchestrator {
           'The approval checkpoint did not contain a delegation plan.',
           false,
         ),
-        outcomes,
+        state.outcomes,
         state.usage,
         state.modelResolution,
       );
     }
+    const selectedDelegation = state.plan.delegations.find(
+      ({ id }) => id === selected.execution.executionKey,
+    );
+    if (selectedDelegation === undefined) {
+      return this.#failed(
+        scope.runId,
+        trace,
+        safeError(
+          'approval-checkpoint-invalid',
+          'The approval checkpoint did not contain the selected delegation.',
+          false,
+        ),
+        state.outcomes,
+        state.usage,
+        state.modelResolution,
+      );
+    }
+    if (rawInput.decision === 'reject') {
+      const outcomes = new Map(
+        state.outcomes.map((outcome) => [outcome.delegationId, outcome]),
+      );
+      outcomes.set(
+        selected.execution.executionKey,
+        this.#specialistOutcome(
+          selectedDelegation,
+          selected.execution.invocationContext,
+          selected.execution.invocationContextHash,
+          ZERO_USAGE,
+          {
+            status: 'failed',
+            safeMessage: 'The requested provider action was not approved.',
+          },
+        ),
+      );
+      for (const delegation of state.plan.delegations) {
+        if (outcomes.has(delegation.id)) continue;
+        outcomes.set(
+          delegation.id,
+          this.#unavailableSpecialistOutcome(
+            resumeTurn,
+            delegation,
+            'approval-rejected-dependency-unavailable',
+          ),
+        );
+      }
+      return this.#synthesize(
+        resumeTurn,
+        state.modelResolution,
+        state.plan,
+        state.plan.delegations.map((delegation) =>
+          outcomes.get(delegation.id)!,
+        ),
+        state.usage,
+        trace,
+      );
+    }
+    const outcomes = [
+      ...state.outcomes,
+      this.#specialistOutcome(
+        selectedDelegation,
+        selected.execution.invocationContext,
+        selected.execution.invocationContextHash,
+        ZERO_USAGE,
+        {
+          status: 'completed',
+          facts: snapshotJson(parsed.data),
+          evidence: [],
+        },
+      ),
+    ];
     return this.#executePlan(
       resumeTurn,
       state.modelResolution,
@@ -3452,6 +3858,165 @@ export class AgentOrchestrator {
     );
   }
 
+  #newInvocationId(): string {
+    return assertUuid(this.#createInvocationId());
+  }
+
+  #createInvocationRequest(
+    turn: PreparedTurnInput,
+    agent: CompiledAgent,
+    parentInvocationId: string,
+    agentInvocationId: string,
+    phaseInvocationId: string,
+  ): ModelDisclosureInvocationRequest {
+    return Object.freeze({
+      orchestrationRunId: turn.runId,
+      parentInvocationId: assertUuid(parentInvocationId),
+      agentInvocationId: assertUuid(agentInvocationId),
+      phaseInvocationId: assertUuid(phaseInvocationId),
+      actorId: turn.userId,
+      locale: turn.locale,
+      grantedCapabilities: Object.freeze(
+        [...agent.manifest.capabilityAllowlist].sort(),
+      ),
+    });
+  }
+
+  #createUnavailableInvocationContext(
+    request: ModelDisclosureInvocationRequest,
+    agent: CompiledAgent,
+  ): AgentInvocationContext {
+    const now = new Date(this.#clock());
+    if (!Number.isFinite(now.getTime())) {
+      throw new Error('invalid-agent-orchestrator-clock');
+    }
+    const deadline = new Date(
+      now.getTime() + agent.manifest.executionBudget.timeoutMs,
+    );
+    if (!Number.isFinite(deadline.getTime())) {
+      throw new Error('invalid-agent-invocation-deadline');
+    }
+    const disclosedContextRefs = Object.freeze([] as string[]);
+    const idempotencyScope = canonicalJsonSha256(
+      Object.freeze({
+        domain: 'emdo.agent-invocation-scope.v1',
+        agentId: agent.manifest.id,
+        agentInvocationId: request.agentInvocationId,
+        orchestrationRunId: request.orchestrationRunId,
+        parentInvocationId: request.parentInvocationId,
+        phaseInvocationId: request.phaseInvocationId,
+        actorId: request.actorId,
+        locale: request.locale,
+        grantedCapabilities: request.grantedCapabilities,
+        disclosedContextRefs,
+      }),
+    );
+    return AgentInvocationContextSchema.parse({
+      orchestrationRunId: request.orchestrationRunId,
+      parentInvocationId: request.parentInvocationId,
+      agentInvocationId: request.agentInvocationId,
+      phaseInvocationId: request.phaseInvocationId,
+      actorId: request.actorId,
+      locale: request.locale,
+      grantedCapabilities: request.grantedCapabilities,
+      disclosedContextRefs,
+      deadline: deadline.toISOString(),
+      idempotencyScope,
+    });
+  }
+
+  #specialistOutcome(
+    delegation: Delegation,
+    invocationContext: AgentInvocationContext,
+    invocationContextHash: string,
+    usage: AgentUsage,
+    outcome: AgentOutcome,
+  ): SpecialistOutcome {
+    const canonicalOutcome = AgentOutcomeSchema.parse(outcome);
+    return Object.freeze({
+      delegationId: delegation.id,
+      specialistId: delegation.specialistId,
+      invocationContext,
+      invocationContextHash: snapshotInvocationContextHash(
+        invocationContextHash,
+        invocationContext,
+      ),
+      usage,
+      ...canonicalOutcome,
+    });
+  }
+
+  #unavailableSpecialistOutcome(
+    turn: PreparedTurnInput,
+    delegation: Delegation,
+    reasonCode: string,
+  ): SpecialistOutcome {
+    const specialist = this.#specialists.get(delegation.specialistId);
+    if (specialist === undefined) {
+      throw new Error('registered-specialist-not-found');
+    }
+    const invocation = this.#createInvocationRequest(
+      turn,
+      specialist,
+      turn.rootManagerInvocationId,
+      this.#newInvocationId(),
+      this.#newInvocationId(),
+    );
+    const invocationContext = this.#createUnavailableInvocationContext(
+      invocation,
+      specialist,
+    );
+    return this.#specialistOutcome(
+      delegation,
+      invocationContext,
+      canonicalJsonSha256(invocationContext as unknown as JsonValue),
+      ZERO_USAGE,
+      { status: 'unavailable', reasonCode: assertIdentifier(reasonCode) },
+    );
+  }
+
+  #completedSpecialistOutcome(
+    delegation: Delegation,
+    invocationContext: AgentInvocationContext,
+    invocationContextHash: string,
+    usage: AgentUsage,
+    output: JsonValue,
+  ): SpecialistOutcome {
+    const facts = snapshotJson(output);
+    const value =
+      facts === null || isJsonArray(facts) || typeof facts !== 'object'
+        ? undefined
+        : facts;
+    const clarificationQuestion = value?.clarificationQuestion;
+    if (
+      typeof clarificationQuestion === 'string' &&
+      clarificationQuestion.trim().length > 0
+    ) {
+      return this.#specialistOutcome(
+        delegation,
+        invocationContext,
+        invocationContextHash,
+        usage,
+        { status: 'needs_input', question: clarificationQuestion },
+      );
+    }
+    const evidenceReferences =
+      value === undefined ? undefined : value.evidenceReferences;
+    const evidence =
+      evidenceReferences !== undefined && isJsonArray(evidenceReferences)
+        ? Object.freeze(
+            evidenceReferences.map((entry) => assertIdentifier(entry)),
+          )
+        : Object.freeze([] as string[]);
+    return this.#specialistOutcome(
+      delegation,
+      invocationContext,
+      invocationContextHash,
+      usage,
+      { status: 'completed', facts, evidence },
+    );
+  }
+
   async #runProvider(
     phase: AgentExecutionPhase,
     agent: CompiledAgent,
@@ -3459,6 +4024,8 @@ export class AgentOrchestrator {
     turn: PreparedTurnInput,
     trace: ActiveLocalTrace,
     options: Readonly<{
+      parentInvocationId: string;
+      agentInvocationId: string;
       phaseInvocationId: string;
       sources: readonly ModelDisclosureSource[];
       resume?: AgentProviderRequest['resume'];
@@ -3474,7 +4041,9 @@ export class AgentOrchestrator {
         : phase === 'synthesize'
           ? 'manager-synthesis'
           : 'specialist-execution';
-    const phaseInvocationId = assertIdentifier(options.phaseInvocationId);
+    const parentInvocationId = assertUuid(options.parentInvocationId);
+    const agentInvocationId = assertUuid(options.agentInvocationId);
+    const phaseInvocationId = assertUuid(options.phaseInvocationId);
     const sources = snapshotDisclosureSources(options.sources);
     const sourceDataClasses = uniqueDataClasses(
       sources.map((source) => disclosureSourceDataClass(source)),
@@ -3486,6 +4055,13 @@ export class AgentOrchestrator {
     ) {
       throw new Error('model-disclosure-source-class-denied');
     }
+    const invocation = this.#createInvocationRequest(
+      turn,
+      agent,
+      parentInvocationId,
+      agentInvocationId,
+      phaseInvocationId,
+    );
     let authorization: ModelDisclosureAuthorization;
     try {
       const decision = snapshotDisclosureAuthorization(
@@ -3501,6 +4077,7 @@ export class AgentOrchestrator {
             agentId: agent.manifest.id,
             phasePurpose: purpose,
             phaseInvocationId,
+            invocation,
             provider: 'openai' as const,
             sources,
           }),
@@ -3530,6 +4107,34 @@ export class AgentOrchestrator {
         authorization.agentId !== agent.manifest.id ||
         authorization.phasePurpose !== purpose ||
         authorization.phaseInvocationId !== phaseInvocationId ||
+        authorization.invocationContext.orchestrationRunId !==
+          invocation.orchestrationRunId ||
+        authorization.invocationContext.parentInvocationId !==
+          invocation.parentInvocationId ||
+        authorization.invocationContext.agentInvocationId !==
+          invocation.agentInvocationId ||
+        authorization.invocationContext.phaseInvocationId !==
+          invocation.phaseInvocationId ||
+        authorization.invocationContext.actorId !== invocation.actorId ||
+        !sameCanonicalJson(
+          authorization.invocationContext
+            .grantedCapabilities as unknown as JsonValue,
+          invocation.grantedCapabilities as unknown as JsonValue,
+        ) ||
+        authorization.invocationContext.locale !== invocation.locale ||
+        !sameCanonicalJson(
+          authorization.invocationContext
+            .disclosedContextRefs as unknown as JsonValue,
+          disclosedContextRefsForRecords(
+            authorization.records,
+          ) as unknown as JsonValue,
+        ) ||
+        authorization.invocationContextHash !==
+          canonicalJsonSha256(
+            authorization.invocationContext as unknown as JsonValue,
+          ) ||
+        Date.parse(authorization.invocationContext.deadline) >
+          Date.parse(authorization.expiresAt) ||
         sourceDataClasses.some(
           (dataClass) =>
             !authorization.records.some(
@@ -3566,7 +4171,10 @@ export class AgentOrchestrator {
       if (!Number.isFinite(now.getTime())) {
         throw new Error('invalid-agent-orchestrator-clock');
       }
-      if (Date.parse(authorization.expiresAt) <= now.getTime()) {
+      if (
+        Date.parse(authorization.expiresAt) <= now.getTime() ||
+        Date.parse(authorization.invocationContext.deadline) <= now.getTime()
+      ) {
         dispatchDisclosureDenial = 'grant-expired';
         await trace.record('disclosure.denied', {
           grantId: authorization.grantId,
@@ -3611,6 +4219,9 @@ export class AgentOrchestrator {
             authenticatedSessionId: turn.authenticatedSessionId,
             spaceAccessGrantId: turn.spaceAccessGrantId,
             authorizationScopeFingerprint: turn.authorizationScopeFingerprint,
+            locale: turn.locale,
+            invocationContext: authorization.invocationContext,
+            invocationContextHash: authorization.invocationContextHash,
             disclosureGrantId: authorization.grantId,
             disclosureGrantVersion: authorization.grantVersion,
             ...(options.approvalDecisionId === undefined
@@ -3634,13 +4245,29 @@ export class AgentOrchestrator {
         }),
       );
     } catch (error) {
-      if (dispatchDisclosureDenial === undefined) throw error;
+      if (dispatchDisclosureDenial !== undefined) {
+        return Object.freeze({
+          status: 'failed',
+          reason: 'disclosure-denied',
+          replaySafety: 'safe',
+          usage: ZERO_USAGE,
+          capabilityCalls: options.priorCapabilityCalls ?? 0,
+        });
+      }
+      if (!modelDispatchRecorded) throw error;
       return Object.freeze({
         status: 'failed',
-        reason: 'disclosure-denied',
-        replaySafety: 'safe',
+        reason: 'execution-failed',
+        replaySafety: 'unsafe',
         usage: ZERO_USAGE,
         capabilityCalls: options.priorCapabilityCalls ?? 0,
+        disclosure: Object.freeze({
+          grantId: authorization.grantId,
+          grantVersion: authorization.grantVersion,
+          invocationContext: authorization.invocationContext,
+          invocationContextHash: authorization.invocationContextHash,
+          modelDispatched: true,
+        }),
       });
     }
     if (dispatchDisclosureDenial !== undefined) {
@@ -3671,12 +4298,26 @@ export class AgentOrchestrator {
         thresholdCadMinor: 5_000,
       });
     }
-    if (result.status === 'failed') return result;
+    if (result.status === 'failed') {
+      return Object.freeze({
+        ...result,
+        disclosure: Object.freeze({
+          grantId: authorization.grantId,
+          grantVersion: authorization.grantVersion,
+          invocationContext: authorization.invocationContext,
+          invocationContextHash: authorization.invocationContextHash,
+          modelDispatched: modelDispatchRecorded,
+        }),
+      });
+    }
     return Object.freeze({
       ...result,
       disclosure: Object.freeze({
         grantId: authorization.grantId,
         grantVersion: authorization.grantVersion,
+        invocationContext: authorization.invocationContext,
+        invocationContextHash: authorization.invocationContextHash,
+        modelDispatched: modelDispatchRecorded,
       }),
     });
   }
@@ -3684,16 +4325,33 @@ export class AgentOrchestrator {
   async #runSpecialistProvider(
     agent: CompiledAgent,
     modelResolution: Extract<ModelResolution, { status: 'resolved' }>,
-    phaseInvocationId: string,
+    invocation: Readonly<{
+      parentInvocationId: string;
+      agentInvocationId: string;
+      phaseInvocationId: string;
+    }>,
     sources: readonly ModelDisclosureSource[],
     turn: PreparedTurnInput,
     trace: ActiveLocalTrace,
     turnProviderWriteLedger: TurnProviderWriteEffectLedger,
   ): Promise<SpecialistProviderExecution> {
+    const invocationRequest = this.#createInvocationRequest(
+      turn,
+      agent,
+      invocation.parentInvocationId,
+      invocation.agentInvocationId,
+      invocation.phaseInvocationId,
+    );
     let activeResolution = modelResolution;
     let usage = ZERO_USAGE;
     let lastFailure: RuntimeFallbackCause = 'luna-execution-failed';
     let terminalFailure: SafeAgentError | undefined;
+    let failureInvocation:
+      | Readonly<{
+          invocationContext: AgentInvocationContext;
+          invocationContextHash: string;
+        }>
+      | undefined;
     let capabilityCalls = 0;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       let result: RuntimeProviderResult | undefined;
@@ -3706,7 +4364,7 @@ export class AgentOrchestrator {
           turn,
           trace,
           {
-            phaseInvocationId,
+            ...invocation,
             sources,
             priorCapabilityCalls: capabilityCalls,
             turnProviderWriteLedger,
@@ -3723,6 +4381,12 @@ export class AgentOrchestrator {
         terminalFailure = terminalProviderFailure(result);
         lastFailure = 'luna-execution-failed';
         replaySafe = result.replaySafety === 'safe';
+        if (result.disclosure !== undefined) {
+          failureInvocation = Object.freeze({
+            invocationContext: result.disclosure.invocationContext,
+            invocationContextHash: result.disclosure.invocationContextHash,
+          });
+        }
       }
       if (result?.status === 'interrupted') {
         return Object.freeze({
@@ -3751,6 +4415,7 @@ export class AgentOrchestrator {
         terminalFailure !== undefined ||
         attempt > 0 ||
         !replaySafe ||
+        result?.disclosure?.modelDispatched === true ||
         activeResolution.resolvedModel !== 'gpt-5.6-luna'
       ) {
         break;
@@ -3779,6 +4444,7 @@ export class AgentOrchestrator {
           status: 'failed',
           safeError: fallback.safeError,
           usage,
+          ...(failureInvocation === undefined ? {} : failureInvocation),
         });
       }
       if (fallback.resolvedModel !== 'gpt-5.6-terra') break;
@@ -3789,6 +4455,21 @@ export class AgentOrchestrator {
         reason: fallback.reason,
         fallbackCause: lastFailure,
         agentId: agent.manifest.id,
+      });
+    }
+    if (failureInvocation === undefined) {
+      const invocationContext = this.#createUnavailableInvocationContext(
+        invocationRequest,
+        agent,
+      );
+      return Object.freeze({
+        status: 'unavailable',
+        reasonCode: terminalFailure?.code ?? 'specialist-dispatch-unavailable',
+        usage,
+        invocationContext,
+        invocationContextHash: canonicalJsonSha256(
+          invocationContext as unknown as JsonValue,
+        ),
       });
     }
     return Object.freeze({
@@ -3807,6 +4488,7 @@ export class AgentOrchestrator {
               true,
             )),
       usage,
+      ...failureInvocation,
     });
   }
 
@@ -3828,6 +4510,8 @@ export class AgentOrchestrator {
       capabilityCalls: result.capabilityCalls ?? 0,
       disclosureGrantId: result.disclosure.grantId,
       disclosureGrantVersion: result.disclosure.grantVersion,
+      invocationContext: result.disclosure.invocationContext,
+      invocationContextHash: result.disclosure.invocationContextHash,
       ...(authorizationScopeFingerprint === undefined
         ? {}
         : { authorizationScopeFingerprint }),
@@ -3864,8 +4548,39 @@ export class AgentOrchestrator {
       interruption.authorizationScopeFingerprint !== undefined &&
       specialist !== undefined &&
       delegation?.specialistId === execution.agentId &&
-      capability?.descriptor.capabilityKind === 'provider-write' &&
-      capability.descriptor.approval.rule === 'authenticated-visual-proposal'
+      capability?.descriptor.approval.rule ===
+        'authenticated-visual-proposal' &&
+      (capability.descriptor.capabilityKind === 'provider-write' ||
+        capability.descriptor.capabilityKind === 'local-write' ||
+        capability.descriptor.capabilityKind === 'import')
+    );
+  }
+
+  #hasExactPausedConfirmation(
+    outcomes: readonly SpecialistOutcome[],
+    paused: readonly PausedExecution[],
+  ): boolean {
+    const execution = paused[0];
+    const interruption = execution?.interruptions[0];
+    const outcome = outcomes.find(
+      ({ delegationId }) => delegationId === execution?.executionKey,
+    );
+    return (
+      execution !== undefined &&
+      interruption !== undefined &&
+      outcome?.status === 'needs_confirmation' &&
+      outcome.specialistId === execution.agentId &&
+      sameCanonicalJson(
+        outcome.invocationContext as unknown as JsonValue,
+        execution.invocationContext as unknown as JsonValue,
+      ) &&
+      outcome.invocationContextHash === execution.invocationContextHash &&
+      outcome.proposedAction.proposalId === interruption.proposalId &&
+      outcome.proposedAction.capabilityId === interruption.capabilityId &&
+      sameCanonicalJson(
+        outcome.proposedAction.argumentsPreview,
+        interruption.argumentsPreview,
+      )
     );
   }
 
@@ -3921,17 +4636,11 @@ export class AgentOrchestrator {
         if (failedDependency !== undefined) {
           outcomes.set(
             delegation.id,
-            Object.freeze({
-              delegationId: delegation.id,
-              specialistId: delegation.specialistId,
-              status: 'blocked' as const,
-              safeError: safeError(
-                'specialist-dependency-failed',
-                'A required specialist dependency did not complete.',
-                false,
-              ),
-              usage: ZERO_USAGE,
-            }),
+            this.#unavailableSpecialistOutcome(
+              turn,
+              delegation,
+              'specialist-dependency-unavailable',
+            ),
           );
           progressed = true;
         }
@@ -3966,24 +4675,84 @@ export class AgentOrchestrator {
         wave += 1;
         const batch = ready.slice(offset, offset + maximumParallel);
         const waveResolution = activeResolution;
-        for (const delegation of batch) {
-          await trace.record('specialist.dispatched', {
-            delegationId: delegation.id,
-            agentId: delegation.specialistId,
-            wave,
-            dependsOn: delegation.dependsOn,
-          });
-        }
+        const dispatches = batch.map((delegation) =>
+          Object.freeze({
+            delegation,
+            specialist: this.#specialists.get(delegation.specialistId)!,
+            invocation: Object.freeze({
+              parentInvocationId: turn.rootManagerInvocationId,
+              agentInvocationId: this.#newInvocationId(),
+              phaseInvocationId: this.#newInvocationId(),
+            }),
+          }),
+        );
         const settled = await Promise.allSettled(
-          batch.map(async (delegation) => {
-            const specialist = this.#specialists.get(delegation.specialistId)!;
+          dispatches.map(async ({ delegation, specialist, invocation }) => {
+            const invocationRequest = this.#createInvocationRequest(
+              turn,
+              specialist,
+              invocation.parentInvocationId,
+              invocation.agentInvocationId,
+              invocation.phaseInvocationId,
+            );
+            const readiness = this.#specialistReadiness.get(
+              specialist.manifest.id,
+            );
+            let readinessResult: RegisteredSpecialistReadiness;
+            try {
+              readinessResult = await readiness!();
+            } catch {
+              readinessResult = {
+                status: 'unavailable',
+                reasonCode: 'specialist-readiness-unavailable',
+              };
+            }
+            if (
+              readinessResult === null ||
+              typeof readinessResult !== 'object' ||
+              (readinessResult.status !== 'ready' &&
+                readinessResult.status !== 'unavailable') ||
+              (readinessResult.status === 'unavailable' &&
+                typeof readinessResult.reasonCode !== 'string')
+            ) {
+              readinessResult = {
+                status: 'unavailable',
+                reasonCode: 'specialist-readiness-unavailable',
+              };
+            }
+            if (readinessResult.status === 'unavailable') {
+              const invocationContext =
+                this.#createUnavailableInvocationContext(
+                  invocationRequest,
+                  specialist,
+                );
+              return {
+                delegation,
+                specialist,
+                execution: Object.freeze({
+                  status: 'unavailable' as const,
+                  reasonCode: assertIdentifier(readinessResult.reasonCode),
+                  usage: ZERO_USAGE,
+                  invocationContext,
+                  invocationContextHash: canonicalJsonSha256(
+                    invocationContext as unknown as JsonValue,
+                  ),
+                }),
+              };
+            }
+            await trace.record('specialist.dispatched', {
+              delegationId: delegation.id,
+              agentId: delegation.specialistId,
+              wave,
+              dependsOn: delegation.dependsOn,
+            });
             const dependencyOutcomes = delegation.dependsOn.map((dependency) =>
               outcomes.get(dependency)!,
             );
             const execution = await this.#runSpecialistProvider(
               specialist,
               waveResolution,
-              delegation.id,
+              invocation,
               snapshotDisclosureSources([
                 Object.freeze({
                   kind: 'specialist-delegation' as const,
@@ -4024,35 +4793,62 @@ export class AgentOrchestrator {
           for (const [index, result] of settled.entries()) {
             const delegation = batch[index]!;
             if (result.status === 'rejected') {
-              const outcome: SpecialistOutcome = Object.freeze({
-                delegationId: delegation.id,
-                specialistId: delegation.specialistId,
-                status: 'failed',
-                safeError: safeError(
-                  'specialist-execution-failed',
-                  'A specialist could not complete its delegated work.',
-                  true,
-                ),
-                usage: ZERO_USAGE,
-              });
+              const outcome = this.#unavailableSpecialistOutcome(
+                turn,
+                delegation,
+                'specialist-execution-unavailable',
+              );
               outcomes.set(delegation.id, outcome);
               await trace.record('specialist.outcome', {
                 delegationId: delegation.id,
                 agentId: delegation.specialistId,
                 status: outcome.status,
+                reasonCode: 'specialist-execution-unavailable',
               });
               continue;
             }
             const execution = result.value.execution;
+            if (execution.status === 'unavailable') {
+              usage = addUsage(usage, execution.usage);
+              const outcome = this.#specialistOutcome(
+                delegation,
+                execution.invocationContext,
+                execution.invocationContextHash,
+                execution.usage,
+                {
+                  status: 'unavailable',
+                  reasonCode: execution.reasonCode,
+                },
+              );
+              outcomes.set(delegation.id, outcome);
+              await trace.record('specialist.outcome', {
+                delegationId: delegation.id,
+                agentId: delegation.specialistId,
+                status: outcome.status,
+                reasonCode: execution.reasonCode,
+              });
+              continue;
+            }
             if (execution.status === 'failed') {
               usage = addUsage(usage, execution.usage);
-              const outcome: SpecialistOutcome = Object.freeze({
-                delegationId: delegation.id,
-                specialistId: delegation.specialistId,
-                status: 'failed',
-                safeError: execution.safeError,
-                usage: execution.usage,
-              });
+              if (
+                execution.invocationContext === undefined ||
+                execution.invocationContextHash === undefined
+              ) {
+                throw new Error(
+                  'specialist-failure-invocation-context-missing',
+                );
+              }
+              const outcome = this.#specialistOutcome(
+                delegation,
+                execution.invocationContext,
+                execution.invocationContextHash,
+                execution.usage,
+                {
+                  status: 'failed',
+                  safeMessage: execution.safeError.message,
+                },
+              );
               outcomes.set(delegation.id, outcome);
               await trace.record('specialist.outcome', {
                 delegationId: delegation.id,
@@ -4066,14 +4862,35 @@ export class AgentOrchestrator {
               activeResolution = execution.modelResolution;
             }
             usage = addUsage(usage, execution.result.usage);
-            if (execution.result.status === 'interrupted') continue;
-            const outcome: SpecialistOutcome = Object.freeze({
-              delegationId: delegation.id,
-              specialistId: delegation.specialistId,
-              status: 'completed',
-              output: execution.result.output,
-              usage: execution.result.usage,
-            });
+            if (execution.result.status === 'interrupted') {
+              const interruption = execution.result.interruptions[0];
+              if (interruption === undefined) {
+                throw new Error('specialist-interruption-missing');
+              }
+              const outcome = this.#specialistOutcome(
+                delegation,
+                execution.result.disclosure.invocationContext,
+                execution.result.disclosure.invocationContextHash,
+                execution.result.usage,
+                {
+                  status: 'needs_confirmation',
+                  proposedAction: {
+                    proposalId: interruption.proposalId,
+                    capabilityId: interruption.capabilityId,
+                    argumentsPreview: interruption.argumentsPreview,
+                  },
+                },
+              );
+              outcomes.set(delegation.id, outcome);
+              continue;
+            }
+            const outcome = this.#completedSpecialistOutcome(
+              delegation,
+              execution.result.disclosure.invocationContext,
+              execution.result.disclosure.invocationContextHash,
+              execution.result.usage,
+              execution.result.output,
+            );
             outcomes.set(delegation.id, outcome);
             await trace.record('specialist.outcome', {
               delegationId: delegation.id,
@@ -4159,23 +4976,26 @@ export class AgentOrchestrator {
             'multiple-provider-writes-require-separate-turns',
           );
           for (const execution of paused) {
+            const delegation = plan.delegations.find(
+              ({ id }) => id === execution.executionKey,
+            );
+            if (delegation === undefined) {
+              throw new Error('paused-specialist-delegation-missing');
+            }
             outcomes.set(
               execution.executionKey,
-              Object.freeze({
-                delegationId: execution.executionKey,
-                specialistId: execution.agentId,
-                status: 'failed' as const,
-                safeError: safeError(
-                  abandoned
-                    ? 'multiple-provider-writes-require-separate-turns'
-                    : 'provider-write-proposal-finalization-pending',
-                  abandoned
+              this.#specialistOutcome(
+                delegation,
+                execution.invocationContext,
+                execution.invocationContextHash,
+                execution.usage,
+                {
+                  status: 'failed',
+                  safeMessage: abandoned
                     ? 'Each provider write requires a separate assistant turn and visual approval.'
                     : 'A prepared external action could not be terminalized safely. Reconciliation is required before retrying.',
-                  false,
-                ),
-                usage: execution.usage,
-              }),
+                },
+              ),
             );
           }
           return this.#failed(
@@ -4243,6 +5063,7 @@ export class AgentOrchestrator {
     let activeResolution = modelResolution;
     let totalUsage = usage;
     let lastFailure: RuntimeFallbackCause = 'luna-execution-failed';
+    const managerSynthesisPhaseInvocationId = this.#newInvocationId();
     const synthesisSources = snapshotDisclosureSources([
       Object.freeze({
         kind: 'conversation-message' as const,
@@ -4269,7 +5090,9 @@ export class AgentOrchestrator {
           turn,
           trace,
           {
-            phaseInvocationId: 'manager-synthesis',
+            parentInvocationId: turn.runId,
+            agentInvocationId: turn.rootManagerInvocationId,
+            phaseInvocationId: managerSynthesisPhaseInvocationId,
             sources: synthesisSources,
           },
         );
@@ -4325,7 +5148,11 @@ export class AgentOrchestrator {
         }
         lastFailure = 'failed-output-validation';
       }
-      if (attempt > 0 || activeResolution.resolvedModel !== 'gpt-5.6-luna') {
+      if (
+        attempt > 0 ||
+        activeResolution.resolvedModel !== 'gpt-5.6-luna' ||
+        synthesis?.disclosure?.modelDispatched === true
+      ) {
         break;
       }
       let fallback: ModelResolution;
@@ -4477,6 +5304,7 @@ export class AgentOrchestrator {
       const state: RuntimeCheckpointState = Object.freeze({
         version: RUNTIME_STATE_VERSION,
         turn: persistedScope(turn),
+        rootManagerInvocationId: turn.rootManagerInvocationId,
         modelResolution,
         ...(plan === undefined ? {} : { plan }),
         outcomes: Object.freeze([...outcomes]),
@@ -4668,25 +5496,38 @@ export class AgentOrchestrator {
     const value = asObject(snapshotJson(raw));
     assertExactKeys(
       value,
-      ['version', 'turn', 'modelResolution', 'outcomes', 'paused', 'usage'],
+      [
+        'version',
+        'turn',
+        'rootManagerInvocationId',
+        'modelResolution',
+        'outcomes',
+        'paused',
+        'usage',
+      ],
       ['plan'],
     );
     if (value.version !== RUNTIME_STATE_VERSION) {
       throw new Error('invalid-runtime-checkpoint');
     }
     const turn = asObject(value.turn);
-    assertExactKeys(turn, [
-      'requestId',
-      'runId',
-      'householdId',
-      'userId',
-      'authenticatedSessionId',
-      'conversationId',
-      'spaceAccessGrantId',
-      'authorizationScopeFingerprint',
-      'message',
-      'currentMessage',
-    ]);
+    assertExactKeys(
+      turn,
+      [
+        'requestId',
+        'runId',
+        'householdId',
+        'userId',
+        'authenticatedSessionId',
+        'conversationId',
+        'spaceAccessGrantId',
+        'authorizationScopeFingerprint',
+        'locale',
+        'message',
+        'currentMessage',
+      ],
+      ['locale'],
+    );
     const model = asObject(value.modelResolution);
     if (
       model.status !== 'resolved' ||
@@ -4710,6 +5551,10 @@ export class AgentOrchestrator {
         EffectiveAuthorizationScopeFingerprintSchema.parse(
           turn.authorizationScopeFingerprint,
         ),
+      locale:
+        turn.locale === undefined
+          ? 'en-CA'
+          : SupportedLocaleSchema.parse(turn.locale),
       message:
         typeof turn.message === 'string' &&
         turn.message.length <= MAX_MESSAGE_LENGTH
@@ -4742,12 +5587,18 @@ export class AgentOrchestrator {
     const paused = Object.freeze(
       value.paused.map((rawPaused) => this.#parsePaused(rawPaused)),
     );
-    if (!this.#isApprovalCheckpointAdmissible(plan, paused)) {
+    const rootManagerInvocationId = assertUuid(value.rootManagerInvocationId);
+    if (
+      rootManagerInvocationId === parsedTurn.runId ||
+      !this.#isApprovalCheckpointAdmissible(plan, paused) ||
+      !this.#hasExactPausedConfirmation(outcomes, paused)
+    ) {
       throw new Error('invalid-runtime-checkpoint');
     }
     return Object.freeze({
       version: RUNTIME_STATE_VERSION,
       turn: parsedTurn,
+      rootManagerInvocationId,
       modelResolution: model as unknown as Extract<
         ModelResolution,
         { status: 'resolved' }
@@ -4761,41 +5612,38 @@ export class AgentOrchestrator {
 
   #parseOutcome(raw: JsonValue): SpecialistOutcome {
     const value = asObject(raw);
-    assertExactKeys(
-      value,
-      ['delegationId', 'specialistId', 'status', 'usage'],
-      ['output', 'safeError'],
+    const commonKeys = new Set([
+      'delegationId',
+      'specialistId',
+      'invocationContext',
+      'invocationContextHash',
+      'usage',
+    ]);
+    const rawOutcome = Object.freeze(
+      Object.fromEntries(
+        Object.entries(value).filter(([key]) => !commonKeys.has(key)),
+      ),
     );
-    if (
-      value.status !== 'completed' &&
-      value.status !== 'failed' &&
-      value.status !== 'blocked'
-    ) {
+    try {
+      const invocationContext = snapshotInvocationContext(
+        value.invocationContext,
+      );
+      const invocationContextHash = snapshotInvocationContextHash(
+        value.invocationContextHash,
+        invocationContext,
+      );
+      const outcome = AgentOutcomeSchema.parse(rawOutcome);
+      return Object.freeze({
+        delegationId: assertIdentifier(value.delegationId),
+        specialistId: assertIdentifier(value.specialistId),
+        invocationContext,
+        invocationContextHash,
+        usage: snapshotUsage(value.usage),
+        ...outcome,
+      });
+    } catch {
       throw new Error('invalid-runtime-checkpoint');
     }
-    let parsedError: SafeAgentError | undefined;
-    if (value.safeError !== undefined) {
-      const error = asObject(value.safeError);
-      assertExactKeys(error, ['code', 'message', 'retryable']);
-      if (
-        typeof error.code !== 'string' ||
-        typeof error.message !== 'string' ||
-        typeof error.retryable !== 'boolean'
-      ) {
-        throw new Error('invalid-runtime-checkpoint');
-      }
-      parsedError = safeError(error.code, error.message, error.retryable);
-    }
-    return Object.freeze({
-      delegationId: assertIdentifier(value.delegationId),
-      specialistId: assertIdentifier(value.specialistId),
-      status: value.status,
-      ...(value.output === undefined
-        ? {}
-        : { output: snapshotJson(value.output) }),
-      ...(parsedError === undefined ? {} : { safeError: parsedError }),
-      usage: snapshotUsage(value.usage),
-    });
   }
 
   #parsePaused(raw: JsonValue): PausedExecution {
@@ -4811,6 +5659,8 @@ export class AgentOrchestrator {
       'disclosureGrantId',
       'disclosureGrantVersion',
       'authorizationScopeFingerprint',
+      'invocationContext',
+      'invocationContextHash',
     ]);
     if (
       value.phase !== 'plan' &&
@@ -4849,6 +5699,11 @@ export class AgentOrchestrator {
         EffectiveAuthorizationScopeFingerprintSchema.parse(
           value.authorizationScopeFingerprint,
         ),
+      invocationContext: snapshotInvocationContext(value.invocationContext),
+      invocationContextHash: snapshotInvocationContextHash(
+        value.invocationContextHash,
+        snapshotInvocationContext(value.invocationContext),
+      ),
     });
   }
 

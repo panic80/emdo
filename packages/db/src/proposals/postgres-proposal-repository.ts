@@ -448,7 +448,11 @@ const proposalSelect = `select pg_catalog.jsonb_build_object(
          'expiresAt', proposal.expires_at,
          'idempotencyKey', proposal.idempotency_key,
          'state', state.state
-       ) as proposal
+       ) || case when proposal.guarded_action is null then '{}'::jsonb
+                else pg_catalog.jsonb_build_object(
+                  'guardedAction', proposal.guarded_action
+                )
+           end as proposal
   from emdo.action_proposals as proposal
   join emdo.proposal_states as state on state.proposal_id = proposal.id`;
 
@@ -700,7 +704,7 @@ const checkFunctionPrivileges = async (
     client = await pool.connect();
     const row = firstResultRow(
       await client.query(
-        `select pg_catalog.coalesce(
+        `select coalesce(
                   pg_catalog.bool_and(
                     resolved.procedure_oid is not null
                     and pg_catalog.has_function_privilege(
@@ -824,7 +828,7 @@ select (
        and not owner.rolcreaterole
        and not owner.rolbypassrls
        and not owner.rolreplication
-       and pg_catalog.coalesce(routine.proconfig, array[]::text[])
+       and coalesce(routine.proconfig, array[]::text[])
              @> array['search_path=pg_catalog, emdo', 'row_security=on']::text[]
        and not exists (
          select 1
@@ -835,7 +839,7 @@ select (
        and not exists (
          select 1
            from pg_catalog.aclexplode(
-             pg_catalog.coalesce(
+             coalesce(
                routine.proacl,
                pg_catalog.acldefault('f', routine.proowner)
              )
@@ -913,7 +917,7 @@ select (
        and not owner.rolcreaterole
        and not owner.rolbypassrls
        and not owner.rolreplication
-       and pg_catalog.coalesce(routine.proconfig, array[]::text[])
+       and coalesce(routine.proconfig, array[]::text[])
              @> array['search_path=pg_catalog, emdo', 'row_security=on']::text[]
        and not exists (
          select 1
@@ -924,7 +928,7 @@ select (
        and not exists (
          select 1
            from pg_catalog.aclexplode(
-             pg_catalog.coalesce(
+             coalesce(
                routine.proacl,
                pg_catalog.acldefault('f', routine.proowner)
              )

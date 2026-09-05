@@ -3,10 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   ALL_MANAGER_DELEGATION_CAPABILITY_IDS,
   ALL_SPECIALIST_CAPABILITY_IDS,
+  FINANCE_V1_CAPABILITY_IDS,
   PROVIDER_WRITE_CAPABILITY_IDS,
   createProductionCapabilityRuntime,
 } from './capability-runtime.js';
 import {
+  createFinanceV1ProductionCapabilityBindings,
   createProductionCapabilityBindings,
   type TrustedProductionCapabilityServices,
   type TrustedProviderWriteCapabilityBindings,
@@ -78,16 +80,77 @@ const createServices = (): TrustedProductionCapabilityServices => {
       })),
       executeStatementImport: vi.fn(async () => ({
         result: {
-          status: 'preview-ready',
-          previewId: 'preview-1',
-          acceptedRows: 0,
-          rejectedRows: 0,
-          duplicateRows: 0,
+          status: 'confirmation-required',
+          proposal: {
+            state: 'proposed',
+            operation: 'finance-statement-import-commit',
+            channel: 'emdo-authenticated-visual',
+            canonicalHash: 'a'.repeat(64),
+          },
         },
       })),
       loadFinanceBudgetInputs: vi.fn(async () => ({
         spaceId: 'space-1',
         transactions: [],
+      })),
+      searchFinanceDocuments: vi.fn(async () => ({
+        hits: [
+          {
+            documentId: 'document-1',
+            documentType: 'receipt' as const,
+            displayName: 'Example Market receipt',
+            occurredOn: '2026-08-11',
+            currency: 'CAD',
+            amountMinor: 1_299,
+            score: 0.98,
+            evidence: [
+              {
+                evidenceId: 'evidence-1',
+                documentId: 'document-1',
+                documentType: 'receipt' as const,
+                displayName: 'Example Market receipt',
+                page: 1,
+                excerpt: 'Groceries 12.99 CAD',
+                sourceLocale: 'en-CA' as const,
+              },
+            ],
+          },
+        ],
+      })),
+      readFinanceDocument: vi.fn(async () => ({
+        document: {
+          id: 'document-1',
+          documentType: 'receipt' as const,
+          displayName: 'Example Market receipt',
+          sourceLocale: 'en-CA' as const,
+          currency: 'CAD',
+          summary: 'A receipt for groceries totaling 12.99 CAD.',
+          committedAt: instant,
+        },
+        evidence: [
+          {
+            evidenceId: 'evidence-1',
+            documentId: 'document-1',
+            documentType: 'receipt' as const,
+            displayName: 'Example Market receipt',
+            page: 1,
+            excerpt: 'Groceries 12.99 CAD',
+            sourceLocale: 'en-CA' as const,
+          },
+        ],
+      })),
+      readFinanceMatches: vi.fn(async () => ({
+        matches: [
+          {
+            matchId: 'match-1',
+            documentId: 'document-1',
+            recordId: 'transaction-1',
+            recordType: 'transaction' as const,
+            state: 'suggested' as const,
+            score: 0.98,
+            reasons: ['Amount and merchant match the transaction.'],
+          },
+        ],
       })),
       readShoppingItems: vi.fn(async () => ({
         items: [],
@@ -188,6 +251,7 @@ describe('production capability bindings', () => {
           sessionId: 'session-1',
           householdId: 'household-1',
           agentId: 'scheduler',
+          locale: 'en-CA',
           spaceAccessGrantId: 'space-grant-1',
           abortSignal: new AbortController().signal,
         },
@@ -206,6 +270,80 @@ describe('production capability bindings', () => {
       },
       expect.objectContaining({ agentId: 'scheduler' }),
     );
+  });
+
+  it('binds the exact seven Finance v1 specialist capabilities', () => {
+    const services = createServices();
+    const bindings = createFinanceV1ProductionCapabilityBindings({
+      schedulerDelegation: services.delegations['agent.scheduler.delegate'],
+      financeDelegation: services.delegations['agent.finance.delegate'],
+      calendarEventCreate: createProviderBinding(),
+      finance: services.specialists,
+    });
+
+    const financeCapabilityIds = FINANCE_V1_CAPABILITY_IDS.filter((id) =>
+      id.startsWith('finance.'),
+    );
+    expect(financeCapabilityIds).toHaveLength(7);
+    expect(Object.keys(bindings).sort()).toEqual(
+      [...FINANCE_V1_CAPABILITY_IDS].sort(),
+    );
+    expect(bindings['finance.analytics.calculate'].kind).toBe('read');
+    expect(bindings['finance.documents.search'].kind).toBe('read');
+    expect(bindings['finance.documents.read'].kind).toBe('read');
+    expect(bindings['finance.matches.read'].kind).toBe('read');
+  });
+
+  it('leaves safe Finance writes direct and fails guarded writes closed without a durable proposal materializer', async () => {
+    const services = createServices();
+    const bindings = createFinanceV1ProductionCapabilityBindings({
+      schedulerDelegation: services.delegations['agent.scheduler.delegate'],
+      financeDelegation: services.delegations['agent.finance.delegate'],
+      calendarEventCreate: createProviderBinding(),
+      finance: services.specialists,
+    });
+    const materialize = bindings['finance.records.write'].materializeProposal!;
+    const base = {
+      capabilityId: 'finance.records.write',
+      descriptor: {} as never,
+      authorityBinding: {} as never,
+      context: {} as never,
+    };
+
+    await expect(
+      materialize({
+        ...base,
+        arguments: {
+          schemaVersion: 1,
+          mutation: {
+            kind: 'create',
+            recordId: 'transaction-1',
+            record: {
+              recordType: 'transaction',
+              accountId: 'account-1',
+              categoryId: null,
+              postedOn: '2026-08-11',
+              description: 'Groceries',
+              amountCadMinor: -1_299,
+            },
+          },
+        },
+      } as never),
+    ).resolves.toBeUndefined();
+    await expect(
+      materialize({
+        ...base,
+        arguments: {
+          schemaVersion: 1,
+          mutation: {
+            kind: 'adjust',
+            transactionId: 'transaction-1',
+            amountCadMinor: 50,
+            reason: 'Correct the receipt total.',
+          },
+        },
+      } as never),
+    ).rejects.toThrow('api-finance-guarded-action-unavailable');
   });
 
   it('requires exact per-capability provider and delegation maps', () => {

@@ -38,6 +38,13 @@ describe('database migration runner', () => {
       '0013_google_oauth_disconnect_retention_runner',
       '0014_audio_spend_readiness',
       '0015_single_household_session_activation',
+      '0016_finance_document_knowledge',
+      '0017_approval_resume_public_events',
+      '0018_finance_guarded_proposal_authority',
+      '0019_manager_turn_spend_warning',
+      '0020_manager_specialist_disclosure',
+      '0021_blocked_visual_decision_claim',
+      '0022_registered_agent_invocation_lineage',
     ]);
     expect(migrations.map(({ index }) => index)).toEqual(
       migrations.map((_, index) => index),
@@ -84,6 +91,22 @@ describe('database migration runner', () => {
     );
     expect(migrations[15]?.sql).toContain(
       'CREATE OR REPLACE FUNCTION emdo.resolve_exactly_one_active_household_for_auth_session',
+    );
+    expect(migrations[16]?.sql).toContain(
+      'CREATE TABLE "emdo"."finance_documents"',
+    );
+    expect(migrations[17]?.sql).toContain(
+      'CREATE OR REPLACE FUNCTION "emdo"."settle_approval_resume_job"',
+    );
+    expect(migrations[18]?.sql).toContain('ADD COLUMN "guarded_action" jsonb');
+    expect(migrations[19]?.sql).toContain(
+      'CREATE OR REPLACE FUNCTION "emdo"."complete_manager_turn"',
+    );
+    expect(migrations[20]?.sql).toContain(
+      'CREATE OR REPLACE FUNCTION "emdo"."resolve_model_disclosure_grant"',
+    );
+    expect(migrations[21]?.sql).toContain(
+      'CREATE OR REPLACE FUNCTION "emdo"."issue_workflow_operation_claim_calendar"',
     );
   });
 

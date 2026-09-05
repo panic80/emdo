@@ -10,6 +10,8 @@ import type {
   AuthenticationBoundary,
   ReadinessGateway,
 } from '../services/contracts.js';
+import type { SyntheticFinanceAccountProvisioner } from './synthetic-finance-account-provisioner.js';
+import type { SyntheticFinanceInvitationHandoff } from './synthetic-finance-invitation-handoff.js';
 
 type ConfigurableApiServiceName = Exclude<
   keyof ApiServices,
@@ -41,6 +43,21 @@ const REQUIRED_SERVICE_METHODS = Object.freeze({
   activityRead: ['list'],
   financeRead: ['list'],
   financeImports: ['listDestinations', 'preview', 'commit'],
+  financeDocuments: [
+    'list',
+    'get',
+    'upload',
+    'downloadOriginal',
+    'retry',
+    'getReview',
+    'updateReview',
+    'commitReview',
+    'listMatches',
+    'decideMatch',
+    'getEvidence',
+    'delete',
+    'readExperience',
+  ],
   managerTurns: ['start'],
   notificationPreferences: ['get', 'update'],
   runEvents: ['open'],
@@ -84,6 +101,7 @@ const COMPONENT_BINDINGS = Object.freeze({
   'experience.activity-read': 'activityRead',
   'experience.finance-read': 'financeRead',
   'experience.finance-imports': 'financeImports',
+  'experience.finance-documents': 'financeDocuments',
   'experience.notification-preferences': 'notificationPreferences',
   'experience.schedule-read': 'scheduleRead',
   'experience.settings-read': 'settingsRead',
@@ -157,7 +175,13 @@ export const createFailClosedApiServices = (input: {
   readonly bindings?: ProductionApiServiceBindings;
   readonly metricsToken?: string;
   readonly close?: () => Promise<void>;
-}): ApiServices & { readonly close?: () => Promise<void> } => {
+  readonly syntheticFinanceAccountProvisioner?: SyntheticFinanceAccountProvisioner;
+  readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
+}): ApiServices & {
+  readonly close?: () => Promise<void>;
+  readonly syntheticFinanceAccountProvisioner?: SyntheticFinanceAccountProvisioner;
+  readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
+} => {
   if (input.auth === undefined) {
     throw new Error('api-production-auth-boundary-missing');
   }
@@ -172,6 +196,9 @@ export const createFailClosedApiServices = (input: {
         list: async () => {
           throw unavailable('finance-read-unavailable', 'Finance view');
         },
+        readSnapshot: async () => {
+          throw unavailable('finance-read-unavailable', 'Finance view');
+        },
       },
       financeImports: {
         listDestinations: async () => {
@@ -182,6 +209,86 @@ export const createFailClosedApiServices = (input: {
         },
         commit: async () => {
           throw unavailable('finance-import-unavailable', 'Finance import');
+        },
+      },
+      financeDocuments: {
+        list: async () => {
+          throw unavailable(
+            'finance-documents-unavailable',
+            'Finance documents',
+          );
+        },
+        get: async () => {
+          throw unavailable(
+            'finance-documents-unavailable',
+            'Finance documents',
+          );
+        },
+        upload: async () => {
+          throw unavailable(
+            'finance-documents-unavailable',
+            'Finance documents',
+          );
+        },
+        downloadOriginal: async () => {
+          throw unavailable(
+            'finance-documents-unavailable',
+            'Finance documents',
+          );
+        },
+        retry: async () => {
+          throw unavailable(
+            'finance-documents-unavailable',
+            'Finance documents',
+          );
+        },
+        getReview: async () => {
+          throw unavailable(
+            'finance-documents-unavailable',
+            'Finance documents',
+          );
+        },
+        updateReview: async () => {
+          throw unavailable(
+            'finance-documents-unavailable',
+            'Finance documents',
+          );
+        },
+        commitReview: async () => {
+          throw unavailable(
+            'finance-documents-unavailable',
+            'Finance documents',
+          );
+        },
+        listMatches: async () => {
+          throw unavailable(
+            'finance-documents-unavailable',
+            'Finance documents',
+          );
+        },
+        decideMatch: async () => {
+          throw unavailable(
+            'finance-documents-unavailable',
+            'Finance documents',
+          );
+        },
+        getEvidence: async () => {
+          throw unavailable(
+            'finance-documents-unavailable',
+            'Finance documents',
+          );
+        },
+        delete: async () => {
+          throw unavailable(
+            'finance-documents-unavailable',
+            'Finance documents',
+          );
+        },
+        readExperience: async () => {
+          throw unavailable(
+            'finance-documents-unavailable',
+            'Finance documents',
+          );
         },
       },
       managerTurns: {
@@ -456,7 +563,11 @@ export const createFailClosedApiServices = (input: {
     },
   });
 
-  const services: ApiServices & { readonly close?: () => Promise<void> } = {
+  const services: ApiServices & {
+    readonly close?: () => Promise<void>;
+    readonly syntheticFinanceAccountProvisioner?: SyntheticFinanceAccountProvisioner;
+    readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
+  } = {
     auth: selectedService('auth', input.auth),
     activityRead: selectedService(
       'activityRead',
@@ -466,6 +577,10 @@ export const createFailClosedApiServices = (input: {
     financeImports: selectedService(
       'financeImports',
       fallbackServices.financeImports,
+    ),
+    financeDocuments: selectedService(
+      'financeDocuments',
+      fallbackServices.financeDocuments,
     ),
     managerTurns: selectedService(
       'managerTurns',
@@ -521,6 +636,18 @@ export const createFailClosedApiServices = (input: {
       },
     },
     ...(input.close === undefined ? {} : { close: input.close }),
+    ...(input.syntheticFinanceAccountProvisioner === undefined
+      ? {}
+      : {
+          syntheticFinanceAccountProvisioner:
+            input.syntheticFinanceAccountProvisioner,
+        }),
+    ...(input.syntheticFinanceInvitationHandoff === undefined
+      ? {}
+      : {
+          syntheticFinanceInvitationHandoff:
+            input.syntheticFinanceInvitationHandoff,
+        }),
   };
   return Object.freeze(services);
 };

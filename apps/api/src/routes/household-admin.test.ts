@@ -14,6 +14,7 @@ const MEMBER_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f71';
 const SESSION_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f72';
 const HOUSEHOLD_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f73';
 const SPACE_GRANT_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f74';
+const PRIVATE_SPACE_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f77';
 const COLLECTION_AUTHORIZATION_SCOPE_FINGERPRINT =
   EffectiveAuthorizationScopeFingerprintSchema.parse('7'.repeat(64));
 const INVITATION_ID = '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f75';
@@ -23,7 +24,7 @@ const CREATED_AT = '2026-08-10T14:00:00.000Z';
 const EXPIRES_AT = '2026-08-17T14:00:00.000Z';
 const JOINED_AT = '2026-08-09T14:00:00.000Z';
 
-const ownerPrincipal: AuthenticatedPrincipal = Object.freeze({
+const householdAdministrationOwnerPrincipal = Object.freeze({
   userId: OWNER_ID,
   sessionId: SESSION_ID,
   householdId: HOUSEHOLD_ID,
@@ -32,6 +33,11 @@ const ownerPrincipal: AuthenticatedPrincipal = Object.freeze({
   spaceAccessGrantId: SPACE_GRANT_ID,
   collectionAuthorizationScopeFingerprint:
     COLLECTION_AUTHORIZATION_SCOPE_FINGERPRINT,
+});
+
+const ownerPrincipal: AuthenticatedPrincipal = Object.freeze({
+  ...householdAdministrationOwnerPrincipal,
+  privateSpaceId: PRIVATE_SPACE_ID,
 });
 
 const memberPrincipal: AuthenticatedPrincipal = Object.freeze({
@@ -153,7 +159,7 @@ describe('household administration HTTP boundary', () => {
       email: 'member@example.ca',
       role: 'member',
       expiresInSeconds: 604_800,
-      principal: ownerPrincipal,
+      principal: householdAdministrationOwnerPrincipal,
       requestId: expect.any(String),
       idempotencyKey: IDEMPOTENCY_KEY,
     });
@@ -169,7 +175,7 @@ describe('household administration HTTP boundary', () => {
       invitations: [invitation],
     });
     expect(householdAdministration.listInvitations).toHaveBeenCalledWith({
-      principal: ownerPrincipal,
+      principal: householdAdministrationOwnerPrincipal,
       requestId: expect.any(String),
     });
 
@@ -205,7 +211,7 @@ describe('household administration HTTP boundary', () => {
       membershipId: MEMBERSHIP_ID,
       expectedVersion: 4,
       role: 'owner',
-      principal: ownerPrincipal,
+      principal: householdAdministrationOwnerPrincipal,
       requestId: expect.any(String),
       idempotencyKey: IDEMPOTENCY_KEY,
     });
@@ -228,13 +234,13 @@ describe('household administration HTTP boundary', () => {
     expect(householdAdministration.deactivateMembership).toHaveBeenCalledWith({
       membershipId: MEMBERSHIP_ID,
       expectedVersion: 4,
-      principal: ownerPrincipal,
+      principal: householdAdministrationOwnerPrincipal,
       requestId: expect.any(String),
       idempotencyKey: IDEMPOTENCY_KEY,
     });
 
     expect(householdAdministration.listMemberships).toHaveBeenCalledWith({
-      principal: ownerPrincipal,
+      principal: householdAdministrationOwnerPrincipal,
       requestId: expect.any(String),
     });
     await app.close();
@@ -262,7 +268,7 @@ describe('household administration HTTP boundary', () => {
     expect(householdAdministration.revokeInvitation).toHaveBeenCalledWith({
       invitationId: INVITATION_ID,
       expectedVersion: 1,
-      principal: ownerPrincipal,
+      principal: householdAdministrationOwnerPrincipal,
       requestId: expect.any(String),
       idempotencyKey: IDEMPOTENCY_KEY,
     });

@@ -122,6 +122,10 @@ export interface TrustedProposalMaterializer {
 export interface TrustedDisclosureGrantResolver {
   resolve(
     disclosureGrantId: string,
+    invocationBinding: Pick<
+      ActionProposal['disclosureGrant'],
+      'invocationContext' | 'invocationContextHash'
+    >,
   ): Promise<ActionProposal['disclosureGrant'] | undefined>;
 }
 
@@ -148,6 +152,9 @@ export const hashActionProposalApproval = (
     providerPreconditions: proposal.providerPreconditions,
     providerAuthorityBindingHash: proposal.providerAuthorityBindingHash,
     providerSdkCallId: proposal.providerSdkCallId,
+    ...(proposal.guardedAction === undefined
+      ? {}
+      : { guardedAction: proposal.guardedAction }),
     payloadHash: proposal.payloadHash,
     disclosureGrant: proposal.disclosureGrant,
     createdAt: proposal.createdAt,
@@ -1114,6 +1121,7 @@ const bindingMatches = (
   proposal: ActionProposal,
   binding: ProviderWriteApprovalBinding,
 ): boolean =>
+  proposal.guardedAction === undefined &&
   decision.decision === 'approved' &&
   decision.userId === binding.userId &&
   proposal.disclosureGrant.agentId === binding.agentId &&
@@ -1420,7 +1428,10 @@ const acquireApproval = async (
   }
 
   const trustedGrantResult = DataDisclosureGrantSchema.safeParse(
-    await resolveDisclosureGrant(initial.proposal.disclosureGrant.id),
+    await resolveDisclosureGrant(
+      initial.proposal.disclosureGrant.id,
+      initial.proposal.disclosureGrant,
+    ),
   );
   const observedAuthorizationNow = currentTime();
   const observedAuthorizationAt = observedAuthorizationNow.getTime();
@@ -1716,7 +1727,10 @@ const markDispatchingApproval = async (
   if (existing.attemptState !== 'prepared') return existing;
 
   const trustedGrantResult = DataDisclosureGrantSchema.safeParse(
-    await resolveDisclosureGrant(initial.proposal.disclosureGrant.id),
+    await resolveDisclosureGrant(
+      initial.proposal.disclosureGrant.id,
+      initial.proposal.disclosureGrant,
+    ),
   );
   const dispatchNow = currentTime();
   const observedDispatchAt = dispatchNow.getTime();
@@ -2245,7 +2259,10 @@ export class ProposalService {
       );
     }
     const trustedGrantResult = DataDisclosureGrantSchema.safeParse(
-      await this.resolveDisclosureGrant(proposal.disclosureGrant.id),
+      await this.resolveDisclosureGrant(
+        proposal.disclosureGrant.id,
+        proposal.disclosureGrant,
+      ),
     );
     const grantCheckedAt = this.currentTime();
     const grantCheckedAtMs = grantCheckedAt.getTime();
@@ -2418,15 +2435,28 @@ export class ProposalService {
       channel: context.channel,
       decidedAt: context.now.toISOString(),
     });
-    const outcome = await repository.transaction(async (transaction) => {
-      const replay = await transaction.findDecisionByIdempotencyKey(
-        decisionLookupFor(decision),
+    const readDecisionReplay = async (): Promise<
+      ActionDecision | undefined
+    > => {
+      // Replay resolution re-locks the request-current authorization scope.
+      // Keep each read short so its locks are released before the decision-only
+      // pool enters the atomic visual-decision aggregate.
+      const replay = await repository.transaction((transaction) =>
+        transaction.findDecisionByIdempotencyKey(decisionLookupFor(decision)),
       );
-      if (replay !== undefined) {
-        return isSameDecisionReplay(replay.decision, decision)
-          ? ({ kind: 'replay', decision: replay.decision } as const)
-          : ({ kind: 'conflict' } as const);
+      if (replay === undefined) return undefined;
+      if (isSameDecisionReplay(replay.decision, decision)) {
+        return replay.decision;
       }
+      throw new ProposalError(
+        'proposal-decision-conflict',
+        'Proposal decision conflicted with persisted state',
+      );
+    };
+    const replay = await readDecisionReplay();
+    if (replay !== undefined) return replay;
+
+    const outcome = await repository.transaction(async (transaction) => {
       const proposal = await transaction.getProposal(decision.proposalId);
       if (proposal === undefined) return { kind: 'not-found' } as const;
       const preparation = await transaction.getProposalPreparation(proposal.id);
@@ -2497,23 +2527,29 @@ export class ProposalService {
         },
       });
       if (result === 'created') return { kind: 'created' } as const;
-      if (result === 'duplicate') {
-        const persisted = await transaction.findDecisionByIdempotencyKey(
-          decisionLookupFor(decision),
-        );
-        return persisted !== undefined &&
-          isSameDecisionReplay(persisted.decision, decision)
-          ? ({ kind: 'replay', decision: persisted.decision } as const)
-          : ({ kind: 'conflict' } as const);
-      }
+      if (result === 'duplicate') return { kind: 'duplicate' } as const;
       return { kind: 'conflict' } as const;
     });
+
+    if (
+      outcome.kind === 'duplicate' ||
+      outcome.kind === 'not-pending' ||
+      outcome.kind === 'conflict'
+    ) {
+      const persisted = await readDecisionReplay();
+      if (persisted !== undefined) return persisted;
+    }
+
+    if (outcome.kind === 'duplicate') {
+      throw new ProposalError(
+        'proposal-decision-conflict',
+        'Proposal decision conflicted with persisted state',
+      );
+    }
 
     switch (outcome.kind) {
       case 'created':
         return decision;
-      case 'replay':
-        return outcome.decision;
       case 'not-found':
         throw new ProposalError(
           'proposal-not-found',

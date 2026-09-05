@@ -14,6 +14,12 @@ import {
   type JsonValue,
   type VersionedSchemaReference,
 } from './primitives.js';
+import type { AgentInvocationContext } from './invocation-context.js';
+import type { SupportedLocale } from './locale.js';
+import {
+  isApprovedFinanceGuardedCapabilityOperation,
+  isFinanceDocumentGuardedOperation,
+} from './guarded-action.js';
 
 export * from './primitives.js';
 
@@ -197,6 +203,48 @@ export const CapabilityDescriptorSchema =
         });
       }
     }
+    if (
+      value.approval.rule === 'authenticated-visual-proposal' &&
+      value.capabilityKind !== 'provider-write'
+    ) {
+      if (
+        value.capabilityKind !== 'local-write' &&
+        value.capabilityKind !== 'import'
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['approval'],
+          message:
+            'Only local writes, imports, and provider writes may require visual approval',
+        });
+      }
+      if (!value.idempotency.required || value.idempotency.scope !== 'actor') {
+        context.addIssue({
+          code: 'custom',
+          path: ['idempotency'],
+          message:
+            'Guarded local actions require actor-scoped idempotency protection',
+        });
+      }
+      if (
+        value.idempotency.ttlMs <
+        value.approval.expiresInSeconds * 1000 + value.timeoutMs
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['idempotency', 'ttlMs'],
+          message:
+            'Guarded local action idempotency TTL must cover approval and execution',
+        });
+      }
+      if (!value.audit.required) {
+        context.addIssue({
+          code: 'custom',
+          path: ['audit', 'required'],
+          message: 'Guarded local actions require an audit record',
+        });
+      }
+    }
   }).transform((value): CapabilityDescriptor => {
     const validated = deepFreeze(value);
     if (validated.capabilityKind === 'provider-write') {
@@ -226,6 +274,54 @@ export const CadMoneySchema = z
 
 export type CadMoney = DeepReadonly<z.input<typeof CadMoneySchema>>;
 
+/**
+ * Minted only by the trusted guarded-action gateway after it has verified an
+ * authenticated visual decision against the persisted proposal. It is never a
+ * model or client input.
+ */
+export const GuardedActionPermitSchema = z
+  .strictObject({
+    proposalId: UuidSchema,
+    decisionId: UuidSchema,
+    capabilityId: IdentifierSchema,
+    capabilityVersion: SemanticVersionSchema,
+    capabilityFingerprint: Sha256Schema,
+    operation: IdentifierSchema,
+    actionHash: Sha256Schema,
+    executionBindingHash: Sha256Schema,
+    targetBindingHash: Sha256Schema.optional(),
+  })
+  .superRefine((value, context) => {
+    if (
+      isFinanceDocumentGuardedOperation(value.operation) !==
+      (value.targetBindingHash !== undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['targetBindingHash'],
+        message:
+          'Finance document guarded permits require an exact target binding',
+      });
+    }
+    if (
+      !isApprovedFinanceGuardedCapabilityOperation(
+        value.capabilityId,
+        value.operation,
+      )
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['operation'],
+        message: 'Guarded Finance operation must match its approved capability',
+      });
+    }
+  })
+  .transform(deepFreeze);
+
+export type GuardedActionPermit = DeepReadonly<
+  z.output<typeof GuardedActionPermitSchema>
+>;
+
 export interface CapabilityInvocationContext {
   readonly requestId: string;
   readonly runId: string;
@@ -233,9 +329,19 @@ export interface CapabilityInvocationContext {
   readonly householdId: string;
   readonly sessionId: string;
   readonly agentId: string;
+  /**
+   * Exact server-minted registered-agent lineage and authority envelope.
+   * Registered production runtimes require it at their narrow schemas; the
+   * generic registry keeps it optional for non-agent and legacy callers.
+   */
+  readonly invocationContext?: AgentInvocationContext;
   readonly spaceAccessGrantId: string;
+  /** Server-derived active response locale; capability callers never choose it. */
+  readonly locale: SupportedLocale;
   readonly disclosureGrantId?: string;
   readonly approvalDecisionId?: string;
+  /** Trusted proof for a dynamically guarded local-write/import resume only. */
+  readonly guardedActionPermit?: GuardedActionPermit;
   readonly abortSignal: AbortSignal;
 }
 
@@ -406,7 +512,10 @@ export type ProviderWriteAuthorization = DeepReadonly<
 
 export interface ProviderWriteCapabilityContext extends Omit<
   CapabilityInvocationContext,
-  'spaceAccessGrantId' | 'disclosureGrantId' | 'approvalDecisionId'
+  | 'spaceAccessGrantId'
+  | 'disclosureGrantId'
+  | 'approvalDecisionId'
+  | 'guardedActionPermit'
 > {
   readonly providerWritePermit: ProviderWriteAuthorization;
   readonly providerWriteOperationScope: ProviderWriteOperationScope;

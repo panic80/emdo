@@ -1,4 +1,9 @@
 import type { FastifyInstance } from 'fastify';
+import {
+  FinanceExperienceV1Schema,
+  FinanceLocaleSchema,
+  type FinanceLocale,
+} from '@emdo/domains/finance';
 
 import { ApiProblem, serviceContractProblem } from '../problem.js';
 import {
@@ -29,6 +34,16 @@ import type {
 
 const uniqueIds = (items: readonly { readonly id: string }[]): boolean =>
   new Set(items.map(({ id }) => id)).size === items.length;
+
+const requestedFinanceLocale = (header: unknown): FinanceLocale | undefined => {
+  if (typeof header !== 'string' || header.length > 512) return undefined;
+  for (const range of header.split(',')) {
+    const tag = range.split(';', 1)[0]?.trim();
+    const parsed = FinanceLocaleSchema.safeParse(tag);
+    if (parsed.success) return parsed.data;
+  }
+  return undefined;
+};
 
 const projectExperiencePrincipal = (
   principal: AuthenticatedPrincipal,
@@ -154,9 +169,27 @@ export const registerExperienceRoutes = (
   });
 
   app.get('/api/v1/experience/finance', async (request, reply) => {
-    const principal = projectExperiencePrincipal(
-      await requirePrincipal(request, services),
-    );
+    const authenticatedPrincipal = await requirePrincipal(request, services);
+    const rawQuery = request.query;
+    const wantsFinanceV1 =
+      rawQuery !== null &&
+      typeof rawQuery === 'object' &&
+      !Array.isArray(rawQuery) &&
+      Reflect.ownKeys(rawQuery).length === 0;
+    if (wantsFinanceV1) {
+      const result = parseServiceResponse(
+        FinanceExperienceV1Schema,
+        await invokeExperience(() =>
+          services.financeDocuments.readExperience({
+            locale: requestedFinanceLocale(request.headers['accept-language']),
+            principal: authenticatedPrincipal,
+            requestId: request.id,
+          }),
+        ),
+      );
+      return reply.header('cache-control', 'no-store').send(result);
+    }
+    const principal = projectExperiencePrincipal(authenticatedPrincipal);
     const query = parseRequest(ExperiencePageQuerySchema, request.query);
     const result = parseServiceResponse(
       FinancePageSchema,

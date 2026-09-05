@@ -26,6 +26,7 @@ const SUITE_IDS = Object.freeze([
   'household-administration',
   'disclosure-authority',
   'finance-import-receipts',
+  'finance-document-knowledge',
   'finance-import-retention-runner',
   'google-oauth-authority',
   'manager-run-event-replay',
@@ -100,10 +101,10 @@ const parseRawReport = (value, sourceSha, runId) => {
       'serverVersionNum',
       'pgvectorExtensionVersion',
     ]) ||
-    value.database.postgresqlMajor !== 17 ||
+    value.database.postgresqlMajor !== 18 ||
     !Number.isSafeInteger(value.database.serverVersionNum) ||
-    value.database.serverVersionNum < 170_000 ||
-    value.database.serverVersionNum >= 180_000 ||
+    value.database.serverVersionNum < 180_000 ||
+    value.database.serverVersionNum >= 190_000 ||
     !/^\d+\.\d+(?:\.\d+)?$/u.test(value.database.pgvectorExtensionVersion)
   ) {
     fail();
@@ -205,7 +206,7 @@ export const runPostgresCiEvidenceWrite = async (argv) => {
     result: {
       outcome: 'success',
       proof: {
-        postgresqlMajor: 17,
+        postgresqlMajor: 18,
         pgvectorExtension: 'passed',
         isolatedDatabases: true,
         sequentialSuites: 'passed',

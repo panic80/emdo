@@ -25,6 +25,9 @@ const ids = {
   attempt: '91000000-0000-4000-8000-000000000009',
   privateSpace: '91000000-0000-4000-8000-000000000010',
   spaceGrant: '91000000-0000-4000-8000-000000000011',
+  parentInvocation: '91000000-0000-4000-8000-000000000012',
+  agentInvocation: '91000000-0000-4000-8000-000000000013',
+  phaseInvocation: '91000000-0000-4000-8000-000000000014',
 } as const;
 
 const hash = (character: string) => character.repeat(64);
@@ -66,6 +69,19 @@ const proposal = ActionProposalSchema.parse({
     agentId: 'scheduler',
     purpose: 'Create one approved Calendar event',
     runId: ids.run,
+    invocationContext: {
+      orchestrationRunId: ids.run,
+      parentInvocationId: ids.parentInvocation,
+      agentInvocationId: ids.agentInvocation,
+      phaseInvocationId: ids.phaseInvocation,
+      actorId: ids.user,
+      locale: 'en-CA',
+      grantedCapabilities: ['scheduler.calendar.create'],
+      disclosedContextRefs: [`context-ref-${hash('1')}`],
+      deadline: '2026-08-10T14:10:00.000Z',
+      idempotencyScope: hash('2'),
+    },
+    invocationContextHash: hash('3'),
     recordAllowlist: [
       {
         dataClass: 'calendar.event',
@@ -512,6 +528,46 @@ describe('PostgresProposalRepository', () => {
       ),
     ).toBe(false);
     expect(workflow.query).not.toHaveBeenCalled();
+  });
+
+  it('hydrates an optional Finance guarded action from the immutable proposal row', async () => {
+    const guardedProposal = ActionProposalSchema.parse({
+      ...proposal,
+      capabilityId: 'finance.records.write',
+      guardedAction: {
+        capabilityVersion: '1.0.0',
+        operation: 'finance-document-delete',
+        actionHash: proposal.payloadHash,
+        executionBindingHash: proposal.providerAuthorityBindingHash,
+        targetBindingHash: hash('f'),
+      },
+    });
+    const read = poolFor((sql) =>
+      sql.includes('from emdo.action_proposals')
+        ? [
+            {
+              proposal: {
+                ...guardedProposal,
+                createdAt: '2026-08-10T10:00:00.000-04:00',
+                expiresAt: '2026-08-10T10:10:00.000-04:00',
+              },
+            },
+          ]
+        : [],
+    );
+    const repository = repositoryFor(read.pool, poolFor(() => []).pool);
+
+    await expect(
+      repository.transaction((transaction) =>
+        transaction.getProposal(guardedProposal.id),
+      ),
+    ).resolves.toEqual(guardedProposal);
+
+    const select = read.query.mock.calls.find(([sql]) =>
+      sql.includes('from emdo.action_proposals'),
+    )?.[0];
+    expect(select).toContain('proposal.guarded_action is null');
+    expect(select).toContain("'guardedAction', proposal.guarded_action");
   });
 
   it('destroys a read session whose commit response is ambiguous', async () => {
@@ -1410,6 +1466,8 @@ describe('PostgresProposalRepository', () => {
     const workflowProbe = workflow.query.mock.calls.find(([sql]) =>
       sql.includes('has_function_privilege'),
     );
+    expect(workflowProbe?.[0]).toMatch(/\bcoalesce\(/u);
+    expect(workflowProbe?.[0]).not.toContain('pg_catalog.coalesce');
     expect(workflowProbe?.[1]?.[0]).toEqual([
       'emdo.commit_provider_proposal_create(text,jsonb)',
       'emdo.commit_provider_proposal_abandonment(jsonb)',
@@ -1465,6 +1523,8 @@ describe('PostgresProposalRepository', () => {
       'emdo.resolve_provider_proposal_decision_replay(uuid,uuid,text,text,uuid)',
     );
     expect(apiProbe).toContain('relforcerowsecurity');
+    expect(apiProbe).toMatch(/\bcoalesce\(/u);
+    expect(apiProbe).not.toContain('pg_catalog.coalesce');
 
     const decisionProbe = decision.query.mock.calls.find(([sql]) =>
       sql.includes('visual_decision_commit_readiness'),
@@ -1477,6 +1537,8 @@ describe('PostgresProposalRepository', () => {
     );
     expect(decisionProbe).toContain('has_table_privilege');
     expect(decisionProbe).toContain('pg_auth_members');
+    expect(decisionProbe).toMatch(/\bcoalesce\(/u);
+    expect(decisionProbe).not.toContain('pg_catalog.coalesce');
   });
 
   it('stays unavailable when either half of the visual-decision path fails', async () => {

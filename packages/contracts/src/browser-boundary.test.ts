@@ -25,6 +25,7 @@ describe('browser-safe contracts boundary', () => {
         'SchedulePageSchema',
         'SettingsViewSchema',
         'ShoppingPageSchema',
+        'SupportedLocaleSchema',
         'SyncOperationSchema',
         'TodayViewSchema',
         'UuidSchema',

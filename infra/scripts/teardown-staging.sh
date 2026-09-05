@@ -14,9 +14,21 @@ acquire_host_lock /var/lib/emdo/locks/capacity.lock staging_capacity_lock_fd
 state_dir="$STAGING_STATE_ROOT/$run_id"
 digest_lock="$state_dir/images.env"
 if [[ ! -d "$state_dir" ]]; then
+  assert_isolated_project_absent "emdo-staging-$run_id" "staging-$run_id"
   log "staging run $run_id is already absent"
   exit 0
 fi
+assert_governed_parent_chain "$state_dir" "$STAGING_STATE_ROOT"
+
+cleanup_failed_teardown() {
+  local exit_code=$?
+  trap - EXIT
+  if [[ -d "$state_dir" && ! -L "$state_dir" ]]; then
+    log "staging teardown failed; retaining protected run $run_id state for a verified retry"
+  fi
+  exit "$exit_code"
+}
+trap cleanup_failed_teardown EXIT
 
 assert_digest_lock "$digest_lock"
 export_digest_lock
@@ -34,7 +46,16 @@ export ACME_EMAIL='staging-invalid@emdo.invalid'
 export POWERSYNC_JWKS_URI='http://api:3000/.well-known/jwks.json'
 export SECRETS_DIR="${DEPLOY_CONFIG_SECRETS_DIR:-/etc/emdo/staging}"
 
+if finance_staging_marker_is_valid "$state_dir"; then
+  load_finance_synthetic_staging_state "$state_dir"
+else
+  disable_finance_synthetic_staging
+fi
+
 staging_compose down --volumes --remove-orphans --timeout 30
-find "$state_dir" -xdev -type f -delete
-rmdir "$state_dir"
-log "staging run $run_id and its named volumes were removed"
+assert_isolated_project_absent "$COMPOSE_PROJECT_NAME" "$DEPLOYMENT_NAMESPACE"
+remove_staging_run_state "$state_dir"
+[[ ! -e "$state_dir" && ! -L "$state_dir" ]] ||
+  die "staging run $run_id state remains after teardown"
+trap - EXIT
+log "staging run $run_id, named resources, keys, and state were removed"

@@ -1,5 +1,14 @@
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { generateKeyPairSync } from 'node:crypto';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +47,34 @@ const validExperienceCursorKeyring = Buffer.from(
     previous: [],
   }),
 ).toString('base64url');
+const financeHmacKeyring = (keyId: string, fill: number): string =>
+  Buffer.from(
+    JSON.stringify({
+      schemaVersion: 1,
+      current: {
+        keyId,
+        keyB64url: Buffer.alloc(32, fill).toString('base64url'),
+      },
+      previous: [],
+    }),
+  ).toString('base64url');
+const validFinanceApprovalCheckpointKeyring = financeHmacKeyring(
+  'finance-approval-checkpoint.current-1',
+  81,
+);
+const validFinanceVisualProofKeyring = financeHmacKeyring(
+  'finance-visual-proof.current-1',
+  82,
+);
+const validFinanceProposalCursorKeyring = financeHmacKeyring(
+  'finance-proposal-cursor.current-1',
+  83,
+);
+const validFinanceInvitationDeliveryPublicKey = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+})
+  .publicKey.export({ type: 'spki', format: 'der' })
+  .toString('base64url');
 const validStagingCoreApiEnvironment = [
   'EMDO_PUBLIC_ORIGIN=https://staging.example.invalid',
   'EMDO_API_DATABASE_URL=postgresql://emdo_api_login:fixture@postgres:5432/emdo_app?sslmode=disable',
@@ -341,10 +378,26 @@ describe('deployment script trust boundaries', () => {
 
     await writeFile(apiEnvironment, `${core.join('\n')}\n`);
 
+    const onboardingPasswordCanary =
+      'onboarding_password_canary_0123456789ABCDEFG';
+    await writeFile(
+      apiEnvironment,
+      `${[
+        ...core,
+        `EMDO_ONBOARDING_DATABASE_URL=postgresql://emdo_onboarding_login:${onboardingPasswordCanary}@postgres:5432/emdo_app?sslmode=disable`,
+      ].join('\n')}\n`,
+    );
+    const onboardingRejected = runCommon(
+      'assert_staging_api_environment "$2"',
+      apiEnvironment,
+    );
+    expect(onboardingRejected.status).not.toBe(0);
+    expect(onboardingRejected.stdout).not.toContain(onboardingPasswordCanary);
+    expect(onboardingRejected.stderr).not.toContain(onboardingPasswordCanary);
+
     for (const optionalLine of [
       'EMDO_GOOGLE_IDENTITY_CLIENT_ID=123456789012-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com',
       'EMDO_GOOGLE_IDENTITY_CLIENT_SECRET=staging-google-client-secret',
-      'EMDO_ONBOARDING_DATABASE_URL=postgresql://emdo_onboarding_login:fixture@postgres:5432/emdo_app?sslmode=disable',
       'EMDO_RESEND_AUTH_API_KEY=re_staging_auth_provider_key_0123456789',
       'EMDO_RESEND_FROM_EMAIL=auth@staging.emdo.invalid',
       'EMDO_TRANSACTIONAL_EMAIL_PROVIDER=resend',
@@ -553,6 +606,351 @@ describe('deployment script trust boundaries', () => {
           .status,
       ).not.toBe(0);
     }
+  });
+
+  it('selects the Finance compose overlay only for an explicit synthetic opt-in', () => {
+    const composeInvocation = (enabled: string) =>
+      runCommon(
+        `docker() { printf '%s\\n' "$@"; }; COMPOSE_PROJECT_NAME=emdo-staging-123; EMDO_FINANCE_SYNTHETIC_STAGING=${enabled}; staging_compose config`,
+      );
+
+    const baseline = composeInvocation('false');
+    const finance = composeInvocation('true');
+    const invalid = composeInvocation('unexpected');
+
+    expect(baseline.status).toBe(0);
+    expect(baseline.stdout).toContain('compose.staging.yml');
+    expect(baseline.stdout).not.toContain('compose.finance-staging.yml');
+    expect(finance.status).toBe(0);
+    expect(finance.stdout).toContain('compose.staging.yml');
+    expect(finance.stdout).toContain('compose.finance-staging.yml');
+    expect(invalid.status).not.toBe(0);
+    expect(invalid.stderr).toContain('EMDO_FINANCE_SYNTHETIC_STAGING');
+  });
+
+  it('keeps the Finance extraction credential isolated while admitting a separately gated agent credential only to the Finance API overlay', async () => {
+    const apiEnvironment = join(directory, 'finance-api.env');
+    const extractionEnvironment = join(directory, 'finance-extraction.env');
+    const stagingApiEnvironment = join(directory, 'api.env');
+    const documentKeyring = Buffer.from(
+      JSON.stringify({
+        schemaVersion: 1,
+        current: {
+          keyVersion: 'finance-documents.v1',
+          keyB64url: Buffer.alloc(32, 71).toString('base64url'),
+        },
+        previous: [],
+      }),
+    ).toString('base64url');
+    const financeApiKey = 'finance_staging_openai_key_0123456789';
+    const agentApiKey = `sk-proj-${'a'.repeat(40)}`;
+
+    await writeFile(
+      apiEnvironment,
+      [
+        'EMDO_FINANCE_DOCUMENTS_ENABLED=true',
+        `EMDO_FINANCE_DOCUMENT_KEYRING_B64URL=${documentKeyring}`,
+        `EMDO_FINANCE_DOCUMENT_REVIEW_HMAC_KEY_B64URL=${'R'.repeat(43)}`,
+        'EMDO_ONBOARDING_DATABASE_URL=postgresql://emdo_onboarding_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+        'EMDO_WORKFLOW_DATABASE_URL=postgresql://emdo_workflow_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+        `EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL=${validFinanceApprovalCheckpointKeyring}`,
+        `EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL=${validFinanceVisualProofKeyring}`,
+        `EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL=${validFinanceProposalCursorKeyring}`,
+        'EMDO_INVITATION_DELIVERY_KEY_ID=finance-staging-123-invitation-delivery',
+        `EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL=${validFinanceInvitationDeliveryPublicKey}`,
+        '',
+      ].join('\n'),
+      { mode: 0o600 },
+    );
+    await writeFile(
+      extractionEnvironment,
+      [
+        'EMDO_FINANCE_DOCUMENTS_ENABLED=true',
+        'EMDO_WORKER_EXECUTOR_DATABASE_URL=postgresql://emdo_worker_executor_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+        `EMDO_FINANCE_DOCUMENT_KEYRING_B64URL=${documentKeyring}`,
+        `EMDO_OPENAI_FINANCE_API_KEY=${financeApiKey}`,
+        '',
+      ].join('\n'),
+      { mode: 0o600 },
+    );
+    await writeFile(
+      stagingApiEnvironment,
+      `${[...validStagingCoreApiEnvironment, `EMDO_OPENAI_FINANCE_API_KEY=${financeApiKey}`].join('\n')}\n`,
+      { mode: 0o600 },
+    );
+
+    expect(
+      runCommon('assert_finance_staging_api_environment "$2"', apiEnvironment)
+        .status,
+    ).toBe(0);
+    expect(
+      runCommon(
+        'assert_finance_staging_extraction_environment "$2"',
+        extractionEnvironment,
+      ).status,
+    ).toBe(0);
+    expect(
+      runCommon('assert_staging_api_environment "$2"', stagingApiEnvironment)
+        .status,
+    ).not.toBe(0);
+
+    await writeFile(
+      apiEnvironment,
+      `${(await readFile(apiEnvironment, 'utf8')).trimEnd()}\n${[
+        'EMDO_FINANCE_SYNTHETIC_STAGING_LIVE_CHAT=true',
+        `EMDO_OPENAI_AGENT_API_KEY=${agentApiKey}`,
+        'EMDO_OPENAI_AGENT_PRICING_VERSION=openai-2026-07-30.boc-2026-08-28.usdcad-1.3888.ceil',
+        'EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS=28',
+        'EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS=167',
+        'EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS=278',
+        'EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS=1667',
+      ].join('\n')}\n`,
+      { mode: 0o600 },
+    );
+    expect(
+      runCommon('assert_finance_staging_api_environment "$2"', apiEnvironment)
+        .status,
+    ).toBe(0);
+
+    await writeFile(
+      apiEnvironment,
+      [
+        'EMDO_FINANCE_DOCUMENTS_ENABLED=true',
+        `EMDO_FINANCE_DOCUMENT_KEYRING_B64URL=${documentKeyring}`,
+        `EMDO_FINANCE_DOCUMENT_REVIEW_HMAC_KEY_B64URL=${'R'.repeat(43)}`,
+        `EMDO_OPENAI_FINANCE_API_KEY=${financeApiKey}`,
+        'EMDO_ONBOARDING_DATABASE_URL=postgresql://emdo_onboarding_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+        'EMDO_WORKFLOW_DATABASE_URL=postgresql://emdo_workflow_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+        `EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL=${validFinanceApprovalCheckpointKeyring}`,
+        `EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL=${validFinanceVisualProofKeyring}`,
+        `EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL=${validFinanceProposalCursorKeyring}`,
+        'EMDO_INVITATION_DELIVERY_KEY_ID=finance-staging-123-invitation-delivery',
+        `EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL=${validFinanceInvitationDeliveryPublicKey}`,
+        '',
+      ].join('\n'),
+      { mode: 0o600 },
+    );
+    const apiProviderKeyRejected = runCommon(
+      'assert_finance_staging_api_environment "$2"',
+      apiEnvironment,
+    );
+    expect(apiProviderKeyRejected.status).not.toBe(0);
+    expect(apiProviderKeyRejected.stdout).not.toContain(financeApiKey);
+    expect(apiProviderKeyRejected.stderr).not.toContain(financeApiKey);
+    expect(apiProviderKeyRejected.stderr).not.toContain(agentApiKey);
+
+    await writeFile(
+      extractionEnvironment,
+      `${[
+        'EMDO_FINANCE_DOCUMENTS_ENABLED=true',
+        'EMDO_WORKER_EXECUTOR_DATABASE_URL=postgresql://emdo_worker_executor_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+        `EMDO_FINANCE_DOCUMENT_KEYRING_B64URL=${documentKeyring}`,
+      ].join('\n')}\n`,
+      { mode: 0o600 },
+    );
+    const missingKey = runCommon(
+      'assert_finance_staging_extraction_environment "$2"',
+      extractionEnvironment,
+    );
+    expect(missingKey.status).not.toBe(0);
+    expect(missingKey.stderr).not.toContain(financeApiKey);
+  });
+
+  it('requires the Finance-only manager authority envelope without admitting it to baseline api.env', async () => {
+    const financeApiEnvironment = join(directory, 'finance-api.env');
+    const baselineApiEnvironment = join(directory, 'api.env');
+    const documentKeyring = Buffer.from(
+      JSON.stringify({
+        schemaVersion: 1,
+        current: {
+          keyVersion: 'finance-documents.v1',
+          keyB64url: Buffer.alloc(32, 93).toString('base64url'),
+        },
+        previous: [],
+      }),
+    ).toString('base64url');
+    const workflowPassword = 'finance_workflow_password_canary_0123456789';
+
+    await writeFile(
+      financeApiEnvironment,
+      [
+        'EMDO_FINANCE_DOCUMENTS_ENABLED=true',
+        `EMDO_FINANCE_DOCUMENT_KEYRING_B64URL=${documentKeyring}`,
+        `EMDO_FINANCE_DOCUMENT_REVIEW_HMAC_KEY_B64URL=${'Q'.repeat(43)}`,
+        'EMDO_ONBOARDING_DATABASE_URL=postgresql://emdo_onboarding_login:fixture@postgres:5432/emdo_app?sslmode=disable',
+        `EMDO_WORKFLOW_DATABASE_URL=postgresql://emdo_workflow_login:${workflowPassword}@postgres:5432/emdo_app?sslmode=disable`,
+        `EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL=${validFinanceApprovalCheckpointKeyring}`,
+        `EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL=${validFinanceVisualProofKeyring}`,
+        `EMDO_PROPOSAL_CURSOR_HMAC_KEYRING_B64URL=${validFinanceProposalCursorKeyring}`,
+        'EMDO_INVITATION_DELIVERY_KEY_ID=finance-staging-123-invitation-delivery',
+        `EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL=${validFinanceInvitationDeliveryPublicKey}`,
+        '',
+      ].join('\n'),
+      { mode: 0o600 },
+    );
+    await writeFile(
+      baselineApiEnvironment,
+      `${[
+        ...validStagingCoreApiEnvironment,
+        `EMDO_WORKFLOW_DATABASE_URL=postgresql://emdo_workflow_login:${workflowPassword}@postgres:5432/emdo_app?sslmode=disable`,
+      ].join('\n')}\n`,
+      { mode: 0o600 },
+    );
+
+    expect(
+      runCommon(
+        'assert_finance_staging_api_environment "$2"',
+        financeApiEnvironment,
+      ).status,
+    ).toBe(0);
+    const baselineResult = runCommon(
+      'assert_staging_api_environment "$2"',
+      baselineApiEnvironment,
+    );
+    expect(baselineResult.status).not.toBe(0);
+    expect(baselineResult.stdout).not.toContain(workflowPassword);
+    expect(baselineResult.stderr).not.toContain(workflowPassword);
+
+    await writeFile(
+      financeApiEnvironment,
+      (await readFile(financeApiEnvironment, 'utf8')).replace(
+        'EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL=',
+        'EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL=not-a-keyring',
+      ),
+      { mode: 0o600 },
+    );
+    const invalidKeyring = runCommon(
+      'assert_finance_staging_api_environment "$2"',
+      financeApiEnvironment,
+    );
+    expect(invalidKeyring.status).not.toBe(0);
+    expect(invalidKeyring.stdout).not.toContain(workflowPassword);
+    expect(invalidKeyring.stderr).not.toContain(workflowPassword);
+  });
+
+  it('derives the Finance-only onboarding DSN from the dedicated password file', async () => {
+    const passwordPath = join(directory, 'onboarding_database_password');
+    const password = 'finance_onboarding_password_0123456789ABCDEFG';
+    await writeFile(passwordPath, `${password}\n`, { mode: 0o600 });
+
+    const result = runCommon(
+      [
+        'fake_mode="$3"; fake_owner="$4"; fake_links="$5"; fake_size="$6"',
+        'stat() { [[ "$1" == -c && "$#" == 3 ]] || return 64; case "$2" in "%a") printf "%s\\n" "$fake_mode" ;; "%u") printf "%s\\n" "$fake_owner" ;; "%h") printf "%s\\n" "$fake_links" ;; "%s") printf "%s\\n" "$fake_size" ;; *) return 64 ;; esac; }',
+        'finance_staging_onboarding_database_url "$2"',
+      ].join('; '),
+      passwordPath,
+      '600',
+      '0',
+      '1',
+      String(Buffer.byteLength(`${password}\n`)),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toBe(
+      `postgresql://emdo_onboarding_login:${password}@postgres:5432/emdo_app?sslmode=disable`,
+    );
+  });
+
+  it('derives the Finance-only workflow DSN from the protected workflow password file', async () => {
+    const passwordPath = join(directory, 'workflow_database_password');
+    const password = 'finance_workflow_password_0123456789ABCDEFG';
+    await writeFile(passwordPath, `${password}\n`, { mode: 0o600 });
+
+    const result = runCommon(
+      [
+        'fake_mode="$3"; fake_owner="$4"; fake_links="$5"; fake_size="$6"',
+        'stat() { [[ "$1" == -c && "$#" == 3 ]] || return 64; case "$2" in "%a") printf "%s\\n" "$fake_mode" ;; "%u") printf "%s\\n" "$fake_owner" ;; "%h") printf "%s\\n" "$fake_links" ;; "%s") printf "%s\\n" "$fake_size" ;; *) return 64 ;; esac; }',
+        'finance_staging_workflow_database_url "$2"',
+      ].join('; '),
+      passwordPath,
+      '600',
+      '0',
+      '1',
+      String(Buffer.byteLength(`${password}\n`)),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toBe(
+      `postgresql://emdo_workflow_login:${password}@postgres:5432/emdo_app?sslmode=disable`,
+    );
+  });
+
+  it('rejects malformed Finance onboarding password files without leaking values', async () => {
+    const passwordPath = join(directory, 'onboarding_database_password');
+    const canary = 'finance_onboarding_password_canary';
+    const invalidValues: readonly (string | Buffer)[] = [
+      `${canary}+invalid\n`,
+      `${canary}/invalid\n`,
+      `${canary}=invalid\n`,
+      `${canary} invalid\n`,
+      `${canary}\nsecond_line\n`,
+      '',
+      `${'a'.repeat(15)}\n`,
+      `${'a'.repeat(513)}\n`,
+      `${canary}\r\n`,
+      Buffer.concat([Buffer.from(canary), Buffer.from([0]), Buffer.from('\n')]),
+    ];
+
+    for (const invalidValue of invalidValues) {
+      await writeFile(passwordPath, invalidValue, { mode: 0o600 });
+      const result = runCommon(
+        'assert_root_owned_bounded_file() { require_regular_file "$1"; }; finance_staging_onboarding_database_url "$2"',
+        passwordPath,
+      );
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).not.toContain(canary);
+      expect(result.stderr).not.toContain(canary);
+    }
+  });
+
+  it.each([
+    ['mode', '644', '0', '1', '46'],
+    ['owner', '600', '501', '1', '46'],
+    ['hard link', '600', '0', '2', '46'],
+    ['empty size', '600', '0', '1', '0'],
+    ['oversized file', '600', '0', '1', '514'],
+  ])(
+    'rejects unsafe Finance onboarding password file %s metadata without leaking values',
+    async (_label, mode, owner, links, size) => {
+      const passwordPath = join(directory, 'onboarding_database_password');
+      const password = 'finance_onboarding_metadata_canary_0123456789';
+      await writeFile(passwordPath, `${password}\n`, { mode: 0o600 });
+
+      const result = runCommon(
+        [
+          'fake_mode="$3"; fake_owner="$4"; fake_links="$5"; fake_size="$6"',
+          'stat() { [[ "$1" == -c && "$#" == 3 ]] || return 64; case "$2" in "%a") printf "%s\\n" "$fake_mode" ;; "%u") printf "%s\\n" "$fake_owner" ;; "%h") printf "%s\\n" "$fake_links" ;; "%s") printf "%s\\n" "$fake_size" ;; *) return 64 ;; esac; }',
+          'finance_staging_onboarding_database_url "$2"',
+        ].join('; '),
+        passwordPath,
+        mode,
+        owner,
+        links,
+        size,
+      );
+
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).not.toContain(password);
+      expect(result.stderr).not.toContain(password);
+    },
+  );
+
+  it('reasserts the protected Finance onboarding password file boundary', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const helperSource = await readFile(commonPath, 'utf8');
+
+    expect(helperSource).toContain(
+      'assert_root_owned_bounded_file "$password_file" 600 513',
+    );
+    expect(helperSource).toContain(
+      '"$SECRETS_DIR/onboarding_database_password"',
+    );
+    expect(helperSource).not.toContain(
+      '"$SECRETS_DIR/api.env" EMDO_ONBOARDING_DATABASE_URL',
+    );
   });
 
   it('requires one high-entropy edge-proxy proof secret', async () => {

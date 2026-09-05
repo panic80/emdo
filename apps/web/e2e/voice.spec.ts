@@ -2,6 +2,9 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
 import { mockAuthenticatedSession } from './support.js';
 
+const productionPwaPreviewPort =
+  process.env.EMDO_PLAYWRIGHT_PRODUCTION_PORT ?? '4173';
+
 async function installVoiceBrowserMocks(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const track = { stop: () => undefined };
@@ -694,9 +697,9 @@ test.describe('push-to-talk ephemeral lifecycle', () => {
     });
 
     await page.goto('/ask');
-    await page.evaluate(async () => {
-      if (location.port === '4173') await navigator.serviceWorker.ready;
-    });
+    if (new URL(page.url()).port === productionPwaPreviewPort) {
+      await page.evaluate(async () => navigator.serviceWorker.ready);
+    }
     await page.getByRole('button', { name: 'Start push-to-talk' }).click();
     await page.getByRole('button', { name: 'Start recording' }).click();
     await expect(page.getByText('Listening…')).toBeVisible();
@@ -1100,7 +1103,8 @@ test.describe('push-to-talk ephemeral lifecycle', () => {
     expect(persistentState.voiceNamedArtifacts).toEqual([]);
 
     const pageOrigin = new URL(page.url()).origin;
-    const isProductionPwaPreview = new URL(page.url()).port === '4173';
+    const isProductionPwaPreview =
+      new URL(page.url()).port === productionPwaPreviewPort;
     if (isProductionPwaPreview) {
       expect(persistentState.cacheNames).toEqual([
         `workbox-precache-v2-${pageOrigin}/`,
@@ -1202,9 +1206,9 @@ test.describe('push-to-talk ephemeral lifecycle', () => {
     });
 
     await page.goto('/ask');
-    await page.evaluate(async () => {
-      if (location.port === '4173') await navigator.serviceWorker.ready;
-    });
+    if (new URL(page.url()).port === productionPwaPreviewPort) {
+      await page.evaluate(async () => navigator.serviceWorker.ready);
+    }
     await expect(page.getByRole('heading', { name: 'Ask EMDO' })).toBeVisible();
     expect(await installedDurableMutationHooks(page)).toEqual(
       expect.arrayContaining([

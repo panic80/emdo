@@ -146,7 +146,8 @@ interface AgentSdkToolConfigBase {
 export type StandardAgentSdkToolConfig = AgentSdkToolConfigBase & {
   readonly canonicalCapabilityId: string;
   readonly capabilityKind: StandardAgentCapabilityKind;
-  readonly needsApproval: false;
+  /** Local-write/import capabilities may determine approval from trusted state. */
+  readonly needsApproval: boolean;
 };
 
 export type ProviderWriteAgentSdkToolConfig = AgentSdkToolConfigBase & {
@@ -187,6 +188,8 @@ export interface CompiledAgent<Agent = unknown> {
     options?: Readonly<{
       readonly exposeCapabilities?: boolean;
       readonly outputType?: z.ZodObject;
+      /** Server-owned phase guidance; it never comes from a model or client. */
+      readonly trustedInstructions?: readonly string[];
     }>,
   ): Agent;
 }
@@ -712,8 +715,11 @@ export class AgentFactory<Agent = unknown, Tool = unknown> {
         throw new Error('provider-write-approval-required');
       }
       if (
+        capability.descriptor.approval.rule ===
+          'authenticated-visual-proposal' &&
         capability.descriptor.capabilityKind !== 'provider-write' &&
-        capability.descriptor.approval.rule === 'authenticated-visual-proposal'
+        capability.descriptor.capabilityKind !== 'local-write' &&
+        capability.descriptor.capabilityKind !== 'import'
       ) {
         throw new Error('agent-capability-approval-mismatch');
       }
@@ -828,13 +834,19 @@ export class AgentFactory<Agent = unknown, Tool = unknown> {
                       ...common,
                       canonicalCapabilityId: descriptor.id,
                       capabilityKind: descriptor.capabilityKind,
-                      needsApproval: false,
+                      needsApproval:
+                        descriptor.approval.rule ===
+                        'authenticated-visual-proposal',
                     });
               }),
             );
       return this.#createAgent({
         name: manifest.id,
-        instructions: combinedInstructions,
+        instructions:
+          options.trustedInstructions === undefined ||
+          options.trustedInstructions.length === 0
+            ? combinedInstructions
+            : `${combinedInstructions}\n\n${options.trustedInstructions.join('\n')}`,
         model,
         tools,
         outputType: options.outputType ?? outputSchema,

@@ -48,7 +48,7 @@ const quoteIdentifier = (value: string): string => {
 };
 
 describeDatabase(
-  'PostgreSQL Better Auth claim bridge (requires isolated PostgreSQL 17 TEST_DATABASE_URL)',
+  'PostgreSQL Better Auth claim bridge (requires isolated PostgreSQL 18 TEST_DATABASE_URL)',
   () => {
     let adminPool: import('pg').Pool;
     let authPool: import('pg').Pool;
@@ -70,8 +70,9 @@ describeDatabase(
         server_version_num: string;
       }>("select current_setting('server_version_num') as server_version_num");
       expect(Number(server.rows[0]?.server_version_num)).toBeGreaterThanOrEqual(
-        170_000,
+        180_000,
       );
+      expect(Number(server.rows[0]?.server_version_num)).toBeLessThan(190_000);
 
       const preexistingRoles = await adminPool.query<{ rolname: string }>(
         `select rolname from pg_catalog.pg_roles

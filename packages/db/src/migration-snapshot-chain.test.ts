@@ -8,6 +8,7 @@ import {
   financeImportFingerprints,
   financeImportPlans,
   financeImportReceipts,
+  financeSpecialistRecordReceipts,
   googleOAuthAuthorizationStarts,
   googleOAuthDisconnectOperations,
 } from './schema.js';
@@ -48,6 +49,15 @@ const tableDelta = (previous: Snapshot, current: Snapshot) => {
   };
 };
 
+const snapshotColumns = (
+  snapshot: Snapshot,
+  table: string,
+): readonly string[] =>
+  Object.keys(
+    (snapshot.tables[table] as { readonly columns: Record<string, unknown> })
+      .columns,
+  );
+
 describe('ordered migration snapshot chain', () => {
   it('has one continuous snapshot for every exact journal entry', async () => {
     const [journal, files] = await Promise.all([
@@ -60,7 +70,8 @@ describe('ordered migration snapshot chain', () => {
       readdir(metadataUrl),
     ]);
     expect(journal.entries.map(({ idx }) => idx)).toEqual([
-      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+      21, 22,
     ]);
     expect(journal.entries.map(({ tag }) => tag)).toEqual([
       '0000_household_foundation',
@@ -79,22 +90,75 @@ describe('ordered migration snapshot chain', () => {
       '0013_google_oauth_disconnect_retention_runner',
       '0014_audio_spend_readiness',
       '0015_single_household_session_activation',
+      '0016_finance_document_knowledge',
+      '0017_approval_resume_public_events',
+      '0018_finance_guarded_proposal_authority',
+      '0019_manager_turn_spend_warning',
+      '0020_manager_specialist_disclosure',
+      '0021_blocked_visual_decision_claim',
+      '0022_registered_agent_invocation_lineage',
     ]);
     expect(
       files.filter((file) => /^\d{4}_snapshot\.json$/u.test(file)).sort(),
     ).toEqual(
       Array.from(
-        { length: 16 },
+        { length: 23 },
         (_, index) => `${index.toString().padStart(4, '0')}_snapshot.json`,
       ),
     );
 
     const snapshots = await Promise.all(
-      Array.from({ length: 16 }, (_, index) => readSnapshot(index)),
+      Array.from({ length: 23 }, (_, index) => readSnapshot(index)),
     );
     expect(snapshots[0]?.prevId).toBe('00000000-0000-0000-0000-000000000000');
     for (let index = 1; index < snapshots.length; index += 1) {
       expect(snapshots[index]?.prevId).toBe(snapshots[index - 1]?.id);
+    }
+    expect(tableDelta(snapshots[16]!, snapshots[17]!)).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[17]!, snapshots[18]!)).toEqual({
+      added: [],
+      changed: ['emdo.action_proposals'],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[18]!, snapshots[19]!)).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[19]!, snapshots[20]!)).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[20]!, snapshots[21]!)).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[21]!, snapshots[22]!)).toEqual({
+      added: [],
+      changed: ['emdo.disclosure_grants'],
+      removed: [],
+    });
+    for (const snapshot of [snapshots[16]!, snapshots[17]!]) {
+      expect(snapshotColumns(snapshot, 'emdo.finance_documents')).toEqual(
+        expect.arrayContaining([
+          'deletion_proposal_id',
+          'deletion_decision_id',
+          'deletion_target_binding_hash',
+          'deletion_execution_binding_hash',
+        ]),
+      );
+      expect(
+        snapshotColumns(snapshot, 'emdo.finance_document_chunks'),
+      ).not.toEqual(expect.arrayContaining(['deletion_proposal_id']));
+      expect(
+        snapshotColumns(snapshot, 'emdo.finance_document_evidence'),
+      ).not.toEqual(expect.arrayContaining(['deletion_proposal_id']));
     }
   });
 
@@ -198,6 +262,20 @@ describe('ordered migration snapshot chain', () => {
       changed: [],
       removed: [],
     });
+    const snapshot16 = await readSnapshot(16);
+    expect(tableDelta(snapshot15, snapshot16)).toEqual({
+      added: [
+        'emdo.finance_document_chunks',
+        'emdo.finance_document_evidence',
+        'emdo.finance_document_extractions',
+        'emdo.finance_document_matches',
+        'emdo.finance_document_review_batches',
+        'emdo.finance_documents',
+        'emdo.finance_specialist_record_receipts',
+      ],
+      changed: [],
+      removed: [],
+    });
   });
 
   it('keeps 0008 finance foreign keys and checks fully represented before the additive OAuth snapshot', async () => {
@@ -296,6 +374,32 @@ describe('ordered migration snapshot chain', () => {
       readonly checkConstraints: Readonly<Record<string, unknown>>;
     };
     const config = getTableConfig(googleOAuthDisconnectOperations);
+
+    expect(Object.keys(stored.indexes).sort()).toEqual(
+      config.indexes.map((index) => index.config.name).sort(),
+    );
+    expect(Object.keys(stored.foreignKeys).sort()).toEqual(
+      config.foreignKeys.map((key) => key.reference().name).sort(),
+    );
+    expect(Object.keys(stored.uniqueConstraints).sort()).toEqual(
+      config.uniqueConstraints.map((constraint) => constraint.name).sort(),
+    );
+    expect(Object.keys(stored.checkConstraints).sort()).toEqual(
+      config.checks.map((check) => check.name).sort(),
+    );
+  });
+
+  it('keeps the 0016 Finance specialist receipt snapshot aligned with its narrow durable schema', async () => {
+    const snapshot16 = await readSnapshot(16);
+    const stored = snapshot16.tables[
+      'emdo.finance_specialist_record_receipts'
+    ] as {
+      readonly indexes: Readonly<Record<string, unknown>>;
+      readonly foreignKeys: Readonly<Record<string, unknown>>;
+      readonly uniqueConstraints: Readonly<Record<string, unknown>>;
+      readonly checkConstraints: Readonly<Record<string, unknown>>;
+    };
+    const config = getTableConfig(financeSpecialistRecordReceipts);
 
     expect(Object.keys(stored.indexes).sort()).toEqual(
       config.indexes.map((index) => index.config.name).sort(),

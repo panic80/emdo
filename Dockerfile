@@ -30,6 +30,7 @@ RUN test -f apps/api/dist/index.js \
     && test -f apps/api/dist/cli/staging-acceptance.js \
     && test -f apps/worker/dist/index.js \
     && test -f apps/worker/dist/cli/migrate-jobs.js \
+    && test -f apps/worker/dist/cli/finance-document-extraction.js \
     && test -f apps/web/dist/index.html
 # Release images never carry embedded workspace sources or developer type
 # declarations. Keep detailed traces in governed runtime storage, not maps.
@@ -52,7 +53,7 @@ RUN cd /opt/emdo/api \
 # Import the worker from its pruned production closure, not workspace modules.
 RUN cd /opt/emdo/worker \
     && node --input-type=module --eval \
-      "const worker = await import('./dist/index.js'); const runtime = worker.createUnavailableWorkerProviderRuntime(); if (runtime.status.overall !== 'degraded') throw new Error('worker provider fallback smoke failed')"
+      "const [worker] = await Promise.all([import('./dist/index.js'), import('./dist/cli/finance-document-extraction.js')]); const runtime = worker.createUnavailableWorkerProviderRuntime(); if (runtime.status.overall !== 'degraded') throw new Error('worker provider fallback smoke failed')"
 
 ARG SOURCE_SHA=unknown
 ARG BUILD_CREATED=unknown

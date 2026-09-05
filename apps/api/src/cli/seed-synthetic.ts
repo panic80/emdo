@@ -20,6 +20,7 @@ const SyntheticSeedConfigurationSchema = z.strictObject({
   clientId: z.uuid(),
   environment: z.literal('staging'),
   externalProvidersEnabled: z.literal('false'),
+  financeSyntheticStaging: z.enum(['true', 'false']).optional(),
   householdName: z.string().trim().min(1).max(100),
   householdSlug: z
     .string()
@@ -65,6 +66,12 @@ const SyncClientRegistrationResponseSchema = z.strictObject({
   clientId: z.uuid(),
   status: z.literal('registered'),
   replayed: z.boolean(),
+});
+
+const FinanceSyntheticAccountResponseSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  accountId: z.literal('synthetic-finance-account-v1'),
+  status: z.enum(['applied', 'duplicate']),
 });
 
 const SyncResultSchema = z.strictObject({
@@ -138,6 +145,7 @@ type SyntheticSeedStage =
   | 'sync-client'
   | 'sync-token'
   | 'private-space'
+  | 'finance-account'
   | 'sync-upload'
   | 'unexpected';
 
@@ -226,6 +234,7 @@ const executeSyntheticSeedCommand = async (input: {
       environment: input.environment.EMDO_ENVIRONMENT,
       externalProvidersEnabled:
         input.environment.EMDO_EXTERNAL_PROVIDERS_ENABLED,
+      financeSyntheticStaging: input.environment.EMDO_FINANCE_SYNTHETIC_STAGING,
       householdName: input.environment.EMDO_BOOTSTRAP_HOUSEHOLD_NAME,
       householdSlug: input.environment.EMDO_BOOTSTRAP_HOUSEHOLD_SLUG,
       ownerEmail: input.environment.EMDO_SYNTHETIC_OWNER_EMAIL,
@@ -296,7 +305,6 @@ const executeSyntheticSeedCommand = async (input: {
     }
     return values;
   });
-
   const csrfResponse = await withinStage('csrf-request', async () =>
     request(
       new Request(`${config.apiOrigin}/api/v1/auth/csrf`, {
@@ -420,7 +428,33 @@ const executeSyntheticSeedCommand = async (input: {
       actorIntent: 'Create the deterministic shopping staging fixture',
       createdAt,
     }),
-  ] as const;
+  ];
+  if (config.financeSyntheticStaging === 'true') {
+    await withinStage('finance-account', async () => {
+      const account = await json(
+        await request(
+          new Request(
+            `${config.apiOrigin}/api/internal/finance-synthetic/account`,
+            {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                cookie: cookies.join('; '),
+                origin: config.publicOrigin,
+                'x-csrf-token': csrf.token,
+                'idempotency-key': 'synthetic-finance-account-seed-v1',
+              },
+              body: JSON.stringify({ schemaVersion: 1 }),
+            },
+          ),
+        ),
+        FinanceSyntheticAccountResponseSchema,
+      );
+      if (account.accountId !== 'synthetic-finance-account-v1') {
+        throw new Error('invalid');
+      }
+    });
+  }
   await withinStage('sync-upload', async () => {
     const upload = await json(
       await request(

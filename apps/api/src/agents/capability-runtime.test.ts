@@ -25,6 +25,7 @@ import {
   REQUIRED_CAPABILITY_BINDING_KINDS,
   capabilitySchemaRegistrations,
   createProductionCapabilityRuntime,
+  parseSpecialistCapabilityOutput,
   parseProductionProviderWriteCapabilityId,
   type ProductionCapabilityBindings,
   type SpecialistCapabilityId,
@@ -41,6 +42,9 @@ const IDS = {
   privateSpace: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f008',
   session: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f009',
   spaceAccessGrant: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f00a',
+  parentInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f00b',
+  agentInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f00c',
+  phaseInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f00d',
 } as const;
 
 const authorizationScopeFingerprint =
@@ -67,6 +71,27 @@ const operationScope = Object.freeze({
 const authorityResolution = Object.freeze({
   authorityBinding,
   operationScope,
+});
+const invocationContext = Object.freeze({
+  orchestrationRunId: IDS.run,
+  parentInvocationId: IDS.parentInvocation,
+  agentInvocationId: IDS.agentInvocation,
+  phaseInvocationId: IDS.phaseInvocation,
+  actorId: IDS.user,
+  locale: 'en-CA' as const,
+  grantedCapabilities: Object.freeze(['google-calendar.event.create']),
+  disclosedContextRefs: Object.freeze([
+    `context-ref-${hashCanonicalJson({
+      dataClass: 'calendar.events',
+      recordId: 'event-target-1',
+    })}`,
+  ]),
+  deadline: '2026-08-09T16:10:00.000Z',
+  idempotencyScope: '3'.repeat(64),
+});
+const invocationBinding = Object.freeze({
+  invocationContext,
+  invocationContextHash: hashCanonicalJson(invocationContext),
 });
 
 const authorityResolvers = () => ({
@@ -129,6 +154,7 @@ const proposal = (input: {
     agentId: 'scheduler',
     purpose: 'Prepare the requested Calendar event proposal.',
     runId: IDS.run,
+    ...invocationBinding,
     recordAllowlist: [
       {
         dataClass: 'calendar.events',
@@ -301,25 +327,22 @@ const specialistSchemaSamples = {
   'finance.statement.import': {
     input: {
       schemaVersion: 1,
-      request: {
-        kind: 'preview',
-        sourceReference: 'upload-1',
-        accountId: 'account-1',
-        mappingReference: 'mapping-1',
-      },
+      request: { kind: 'commit', planId: 'reviewed-plan-1' },
     },
     output: {
       schemaVersion: 1,
       result: {
-        status: 'preview-ready',
-        previewId: 'preview-1',
-        acceptedRows: 10,
-        rejectedRows: 1,
-        duplicateRows: 2,
+        status: 'confirmation-required',
+        proposal: {
+          state: 'proposed',
+          operation: 'finance-statement-import-commit',
+          channel: 'emdo-authenticated-visual',
+          canonicalHash: 'a'.repeat(64),
+        },
       },
     },
   },
-  'finance.budget.calculate': {
+  'finance.analytics.calculate': {
     input: { schemaVersion: 1, month: '2026-08' },
     output: {
       schemaVersion: 1,
@@ -335,6 +358,93 @@ const specialistSchemaSamples = {
           netCadMinor: 0,
         },
       },
+    },
+  },
+  'finance.documents.search': {
+    input: {
+      schemaVersion: 1,
+      query: 'Example Market',
+      documentTypes: ['receipt'],
+      from: '2026-08-01',
+      to: '2026-08-31',
+      limit: 10,
+    },
+    output: {
+      schemaVersion: 1,
+      hits: [
+        {
+          documentId: 'document-1',
+          documentType: 'receipt',
+          displayName: 'Example Market receipt',
+          occurredOn: '2026-08-11',
+          currency: 'CAD',
+          amountMinor: 1299,
+          score: 0.98,
+          evidence: [
+            {
+              evidenceId: 'evidence-1',
+              documentId: 'document-1',
+              documentType: 'receipt',
+              displayName: 'Example Market receipt',
+              page: 1,
+              excerpt: 'Groceries 12.99 CAD',
+              sourceLocale: 'en-CA',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  'finance.documents.read': {
+    input: {
+      schemaVersion: 1,
+      documentId: 'document-1',
+      evidenceIds: ['evidence-1'],
+    },
+    output: {
+      schemaVersion: 1,
+      document: {
+        id: 'document-1',
+        documentType: 'receipt',
+        displayName: 'Example Market receipt',
+        sourceLocale: 'en-CA',
+        currency: 'CAD',
+        summary: 'A receipt for groceries totaling 12.99 CAD.',
+        committedAt: instant,
+      },
+      evidence: [
+        {
+          evidenceId: 'evidence-1',
+          documentId: 'document-1',
+          documentType: 'receipt',
+          displayName: 'Example Market receipt',
+          page: 1,
+          excerpt: 'Groceries 12.99 CAD',
+          sourceLocale: 'en-CA',
+        },
+      ],
+    },
+  },
+  'finance.matches.read': {
+    input: {
+      schemaVersion: 1,
+      documentId: 'document-1',
+      states: ['suggested'],
+      limit: 25,
+    },
+    output: {
+      schemaVersion: 1,
+      matches: [
+        {
+          matchId: 'match-1',
+          documentId: 'document-1',
+          recordId: 'transaction-1',
+          recordType: 'transaction',
+          state: 'suggested',
+          score: 0.98,
+          reasons: ['Amount and merchant match the transaction.'],
+        },
+      ],
     },
   },
   'shopping.items.read': {
@@ -473,8 +583,8 @@ describe('production capability runtime conformance', () => {
       ...authorityResolvers(),
     });
 
-    expect(runtime.registry.size).toBe(19);
-    expect(runtime.schemas.size).toBe(40);
+    expect(runtime.registry.size).toBe(22);
+    expect(runtime.schemas.size).toBe(46);
     expect(
       runtime.registry.resolveForAgent({
         manifest: runtime.manifests.scheduler,
@@ -486,7 +596,7 @@ describe('production capability runtime conformance', () => {
         manifest: runtime.manifests.finance,
         requestedCapabilityIds: runtime.manifests.finance.capabilityAllowlist,
       }),
-    ).toHaveLength(4);
+    ).toHaveLength(7);
     expect(
       runtime.registry.resolveForAgent({
         manifest: runtime.manifests.shopping,
@@ -588,6 +698,7 @@ describe('production capability runtime conformance', () => {
         householdId: IDS.household,
         sessionId: IDS.session,
         agentId: 'untrusted-agent-name',
+        locale: 'en-CA',
         spaceAccessGrantId: IDS.spaceAccessGrant,
         disclosureGrantId: IDS.grant,
         approvalDecisionId: IDS.decision,
@@ -625,6 +736,7 @@ describe('production capability runtime conformance', () => {
       authorizationScopeFingerprint,
       disclosureGrantId: IDS.grant,
       disclosureGrantVersion: '1.0.0',
+      ...invocationBinding,
       sdkCallId: 'call-google-calendar-create-1',
       abortSignal: new AbortController().signal,
     } as const;
@@ -692,6 +804,7 @@ describe('production capability runtime conformance', () => {
       authorizationScopeFingerprint,
       disclosureGrantId: IDS.grant,
       disclosureGrantVersion: '7.2.5',
+      ...invocationBinding,
       sdkCallId: 'call-google-calendar-create-versioned',
       abortSignal: new AbortController().signal,
     } as const;
@@ -761,6 +874,7 @@ describe('production capability runtime conformance', () => {
       authorizationScopeFingerprint,
       disclosureGrantId: IDS.grant,
       disclosureGrantVersion: '1.0.0',
+      ...invocationBinding,
       sdkCallId: 'call-google-calendar-create-rotated',
       abortSignal: new AbortController().signal,
     } as const;
@@ -815,16 +929,16 @@ describe('production capability runtime conformance', () => {
         ...ALL_MANAGER_DELEGATION_CAPABILITY_IDS,
       ].sort(),
     );
-    expect(new Set(ALL_SPECIALIST_CAPABILITY_IDS).size).toBe(16);
+    expect(new Set(ALL_SPECIALIST_CAPABILITY_IDS).size).toBe(19);
     expect(new Set(ALL_MANAGER_DELEGATION_CAPABILITY_IDS).size).toBe(3);
   });
 
   it('uses distinct strict schemas for every specialist capability', () => {
-    expect(capabilitySchemaRegistrations).toHaveLength(32);
+    expect(capabilitySchemaRegistrations).toHaveLength(38);
     const references = capabilitySchemaRegistrations.map(
       ({ reference }) => `${reference.id}@${reference.version}`,
     );
-    expect(new Set(references).size).toBe(32);
+    expect(new Set(references).size).toBe(38);
     expect(
       capabilitySchemaRegistrations.every(
         ({ schema, reference }) =>
@@ -877,6 +991,49 @@ describe('production capability runtime conformance', () => {
         ).toBe(false);
       }
     }
+  });
+
+  it('accepts only hash-bound EMDO Finance confirmation proposals', () => {
+    const proposal = {
+      schemaVersion: 1 as const,
+      result: {
+        status: 'confirmation-required' as const,
+        proposal: {
+          state: 'proposed' as const,
+          operation: 'finance-reversal' as const,
+          channel: 'emdo-authenticated-visual' as const,
+          canonicalHash: 'a'.repeat(64),
+        },
+      },
+    };
+
+    expect(
+      parseSpecialistCapabilityOutput('finance.records.write', proposal),
+    ).toEqual(proposal);
+    expect(
+      parseSpecialistCapabilityOutput('finance.statement.import', {
+        ...proposal,
+        result: {
+          ...proposal.result,
+          proposal: {
+            ...proposal.result.proposal,
+            operation: 'finance-statement-import-commit',
+          },
+        },
+      }),
+    ).toMatchObject({ result: { status: 'confirmation-required' } });
+    expect(() =>
+      parseSpecialistCapabilityOutput('finance.records.write', {
+        ...proposal,
+        result: {
+          ...proposal.result,
+          proposal: {
+            ...proposal.result.proposal,
+            channel: 'finance-specialist-direct',
+          },
+        },
+      }),
+    ).toThrow();
   });
 
   it('converts every specialist input and output through the real strict SDK tool boundary', () => {

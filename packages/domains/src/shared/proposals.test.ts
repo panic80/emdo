@@ -37,6 +37,9 @@ const ids = {
   currentRequest: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f015',
   currentSpaceGrant: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f016',
   originSpaceGrant: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f017',
+  parentInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f018',
+  agentInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f019',
+  phaseInvocation: '018f1f5e-6f47-7d61-a6dd-1e86f8b8f020',
 } as const;
 
 const argumentsValue = { calendarId: 'primary', title: 'Dentist' };
@@ -69,6 +72,23 @@ const approvalDisplay = {
   afterSummary: 'One event will be created with the approved details.',
   fields: [{ label: 'Title', value: 'Dentist' }],
 } as const;
+const invocationContext = {
+  orchestrationRunId: ids.run,
+  parentInvocationId: ids.parentInvocation,
+  agentInvocationId: ids.agentInvocation,
+  phaseInvocationId: ids.phaseInvocation,
+  actorId: ids.user,
+  locale: 'en-CA',
+  grantedCapabilities: ['google-calendar.event.create'],
+  disclosedContextRefs: [
+    `context-ref-${hashCanonicalJson({
+      dataClass: 'calendar.events',
+      recordId: 'primary',
+    })}`,
+  ],
+  deadline: '2026-08-09T16:10:00.000Z',
+  idempotencyScope: '1'.repeat(64),
+} as const;
 const proposalInput = {
   schemaVersion: 1,
   id: ids.proposal,
@@ -99,6 +119,8 @@ const proposalInput = {
     agentId: 'scheduler',
     purpose: 'Create the approved appointment.',
     runId: ids.run,
+    invocationContext,
+    invocationContextHash: hashCanonicalJson(invocationContext),
     recordAllowlist: [
       { dataClass: 'calendar.events', recordId: 'primary', fields: ['title'] },
     ],
@@ -242,6 +264,128 @@ class ClockAdvancingProposalRepository extends InMemoryProposalRepository {
       }
     }
     return super.transaction(work);
+  }
+}
+
+class CountingDecisionCommitRepository extends InMemoryProposalRepository {
+  decisionCommitCount = 0;
+
+  override async transaction<Result>(
+    work: (transaction: ProposalRepositoryTransaction) => Promise<Result>,
+  ): Promise<Result> {
+    return super.transaction((transaction) =>
+      work(
+        Object.freeze({
+          ...transaction,
+          commitDecision: async (
+            input: Parameters<
+              ProposalRepositoryTransaction['commitDecision']
+            >[0],
+          ) => {
+            this.decisionCommitCount += 1;
+            return transaction.commitDecision(input);
+          },
+        }),
+      ),
+    );
+  }
+}
+
+class DuplicateDecisionCommitRepository extends CountingDecisionCommitRepository {
+  private reportDuplicateOnce = true;
+
+  override async transaction<Result>(
+    work: (transaction: ProposalRepositoryTransaction) => Promise<Result>,
+  ): Promise<Result> {
+    return super.transaction((transaction) =>
+      work(
+        Object.freeze({
+          ...transaction,
+          commitDecision: async (
+            input: Parameters<
+              ProposalRepositoryTransaction['commitDecision']
+            >[0],
+          ) => {
+            const result = await transaction.commitDecision(input);
+            if (this.reportDuplicateOnce && result === 'created') {
+              this.reportDuplicateOnce = false;
+              return 'duplicate';
+            }
+            return result;
+          },
+        }),
+      ),
+    );
+  }
+}
+
+class ConflictAfterPersistedDecisionRepository extends CountingDecisionCommitRepository {
+  private reportConflictOnce = true;
+
+  override async transaction<Result>(
+    work: (transaction: ProposalRepositoryTransaction) => Promise<Result>,
+  ): Promise<Result> {
+    return super.transaction((transaction) =>
+      work(
+        Object.freeze({
+          ...transaction,
+          commitDecision: async (
+            input: Parameters<
+              ProposalRepositoryTransaction['commitDecision']
+            >[0],
+          ) => {
+            const result = await transaction.commitDecision(input);
+            if (this.reportConflictOnce && result === 'created') {
+              this.reportConflictOnce = false;
+              return 'conflict';
+            }
+            return result;
+          },
+        }),
+      ),
+    );
+  }
+}
+
+class ConcurrentDecisionReadBarrierRepository extends CountingDecisionCommitRepository {
+  private absentDecisionReads = 0;
+  private readonly bothAbsentReadsObserved: Promise<void>;
+  private releaseAbsentReads!: () => void;
+
+  constructor() {
+    super();
+    this.bothAbsentReadsObserved = new Promise<void>((resolve) => {
+      this.releaseAbsentReads = resolve;
+    });
+  }
+
+  override async transaction<Result>(
+    work: (transaction: ProposalRepositoryTransaction) => Promise<Result>,
+  ): Promise<Result> {
+    let observedAbsentDecision = false;
+    const result = await super.transaction((transaction) =>
+      work(
+        Object.freeze({
+          ...transaction,
+          findDecisionByIdempotencyKey: async (
+            lookup: Parameters<
+              ProposalRepositoryTransaction['findDecisionByIdempotencyKey']
+            >[0],
+          ) => {
+            const stored =
+              await transaction.findDecisionByIdempotencyKey(lookup);
+            if (stored === undefined) observedAbsentDecision = true;
+            return stored;
+          },
+        }),
+      ),
+    );
+    if (observedAbsentDecision && this.absentDecisionReads < 2) {
+      this.absentDecisionReads += 1;
+      if (this.absentDecisionReads === 2) this.releaseAbsentReads();
+      await this.bothAbsentReadsObserved;
+    }
+    return result;
   }
 }
 
@@ -425,6 +569,130 @@ describe('ProposalService', () => {
         }),
       ),
     ).resolves.toBe('conflict');
+  });
+
+  it('returns the persisted decision on an exact second visual-decision request without another commit', async () => {
+    const repository = new CountingDecisionCommitRepository();
+    const service = new ProposalService(
+      materializer,
+      disclosureGrantResolver,
+      repository,
+      () => new Date('2026-08-09T16:02:00.000Z'),
+    );
+    await service.create(proposal, preparationBinding);
+
+    const first = await service.decide(decisionRequest, decisionContext);
+    const replay = await service.decide(decisionRequest, {
+      ...decisionContext,
+      decisionId: ids.otherProposal,
+      now: new Date('2026-08-09T16:02:30.000Z'),
+    });
+
+    expect(replay).toEqual(first);
+    expect(repository.decisionCommitCount).toBe(1);
+    expect((await repository.getProposal(proposal.id))?.state).toBe('approved');
+  });
+
+  it('converges overlapping exact visual-decision requests on one persisted decision', async () => {
+    const repository = new ConcurrentDecisionReadBarrierRepository();
+    const service = new ProposalService(
+      materializer,
+      disclosureGrantResolver,
+      repository,
+      () => new Date('2026-08-09T16:02:00.000Z'),
+    );
+    await service.create(proposal, preparationBinding);
+
+    const [first, second] = await Promise.all([
+      service.decide(decisionRequest, decisionContext),
+      service.decide(decisionRequest, {
+        ...decisionContext,
+        decisionId: ids.otherProposal,
+        now: new Date('2026-08-09T16:01:30.000Z'),
+      }),
+    ]);
+
+    expect(second).toEqual(first);
+    expect(repository.decisionCommitCount).toBe(1);
+    expect((await repository.getProposal(proposal.id))?.state).toBe('approved');
+    expect(
+      (await repository.listEvents()).filter(
+        ({ eventType }) => eventType === 'proposal.approved',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('keeps a conflicting overlapping visual decision fail-closed', async () => {
+    const repository = new ConcurrentDecisionReadBarrierRepository();
+    const service = new ProposalService(
+      materializer,
+      disclosureGrantResolver,
+      repository,
+      () => new Date('2026-08-09T16:02:00.000Z'),
+    );
+    await service.create(proposal, preparationBinding);
+
+    const [approved, rejected] = await Promise.allSettled([
+      service.decide(decisionRequest, decisionContext),
+      service.decide(
+        { ...decisionRequest, decision: 'rejected' },
+        {
+          ...decisionContext,
+          decisionId: ids.otherProposal,
+          now: new Date('2026-08-09T16:01:30.000Z'),
+        },
+      ),
+    ]);
+
+    expect(approved.status).toBe('fulfilled');
+    expect(rejected).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'proposal-decision-conflict' },
+    });
+    expect(repository.decisionCommitCount).toBe(1);
+    expect((await repository.getProposal(proposal.id))?.state).toBe('approved');
+  });
+
+  it('recovers the persisted decision when the commit transaction reports an exact duplicate', async () => {
+    const repository = new DuplicateDecisionCommitRepository();
+    const service = new ProposalService(
+      materializer,
+      disclosureGrantResolver,
+      repository,
+      () => new Date('2026-08-09T16:02:00.000Z'),
+    );
+    await service.create(proposal, preparationBinding);
+
+    const decision = await service.decide(decisionRequest, decisionContext);
+
+    expect(decision).toMatchObject({
+      id: ids.decision,
+      proposalId: proposal.id,
+      decision: 'approved',
+    });
+    expect(repository.decisionCommitCount).toBe(1);
+    expect((await repository.getProposal(proposal.id))?.state).toBe('approved');
+  });
+
+  it('recovers an exact persisted decision after the commit path reports a concurrency conflict', async () => {
+    const repository = new ConflictAfterPersistedDecisionRepository();
+    const service = new ProposalService(
+      materializer,
+      disclosureGrantResolver,
+      repository,
+      () => new Date('2026-08-09T16:02:00.000Z'),
+    );
+    await service.create(proposal, preparationBinding);
+
+    const decision = await service.decide(decisionRequest, decisionContext);
+
+    expect(decision).toMatchObject({
+      id: ids.decision,
+      proposalId: proposal.id,
+      decision: 'approved',
+    });
+    expect(repository.decisionCommitCount).toBe(1);
+    expect((await repository.getProposal(proposal.id))?.state).toBe('approved');
   });
 
   it('rejects direct repository abandonment after visual approval', async () => {
@@ -710,6 +978,33 @@ describe('ProposalService', () => {
 
     expect(hashActionProposalApproval(changedScope)).not.toBe(
       hashActionProposalApproval(proposalInput),
+    );
+  });
+
+  it('includes guarded local-action and target bindings in immutable approval material', () => {
+    const guarded = {
+      ...proposalInput,
+      guardedAction: {
+        capabilityVersion: '1.0.0',
+        operation: 'finance-document-review-commit',
+        actionHash: proposalInput.payloadHash,
+        executionBindingHash: proposalInput.providerAuthorityBindingHash,
+        targetBindingHash: '8'.repeat(64),
+      },
+    } as const;
+    const changedTarget = {
+      ...guarded,
+      guardedAction: {
+        ...guarded.guardedAction,
+        targetBindingHash: '7'.repeat(64),
+      },
+    } as const;
+
+    expect(hashActionProposalApproval(guarded)).not.toBe(
+      hashActionProposalApproval(proposalInput),
+    );
+    expect(hashActionProposalApproval(changedTarget)).not.toBe(
+      hashActionProposalApproval(guarded),
     );
   });
 

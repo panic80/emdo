@@ -79,6 +79,18 @@ The staging Compose healthcheck and HTTP-subset CLI use this path; production
 does not register it, and `/readyz` remains the only complete API readiness
 contract.
 
+An explicitly enabled Finance synthetic run replaces that profile with
+`GET /finance-synthetic-staging/readyz`; the two synthetic readiness routes are
+mutually exclusive. The Finance route also requires
+`EMDO_FINANCE_SYNTHETIC_STAGING=true` and
+`EMDO_FINANCE_DOCUMENTS_ENABLED=true`. Its version-1 profile is
+`finance-synthetic-staging`, is always `releaseEligible: false`, requires the
+Finance manager, guarded-action authority, run-event, import, read, and
+document checks to be `ok`, and requires `google.connector` and
+`voice.provider` to remain `unavailable`. Only the Finance Compose overlay uses
+this path for its API healthcheck; baseline staging and production remain
+unchanged.
+
 `database`, `worker`, and `powersync` are not API readiness keys. The API's
 concrete component probes verify their own database/provider dependencies.
 Worker and PowerSync process health remain mandatory Compose gates and are
