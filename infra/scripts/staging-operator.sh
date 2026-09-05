@@ -289,7 +289,7 @@ deploy_release() {
       "${finance_key_lines[0]}" =~ ^[A-Za-z0-9_-]+$ ]] ||
       die 'Finance staging extraction key has an invalid protected stdin format'
     if [[ "$finance_live_chat" == true ]]; then
-      [[ "${#finance_key_lines[@]}" == 7 &&
+      [[ "${#finance_key_lines[@]}" == 5 &&
         ${#finance_key_lines[1]} -ge 20 && ${#finance_key_lines[1]} -le 512 &&
         "${finance_key_lines[1]}" =~ ^sk-[A-Za-z0-9_-]+$ &&
         ${#finance_key_lines[2]} -ge 1 && ${#finance_key_lines[2]} -le 128 &&

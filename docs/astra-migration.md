@@ -70,6 +70,11 @@ agent key, pricing version, Astra input rate, and Astra output rate. Update the
 two GitHub rate variables before requesting a live-chat staging run. Live provider
 acceptance and deployment remain separate from local test results.
 
+The root-owned `/usr/local/sbin/emdo-staging-operator` must also be updated to
+accept this five-line packet before rollout. Older installed operators expect
+seven lines and reject Astra's configuration before deployment. The current
+operator rejects the legacy seven-line packet without forwarding credentials.
+
 ## References
 
 - [OpenAI Astra migration guide](https://developers.openai.com/api/docs/guides/latest-model#gpt-6-astra-update-api-and-model-parameters)

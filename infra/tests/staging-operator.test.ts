@@ -122,11 +122,9 @@ deploy_release "$@"`,
     const livePacket = [
       financeKey,
       agentKey,
-      'openai-2026-07-30.boc-2026-08-28.usdcad-1.3888.ceil',
-      '28',
-      '167',
-      '278',
-      '1667',
+      'openai-astra.test.usdcad-1.3888.ceil',
+      '1389',
+      '6944',
     ].join('\n');
     const live = spawnSync(
       'bash',
@@ -143,6 +141,18 @@ deploy_release "$@"`,
     );
     expect(live.stderr).not.toContain(financeKey);
     expect(live.stderr).not.toContain(agentKey);
+
+    const legacyPacket = `${livePacket}\n278\n1667\n`;
+    const legacy = spawnSync(
+      'bash',
+      [scriptPath, '123456791', 'false', '60', 'true', 'true'],
+      { encoding: 'utf8', input: legacyPacket },
+    );
+    expect(legacy.status).not.toBe(0);
+    expect(legacy.stderr).toContain('protected stdin packet is invalid');
+    expect(legacy.stderr).not.toContain(financeKey);
+    expect(legacy.stderr).not.toContain(agentKey);
+    expect(await readFile(receivedInput, 'utf8')).toBe(`${livePacket}\n`);
   });
 
   it('cleans temporary install state without dereferencing expired function locals', async () => {
