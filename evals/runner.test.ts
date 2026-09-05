@@ -62,8 +62,8 @@ describe('EMDO agent eval harness', () => {
         'freshness',
         'disclosure',
         'partial-failure',
-        'luna-terra-fallback',
-        'dual-model-unavailable',
+        'astra-model-routing',
+        'astra-unavailable',
         'approval-interruption',
       ]),
     );
@@ -652,7 +652,7 @@ describe('EMDO agent eval harness', () => {
     }));
 
     const result = await createAgentEvalRunner({ driver }).runCase(
-      caseById('dual-model-unavailable'),
+      caseById('astra-unavailable'),
     );
 
     expect(result.passed).toBe(false);

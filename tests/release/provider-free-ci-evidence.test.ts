@@ -60,9 +60,9 @@ const agentEvidenceCases = [
   ['partial-specialist-failure', ['parallel-dispatch', 'partial-failure']],
   ['cross-run-disclosure-reuse-denied', ['disclosure']],
   ['disclosure-expires-before-model-dispatch', ['disclosure']],
-  ['luna-unavailable-terra-fallback', ['luna-terra-fallback']],
-  ['required-terra-unavailable', ['luna-terra-fallback']],
-  ['dual-model-unavailable', ['dual-model-unavailable']],
+  ['astra-default-routing', ['astra-model-routing']],
+  ['required-astra-unavailable', ['astra-model-routing']],
+  ['astra-unavailable', ['astra-unavailable']],
   [
     'multiple-provider-writes-require-separate-turns',
     ['approval-interruption'],
@@ -246,24 +246,24 @@ const writeAgentCaseReport = async (
         ? [
             {
               status: 'resolved',
-              requestedModel: 'gpt-5.6-luna',
-              resolvedModel: 'gpt-5.6-luna',
+              requestedModel: 'gpt-6-astra',
+              resolvedModel: 'gpt-6-astra',
             },
           ]
         : id === 'dependent-cross-domain-waves'
           ? [
               {
                 status: 'resolved',
-                requestedModel: 'gpt-5.6-terra',
-                resolvedModel: 'gpt-5.6-terra',
+                requestedModel: 'gpt-6-astra',
+                resolvedModel: 'gpt-6-astra',
               },
             ]
-          : id === 'luna-unavailable-terra-fallback'
+          : id === 'astra-default-routing'
             ? [
                 {
                   status: 'resolved',
-                  requestedModel: 'gpt-5.6-luna',
-                  resolvedModel: 'gpt-5.6-terra',
+                  requestedModel: 'gpt-6-astra',
+                  resolvedModel: 'gpt-6-astra',
                 },
               ]
             : [],
@@ -317,7 +317,7 @@ const requiredEvalRuntimeTests = [
   {
     file: 'evals/orchestrator-integration.test.ts',
     fullName:
-      'real AgentOrchestrator eval path passes Luna fallback and fail-closed model cases through the production runner',
+      'real AgentOrchestrator eval path passes Astra routing and fail-closed model cases through the production runner',
   },
   {
     file: 'evals/orchestrator-integration.test.ts',

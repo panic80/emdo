@@ -71,7 +71,7 @@ describe('ordered migration snapshot chain', () => {
     ]);
     expect(journal.entries.map(({ idx }) => idx)).toEqual([
       0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-      21, 22,
+      21, 22, 23,
     ]);
     expect(journal.entries.map(({ tag }) => tag)).toEqual([
       '0000_household_foundation',
@@ -97,18 +97,19 @@ describe('ordered migration snapshot chain', () => {
       '0020_manager_specialist_disclosure',
       '0021_blocked_visual_decision_claim',
       '0022_registered_agent_invocation_lineage',
+      '0023_astra_model_migration',
     ]);
     expect(
       files.filter((file) => /^\d{4}_snapshot\.json$/u.test(file)).sort(),
     ).toEqual(
       Array.from(
-        { length: 23 },
+        { length: 24 },
         (_, index) => `${index.toString().padStart(4, '0')}_snapshot.json`,
       ),
     );
 
     const snapshots = await Promise.all(
-      Array.from({ length: 23 }, (_, index) => readSnapshot(index)),
+      Array.from({ length: 24 }, (_, index) => readSnapshot(index)),
     );
     expect(snapshots[0]?.prevId).toBe('00000000-0000-0000-0000-000000000000');
     for (let index = 1; index < snapshots.length; index += 1) {

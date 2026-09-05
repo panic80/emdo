@@ -106,8 +106,8 @@ const completedTurnResult = (
     },
     modelResolution: {
       status: 'resolved',
-      requestedModel: 'gpt-5.6-terra',
-      resolvedModel: 'gpt-5.6-terra',
+      requestedModel: 'gpt-6-astra',
+      resolvedModel: 'gpt-6-astra',
       reason: 'default',
     },
   });
@@ -290,7 +290,7 @@ describeDatabase(
       });
 
       const store = new PostgresManagerTurnStore(runtime.scopedPool, {
-        requestedModel: 'gpt-5.6-terra',
+        requestedModel: 'gpt-6-astra',
       });
       const claimed = await store.claim({
         request: {
@@ -852,13 +852,14 @@ describeDatabase(
         },
         modelResolution: {
           status: 'unavailable',
-          requestedModel: 'gpt-5.6-luna',
-          attemptedModels: ['gpt-5.6-luna'],
-          reason: 'configured-model-fallback-not-allowed',
+          requestedModel: 'gpt-6-astra',
+          attemptedModels: ['gpt-6-astra'],
+          reason: 'no-configured-model-available',
           safeError: {
-            code: 'agent-model-fallback-not-allowed',
-            message: 'The active agent policy does not allow a model fallback.',
-            retryable: false,
+            code: 'agent-model-unavailable',
+            message:
+              'AI is temporarily unavailable. Local features still work.',
+            retryable: true,
           },
         },
       };
@@ -891,8 +892,8 @@ describeDatabase(
       try {
         await admin.query(
           `update emdo.agent_runs
-              set status = 'blocked', resolved_model = 'gpt-5.6-luna',
-                  model_reason = 'luna-unavailable',
+              set status = 'blocked', resolved_model = 'gpt-6-astra',
+                  model_reason = 'model-execution-failed',
                   local_trace_reference = 'pre-resume-stale-trace',
                   safe_error = $2::jsonb, usage = $3::jsonb
             where id = $1 and status = 'running' and completed_at is null`,
@@ -977,8 +978,8 @@ describeDatabase(
         try {
           await admin.query(
             `update emdo.agent_runs
-                set status = 'blocked', resolved_model = 'gpt-5.6-luna',
-                    model_reason = 'luna-unavailable',
+                set status = 'blocked', resolved_model = 'gpt-6-astra',
+                    model_reason = 'model-execution-failed',
                     local_trace_reference = 'pre-resume-stale-trace',
                     safe_error = $2::jsonb, usage = $3::jsonb
               where id = $1 and status = 'running' and completed_at is null`,
@@ -1048,8 +1049,8 @@ describeDatabase(
           }
           await admin.query(
             `update emdo.agent_runs
-                set status = 'blocked', resolved_model = 'gpt-5.6-luna',
-                    model_reason = 'luna-unavailable',
+                set status = 'blocked', resolved_model = 'gpt-6-astra',
+                    model_reason = 'model-execution-failed',
                     local_trace_reference = 'pre-resume-stale-trace',
                     safe_error = $2::jsonb, usage = $3::jsonb,
                     completed_at = null
@@ -1102,8 +1103,8 @@ describeDatabase(
       expect(hashMismatchProbe.backfillProjection).toMatchObject({
         resume_state: 'terminal',
         run_status: 'blocked',
-        resolved_model: 'gpt-5.6-luna',
-        model_reason: 'luna-unavailable',
+        resolved_model: 'gpt-6-astra',
+        model_reason: 'model-execution-failed',
         local_trace_reference: 'pre-resume-stale-trace',
         safe_error: staleSafeError,
         usage: staleUsage,
@@ -1127,7 +1128,7 @@ describeDatabase(
           resume_state: 'terminal',
           run_status: 'failed',
           resolved_model: null,
-          model_reason: 'configured-model-fallback-not-allowed',
+          model_reason: 'no-configured-model-available',
           local_trace_reference: failedResumeResult.localTraceReference,
           safe_error: failedResumeResult.safeError,
           usage: failedResumeResult.usage,
@@ -1174,8 +1175,8 @@ describeDatabase(
           expect(projection).toMatchObject({
             resume_state: branch.expectedState,
             run_status: 'failed',
-            resolved_model: 'gpt-5.6-luna',
-            model_reason: 'luna-unavailable',
+            resolved_model: 'gpt-6-astra',
+            model_reason: 'model-execution-failed',
             local_trace_reference: branch.expectedTrace,
             safe_error: branch.expectedSafeError,
             usage: staleUsage,
@@ -1256,8 +1257,8 @@ describeDatabase(
       }>(
         `update emdo.agent_runs
             set status = 'blocked',
-                resolved_model = 'gpt-5.6-luna',
-                model_reason = 'luna-unavailable',
+                resolved_model = 'gpt-6-astra',
+                model_reason = 'model-execution-failed',
                 local_trace_reference = 'pre-resume-stale-trace',
                 safe_error = '{"code":"pre-resume-stale","message":"Stale pre-resume error.","retryable":false}'::jsonb,
                 usage = '{"inputTokens":1,"outputTokens":2,"modelCostCadMinor":3}'::jsonb

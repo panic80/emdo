@@ -7,6 +7,7 @@ export default defineWorkspace([
       environment: 'node',
       include: ['**/*.{test,spec}.ts'],
       exclude: [
+        '**/.worktrees/**',
         'apps/web/**',
         'apps/worker/**',
         '**/node_modules/**',

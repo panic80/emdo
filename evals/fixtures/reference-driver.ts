@@ -19,13 +19,13 @@ import type {
 } from '../src/runner.js';
 
 const modelPolicy = Object.freeze({
-  defaultModel: 'gpt-5.6-luna' as const,
-  complexModel: 'gpt-5.6-terra' as const,
+  defaultModel: 'gpt-6-astra' as const,
+  complexModel: 'gpt-6-astra' as const,
   escalationReasons: Object.freeze([
     'dependent-cross-domain',
     'failed-output-validation',
     'low-confidence-reconciliation',
-    'luna-unavailable',
+    'model-execution-failed',
     'complex-reasoning',
   ] as const),
 });
@@ -80,7 +80,7 @@ const modelEvent = (
       escalationTrigger !== 'dependent-cross-domain' &&
       escalationTrigger !== 'failed-output-validation' &&
       escalationTrigger !== 'low-confidence-reconciliation' &&
-      escalationTrigger !== 'luna-unavailable'
+      escalationTrigger !== 'model-execution-failed'
     ) {
       throw new Error('invalid-reference-model-escalation-trigger');
     }
@@ -113,8 +113,8 @@ const resolveFixtureModel = async (
 ): Promise<AgentEvalPhase> => {
   const availability = evalCase.fixture.modelAvailability as
     | Readonly<{
-        'gpt-5.6-luna': boolean;
-        'gpt-5.6-terra': boolean;
+        'gpt-6-astra': boolean;
+        'gpt-6-astra': boolean;
       }>
     | undefined;
   const router = new ModelRouter({
@@ -392,9 +392,9 @@ export const createReferenceEvalDriver = (): ReferenceEvalDriver => {
               },
             ),
           };
-        case 'luna-unavailable-terra-fallback':
-        case 'required-terra-unavailable':
-        case 'dual-model-unavailable':
+        case 'astra-default-routing':
+        case 'required-astra-unavailable':
+        case 'astra-unavailable':
           return resolveFixtureModel(evalCase);
         case 'multiple-provider-writes-require-separate-turns':
           return {

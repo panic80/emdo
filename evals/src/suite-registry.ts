@@ -25,9 +25,9 @@ const selectCases = (ids: readonly string[]): readonly AgentEvalCase[] =>
   );
 
 const specialistModelCases = [
-  'luna-unavailable-terra-fallback',
-  'required-terra-unavailable',
-  'dual-model-unavailable',
+  'astra-default-routing',
+  'required-astra-unavailable',
+  'astra-unavailable',
 ] as const;
 
 const suite = (

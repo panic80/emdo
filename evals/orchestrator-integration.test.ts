@@ -128,13 +128,13 @@ const compiledAgent = (
               ],
     riskCeiling: kind === 'manager' ? 'none' : 'read',
     modelPolicy: Object.freeze({
-      defaultModel: 'gpt-5.6-luna',
-      complexModel: 'gpt-5.6-terra',
+      defaultModel: 'gpt-6-astra',
+      complexModel: 'gpt-6-astra',
       escalationReasons: Object.freeze([
         'dependent-cross-domain',
         'failed-output-validation',
         'low-confidence-reconciliation',
-        'luna-unavailable',
+        'model-execution-failed',
         'complex-reasoning',
       ] as const),
     }),
@@ -627,8 +627,8 @@ describe('real AgentOrchestrator eval path', () => {
           const dependent = triggers.includes('dependent-cross-domain');
           return Object.freeze({
             status: 'resolved',
-            requestedModel: dependent ? 'gpt-5.6-terra' : 'gpt-5.6-luna',
-            resolvedModel: dependent ? 'gpt-5.6-terra' : 'gpt-5.6-luna',
+            requestedModel: dependent ? 'gpt-6-astra' : 'gpt-6-astra',
+            resolvedModel: dependent ? 'gpt-6-astra' : 'gpt-6-astra',
             reason: dependent ? 'dependent-cross-domain' : 'default',
           });
         },
@@ -668,11 +668,11 @@ describe('real AgentOrchestrator eval path', () => {
     expect(JSON.stringify(report)).not.toContain('database password');
   });
 
-  it('passes Luna fallback and fail-closed model cases through the production runner', async () => {
+  it('passes Astra routing and fail-closed model cases through the production runner', async () => {
     const cases = [
-      evalCase('luna-unavailable-terra-fallback'),
-      evalCase('required-terra-unavailable'),
-      evalCase('dual-model-unavailable'),
+      evalCase('astra-default-routing'),
+      evalCase('required-astra-unavailable'),
+      evalCase('astra-unavailable'),
     ];
     const results = [];
 
@@ -875,8 +875,7 @@ describe('real AgentOrchestrator eval path', () => {
         },
         modelRouter: new ModelRouter(
           new InMemoryModelAvailability({
-            'gpt-5.6-luna': true,
-            'gpt-5.6-terra': true,
+            'gpt-6-astra': true,
           }),
         ),
         memory: evalManagerMemory,
@@ -1056,8 +1055,7 @@ describe('real AgentOrchestrator eval path', () => {
       },
       modelRouter: new ModelRouter(
         new InMemoryModelAvailability({
-          'gpt-5.6-luna': true,
-          'gpt-5.6-terra': true,
+          'gpt-6-astra': true,
         }),
       ),
       memory: evalManagerMemory,
@@ -1280,8 +1278,7 @@ describe('real AgentOrchestrator eval path', () => {
       },
       modelRouter: new ModelRouter(
         new InMemoryModelAvailability({
-          'gpt-5.6-luna': true,
-          'gpt-5.6-terra': true,
+          'gpt-6-astra': true,
         }),
       ),
       memory: evalManagerMemory,
@@ -1487,8 +1484,7 @@ describe('real AgentOrchestrator eval path', () => {
       },
       modelRouter: new ModelRouter(
         new InMemoryModelAvailability({
-          'gpt-5.6-luna': true,
-          'gpt-5.6-terra': true,
+          'gpt-6-astra': true,
         }),
       ),
       memory: evalManagerMemory,
@@ -1663,8 +1659,7 @@ describe('real AgentOrchestrator eval path', () => {
       executionProvider: executionProvider(execute),
       modelRouter: new ModelRouter(
         new InMemoryModelAvailability({
-          'gpt-5.6-luna': true,
-          'gpt-5.6-terra': true,
+          'gpt-6-astra': true,
         }),
       ),
       memory: evalManagerMemory,
@@ -1819,8 +1814,7 @@ describe('real AgentOrchestrator eval path', () => {
       }),
       modelRouter: new ModelRouter(
         new InMemoryModelAvailability({
-          'gpt-5.6-luna': true,
-          'gpt-5.6-terra': true,
+          'gpt-6-astra': true,
         }),
       ),
       memory: evalManagerMemory,

@@ -865,7 +865,7 @@ assert_finance_staging_api_environment() {
   local path="$1"
   local keyring review_key approval_keyring visual_proof_keyring
   local proposal_cursor_keyring invitation_key_id invitation_public_key
-  local live_chat agent_api_key pricing_version luna_input luna_output terra_input terra_output
+  local live_chat agent_api_key pricing_version astra_input astra_output
   assert_env_file_allowed_keys "$path" \
     EMDO_FINANCE_DOCUMENTS_ENABLED \
     EMDO_FINANCE_DOCUMENT_KEYRING_B64URL \
@@ -878,10 +878,8 @@ assert_finance_staging_api_environment() {
     EMDO_INVITATION_DELIVERY_PUBLIC_KEY_SPKI_BASE64URL \
     EMDO_FINANCE_SYNTHETIC_STAGING_LIVE_CHAT \
     EMDO_OPENAI_AGENT_API_KEY EMDO_OPENAI_AGENT_PRICING_VERSION \
-    EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS \
-    EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS \
-    EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS \
-    EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS
+    EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS \
+    EMDO_OPENAI_AGENT_GPT_6_ASTRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS
   [[ "$(env_file_value "$path" EMDO_FINANCE_DOCUMENTS_ENABLED)" == true ]] ||
     die "$path must enable Finance documents"
   assert_internal_postgres_uri "$path" \
@@ -917,10 +915,8 @@ assert_finance_staging_api_environment() {
   if [[ "$live_chat" == false ]]; then
     for key in \
       EMDO_OPENAI_AGENT_API_KEY EMDO_OPENAI_AGENT_PRICING_VERSION \
-      EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS \
-      EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS \
-      EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS \
-      EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS; do
+      EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS \
+      EMDO_OPENAI_AGENT_GPT_6_ASTRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS; do
       ! env_file_has_key "$path" "$key" ||
         die "$path must omit OpenAI agent configuration unless live chat is enabled"
     done
@@ -928,15 +924,13 @@ assert_finance_staging_api_environment() {
   fi
   agent_api_key="$(env_file_value "$path" EMDO_OPENAI_AGENT_API_KEY)"
   pricing_version="$(env_file_value "$path" EMDO_OPENAI_AGENT_PRICING_VERSION)"
-  luna_input="$(env_file_value "$path" EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS)"
-  luna_output="$(env_file_value "$path" EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS)"
-  terra_input="$(env_file_value "$path" EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS)"
-  terra_output="$(env_file_value "$path" EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS)"
+  astra_input="$(env_file_value "$path" EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS)"
+  astra_output="$(env_file_value "$path" EMDO_OPENAI_AGENT_GPT_6_ASTRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS)"
   [[ ${#agent_api_key} -ge 20 && ${#agent_api_key} -le 512 && "$agent_api_key" =~ ^sk-[A-Za-z0-9_-]+$ ]] ||
     die "$path contains an invalid OpenAI agent API key"
   [[ ${#pricing_version} -ge 1 && ${#pricing_version} -le 128 && "$pricing_version" =~ ^[A-Za-z0-9._:-]+$ ]] ||
     die "$path contains an invalid OpenAI agent pricing version"
-  for value in "$luna_input" "$luna_output" "$terra_input" "$terra_output"; do
+  for value in "$astra_input" "$astra_output"; do
     [[ "$value" =~ ^[1-9][0-9]{0,15}$ ]] ||
       die "$path contains an invalid OpenAI agent token rate"
   done
@@ -1195,7 +1189,7 @@ prepare_finance_synthetic_staging_state() {
   local worker_executor_database_url onboarding_database_url workflow_database_url
   local document_key review_key keyring approval_keyring visual_proof_keyring
   local proposal_cursor_keyring invitation_delivery_public_key invitation_delivery_key_id
-  local live_chat agent_api_key pricing_version luna_input luna_output terra_input terra_output
+  local live_chat agent_api_key pricing_version astra_input astra_output
   local -a secret_lines=()
 
   [[ "${EMDO_FINANCE_SYNTHETIC_STAGING:-false}" == true ]] ||
@@ -1208,8 +1202,8 @@ prepare_finance_synthetic_staging_state() {
   require_command openssl
   mapfile -t secret_lines
   if [[ "$live_chat" == true ]]; then
-    [[ "${#secret_lines[@]}" == 7 ]] ||
-      die 'Finance live chat requires exactly seven protected stdin lines'
+    [[ "${#secret_lines[@]}" == 5 ]] ||
+      die 'Finance live chat requires exactly five protected stdin lines'
   else
     [[ "${#secret_lines[@]}" == 1 ]] ||
       die 'Finance staging key must be supplied as exactly one protected stdin line'
@@ -1220,15 +1214,13 @@ prepare_finance_synthetic_staging_state() {
   if [[ "$live_chat" == true ]]; then
     agent_api_key="${secret_lines[1]}"
     pricing_version="${secret_lines[2]}"
-    luna_input="${secret_lines[3]}"
-    luna_output="${secret_lines[4]}"
-    terra_input="${secret_lines[5]}"
-    terra_output="${secret_lines[6]}"
+    astra_input="${secret_lines[3]}"
+    astra_output="${secret_lines[4]}"
     [[ ${#agent_api_key} -ge 20 && ${#agent_api_key} -le 512 && "$agent_api_key" =~ ^sk-[A-Za-z0-9_-]+$ ]] ||
       die 'Finance live chat agent key has an invalid format'
     [[ ${#pricing_version} -ge 1 && ${#pricing_version} -le 128 && "$pricing_version" =~ ^[A-Za-z0-9._:-]+$ ]] ||
       die 'Finance live chat pricing version has an invalid format'
-    for value in "$luna_input" "$luna_output" "$terra_input" "$terra_output"; do
+    for value in "$astra_input" "$astra_output"; do
       [[ "$value" =~ ^[1-9][0-9]{0,15}$ ]] ||
         die 'Finance live chat token rate has an invalid format'
     done
@@ -1278,10 +1270,8 @@ prepare_finance_synthetic_staging_state() {
       'EMDO_FINANCE_SYNTHETIC_STAGING_LIVE_CHAT=true' \
       "EMDO_OPENAI_AGENT_API_KEY=$agent_api_key" \
       "EMDO_OPENAI_AGENT_PRICING_VERSION=$pricing_version" \
-      "EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS=$luna_input" \
-      "EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS=$luna_output" \
-      "EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS=$terra_input" \
-      "EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS=$terra_output" >> "$pending_api"
+      "EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS=$astra_input" \
+      "EMDO_OPENAI_AGENT_GPT_6_ASTRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS=$astra_output" >> "$pending_api"
   fi
   printf '%s\n' \
     'EMDO_FINANCE_DOCUMENTS_ENABLED=true' \
@@ -1303,10 +1293,8 @@ prepare_finance_synthetic_staging_state() {
   secret_lines[0]=''
   agent_api_key=''
   pricing_version=''
-  luna_input=''
-  luna_output=''
-  terra_input=''
-  terra_output=''
+  astra_input=''
+  astra_output=''
   document_key=''
   review_key=''
   keyring=''

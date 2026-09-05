@@ -374,7 +374,7 @@ const ListInputSchema = ScopedInputSchema.extend({
 });
 const ExtractionCreateInputSchema = DocumentInputSchema.extend({
   retry: z.boolean().default(false),
-  model: z.literal('gpt-5.6-terra').nullable().default(null),
+  model: z.literal('gpt-6-astra').nullable().default(null),
 });
 const EncryptedExtractionPayloadSchema = z.strictObject({
   schemaVersion: z.literal(1),

@@ -63,18 +63,19 @@ export type AgentOutcome = DeepReadonly<
   z.output<typeof AgentOutcomeBaseSchema>
 >;
 
-export const ModelIdSchema = z.enum(['gpt-5.6-luna', 'gpt-5.6-terra']);
+export const ModelIdSchema = z.literal('gpt-6-astra');
+const LegacyModelIdSchema = z.enum(['gpt-5.6-luna', 'gpt-5.6-terra']);
 
 const ModelPolicySchema = z.strictObject({
-  defaultModel: z.literal('gpt-5.6-luna'),
-  complexModel: z.literal('gpt-5.6-terra'),
+  defaultModel: z.literal('gpt-6-astra'),
+  complexModel: z.literal('gpt-6-astra'),
   escalationReasons: z
     .array(
       z.enum([
         'dependent-cross-domain',
         'failed-output-validation',
         'low-confidence-reconciliation',
-        'luna-unavailable',
+        'model-execution-failed',
         'complex-reasoning',
       ]),
     )
@@ -178,8 +179,8 @@ export const SafeErrorSchema = z.strictObject({
 
 const ResolvedModelResolutionSchema = z.strictObject({
   status: z.literal('resolved'),
-  requestedModel: ModelIdSchema,
-  resolvedModel: ModelIdSchema,
+  requestedModel: LegacyModelIdSchema,
+  resolvedModel: LegacyModelIdSchema,
   reason: z.enum([
     'default',
     'dependent-cross-domain',
@@ -201,8 +202,8 @@ const TerraFallbackModelResolutionSchema = z.strictObject({
 const NoConfiguredModelResolutionSchema = z
   .strictObject({
     status: z.literal('unavailable'),
-    requestedModel: ModelIdSchema,
-    attemptedModels: z.array(ModelIdSchema).length(2),
+    requestedModel: LegacyModelIdSchema,
+    attemptedModels: z.array(LegacyModelIdSchema).length(2),
     reason: z.literal('no-configured-model-available'),
     safeError: z.strictObject({
       code: z.literal('agent-model-unavailable'),
@@ -281,13 +282,54 @@ const ConfiguredFallbackDeniedSchema = z.strictObject({
   }),
 });
 
-export const ModelResolutionSchema = z.union([
+const LegacyModelResolutionSchema = z.union([
   ResolvedModelResolutionSchema,
   TerraFallbackModelResolutionSchema,
   NoConfiguredModelResolutionSchema,
   RequiredModelUnavailableSchema,
   ConfiguredEscalationDeniedSchema,
   ConfiguredFallbackDeniedSchema,
+]);
+const AstraEscalationTriggerSchema = z.enum([
+  'dependent-cross-domain',
+  'failed-output-validation',
+  'low-confidence-reconciliation',
+  'complex-reasoning',
+  'model-execution-failed',
+]);
+
+/** Active resolutions are Astra-only; the legacy branch is read compatibility. */
+export const ModelResolutionSchema = z.union([
+  z.strictObject({
+    status: z.literal('resolved'),
+    requestedModel: ModelIdSchema,
+    resolvedModel: ModelIdSchema,
+    reason: z.union([z.literal('default'), AstraEscalationTriggerSchema]),
+  }),
+  z.strictObject({
+    status: z.literal('unavailable'),
+    requestedModel: ModelIdSchema,
+    attemptedModels: z.tuple([ModelIdSchema]),
+    reason: z.literal('no-configured-model-available'),
+    safeError: NoConfiguredModelResolutionSchema.shape.safeError,
+  }),
+  z.strictObject({
+    status: z.literal('unavailable'),
+    requestedModel: ModelIdSchema,
+    attemptedModels: z.tuple([ModelIdSchema]),
+    reason: z.literal('required-complex-model-unavailable'),
+    escalationTrigger: AstraEscalationTriggerSchema,
+    safeError: RequiredModelUnavailableSchema.shape.safeError,
+  }),
+  z.strictObject({
+    status: z.literal('unavailable'),
+    requestedModel: ModelIdSchema,
+    attemptedModels: z.tuple([]),
+    reason: z.literal('configured-model-escalation-not-allowed'),
+    escalationTrigger: AstraEscalationTriggerSchema,
+    safeError: ConfiguredEscalationDeniedSchema.shape.safeError,
+  }),
+  LegacyModelResolutionSchema,
 ]);
 export type ModelId = z.output<typeof ModelIdSchema>;
 export type ModelResolution = DeepReadonly<

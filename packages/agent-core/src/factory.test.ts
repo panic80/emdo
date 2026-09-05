@@ -32,13 +32,13 @@ const manifest = (
       output: Object.freeze({ id: `${id}.output`, version: '1.0.0' }),
     }),
     modelPolicy: Object.freeze({
-      defaultModel: 'gpt-5.6-luna',
-      complexModel: 'gpt-5.6-terra',
+      defaultModel: 'gpt-6-astra',
+      complexModel: 'gpt-6-astra',
       escalationReasons: Object.freeze([
         'dependent-cross-domain',
         'failed-output-validation',
         'low-confidence-reconciliation',
-        'luna-unavailable',
+        'model-execution-failed',
         'complex-reasoning',
       ] as const),
     }),
@@ -249,7 +249,7 @@ describe('AgentFactory', () => {
     );
 
     const compiled = factory.compile(definition(kind, id));
-    const sdkAgent = compiled.materialize('gpt-5.6-terra');
+    const sdkAgent = compiled.materialize('gpt-6-astra');
 
     expect(resolveForAgent).toHaveBeenCalledWith({
       manifest: compiled.manifest,
@@ -270,7 +270,7 @@ describe('AgentFactory', () => {
     expect(createAgent).toHaveBeenCalledWith({
       name: id,
       instructions: compiled.instructions,
-      model: 'gpt-5.6-terra',
+      model: 'gpt-6-astra',
       maxOutputTokens: 4_000,
       outputType: expect.any(z.ZodObject),
       tools: [
@@ -290,7 +290,7 @@ describe('AgentFactory', () => {
     const trustedInstruction =
       'Write the final EMDO synthesis in ja-JP. Keep evidence excerpts in their source language; do not translate those excerpts.';
 
-    compiled.materialize('gpt-5.6-luna', {
+    compiled.materialize('gpt-6-astra', {
       exposeCapabilities: false,
       trustedInstructions: [trustedInstruction],
     });
@@ -577,7 +577,7 @@ describe('AgentFactory', () => {
       ]),
     });
 
-    factory.compile(providerDefinition).materialize('gpt-5.6-luna');
+    factory.compile(providerDefinition).materialize('gpt-6-astra');
 
     expect(createTool).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -15,8 +15,7 @@ const MAX_USAGE_TOKENS = 100_000_000;
 const LOW_CONFIDENCE_THRESHOLD = 0.7;
 const MAX_429_ERROR_RESPONSE_BYTES = 16 * 1024;
 
-export const OPENAI_FINANCE_DOCUMENT_EXTRACTION_MODEL =
-  'gpt-5.6-terra' as const;
+export const OPENAI_FINANCE_DOCUMENT_EXTRACTION_MODEL = 'gpt-6-astra' as const;
 
 export const OPENAI_FINANCE_DOCUMENT_EXTRACTION_LIMITS = Object.freeze({
   maxDocumentBytes: 25 * 1024 * 1024,
@@ -92,8 +91,8 @@ export interface OpenAiFinanceDocumentExtractionRequest<Extraction> {
   readonly input: OpenAiFinanceDocumentExtractionInput;
   readonly output: FinanceDocumentOutputContract<Extraction>;
   readonly signal: AbortSignal;
-  /** Defaults to gpt-5.6-terra; callers may select a separately approved ID. */
-  readonly model?: string;
+  /** The active extraction policy permits Astra only. */
+  readonly model?: typeof OPENAI_FINANCE_DOCUMENT_EXTRACTION_MODEL;
   /** Defaults to 60 seconds and is bounded to two minutes. */
   readonly timeoutMs?: number;
   /** Awaited once immediately before the first provider dispatch. */
@@ -193,10 +192,7 @@ const isDocumentMimeType = (
   (OPENAI_FINANCE_DOCUMENT_MIME_TYPES as readonly string[]).includes(value);
 
 const isApprovedModel = (value: unknown): value is string =>
-  typeof value === 'string' &&
-  value.length >= 1 &&
-  value.length <= 128 &&
-  /^[A-Za-z0-9._-]+$/u.test(value);
+  value === OPENAI_FINANCE_DOCUMENT_EXTRACTION_MODEL;
 
 const isSafeTimeout = (value: unknown): value is number =>
   typeof value === 'number' &&
@@ -747,6 +743,9 @@ const requestBody = <Extraction>(input: {
   return JSON.stringify({
     model: input.model,
     store: false,
+    reasoning: { effort: 'medium' },
+    service_tier: 'default',
+    prompt_cache_options: { ttl: '30m' },
     max_output_tokens: 16_384,
     input: [
       {

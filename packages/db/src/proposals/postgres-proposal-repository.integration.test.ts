@@ -977,7 +977,7 @@ describeDatabase(
            (id, household_id, space_id, original_owner_user_id, agent_id,
             agent_version, requested_model, status)
          values ($1, $2, $3, $4, $5, '1.0.0',
-                 'gpt-5.6-luna', 'running')`,
+                 'gpt-6-astra', 'running')`,
         [actor.run, actor.household, actor.space, actor.user, 'manager'],
       );
       await admin.query(
@@ -1033,7 +1033,7 @@ describeDatabase(
             ownership_token_hash, state, revision, created_at, updated_at,
             retain_until)
          values ($1, 1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                 $12::jsonb, $13, '1.0.0', 'gpt-5.6-luna', $14, $15,
+                 $12::jsonb, $13, '1.0.0', 'gpt-6-astra', $14, $15,
                  'claimed', 1, pg_catalog.clock_timestamp(),
                  pg_catalog.clock_timestamp(),
                  pg_catalog.clock_timestamp() + interval '89 days')`,
@@ -1181,9 +1181,7 @@ describeDatabase(
       );
 
       const proposalMigrations = await loadOrderedMigrations();
-      expect(proposalMigrations.at(-1)?.id).toBe(
-        '0022_registered_agent_invocation_lineage',
-      );
+      expect(proposalMigrations.at(-1)?.id).toBe('0023_astra_model_migration');
       for (const migration of proposalMigrations) {
         try {
           await admin.query(migration.sql);
@@ -1875,8 +1873,8 @@ describeDatabase(
         },
         modelResolution: {
           status: 'resolved',
-          requestedModel: 'gpt-5.6-luna',
-          resolvedModel: 'gpt-5.6-luna',
+          requestedModel: 'gpt-6-astra',
+          resolvedModel: 'gpt-6-astra',
           reason: 'default',
         },
       } as const;

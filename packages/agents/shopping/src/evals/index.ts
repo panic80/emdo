@@ -19,8 +19,8 @@ export const agentEvalCatalog = deepFreeze({
       id: 'partial-specialist-failure',
       fixtureIds: ['shopping.official-api-offer'],
     },
-    { id: 'luna-unavailable-terra-fallback', fixtureIds: [] },
-    { id: 'required-terra-unavailable', fixtureIds: [] },
-    { id: 'dual-model-unavailable', fixtureIds: [] },
+    { id: 'astra-default-routing', fixtureIds: [] },
+    { id: 'required-astra-unavailable', fixtureIds: [] },
+    { id: 'astra-unavailable', fixtureIds: [] },
   ],
 } as const);

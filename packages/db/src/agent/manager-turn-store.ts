@@ -143,8 +143,8 @@ const IndeterminateInputSchema = z.strictObject({
 const OptionsSchema = z.strictObject({
   managerAgentVersion: SemanticVersionSchema.default('1.0.0'),
   requestedModel: z
-    .enum(['gpt-5.6-luna', 'gpt-5.6-terra', 'provider-free-mvp-v1'])
-    .default('gpt-5.6-luna'),
+    .enum(['gpt-6-astra', 'provider-free-mvp-v1'])
+    .default('gpt-6-astra'),
 });
 
 export interface PostgresManagerTurnPrincipal {
@@ -201,8 +201,7 @@ export type PostgresManagerTurnIndeterminate =
 
 export interface PostgresManagerTurnStoreOptions {
   readonly managerAgentVersion?: string;
-  readonly requestedModel?:
-    'gpt-5.6-luna' | 'gpt-5.6-terra' | 'provider-free-mvp-v1';
+  readonly requestedModel?: 'gpt-6-astra' | 'provider-free-mvp-v1';
 }
 
 export class ManagerTurnPersistenceError extends Error {

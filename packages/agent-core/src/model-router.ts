@@ -1,5 +1,4 @@
-export const EMDO_MODEL_IDS = ['gpt-5.6-luna', 'gpt-5.6-terra'] as const;
-
+export const EMDO_MODEL_IDS = ['gpt-6-astra'] as const;
 export type EmdoModelId = (typeof EMDO_MODEL_IDS)[number];
 
 export const MODEL_ESCALATION_TRIGGERS = [
@@ -7,24 +6,24 @@ export const MODEL_ESCALATION_TRIGGERS = [
   'failed-output-validation',
   'low-confidence-reconciliation',
   'complex-reasoning',
-  'luna-unavailable',
+  'model-execution-failed',
 ] as const;
 
 export type ModelEscalationTrigger = (typeof MODEL_ESCALATION_TRIGGERS)[number];
 export type RequestedModelEscalationTrigger = Exclude<
   ModelEscalationTrigger,
-  'luna-unavailable'
+  'model-execution-failed'
 >;
 
 export interface ModelRoutingPolicy {
-  readonly defaultModel: 'gpt-5.6-luna';
-  readonly complexModel: 'gpt-5.6-terra';
+  readonly defaultModel: EmdoModelId;
+  readonly complexModel: EmdoModelId;
   readonly escalationReasons: readonly ModelEscalationTrigger[];
 }
 
 const MODEL_ESCALATION_PRIORITY = [
   'failed-output-validation',
-  'luna-unavailable',
+  'model-execution-failed',
   'low-confidence-reconciliation',
   'dependent-cross-domain',
   'complex-reasoning',
@@ -39,19 +38,12 @@ export type ModelResolution =
       status: 'resolved';
       requestedModel: EmdoModelId;
       resolvedModel: EmdoModelId;
-      reason: 'default' | RequestedModelEscalationTrigger | 'luna-unavailable';
-    }>
-  | Readonly<{
-      status: 'resolved';
-      requestedModel: 'gpt-5.6-terra';
-      resolvedModel: 'gpt-5.6-luna';
-      reason: 'terra-unavailable';
-      escalationTrigger: 'complex-reasoning';
+      reason: 'default' | ModelEscalationTrigger;
     }>
   | Readonly<{
       status: 'unavailable';
       requestedModel: EmdoModelId;
-      attemptedModels: readonly EmdoModelId[];
+      attemptedModels: readonly [EmdoModelId];
       reason: 'no-configured-model-available';
       safeError: Readonly<{
         code: 'agent-model-unavailable';
@@ -61,10 +53,10 @@ export type ModelResolution =
     }>
   | Readonly<{
       status: 'unavailable';
-      requestedModel: 'gpt-5.6-terra';
-      attemptedModels: readonly ['gpt-5.6-terra'];
+      requestedModel: EmdoModelId;
+      attemptedModels: readonly [EmdoModelId];
       reason: 'required-complex-model-unavailable';
-      escalationTrigger: Exclude<ModelEscalationTrigger, 'complex-reasoning'>;
+      escalationTrigger: ModelEscalationTrigger;
       safeError: Readonly<{
         code: 'required-agent-model-unavailable';
         message: 'The model required to complete this request safely is temporarily unavailable.';
@@ -73,24 +65,13 @@ export type ModelResolution =
     }>
   | Readonly<{
       status: 'unavailable';
-      requestedModel: 'gpt-5.6-terra';
+      requestedModel: EmdoModelId;
       attemptedModels: readonly [];
       reason: 'configured-model-escalation-not-allowed';
       escalationTrigger: ModelEscalationTrigger;
       safeError: Readonly<{
         code: 'agent-model-escalation-not-allowed';
         message: 'The active agent policy does not allow the required model escalation.';
-        retryable: false;
-      }>;
-    }>
-  | Readonly<{
-      status: 'unavailable';
-      requestedModel: 'gpt-5.6-luna';
-      attemptedModels: readonly ['gpt-5.6-luna'];
-      reason: 'configured-model-fallback-not-allowed';
-      safeError: Readonly<{
-        code: 'agent-model-fallback-not-allowed';
-        message: 'The active agent policy does not allow a model fallback.';
         retryable: false;
       }>;
     }>;
@@ -209,12 +190,12 @@ const snapshotRoutingRequest = (
       defaultModel.get !== undefined ||
       defaultModel.set !== undefined ||
       defaultModel.enumerable !== true ||
-      defaultModel.value !== 'gpt-5.6-luna' ||
+      defaultModel.value !== 'gpt-6-astra' ||
       complexModel === undefined ||
       complexModel.get !== undefined ||
       complexModel.set !== undefined ||
       complexModel.enumerable !== true ||
-      complexModel.value !== 'gpt-5.6-terra' ||
+      complexModel.value !== 'gpt-6-astra' ||
       escalationReasons === undefined ||
       escalationReasons.get !== undefined ||
       escalationReasons.set !== undefined ||
@@ -241,8 +222,8 @@ const snapshotRoutingRequest = (
     return Object.freeze({
       triggers,
       policy: Object.freeze({
-        defaultModel: 'gpt-5.6-luna',
-        complexModel: 'gpt-5.6-terra',
+        defaultModel: 'gpt-6-astra',
+        complexModel: 'gpt-6-astra',
         escalationReasons: reasons,
       }),
     });
@@ -309,19 +290,13 @@ export class ModelRouter {
       });
     }
 
-    if (
-      requestedModel === policy.complexModel &&
-      escalation !== 'complex-reasoning'
-    ) {
+    if (escalation !== undefined) {
       return freezeResolution({
         status: 'unavailable',
-        requestedModel: policy.complexModel,
-        attemptedModels: [policy.complexModel] as const,
+        requestedModel,
+        attemptedModels: [requestedModel] as const,
         reason: 'required-complex-model-unavailable',
-        escalationTrigger: escalation as Exclude<
-          ModelEscalationTrigger,
-          'complex-reasoning'
-        >,
+        escalationTrigger: escalation,
         safeError: {
           code: 'required-agent-model-unavailable',
           message:
@@ -331,49 +306,11 @@ export class ModelRouter {
       });
     }
 
-    if (
-      requestedModel === policy.defaultModel &&
-      !policy.escalationReasons.includes('luna-unavailable')
-    ) {
-      return freezeResolution({
-        status: 'unavailable',
-        requestedModel: policy.defaultModel,
-        attemptedModels: [policy.defaultModel] as const,
-        reason: 'configured-model-fallback-not-allowed',
-        safeError: {
-          code: 'agent-model-fallback-not-allowed',
-          message: 'The active agent policy does not allow a model fallback.',
-          retryable: false,
-        },
-      });
-    }
-
-    const fallbackModel: EmdoModelId =
-      requestedModel === policy.defaultModel
-        ? policy.complexModel
-        : policy.defaultModel;
-    if (await this.available(fallbackModel)) {
-      if (requestedModel === policy.complexModel) {
-        return freezeResolution({
-          status: 'resolved',
-          requestedModel: policy.complexModel,
-          resolvedModel: policy.defaultModel,
-          reason: 'terra-unavailable',
-          escalationTrigger: 'complex-reasoning',
-        });
-      }
-      return freezeResolution({
-        status: 'resolved',
-        requestedModel: policy.defaultModel,
-        resolvedModel: policy.complexModel,
-        reason: 'luna-unavailable',
-      });
-    }
-
+    // Astra is the only active model. Never silently dispatch a legacy model.
     return freezeResolution({
       status: 'unavailable',
       requestedModel,
-      attemptedModels: [requestedModel, fallbackModel],
+      attemptedModels: [requestedModel] as const,
       reason: 'no-configured-model-available',
       safeError: {
         code: 'agent-model-unavailable',

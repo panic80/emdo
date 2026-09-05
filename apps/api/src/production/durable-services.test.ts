@@ -107,10 +107,8 @@ const coreAgentEnvironment = () => ({
   EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL: approvalCheckpointKeyring,
   EMDO_OPENAI_AGENT_API_KEY: 'sk-core-agent-assembly-test-key-1234567890',
   EMDO_OPENAI_AGENT_PRICING_VERSION: '2026-08-15',
-  EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '100',
-  EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: '200',
-  EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '300',
-  EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: '400',
+  EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '100',
+  EMDO_OPENAI_AGENT_GPT_6_ASTRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: '200',
   EMDO_VISUAL_DECISION_DATABASE_URL: visualDecisionDatabaseUrl,
   EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL: visualProofKeyring,
 });
@@ -484,14 +482,9 @@ describe('production durable API service composition', () => {
         EMDO_APPROVAL_CHECKPOINT_KEYRING_B64URL: approvalCheckpointKeyring,
         EMDO_OPENAI_AGENT_API_KEY: 'sk-core-agent-assembly-test-key-1234567890',
         EMDO_OPENAI_AGENT_PRICING_VERSION: '2026-08-15',
-        EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS:
-          '100',
-        EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS:
+        EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '100',
+        EMDO_OPENAI_AGENT_GPT_6_ASTRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS:
           '200',
-        EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS:
-          '300',
-        EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS:
-          '400',
         EMDO_VISUAL_DECISION_DATABASE_URL: visualDecisionDatabaseUrl,
         EMDO_VISUAL_PROOF_HMAC_KEYRING_B64URL: visualProofKeyring,
       },
@@ -542,7 +535,7 @@ describe('production durable API service composition', () => {
     expect(googleCheck).not.toHaveBeenCalled();
   });
 
-  it('requires workflow, Google, and Terra, while Luna may be unavailable', async () => {
+  it('requires workflow, Google, and Astra without probing legacy models', async () => {
     const adapters = dependencies();
     const googleCheck = vi.fn(async () => true);
     vi.mocked(adapters.createGoogleConnectorBinding).mockReturnValue({
@@ -562,7 +555,7 @@ describe('production durable API service composition', () => {
       },
     });
     const modelAvailability = {
-      isAvailable: vi.fn(async (model: string) => model === 'gpt-5.6-terra'),
+      isAvailable: vi.fn(async (model: string) => model === 'gpt-6-astra'),
     };
     coreAgentMocks.createOpenAi.mockReturnValue({
       modelAvailability,
@@ -582,7 +575,7 @@ describe('production durable API service composition', () => {
     await expect(first).resolves.toBe(true);
     expect(coreAgentMocks.checkWorkflow).toHaveBeenCalledOnce();
     expect(googleCheck).toHaveBeenCalledOnce();
-    expect(modelAvailability.isAvailable).toHaveBeenCalledWith('gpt-5.6-terra');
+    expect(modelAvailability.isAvailable).toHaveBeenCalledWith('gpt-6-astra');
     expect(modelAvailability.isAvailable).not.toHaveBeenCalledWith(
       'gpt-5.6-luna',
     );

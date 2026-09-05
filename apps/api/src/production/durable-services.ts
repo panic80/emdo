@@ -741,11 +741,11 @@ export const createProductionDurableServiceBindings = async (
         return workflow === true && googleReady === true;
       });
       const checkCoreAgent = coalesceProbe(async () => {
-        const [workflowAndGoogle, terra] = await Promise.all([
+        const [workflowAndGoogle, astra] = await Promise.all([
           checkWorkflowAndGoogle(),
-          configuredOpenAi.modelAvailability.isAvailable('gpt-5.6-terra'),
+          configuredOpenAi.modelAvailability.isAvailable('gpt-6-astra'),
         ]);
-        return workflowAndGoogle === true && terra === true;
+        return workflowAndGoogle === true && astra === true;
       });
       const runtimeFactory: ProductionAgentRuntimeFactory = Object.freeze({
         create: async (
@@ -874,14 +874,14 @@ export const createProductionDurableServiceBindings = async (
         ),
       );
       const checkManagerFinanceAgent = coalesceProbe(async () => {
-        const [workflow, terra, financeReady] = await Promise.all([
+        const [workflow, astra, financeReady] = await Promise.all([
           checkFinanceWorkflow(),
-          configuredOpenAi.modelAvailability.isAvailable('gpt-5.6-terra'),
+          configuredOpenAi.modelAvailability.isAvailable('gpt-6-astra'),
           financeSyntheticStaging
             ? (financeSpecialist?.checkReady() ?? Promise.resolve(false))
             : Promise.resolve(true),
         ]);
-        return workflow === true && terra === true && financeReady === true;
+        return workflow === true && astra === true && financeReady === true;
       });
       const runtimeFactory: ProductionAgentRuntimeFactory = Object.freeze({
         create: async (
@@ -978,7 +978,7 @@ export const createProductionDurableServiceBindings = async (
       const checkManagerAgent = coalesceProbe(async () => {
         return (
           (await configuredOpenAi.modelAvailability.isAvailable(
-            'gpt-5.6-terra',
+            'gpt-6-astra',
           )) === true
         );
       });

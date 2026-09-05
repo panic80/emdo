@@ -303,7 +303,7 @@ describeDatabase(
           ),
       };
       const managerTurns = new PostgresManagerTurnStore(runtime.scopedPool, {
-        requestedModel: 'gpt-5.6-luna',
+        requestedModel: 'gpt-6-astra',
       });
       const claimManagerTurn = async (
         idempotencyKey: string,
@@ -881,7 +881,7 @@ describeDatabase(
       );
       const blockedTurn = await new PostgresManagerTurnStore(
         runtime.scopedPool,
-        { requestedModel: 'gpt-5.6-luna' },
+        { requestedModel: 'gpt-6-astra' },
       ).claim({
         request: {
           schemaVersion: 1,

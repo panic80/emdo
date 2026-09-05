@@ -36,10 +36,8 @@ const AgentEnvironmentPrefix = 'EMDO_OPENAI_AGENT_';
 const AgentEnvironmentKeys = Object.freeze([
   'EMDO_OPENAI_AGENT_API_KEY',
   'EMDO_OPENAI_AGENT_PRICING_VERSION',
-  'EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS',
-  'EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS',
-  'EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS',
-  'EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS',
+  'EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS',
+  'EMDO_OPENAI_AGENT_GPT_6_ASTRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS',
 ] as const);
 
 const ApiKeySchema = z
@@ -55,10 +53,8 @@ const PricingVersionSchema = z
 const EnvironmentSchema = z.strictObject({
   apiKey: ApiKeySchema,
   pricingVersion: PricingVersionSchema,
-  lunaInputCadMinorPerMillionTokens: z.string(),
-  lunaOutputCadMinorPerMillionTokens: z.string(),
-  terraInputCadMinorPerMillionTokens: z.string(),
-  terraOutputCadMinorPerMillionTokens: z.string(),
+  astraInputCadMinorPerMillionTokens: z.string(),
+  astraOutputCadMinorPerMillionTokens: z.string(),
 });
 const DurablePrincipalSchema = z.strictObject({
   userId: UuidSchema,
@@ -171,37 +167,23 @@ const readAgentEnvironment = (
   const parsed = EnvironmentSchema.safeParse({
     apiKey: read('EMDO_OPENAI_AGENT_API_KEY'),
     pricingVersion: read('EMDO_OPENAI_AGENT_PRICING_VERSION'),
-    lunaInputCadMinorPerMillionTokens: read(
-      'EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS',
+    astraInputCadMinorPerMillionTokens: read(
+      'EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS',
     ),
-    lunaOutputCadMinorPerMillionTokens: read(
-      'EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS',
-    ),
-    terraInputCadMinorPerMillionTokens: read(
-      'EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS',
-    ),
-    terraOutputCadMinorPerMillionTokens: read(
-      'EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS',
+    astraOutputCadMinorPerMillionTokens: read(
+      'EMDO_OPENAI_AGENT_GPT_6_ASTRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS',
     ),
   });
   if (!parsed.success) return undefined;
-  const lunaInputCadMinorPerMillionTokens = parsePositiveSafeInteger(
-    parsed.data.lunaInputCadMinorPerMillionTokens,
+  const astraInputCadMinorPerMillionTokens = parsePositiveSafeInteger(
+    parsed.data.astraInputCadMinorPerMillionTokens,
   );
-  const lunaOutputCadMinorPerMillionTokens = parsePositiveSafeInteger(
-    parsed.data.lunaOutputCadMinorPerMillionTokens,
-  );
-  const terraInputCadMinorPerMillionTokens = parsePositiveSafeInteger(
-    parsed.data.terraInputCadMinorPerMillionTokens,
-  );
-  const terraOutputCadMinorPerMillionTokens = parsePositiveSafeInteger(
-    parsed.data.terraOutputCadMinorPerMillionTokens,
+  const astraOutputCadMinorPerMillionTokens = parsePositiveSafeInteger(
+    parsed.data.astraOutputCadMinorPerMillionTokens,
   );
   if (
-    lunaInputCadMinorPerMillionTokens === undefined ||
-    lunaOutputCadMinorPerMillionTokens === undefined ||
-    terraInputCadMinorPerMillionTokens === undefined ||
-    terraOutputCadMinorPerMillionTokens === undefined
+    astraInputCadMinorPerMillionTokens === undefined ||
+    astraOutputCadMinorPerMillionTokens === undefined
   ) {
     return undefined;
   }
@@ -209,13 +191,9 @@ const readAgentEnvironment = (
     apiKey: parsed.data.apiKey,
     pricingVersion: parsed.data.pricingVersion,
     rates: {
-      'gpt-5.6-luna': {
-        inputCadMinorPerMillionTokens: lunaInputCadMinorPerMillionTokens,
-        outputCadMinorPerMillionTokens: lunaOutputCadMinorPerMillionTokens,
-      },
-      'gpt-5.6-terra': {
-        inputCadMinorPerMillionTokens: terraInputCadMinorPerMillionTokens,
-        outputCadMinorPerMillionTokens: terraOutputCadMinorPerMillionTokens,
+      'gpt-6-astra': {
+        inputCadMinorPerMillionTokens: astraInputCadMinorPerMillionTokens,
+        outputCadMinorPerMillionTokens: astraOutputCadMinorPerMillionTokens,
       },
     },
   });
@@ -225,7 +203,11 @@ const defaultDependencies: ProductionOpenAiAgentServiceDependencies =
   Object.freeze({
     fetch: globalThis.fetch.bind(globalThis),
     createProvider: ({ apiKey }: { readonly apiKey: string }) =>
-      new OpenAIProvider({ apiKey }),
+      new OpenAIProvider({
+        apiKey,
+        useResponses: true,
+        useResponsesWebSocket: false,
+      }),
     createRunner: ({
       modelProvider,
       tracingDisabled,
@@ -397,10 +379,20 @@ export class ProductionOpenAiAgentCostCalculator implements OpenAiAgentCostCalcu
       throw new Error('api-openai-agent-cost-invalid');
     }
     const rates = this.rates[input.model];
+    // Bound every input token at the cache-write rate (1.25x), including
+    // reservations where cache usage is not known. This is a conservative spend
+    // ledger estimate, not an invoice; cached reads can cost less. Long-context
+    // requests (>272K) double input/cache rates and multiply output by 1.5.
+    const longContext = input.inputTokens > 272_000;
     const total =
-      BigInt(input.inputTokens) * BigInt(rates.inputCadMinorPerMillionTokens) +
-      BigInt(input.outputTokens) * BigInt(rates.outputCadMinorPerMillionTokens);
-    const rounded = (total + TOKEN_RATE_DIVISOR - 1n) / TOKEN_RATE_DIVISOR;
+      BigInt(input.inputTokens) *
+        BigInt(rates.inputCadMinorPerMillionTokens) *
+        (longContext ? 10n : 5n) +
+      BigInt(input.outputTokens) *
+        BigInt(rates.outputCadMinorPerMillionTokens) *
+        (longContext ? 6n : 4n);
+    const divisor = TOKEN_RATE_DIVISOR * 4n;
+    const rounded = (total + divisor - 1n) / divisor;
     if (rounded > BigInt(Number.MAX_SAFE_INTEGER)) {
       throw new Error('api-openai-agent-cost-invalid');
     }

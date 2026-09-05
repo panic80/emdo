@@ -3,30 +3,29 @@ import { describe, expect, it, vi } from 'vitest';
 import { InMemoryModelAvailability, ModelRouter } from './model-router.js';
 
 const policy = Object.freeze({
-  defaultModel: 'gpt-5.6-luna' as const,
-  complexModel: 'gpt-5.6-terra' as const,
+  defaultModel: 'gpt-6-astra' as const,
+  complexModel: 'gpt-6-astra' as const,
   escalationReasons: Object.freeze([
     'dependent-cross-domain',
     'failed-output-validation',
     'low-confidence-reconciliation',
-    'luna-unavailable',
+    'model-execution-failed',
     'complex-reasoning',
   ] as const),
 });
 
 describe('ModelRouter', () => {
-  it('uses Luna by default and records why it was selected', async () => {
+  it('uses Astra by default and records why it was selected', async () => {
     const router = new ModelRouter(
       new InMemoryModelAvailability({
-        'gpt-5.6-luna': true,
-        'gpt-5.6-terra': true,
+        'gpt-6-astra': true,
       }),
     );
 
     await expect(router.resolve({ triggers: [], policy })).resolves.toEqual({
       status: 'resolved',
-      requestedModel: 'gpt-5.6-luna',
-      resolvedModel: 'gpt-5.6-luna',
+      requestedModel: 'gpt-6-astra',
+      resolvedModel: 'gpt-6-astra',
       reason: 'default',
     });
   });
@@ -36,11 +35,10 @@ describe('ModelRouter', () => {
     'failed-output-validation',
     'low-confidence-reconciliation',
     'complex-reasoning',
-  ] as const)('routes %s work to Terra', async (trigger) => {
+  ] as const)('routes %s work to Astra', async (trigger) => {
     const router = new ModelRouter(
       new InMemoryModelAvailability({
-        'gpt-5.6-luna': true,
-        'gpt-5.6-terra': true,
+        'gpt-6-astra': true,
       }),
     );
 
@@ -48,51 +46,15 @@ describe('ModelRouter', () => {
       router.resolve({ triggers: [trigger], policy }),
     ).resolves.toEqual({
       status: 'resolved',
-      requestedModel: 'gpt-5.6-terra',
-      resolvedModel: 'gpt-5.6-terra',
+      requestedModel: 'gpt-6-astra',
+      resolvedModel: 'gpt-6-astra',
       reason: trigger,
-    });
-  });
-
-  it('falls back from unavailable Luna to Terra', async () => {
-    const router = new ModelRouter(
-      new InMemoryModelAvailability({
-        'gpt-5.6-luna': false,
-        'gpt-5.6-terra': true,
-      }),
-    );
-
-    await expect(router.resolve({ triggers: [], policy })).resolves.toEqual({
-      status: 'resolved',
-      requestedModel: 'gpt-5.6-luna',
-      resolvedModel: 'gpt-5.6-terra',
-      reason: 'luna-unavailable',
-    });
-  });
-
-  it('degrades ordinary complex reasoning to Luna while preserving the trigger', async () => {
-    const router = new ModelRouter(
-      new InMemoryModelAvailability({
-        'gpt-5.6-luna': true,
-        'gpt-5.6-terra': false,
-      }),
-    );
-
-    await expect(
-      router.resolve({ triggers: ['complex-reasoning'], policy }),
-    ).resolves.toEqual({
-      status: 'resolved',
-      requestedModel: 'gpt-5.6-terra',
-      resolvedModel: 'gpt-5.6-luna',
-      reason: 'terra-unavailable',
-      escalationTrigger: 'complex-reasoning',
     });
   });
 
   it('fails closed without provider I/O when the manifest policy does not allow the requested escalation', async () => {
     const availability = new InMemoryModelAvailability({
-      'gpt-5.6-luna': true,
-      'gpt-5.6-terra': true,
+      'gpt-6-astra': true,
     });
     const router = new ModelRouter(availability);
 
@@ -101,12 +63,12 @@ describe('ModelRouter', () => {
         triggers: ['failed-output-validation'],
         policy: {
           ...policy,
-          escalationReasons: ['complex-reasoning', 'luna-unavailable'],
+          escalationReasons: ['complex-reasoning', 'model-execution-failed'],
         },
       }),
     ).resolves.toEqual({
       status: 'unavailable',
-      requestedModel: 'gpt-5.6-terra',
+      requestedModel: 'gpt-6-astra',
       attemptedModels: [],
       reason: 'configured-model-escalation-not-allowed',
       escalationTrigger: 'failed-output-validation',
@@ -120,45 +82,15 @@ describe('ModelRouter', () => {
     expect(availability.checkedModels()).toEqual([]);
   });
 
-  it('records an unavailable nonretryable result when policy forbids Luna fallback', async () => {
-    const availability = new InMemoryModelAvailability({
-      'gpt-5.6-luna': false,
-      'gpt-5.6-terra': true,
-    });
-    const router = new ModelRouter(availability);
-
-    await expect(
-      router.resolve({
-        triggers: [],
-        policy: {
-          ...policy,
-          escalationReasons: ['complex-reasoning'],
-        },
-      }),
-    ).resolves.toEqual({
-      status: 'unavailable',
-      requestedModel: 'gpt-5.6-luna',
-      attemptedModels: ['gpt-5.6-luna'],
-      reason: 'configured-model-fallback-not-allowed',
-      safeError: {
-        code: 'agent-model-fallback-not-allowed',
-        message: 'The active agent policy does not allow a model fallback.',
-        retryable: false,
-      },
-    });
-    expect(availability.checkedModels()).toEqual(['gpt-5.6-luna']);
-  });
-
   it.each([
     'dependent-cross-domain',
     'failed-output-validation',
     'low-confidence-reconciliation',
   ] as const)(
-    'fails closed when Terra is unavailable for %s',
+    'fails closed when Astra is unavailable for %s',
     async (trigger) => {
       const availability = new InMemoryModelAvailability({
-        'gpt-5.6-luna': true,
-        'gpt-5.6-terra': false,
+        'gpt-6-astra': false,
       });
       const router = new ModelRouter(availability);
 
@@ -166,8 +98,8 @@ describe('ModelRouter', () => {
         router.resolve({ triggers: [trigger], policy }),
       ).resolves.toEqual({
         status: 'unavailable',
-        requestedModel: 'gpt-5.6-terra',
-        attemptedModels: ['gpt-5.6-terra'],
+        requestedModel: 'gpt-6-astra',
+        attemptedModels: ['gpt-6-astra'],
         reason: 'required-complex-model-unavailable',
         escalationTrigger: trigger,
         safeError: {
@@ -177,7 +109,7 @@ describe('ModelRouter', () => {
           retryable: true,
         },
       });
-      expect(availability.checkedModels()).toEqual(['gpt-5.6-terra']);
+      expect(availability.checkedModels()).toEqual(['gpt-6-astra']);
     },
   );
 
@@ -189,8 +121,7 @@ describe('ModelRouter', () => {
     async (first, second) => {
       const router = new ModelRouter(
         new InMemoryModelAvailability({
-          'gpt-5.6-luna': true,
-          'gpt-5.6-terra': false,
+          'gpt-6-astra': false,
         }),
       );
 
@@ -207,15 +138,14 @@ describe('ModelRouter', () => {
   it('returns a safe unavailable result without inventing a resolved model', async () => {
     const router = new ModelRouter(
       new InMemoryModelAvailability({
-        'gpt-5.6-luna': false,
-        'gpt-5.6-terra': false,
+        'gpt-6-astra': false,
       }),
     );
 
     await expect(router.resolve({ triggers: [], policy })).resolves.toEqual({
       status: 'unavailable',
-      requestedModel: 'gpt-5.6-luna',
-      attemptedModels: ['gpt-5.6-luna', 'gpt-5.6-terra'],
+      requestedModel: 'gpt-6-astra',
+      attemptedModels: ['gpt-6-astra'],
       reason: 'no-configured-model-available',
       safeError: {
         code: 'agent-model-unavailable',
@@ -227,8 +157,7 @@ describe('ModelRouter', () => {
 
   it('deduplicates availability checks and freezes returned results', async () => {
     const availability = new InMemoryModelAvailability({
-      'gpt-5.6-luna': true,
-      'gpt-5.6-terra': true,
+      'gpt-6-astra': true,
     });
     const router = new ModelRouter(availability);
     const result = await router.resolve({
@@ -236,15 +165,14 @@ describe('ModelRouter', () => {
       policy,
     });
 
-    expect(availability.checkedModels()).toEqual(['gpt-5.6-terra']);
+    expect(availability.checkedModels()).toEqual(['gpt-6-astra']);
     expect(Object.isFrozen(result)).toBe(true);
   });
 
   it('fails closed on an unknown runtime escalation trigger', async () => {
     const router = new ModelRouter(
       new InMemoryModelAvailability({
-        'gpt-5.6-luna': true,
-        'gpt-5.6-terra': true,
+        'gpt-6-astra': true,
       }),
     );
 
@@ -256,35 +184,36 @@ describe('ModelRouter', () => {
     ).rejects.toThrow('invalid-model-routing-request');
   });
 
-  it('treats availability probe failures as unavailable and still tries the fallback', async () => {
-    const router = new ModelRouter({
-      isAvailable: async (model) => {
-        if (model === 'gpt-5.6-luna') throw new Error('probe failed');
-        return true;
-      },
+  it('fails closed on probe errors without trying any legacy model', async () => {
+    const isAvailable = vi.fn(async () => {
+      throw new Error('probe failed');
     });
-
+    const router = new ModelRouter({ isAvailable });
     await expect(
       router.resolve({ triggers: [], policy }),
     ).resolves.toMatchObject({
-      status: 'resolved',
-      requestedModel: 'gpt-5.6-luna',
-      resolvedModel: 'gpt-5.6-terra',
-      reason: 'luna-unavailable',
-    });
-
-    const unavailable = new ModelRouter({
-      isAvailable: async () => {
-        throw new Error('probe failed');
-      },
-    });
-    await expect(
-      unavailable.resolve({ triggers: [], policy }),
-    ).resolves.toMatchObject({
       status: 'unavailable',
+      requestedModel: 'gpt-6-astra',
+      attemptedModels: ['gpt-6-astra'],
       reason: 'no-configured-model-available',
     });
+    expect(isAvailable.mock.calls).toEqual([['gpt-6-astra']]);
   });
+
+  it.each(['gpt-5.6-luna', 'gpt-5.6-terra'])(
+    'rejects legacy active model %s',
+    async (model) => {
+      const isAvailable = vi.fn(async () => true);
+      const router = new ModelRouter({ isAvailable });
+      await expect(
+        router.resolve({
+          triggers: [],
+          policy: { ...policy, defaultModel: model } as never,
+        }),
+      ).rejects.toThrow('invalid-model-routing-request');
+      expect(isAvailable).not.toHaveBeenCalled();
+    },
+  );
 
   it('captures the availability probe at construction', async () => {
     const replacement = vi.fn(async () => false);
@@ -298,7 +227,7 @@ describe('ModelRouter', () => {
       router.resolve({ triggers: [], policy }),
     ).resolves.toMatchObject({
       status: 'resolved',
-      resolvedModel: 'gpt-5.6-luna',
+      resolvedModel: 'gpt-6-astra',
     });
     expect(replacement).not.toHaveBeenCalled();
   });

@@ -395,10 +395,8 @@ describeDatabase(
       );
 
       const migrations = await loadOrderedMigrations();
-      expect(migrations).toHaveLength(23);
-      expect(migrations.at(-1)?.id).toBe(
-        '0022_registered_agent_invocation_lineage',
-      );
+      expect(migrations).toHaveLength(24);
+      expect(migrations.at(-1)?.id).toBe('0023_astra_model_migration');
       if (preflight.rows[0]?.emdo_schema === null) {
         for (const migration of migrations) await admin.query(migration.sql);
       } else {
@@ -710,6 +708,133 @@ describeDatabase(
       );
     });
 
+    it('preserves historical extraction provenance when the Astra migration is applied', async () => {
+      const client = await admin.connect();
+      try {
+        await client.query('begin');
+        await client.query(
+          "update emdo.finance_document_extractions set model = 'gpt-5.6-terra' where id = $1",
+          [ids.ownerExtraction],
+        );
+        const migration = (await loadOrderedMigrations()).at(-1);
+        if (migration?.id !== '0023_astra_model_migration')
+          throw new Error('missing-astra-migration');
+        await client.query(migration.sql);
+        const row = await client.query(
+          'select model from emdo.finance_document_extractions where id = $1',
+          [ids.ownerExtraction],
+        );
+        expect(row.rows).toEqual([{ model: 'gpt-5.6-terra' }]);
+      } finally {
+        await client.query('rollback');
+        client.release();
+      }
+    });
+
+    it('validates Astra approval results while retaining legacy history and rejecting mixed models', async () => {
+      const completed = {
+        status: 'completed',
+        runId: randomUUID(),
+        localTraceReference: 'astra-test',
+        output: { message: 'Ready' },
+        specialistOutcomes: [],
+        hasPartialFailures: false,
+        usage: { inputTokens: 10, outputTokens: 5, modelCostCadMinor: 1 },
+      };
+      const astra = {
+        status: 'resolved',
+        requestedModel: 'gpt-6-astra',
+        resolvedModel: 'gpt-6-astra',
+        reason: 'default',
+      };
+      const unavailable = {
+        status: 'unavailable',
+        requestedModel: 'gpt-6-astra',
+        attemptedModels: ['gpt-6-astra'],
+        reason: 'no-configured-model-available',
+        safeError: {
+          code: 'agent-model-unavailable',
+          message: 'AI is temporarily unavailable. Local features still work.',
+          retryable: true,
+        },
+      };
+      const failed = {
+        status: 'failed',
+        runId: completed.runId,
+        localTraceReference: completed.localTraceReference,
+        usage: completed.usage,
+        specialistOutcomes: [],
+        safeError: unavailable.safeError,
+      };
+      for (const [result, valid] of [
+        [{ ...completed, modelResolution: astra }, true],
+        [
+          {
+            ...completed,
+            modelResolution: { ...astra, reason: 'model-execution-failed' },
+          },
+          true,
+        ],
+        [
+          {
+            ...completed,
+            modelResolution: {
+              ...astra,
+              requestedModel: 'gpt-5.6-luna',
+              resolvedModel: 'gpt-5.6-luna',
+            },
+          },
+          true,
+        ],
+        [
+          {
+            ...completed,
+            modelResolution: {
+              ...astra,
+              requestedModel: 'gpt-5.6-terra',
+              resolvedModel: 'gpt-5.6-terra',
+            },
+          },
+          true,
+        ],
+        [
+          {
+            ...completed,
+            modelResolution: { ...astra, resolvedModel: 'gpt-5.6-luna' },
+          },
+          false,
+        ],
+        [
+          {
+            ...completed,
+            modelResolution: { ...astra, reason: 'terra-unavailable' },
+          },
+          false,
+        ],
+        [{ ...completed, modelResolution: { ...astra, extra: true } }, false],
+        [{ ...completed, modelResolution: unavailable }, false],
+        [{ ...failed, modelResolution: unavailable }, true],
+        [
+          {
+            ...failed,
+            modelResolution: {
+              ...unavailable,
+              attemptedModels: ['gpt-6-astra', 'gpt-5.6-luna'],
+            },
+          },
+          false,
+        ],
+      ] as const) {
+        const checked = await admin.query(
+          'select emdo.approval_resume_turn_result_is_valid($1::jsonb) as valid',
+          [JSON.stringify(result)],
+        );
+        expect(checked.rows, JSON.stringify(result.modelResolution)).toEqual([
+          { valid },
+        ]);
+      }
+    });
+
     it('persists a fresh upload, queues its first extraction, and reads back the current owner-scoped metadata', async () => {
       const generatedIds = [
         ids.ownerUploadedDocument,
@@ -790,6 +915,19 @@ describeDatabase(
           extractionRevision: 1,
         });
         expect(generatedIds).toEqual([]);
+        const claimed = await admin.query(
+          'select document_id from emdo.claim_next_finance_document_extraction()',
+        );
+        expect(claimed.rows).toEqual([
+          { document_id: ids.ownerUploadedDocument },
+        ]);
+        const extraction = await admin.query(
+          'select model, state from emdo.finance_document_extractions where id = $1',
+          [ids.ownerUploadedExtraction],
+        );
+        expect(extraction.rows).toEqual([
+          { model: 'gpt-6-astra', state: 'extracting' },
+        ]);
       } finally {
         await admin.query(
           `delete from emdo.finance_document_extractions where id = $1`,

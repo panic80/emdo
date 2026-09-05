@@ -186,12 +186,12 @@ const normalizeKnownEvent = (
         type: 'model-resolution',
         status: 'resolved',
         requestedModel: enumValue(metadata, 'requestedModel', [
-          'gpt-5.6-luna',
-          'gpt-5.6-terra',
+          'gpt-6-astra',
+          'gpt-6-astra',
         ]),
         resolvedModel: enumValue(metadata, 'resolvedModel', [
-          'gpt-5.6-luna',
-          'gpt-5.6-terra',
+          'gpt-6-astra',
+          'gpt-6-astra',
         ]),
         reason: enumValue(metadata, 'reason', [
           'default',
@@ -199,8 +199,7 @@ const normalizeKnownEvent = (
           'failed-output-validation',
           'low-confidence-reconciliation',
           'complex-reasoning',
-          'luna-unavailable',
-          'terra-unavailable',
+          'model-execution-failed',
         ]),
         ...(escalationTrigger === undefined
           ? {}
@@ -233,7 +232,7 @@ const normalizeKnownEvent = (
           'dependent-cross-domain',
           'failed-output-validation',
           'low-confidence-reconciliation',
-          'luna-unavailable',
+          'model-execution-failed',
           'complex-reasoning',
         ].includes(escalationTrigger)
       ) {
@@ -243,14 +242,12 @@ const normalizeKnownEvent = (
         type: 'model-resolution',
         status: 'unavailable',
         requestedModel: enumValue(metadata, 'requestedModel', [
-          'gpt-5.6-luna',
-          'gpt-5.6-terra',
+          'gpt-6-astra',
+          'gpt-6-astra',
         ]),
         attemptedModels: stringArray(metadata, 'attemptedModels').map(
           (model) =>
-            model === 'gpt-5.6-luna' || model === 'gpt-5.6-terra'
-              ? model
-              : fail(),
+            model === 'gpt-6-astra' || model === 'gpt-6-astra' ? model : fail(),
         ),
         reason,
         ...(escalationTrigger === undefined
@@ -260,7 +257,7 @@ const normalizeKnownEvent = (
                 | 'dependent-cross-domain'
                 | 'failed-output-validation'
                 | 'low-confidence-reconciliation'
-                | 'luna-unavailable'
+                | 'model-execution-failed'
                 | 'complex-reasoning',
             }),
         safeErrorCode: enumValue(metadata, 'safeErrorCode', [

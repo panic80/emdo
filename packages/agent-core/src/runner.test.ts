@@ -99,13 +99,13 @@ const agent = (
         : ['agent.delegations', 'agent.specialist-outcomes', `${id}.records`],
     riskCeiling: kind === 'manager' ? 'none' : 'provider-write',
     modelPolicy: Object.freeze({
-      defaultModel: 'gpt-5.6-luna',
-      complexModel: 'gpt-5.6-terra',
+      defaultModel: 'gpt-6-astra',
+      complexModel: 'gpt-6-astra',
       escalationReasons: Object.freeze([
         'dependent-cross-domain',
         'failed-output-validation',
         'low-confidence-reconciliation',
-        'luna-unavailable',
+        'model-execution-failed',
         'complex-reasoning',
       ] as const),
     }),
@@ -128,15 +128,14 @@ const agent = (
     capabilities: Object.freeze([...capabilities]),
     inputSchema,
     outputSchema,
-    materialize: (model: 'gpt-5.6-luna' | 'gpt-5.6-terra') =>
-      Object.freeze({ id, model }),
+    materialize: (model: 'gpt-6-astra') => Object.freeze({ id, model }),
   });
 };
 
 const defaultResolution: ModelResolution = Object.freeze({
   status: 'resolved',
-  requestedModel: 'gpt-5.6-luna',
-  resolvedModel: 'gpt-5.6-luna',
+  requestedModel: 'gpt-6-astra',
+  resolvedModel: 'gpt-6-astra',
   reason: 'default',
 });
 
@@ -1500,7 +1499,7 @@ describe('AgentOrchestrator', () => {
   });
 
   it.each(['invalid-output', 'provider-failure'] as const)(
-    'does not replay a disclosed Luna plan on Terra after %s',
+    'does not replay a disclosed Astra plan after %s',
     async (failureMode) => {
       const planModels: string[] = [];
       let specialistCalls = 0;
@@ -1508,13 +1507,13 @@ describe('AgentOrchestrator', () => {
         async (request) => {
           if (request.phase === 'plan') {
             planModels.push(request.model);
-            if (request.model === 'gpt-5.6-luna') {
+            if (request.model === 'gpt-6-astra') {
               if (failureMode === 'provider-failure') {
-                throw new Error('Luna provider failed');
+                throw new Error('Astra provider failed');
               }
               return completed({ unexpected: true });
             }
-            throw new Error('Terra must not receive a replayed disclosure');
+            throw new Error('Astra must not receive a replayed disclosure');
           }
           if (request.phase === 'specialist') {
             specialistCalls += 1;
@@ -1535,7 +1534,7 @@ describe('AgentOrchestrator', () => {
         },
         modelResolution: defaultResolution,
       });
-      expect(planModels).toEqual(['gpt-5.6-luna']);
+      expect(planModels).toEqual(['gpt-6-astra']);
       expect(specialistCalls).toBe(0);
       expect(resolveModel).toHaveBeenCalledOnce();
       const planDisclosureEvents = traceEvents.filter(
@@ -1553,12 +1552,12 @@ describe('AgentOrchestrator', () => {
     },
   );
 
-  it('uses the pre-dispatch Luna-unavailable fallback with one bound Terra disclosure', async () => {
-    const terraResolution: ModelResolution = Object.freeze({
+  it('uses the configured Astra recovery resolution with one bound disclosure', async () => {
+    const recoveryResolution: ModelResolution = Object.freeze({
       status: 'resolved',
-      requestedModel: 'gpt-5.6-luna',
-      resolvedModel: 'gpt-5.6-terra',
-      reason: 'luna-unavailable',
+      requestedModel: 'gpt-6-astra',
+      resolvedModel: 'gpt-6-astra',
+      reason: 'model-execution-failed',
     });
     const models: string[] = [];
     const { orchestrator, resolveModel, traceEvents } = setup(
@@ -1581,14 +1580,14 @@ describe('AgentOrchestrator', () => {
         }
         return completed({ message: 'Tuesday works.' });
       },
-      { modelResolution: terraResolution },
+      { modelResolution: recoveryResolution },
     );
 
     await expect(orchestrator.runTurn(turn())).resolves.toMatchObject({
       status: 'completed',
-      modelResolution: terraResolution,
+      modelResolution: recoveryResolution,
     });
-    expect(models).toEqual(['gpt-5.6-terra', 'gpt-5.6-terra', 'gpt-5.6-terra']);
+    expect(models).toEqual(['gpt-6-astra', 'gpt-6-astra', 'gpt-6-astra']);
     expect(resolveModel).toHaveBeenCalledOnce();
     const planDisclosureEvents = traceEvents.filter(
       (event) =>
@@ -1603,7 +1602,7 @@ describe('AgentOrchestrator', () => {
     ).toHaveLength(1);
   });
 
-  it('does not replay a disclosed Luna synthesis on Terra after invalid output', async () => {
+  it('does not replay a disclosed Astra synthesis after invalid output', async () => {
     let specialistCalls = 0;
     const synthesisModels: string[] = [];
     const { orchestrator } = setup(
@@ -1639,11 +1638,11 @@ describe('AgentOrchestrator', () => {
       modelResolution: defaultResolution,
     });
     expect(specialistCalls).toBe(1);
-    expect(synthesisModels).toEqual(['gpt-5.6-luna']);
+    expect(synthesisModels).toEqual(['gpt-6-astra']);
   });
 
   it.each(['invalid-output', 'provider-failure'] as const)(
-    'does not replay a disclosed Luna specialist on Terra after %s',
+    'does not replay a disclosed Astra specialist after %s',
     async (failureMode) => {
       const specialistModels: string[] = [];
       const { orchestrator } = setup(
@@ -1662,12 +1661,12 @@ describe('AgentOrchestrator', () => {
           }
           if (request.phase === 'specialist') {
             specialistModels.push(request.model);
-            if (request.model === 'gpt-5.6-luna') {
+            if (request.model === 'gpt-6-astra') {
               return failureMode === 'invalid-output'
                 ? completed({ wrong: true }, 'safe')
                 : failedProviderResult('safe');
             }
-            throw new Error('Terra must not receive a replayed disclosure');
+            throw new Error('Astra must not receive a replayed disclosure');
           }
           return completed({ message: 'Tuesday works.' });
         },
@@ -1693,7 +1692,7 @@ describe('AgentOrchestrator', () => {
           },
         ],
       });
-      expect(specialistModels).toEqual(['gpt-5.6-luna']);
+      expect(specialistModels).toEqual(['gpt-6-astra']);
     },
   );
 
@@ -1741,7 +1740,7 @@ describe('AgentOrchestrator', () => {
         },
       ],
     });
-    expect(specialistModels).toEqual(['gpt-5.6-luna']);
+    expect(specialistModels).toEqual(['gpt-6-astra']);
     expect(resolveModel).toHaveBeenCalledOnce();
   });
 
@@ -1781,11 +1780,8 @@ describe('AgentOrchestrator', () => {
   it('fails clearly when the configured model is unavailable while local memory stays untouched', async () => {
     const unavailable = Object.freeze({
       status: 'unavailable',
-      requestedModel: 'gpt-5.6-luna',
-      attemptedModels: Object.freeze([
-        'gpt-5.6-luna' as const,
-        'gpt-5.6-terra' as const,
-      ]),
+      requestedModel: 'gpt-6-astra',
+      attemptedModels: Object.freeze(['gpt-6-astra'] as const),
       reason: 'no-configured-model-available',
       safeError: Object.freeze({
         code: 'agent-model-unavailable',
@@ -1812,9 +1808,9 @@ describe('AgentOrchestrator', () => {
     expect(resolveModel).toHaveBeenCalledWith({
       triggers: [],
       policy: expect.objectContaining({
-        defaultModel: 'gpt-5.6-luna',
-        complexModel: 'gpt-5.6-terra',
-        escalationReasons: expect.arrayContaining(['luna-unavailable']),
+        defaultModel: 'gpt-6-astra',
+        complexModel: 'gpt-6-astra',
+        escalationReasons: expect.arrayContaining(['model-execution-failed']),
       }),
     });
   });
@@ -1822,7 +1818,7 @@ describe('AgentOrchestrator', () => {
   it('does no provider or memory I/O when manifest policy forbids the required escalation', async () => {
     const unavailable = Object.freeze({
       status: 'unavailable',
-      requestedModel: 'gpt-5.6-terra',
+      requestedModel: 'gpt-6-astra',
       attemptedModels: Object.freeze([] as const),
       reason: 'configured-model-escalation-not-allowed',
       escalationTrigger: 'failed-output-validation',

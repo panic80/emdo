@@ -93,8 +93,8 @@ export const emdoAgentEvalCases: readonly AgentEvalCase[] = Object.freeze([
       Object.freeze({
         type: 'model-resolution',
         status: 'resolved',
-        requestedModel: 'gpt-5.6-terra',
-        resolvedModel: 'gpt-5.6-terra',
+        requestedModel: 'gpt-6-astra',
+        resolvedModel: 'gpt-6-astra',
         reason: 'dependent-cross-domain',
       }),
     ]),
@@ -287,47 +287,45 @@ export const emdoAgentEvalCases: readonly AgentEvalCase[] = Object.freeze([
     ]),
   }),
   defineEvalCase({
-    id: 'luna-unavailable-terra-fallback',
-    title: 'Falls back from unavailable Luna to Terra',
-    coverage: ['luna-terra-fallback'],
+    id: 'astra-default-routing',
+    title: 'Routes default work to Astra',
+    coverage: ['astra-model-routing'],
     turn: turn('410', 'Summarize today.'),
     fixture: Object.freeze({
       now: EVAL_NOW,
       modelAvailability: Object.freeze({
-        'gpt-5.6-luna': false,
-        'gpt-5.6-terra': true,
+        'gpt-6-astra': true,
       }),
     }),
     assertions: Object.freeze([
       Object.freeze({
         type: 'model-resolution',
         status: 'resolved',
-        requestedModel: 'gpt-5.6-luna',
-        resolvedModel: 'gpt-5.6-terra',
-        reason: 'luna-unavailable',
+        requestedModel: 'gpt-6-astra',
+        resolvedModel: 'gpt-6-astra',
+        reason: 'default',
       }),
     ]),
   }),
   defineEvalCase({
-    id: 'required-terra-unavailable',
-    title: 'Fails closed when a safety-required Terra run is unavailable',
-    coverage: ['luna-terra-fallback'],
+    id: 'required-astra-unavailable',
+    title: 'Fails closed when a safety-required Astra run is unavailable',
+    coverage: ['astra-model-routing'],
     turn: turn('411', 'Reconcile conflicting records.', [
       'low-confidence-reconciliation',
     ]),
     fixture: Object.freeze({
       now: EVAL_NOW,
       modelAvailability: Object.freeze({
-        'gpt-5.6-luna': true,
-        'gpt-5.6-terra': false,
+        'gpt-6-astra': false,
       }),
     }),
     assertions: Object.freeze([
       Object.freeze({
         type: 'model-resolution',
         status: 'unavailable',
-        requestedModel: 'gpt-5.6-terra',
-        attemptedModels: ['gpt-5.6-terra'] as const,
+        requestedModel: 'gpt-6-astra',
+        attemptedModels: ['gpt-6-astra'] as const,
         reason: 'required-complex-model-unavailable',
         escalationTrigger: 'low-confidence-reconciliation',
         safeErrorCode: 'required-agent-model-unavailable',
@@ -336,23 +334,22 @@ export const emdoAgentEvalCases: readonly AgentEvalCase[] = Object.freeze([
     ]),
   }),
   defineEvalCase({
-    id: 'dual-model-unavailable',
+    id: 'astra-unavailable',
     title: 'Fails safely while keeping local features operational',
-    coverage: ['dual-model-unavailable'],
+    coverage: ['astra-unavailable'],
     turn: turn('412', 'Summarize today.'),
     fixture: Object.freeze({
       now: EVAL_NOW,
       modelAvailability: Object.freeze({
-        'gpt-5.6-luna': false,
-        'gpt-5.6-terra': false,
+        'gpt-6-astra': false,
       }),
     }),
     assertions: Object.freeze([
       Object.freeze({
         type: 'model-resolution',
         status: 'unavailable',
-        requestedModel: 'gpt-5.6-luna',
-        attemptedModels: ['gpt-5.6-luna', 'gpt-5.6-terra'] as const,
+        requestedModel: 'gpt-6-astra',
+        attemptedModels: ['gpt-6-astra'] as const,
         reason: 'no-configured-model-available',
         safeErrorCode: 'agent-model-unavailable',
         localFeaturesOperational: true,

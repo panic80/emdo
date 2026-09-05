@@ -323,7 +323,7 @@ const GATE_RECEIPT_DEFINITIONS = Object.freeze({
   'agent-evals-production-runtime': freezeDefinition({
     runner: 'ci',
     proof: {
-      lunaTerraRouting: 'passed',
+      astraRouting: 'passed',
       approvalInterruption: 'passed',
       usageBudget: 'passed',
       resolvedModelRecorded: true,

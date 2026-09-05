@@ -21,13 +21,13 @@ import {
 } from './runner.js';
 
 const modelPolicy = Object.freeze({
-  defaultModel: 'gpt-5.6-luna' as const,
-  complexModel: 'gpt-5.6-terra' as const,
+  defaultModel: 'gpt-6-astra' as const,
+  complexModel: 'gpt-6-astra' as const,
   escalationReasons: Object.freeze([
     'dependent-cross-domain',
     'failed-output-validation',
     'low-confidence-reconciliation',
-    'luna-unavailable',
+    'model-execution-failed',
     'complex-reasoning',
   ] as const),
 });
@@ -375,7 +375,7 @@ describe('OpenAI Agents SDK boundary', () => {
         provider.execute({
           phase: 'synthesize',
           agent,
-          model: 'gpt-5.6-luna',
+          model: 'gpt-6-astra',
           input: { sourceExcerpt: 'facture originale' },
           context: { ...context, locale },
           maxTurns: 12,
@@ -383,7 +383,7 @@ describe('OpenAI Agents SDK boundary', () => {
       ).resolves.toMatchObject({ status: 'completed' });
 
       expect(materialize).toHaveBeenCalledWith(
-        'gpt-5.6-luna',
+        'gpt-6-astra',
         expect.objectContaining({
           trustedInstructions: [
             `Write the entire user-facing final EMDO synthesis in ${language} (${locale}), regardless of the language used in the user message or conversation history. The only exception is brief, bounded source-language evidence excerpts, which must remain in their original language and must not be translated.`,
@@ -423,7 +423,7 @@ describe('OpenAI Agents SDK boundary', () => {
     const sdkAgent = facade.createAgent({
       name: 'scheduler',
       instructions: 'Use scoped data only.',
-      model: 'gpt-5.6-luna',
+      model: 'gpt-6-astra',
       tools: [sdkTool],
       outputType,
       maxOutputTokens: 1_000,
@@ -431,7 +431,13 @@ describe('OpenAI Agents SDK boundary', () => {
 
     expect(sdkAgent).toBeInstanceOf(Agent);
     expect(sdkAgent.outputType).toBe(outputType);
-    expect(sdkAgent.modelSettings.maxTokens).toBe(1_000);
+    expect(sdkAgent.modelSettings).toEqual({
+      maxTokens: 1_000,
+      reasoning: { effort: 'medium' },
+      store: false,
+      promptCacheOptions: { ttl: '30m' },
+      providerData: { service_tier: 'default' },
+    });
     expect(sdkAgent.tools).toEqual([
       expect.objectContaining({
         type: 'function',
@@ -613,7 +619,7 @@ describe('OpenAI Agents SDK boundary', () => {
       provider.execute({
         phase: 'specialist',
         agent: compiled,
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'dentist' },
         context,
         maxTurns: 12,
@@ -737,7 +743,7 @@ describe('OpenAI Agents SDK boundary', () => {
     const request: AgentProviderRequest = {
       phase: 'specialist',
       agent: compiled,
-      model: 'gpt-5.6-luna',
+      model: 'gpt-6-astra',
       input: { title: 'Dentist' },
       context,
       maxTurns: 12,
@@ -760,7 +766,7 @@ describe('OpenAI Agents SDK boundary', () => {
       ],
     });
     expect(JSON.stringify(result)).not.toContain('privateNotes');
-    expect(materialize).toHaveBeenCalledWith('gpt-5.6-luna', {
+    expect(materialize).toHaveBeenCalledWith('gpt-6-astra', {
       exposeCapabilities: true,
       outputType: outputSchema,
     });
@@ -813,7 +819,7 @@ describe('OpenAI Agents SDK boundary', () => {
         provider.execute({
           phase: 'specialist',
           agent: compiled,
-          model: 'gpt-5.6-luna',
+          model: 'gpt-6-astra',
           input: { request: 'dentist' },
           context,
           maxTurns: 12,
@@ -881,7 +887,7 @@ describe('OpenAI Agents SDK boundary', () => {
       provider.execute({
         phase: 'specialist',
         agent: compiled,
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'schedule two events' },
         context,
         maxTurns: 12,
@@ -950,7 +956,7 @@ describe('OpenAI Agents SDK boundary', () => {
       provider.execute({
         phase: 'specialist',
         agent: compiled,
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'schedule two events' },
         context,
         maxTurns: 12,
@@ -1023,7 +1029,7 @@ describe('OpenAI Agents SDK boundary', () => {
       provider.execute({
         phase: 'specialist',
         agent: compiled,
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'schedule two events' },
         context,
         maxTurns: 12,
@@ -1110,7 +1116,7 @@ describe('OpenAI Agents SDK boundary', () => {
       provider.execute({
         phase: 'specialist',
         agent: compiled,
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'dentist' },
         context,
         maxTurns: 12,
@@ -1181,7 +1187,7 @@ describe('OpenAI Agents SDK boundary', () => {
       .execute({
         phase: 'specialist',
         agent: compiled,
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'dentist' },
         context,
         maxTurns: 12,
@@ -1194,7 +1200,7 @@ describe('OpenAI Agents SDK boundary', () => {
     const second = provider.execute({
       phase: 'specialist',
       agent: compiled,
-      model: 'gpt-5.6-luna',
+      model: 'gpt-6-astra',
       input: { request: 'optometrist' },
       context,
       maxTurns: 12,
@@ -1246,7 +1252,7 @@ describe('OpenAI Agents SDK boundary', () => {
       provider.execute({
         phase: 'specialist',
         agent: compiled,
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'optometrist' },
         context,
         maxTurns: 12,
@@ -1304,7 +1310,7 @@ describe('OpenAI Agents SDK boundary', () => {
       provider.execute({
         phase: 'specialist',
         agent: compiled,
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'dentist' },
         context,
         maxTurns: 12,
@@ -1361,7 +1367,7 @@ describe('OpenAI Agents SDK boundary', () => {
         provider.execute({
           phase: 'specialist',
           agent: compiled,
-          model: 'gpt-5.6-luna',
+          model: 'gpt-6-astra',
           input: { request: 'dentist' },
           context: contextWithInvocationDeadline(
             new Date(now.getTime() + 5_000).toISOString(),
@@ -1419,7 +1425,7 @@ describe('OpenAI Agents SDK boundary', () => {
         provider.execute({
           phase: 'specialist',
           agent: compiled,
-          model: 'gpt-5.6-luna',
+          model: 'gpt-6-astra',
           input: { request: 'dentist' },
           context: contextWithInvocationDeadline(
             new Date(now.getTime() + 5_000).toISOString(),
@@ -1480,7 +1486,7 @@ describe('OpenAI Agents SDK boundary', () => {
         provider.execute({
           phase: 'specialist',
           agent: compiled,
-          model: 'gpt-5.6-luna',
+          model: 'gpt-6-astra',
           input: { request: 'dentist' },
           context: contextWithInvocationDeadline(
             new Date(now.getTime() + 60_000).toISOString(),
@@ -1541,7 +1547,7 @@ describe('OpenAI Agents SDK boundary', () => {
       provider.execute({
         phase: 'specialist',
         agent: compiled,
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'dentist' },
         context,
         maxTurns: 12,
@@ -1593,7 +1599,7 @@ describe('OpenAI Agents SDK boundary', () => {
       provider.execute({
         phase: 'specialist',
         agent: compiled,
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'dentist' },
         context: cancelledContext,
         maxTurns: 12,
@@ -1621,7 +1627,7 @@ describe('OpenAI Agents SDK boundary', () => {
       provider.execute({
         phase: 'specialist',
         agent: compiled,
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'dentist' },
         context,
         maxTurns: 12,
@@ -1651,7 +1657,7 @@ describe('OpenAI Agents SDK boundary', () => {
       provider.execute({
         phase: 'specialist',
         agent: compiledAgentWithCapability('read', gateway),
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'dentist' },
         context,
         maxTurns: 12,
@@ -1692,7 +1698,7 @@ describe('OpenAI Agents SDK boundary', () => {
       provider.execute({
         phase: 'specialist',
         agent: compiledAgentWithCapability('read', gateway),
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'dentist' },
         context,
         maxTurns: 12,
@@ -1723,7 +1729,7 @@ describe('OpenAI Agents SDK boundary', () => {
       provider.execute({
         phase: 'specialist',
         agent: compiledAgentWithCapability('read', gateway),
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'dentist' },
         context,
         maxTurns: 12,
@@ -1779,7 +1785,7 @@ describe('OpenAI Agents SDK boundary', () => {
       provider.execute({
         phase: 'specialist',
         agent: compiledAgentWithCapability('read', gateway),
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'dentist' },
         context,
         maxTurns: 12,
@@ -1828,7 +1834,7 @@ describe('OpenAI Agents SDK boundary', () => {
       capabilityProvider.execute({
         phase: 'specialist',
         agent: noCalls,
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'dentist' },
         context,
         maxTurns: 12,
@@ -1865,7 +1871,7 @@ describe('OpenAI Agents SDK boundary', () => {
       timeoutProvider.execute({
         phase: 'specialist',
         agent: timed,
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         input: { request: 'dentist' },
         context,
         maxTurns: 12,

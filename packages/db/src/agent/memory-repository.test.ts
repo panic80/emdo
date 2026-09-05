@@ -16,7 +16,7 @@ const runRow = {
   space_id: spaceId,
   agent_id: 'scheduler.agent',
   agent_version: '1.0.0',
-  requested_model: 'gpt-5.6-luna',
+  requested_model: 'gpt-6-astra',
   resolved_model: null,
   model_reason: null,
   status: 'queued',
@@ -55,7 +55,7 @@ describe('PostgresAgentMemoryRepository', () => {
         spaceId,
         agentId: 'scheduler.agent',
         agentVersion: '1.0.0',
-        requestedModel: 'gpt-5.6-luna',
+        requestedModel: 'gpt-6-astra',
       }),
     ).resolves.toMatchObject({ id: runId, status: 'queued' });
     expect(

@@ -54,13 +54,13 @@ export const financeManifest: AgentManifest = AgentManifestSchema.parse({
     'finance.document-matches',
   ],
   modelPolicy: {
-    defaultModel: 'gpt-5.6-luna',
-    complexModel: 'gpt-5.6-terra',
+    defaultModel: 'gpt-6-astra',
+    complexModel: 'gpt-6-astra',
     escalationReasons: [
       'dependent-cross-domain',
       'failed-output-validation',
       'low-confidence-reconciliation',
-      'luna-unavailable',
+      'model-execution-failed',
       'complex-reasoning',
     ],
   },

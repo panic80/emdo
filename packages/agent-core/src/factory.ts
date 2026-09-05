@@ -27,13 +27,13 @@ export interface ValidatedAgentManifest {
   readonly readableDataClasses: readonly string[];
   readonly riskCeiling: keyof typeof RISK_RANK;
   readonly modelPolicy: Readonly<{
-    readonly defaultModel: 'gpt-5.6-luna';
-    readonly complexModel: 'gpt-5.6-terra';
+    readonly defaultModel: 'gpt-6-astra';
+    readonly complexModel: 'gpt-6-astra';
     readonly escalationReasons: readonly (
       | 'dependent-cross-domain'
       | 'failed-output-validation'
       | 'low-confidence-reconciliation'
-      | 'luna-unavailable'
+      | 'model-execution-failed'
       | 'complex-reasoning'
     )[];
   }>;
@@ -803,7 +803,7 @@ export class AgentFactory<Agent = unknown, Tool = unknown> {
       model,
       options = {},
     ) => {
-      if (model !== 'gpt-5.6-luna' && model !== 'gpt-5.6-terra') {
+      if (model !== 'gpt-6-astra') {
         throw new Error('invalid-agent-model');
       }
       const tools =

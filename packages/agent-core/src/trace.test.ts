@@ -23,7 +23,7 @@ describe('LocalTraceRecorder', () => {
       userId: '018f1f5e-3333-7333-8333-333333333333',
       householdId: '018f1f5e-4444-7444-8444-444444444444',
       agentId: 'scheduler',
-      model: 'gpt-5.6-luna',
+      model: 'gpt-6-astra',
       apiKey: 'sk-do-not-log',
       authorization: 'Bearer do-not-log',
       nested: { credential: 'hidden', latencyMs: 42 },
@@ -38,7 +38,7 @@ describe('LocalTraceRecorder', () => {
       occurredAt: '2026-08-09T22:00:00.000Z',
       metadata: {
         agentId: 'scheduler',
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         apiKey: '[redacted]',
         authorization: '[redacted]',
         nested: { credential: '[redacted]', latencyMs: 42 },

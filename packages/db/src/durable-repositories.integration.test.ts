@@ -98,7 +98,7 @@ describeDatabase(
           spaceId: ids.space,
           agentId: 'scheduler.agent',
           agentVersion: '1.0.0',
-          requestedModel: 'gpt-5.6-luna',
+          requestedModel: 'gpt-6-astra',
         }),
       ).resolves.toMatchObject({ id: ids.run, status: 'queued' });
       await expect(
@@ -110,6 +110,9 @@ describeDatabase(
         }),
       ).resolves.toMatchObject({ sequence: 1 });
 
+      const periodResult = await admin.query<{ period: string }>(
+        "select to_char(clock_timestamp() at time zone 'America/Toronto', 'YYYY-MM') as period",
+      );
       const spend = new PostgresSpendLedger(runtime.scopedPool, principal);
       const reservationId = 'durable-reservation-0001';
       const executionId = 'durable-execution-000001';
@@ -119,7 +122,7 @@ describeDatabase(
             reservationId,
             executionId,
             householdId: ids.household,
-            period: '2026-08',
+            period: periodResult.rows[0]!.period,
             category: 'model',
             estimatedCadMinor: 100,
             authorizationHash: 'a'.repeat(64),

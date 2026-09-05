@@ -29,10 +29,8 @@ const liveChatEnvironment = Object.freeze({
   EMDO_OPENAI_AGENT_API_KEY: `sk-proj-${'a'.repeat(40)}`,
   EMDO_OPENAI_AGENT_PRICING_VERSION:
     'openai-2026-07-30.boc-2026-08-28.usdcad-1.3888.ceil',
-  EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '28',
-  EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: '167',
-  EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '278',
-  EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: '1667',
+  EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '28',
+  EMDO_OPENAI_AGENT_GPT_6_ASTRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: '167',
 });
 
 const invocationContext = Object.freeze({
@@ -272,14 +270,14 @@ describe('Finance synthetic staging agent service bundle', () => {
 
     const services = bundle();
     await expect(
-      services.modelAvailability.isAvailable('gpt-5.6-luna'),
+      services.modelAvailability.isAvailable('gpt-6-astra'),
     ).resolves.toBe(true);
     await expect(
-      services.modelAvailability.isAvailable('gpt-5.6-terra'),
+      services.modelAvailability.isAvailable('gpt-6-astra'),
     ).resolves.toBe(true);
     expect(
       services.costCalculator.calculateCadMinor({
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         inputTokens: 99_999,
         outputTokens: 99_999,
       }),
@@ -318,7 +316,7 @@ describe('Finance synthetic staging agent service bundle', () => {
 
     expect(providerKey).not.toHaveBeenCalled();
     await expect(
-      services.modelAvailability.isAvailable('gpt-5.6-luna'),
+      services.modelAvailability.isAvailable('gpt-6-astra'),
     ).resolves.toBe(true);
     await services.close();
   });

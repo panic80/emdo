@@ -885,7 +885,7 @@ export const createFinanceSyntheticStagingAgentServiceBundle = (
   const bundle: ProductionOpenAiAgentServiceBundle = {
     modelAvailability: {
       isAvailable: async (model) =>
-        model === 'gpt-5.6-luna' || model === 'gpt-5.6-terra',
+        model === 'gpt-6-astra' || model === 'gpt-6-astra',
     },
     costCalculator: {
       calculateCadMinor: () => 1,

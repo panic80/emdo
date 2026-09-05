@@ -1079,7 +1079,7 @@ describe('production capability runtime conformance', () => {
       shoppingAgentDefinition,
     ]) {
       const compiled = factory.compile(definition);
-      const agent = compiled.materialize('gpt-5.6-luna');
+      const agent = compiled.materialize('gpt-6-astra');
       expect(agent.tools).toHaveLength(
         definition.manifest.capabilityAllowlist.length,
       );
@@ -1117,7 +1117,7 @@ describe('production capability runtime conformance', () => {
       shoppingAgentDefinition,
     ]) {
       expect(() =>
-        realSdkFactory.compile(definition).materialize('gpt-5.6-luna'),
+        realSdkFactory.compile(definition).materialize('gpt-6-astra'),
       ).not.toThrow();
     }
   });

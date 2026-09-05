@@ -512,9 +512,9 @@ describe('uniform agent package template', () => {
       'partial-specialist-failure',
       'cross-run-disclosure-reuse-denied',
       'disclosure-expires-before-model-dispatch',
-      'luna-unavailable-terra-fallback',
-      'required-terra-unavailable',
-      'dual-model-unavailable',
+      'astra-default-routing',
+      'required-astra-unavailable',
+      'astra-unavailable',
       'multiple-provider-writes-require-separate-turns',
       'calendar-write-authenticated-visual-resume',
       'typed-yes-cannot-approve',
@@ -600,7 +600,7 @@ describe('uniform agent package template', () => {
 
     for (const { definition } of packages) {
       const compiled = factory.compile(definition);
-      const sdkAgent = compiled.materialize('gpt-5.6-luna');
+      const sdkAgent = compiled.materialize('gpt-6-astra');
 
       expect(compiled.manifest.id).toBe(definition.manifest.id);
       expect(compiled.inputSchema).toBe(
@@ -625,7 +625,7 @@ describe('uniform agent package template', () => {
       expect(sdkAgent).toEqual(
         expect.objectContaining({
           name: definition.manifest.id,
-          model: 'gpt-5.6-luna',
+          model: 'gpt-6-astra',
           outputType: compiled.outputSchema,
         }),
       );

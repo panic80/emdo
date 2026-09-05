@@ -58,10 +58,8 @@ describeDatabase(
       }
 
       const migrations = await loadOrderedMigrations();
-      expect(migrations).toHaveLength(23);
-      expect(migrations.at(-1)?.id).toBe(
-        '0022_registered_agent_invocation_lineage',
-      );
+      expect(migrations).toHaveLength(24);
+      expect(migrations.at(-1)?.id).toBe('0023_astra_model_migration');
       for (const migration of migrations) await admin.query(migration.sql);
 
       await admin.query(

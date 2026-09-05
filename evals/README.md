@@ -52,7 +52,7 @@ The suite covers:
 - deny-by-default capabilities and indirect prompt injection containment;
 - derived-value evidence lineage, freshness, and one-run field disclosure;
 - partial specialist failure synthesis;
-- Luna-to-Terra fallback, safety-required Terra failure, and dual
+- Astra default routing, safety-required Astra failure, and
   unavailability while local features remain usable;
 - authenticated visual approval interruption, exact one-time resume, and the
   rule that typed text cannot approve a provider write;

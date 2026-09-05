@@ -138,9 +138,9 @@ const requiredAgentCases = new Map([
   ['partial-specialist-failure', ['parallel-dispatch', 'partial-failure']],
   ['cross-run-disclosure-reuse-denied', ['disclosure']],
   ['disclosure-expires-before-model-dispatch', ['disclosure']],
-  ['luna-unavailable-terra-fallback', ['luna-terra-fallback']],
-  ['required-terra-unavailable', ['luna-terra-fallback']],
-  ['dual-model-unavailable', ['dual-model-unavailable']],
+  ['astra-default-routing', ['astra-model-routing']],
+  ['required-astra-unavailable', ['astra-model-routing']],
+  ['astra-unavailable', ['astra-unavailable']],
   [
     'multiple-provider-writes-require-separate-turns',
     ['approval-interruption'],
@@ -168,7 +168,7 @@ const requiredEvalRuntimeTests = Object.freeze([
   Object.freeze({
     file: 'evals/orchestrator-integration.test.ts',
     fullName:
-      'real AgentOrchestrator eval path passes Luna fallback and fail-closed model cases through the production runner',
+      'real AgentOrchestrator eval path passes Astra routing and fail-closed model cases through the production runner',
   }),
   Object.freeze({
     file: 'evals/orchestrator-integration.test.ts',
@@ -414,8 +414,8 @@ const validateAgentCaseEvidenceReport = async (path) => {
           'resolvedModel',
         ]) &&
         resolution.status === 'resolved' &&
-        ['gpt-5.6-luna', 'gpt-5.6-terra'].includes(resolution.requestedModel) &&
-        ['gpt-5.6-luna', 'gpt-5.6-terra'].includes(resolution.resolvedModel);
+        ['gpt-6-astra'].includes(resolution.requestedModel) &&
+        ['gpt-6-astra'].includes(resolution.resolvedModel);
       const validUnavailable =
         hasExactKeys(resolution, [
           'status',
@@ -423,11 +423,11 @@ const validateAgentCaseEvidenceReport = async (path) => {
           'attemptedModels',
         ]) &&
         resolution.status === 'unavailable' &&
-        ['gpt-5.6-luna', 'gpt-5.6-terra'].includes(resolution.requestedModel) &&
+        ['gpt-6-astra'].includes(resolution.requestedModel) &&
         Array.isArray(resolution.attemptedModels) &&
         resolution.attemptedModels.length > 0 &&
         resolution.attemptedModels.every((model) =>
-          ['gpt-5.6-luna', 'gpt-5.6-terra'].includes(model),
+          ['gpt-6-astra'].includes(model),
         );
       if (!validResolved && !validUnavailable) invalid();
     }
@@ -466,14 +466,10 @@ const validateAgentCaseEvidenceReport = async (path) => {
     ) ||
     !hasResolvedModel(
       'dependent-cross-domain-waves',
-      'gpt-5.6-terra',
-      'gpt-5.6-terra',
+      'gpt-6-astra',
+      'gpt-6-astra',
     ) ||
-    !hasResolvedModel(
-      'luna-unavailable-terra-fallback',
-      'gpt-5.6-luna',
-      'gpt-5.6-terra',
-    ) ||
+    !hasResolvedModel('astra-default-routing', 'gpt-6-astra', 'gpt-6-astra') ||
     requireCase('calendar-write-authenticated-visual-resume').observations
       .approvalInterruptionCount < 1 ||
     requireCase('calendar-write-authenticated-visual-resume').observations
@@ -759,7 +755,7 @@ const profileReceipts = async (profile, binding, values) => {
           category: 'gates',
           id: 'agent-evals-production-runtime',
           proof: {
-            lunaTerraRouting: 'passed',
+            astraRouting: 'passed',
             approvalInterruption: 'passed',
             usageBudget: 'passed',
             resolvedModelRecorded: true,

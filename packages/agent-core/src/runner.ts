@@ -13,6 +13,7 @@ import {
   AgentInvocationContextSchema,
   AgentOutcomeSchema,
   EffectiveAuthorizationScopeFingerprintSchema,
+  ModelResolutionSchema,
   SupportedLocaleSchema,
   type AgentInvocationContext,
   type AgentOutcome,
@@ -809,7 +810,13 @@ export const createOpenAiAgentsSdkFacade = (
       name: config.name,
       instructions: config.instructions,
       model: config.model,
-      modelSettings: { maxTokens: config.maxOutputTokens },
+      modelSettings: {
+        maxTokens: config.maxOutputTokens,
+        reasoning: { effort: 'medium' },
+        store: false,
+        promptCacheOptions: { ttl: '30m' },
+        providerData: { service_tier: 'default' },
+      },
       tools: [...config.tools],
       outputType: config.outputType,
     });
@@ -1040,14 +1047,14 @@ type RuntimeProviderResult =
     >;
 
 type RuntimeFallbackCause =
-  'failed-output-validation' | 'luna-execution-failed';
+  'failed-output-validation' | 'model-execution-failed';
 
 const fallbackTrigger = (
   cause: RuntimeFallbackCause,
 ): ModelEscalationTrigger =>
   cause === 'failed-output-validation'
     ? 'failed-output-validation'
-    : 'luna-unavailable';
+    : 'model-execution-failed';
 
 type SpecialistProviderExecution =
   | Readonly<{
@@ -3238,7 +3245,7 @@ export class AgentOrchestrator {
     let activeResolution = modelResolution;
     let planningUsage = ZERO_USAGE;
     let plan: ManagerPlan | undefined;
-    let lastPlanFailure: RuntimeFallbackCause = 'luna-execution-failed';
+    let lastPlanFailure: RuntimeFallbackCause = 'model-execution-failed';
     const planningSources = snapshotDisclosureSources(
       [...memory.entries, currentMessage].map((entry) =>
         Object.freeze({ kind: 'conversation-message' as const, entry }),
@@ -3261,7 +3268,7 @@ export class AgentOrchestrator {
           },
         );
       } catch {
-        lastPlanFailure = 'luna-execution-failed';
+        lastPlanFailure = 'model-execution-failed';
       }
       if (planning !== undefined) {
         planningUsage = addUsage(planningUsage, planning.usage);
@@ -3278,7 +3285,7 @@ export class AgentOrchestrator {
             activeResolution,
           );
         }
-        lastPlanFailure = 'luna-execution-failed';
+        lastPlanFailure = 'model-execution-failed';
       }
       if (planning?.status === 'interrupted') {
         return this.#pause(
@@ -3305,7 +3312,7 @@ export class AgentOrchestrator {
       }
       if (
         attempt > 0 ||
-        activeResolution.resolvedModel !== 'gpt-5.6-luna' ||
+        activeResolution.reason !== 'default' ||
         planning?.disclosure?.modelDispatched === true
       ) {
         break;
@@ -3339,7 +3346,7 @@ export class AgentOrchestrator {
           fallback,
         );
       }
-      if (fallback.resolvedModel !== 'gpt-5.6-terra') break;
+      if (fallback.resolvedModel !== 'gpt-6-astra') break;
       activeResolution = fallback;
       await trace.record('model.resolved', {
         requestedModel: fallback.requestedModel,
@@ -4344,7 +4351,7 @@ export class AgentOrchestrator {
     );
     let activeResolution = modelResolution;
     let usage = ZERO_USAGE;
-    let lastFailure: RuntimeFallbackCause = 'luna-execution-failed';
+    let lastFailure: RuntimeFallbackCause = 'model-execution-failed';
     let terminalFailure: SafeAgentError | undefined;
     let failureInvocation:
       | Readonly<{
@@ -4371,7 +4378,7 @@ export class AgentOrchestrator {
           },
         );
       } catch {
-        lastFailure = 'luna-execution-failed';
+        lastFailure = 'model-execution-failed';
       }
       if (result !== undefined) {
         usage = addUsage(usage, result.usage);
@@ -4379,7 +4386,7 @@ export class AgentOrchestrator {
       }
       if (result?.status === 'failed') {
         terminalFailure = terminalProviderFailure(result);
-        lastFailure = 'luna-execution-failed';
+        lastFailure = 'model-execution-failed';
         replaySafe = result.replaySafety === 'safe';
         if (result.disclosure !== undefined) {
           failureInvocation = Object.freeze({
@@ -4416,7 +4423,7 @@ export class AgentOrchestrator {
         attempt > 0 ||
         !replaySafe ||
         result?.disclosure?.modelDispatched === true ||
-        activeResolution.resolvedModel !== 'gpt-5.6-luna'
+        activeResolution.reason !== 'default'
       ) {
         break;
       }
@@ -4447,7 +4454,7 @@ export class AgentOrchestrator {
           ...(failureInvocation === undefined ? {} : failureInvocation),
         });
       }
-      if (fallback.resolvedModel !== 'gpt-5.6-terra') break;
+      if (fallback.resolvedModel !== 'gpt-6-astra') break;
       activeResolution = fallback;
       await trace.record('model.resolved', {
         requestedModel: fallback.requestedModel,
@@ -4858,7 +4865,7 @@ export class AgentOrchestrator {
               });
               continue;
             }
-            if (execution.modelResolution.resolvedModel === 'gpt-5.6-terra') {
+            if (execution.modelResolution.reason !== 'default') {
               activeResolution = execution.modelResolution;
             }
             usage = addUsage(usage, execution.result.usage);
@@ -5062,7 +5069,7 @@ export class AgentOrchestrator {
   ): Promise<TurnResult> {
     let activeResolution = modelResolution;
     let totalUsage = usage;
-    let lastFailure: RuntimeFallbackCause = 'luna-execution-failed';
+    let lastFailure: RuntimeFallbackCause = 'model-execution-failed';
     const managerSynthesisPhaseInvocationId = this.#newInvocationId();
     const synthesisSources = snapshotDisclosureSources([
       Object.freeze({
@@ -5097,7 +5104,7 @@ export class AgentOrchestrator {
           },
         );
       } catch {
-        lastFailure = 'luna-execution-failed';
+        lastFailure = 'model-execution-failed';
       }
       if (synthesis !== undefined) {
         totalUsage = addUsage(totalUsage, synthesis.usage);
@@ -5114,7 +5121,7 @@ export class AgentOrchestrator {
             activeResolution,
           );
         }
-        lastFailure = 'luna-execution-failed';
+        lastFailure = 'model-execution-failed';
       }
       if (synthesis?.status === 'interrupted') {
         return this.#pause(
@@ -5150,7 +5157,7 @@ export class AgentOrchestrator {
       }
       if (
         attempt > 0 ||
-        activeResolution.resolvedModel !== 'gpt-5.6-luna' ||
+        activeResolution.reason !== 'default' ||
         synthesis?.disclosure?.modelDispatched === true
       ) {
         break;
@@ -5184,7 +5191,7 @@ export class AgentOrchestrator {
           fallback,
         );
       }
-      if (fallback.resolvedModel !== 'gpt-5.6-terra') break;
+      if (fallback.resolvedModel !== 'gpt-6-astra') break;
       activeResolution = fallback;
       await trace.record('model.resolved', {
         requestedModel: fallback.requestedModel,
@@ -5528,11 +5535,11 @@ export class AgentOrchestrator {
       ],
       ['locale'],
     );
-    const model = asObject(value.modelResolution);
+    const model = ModelResolutionSchema.parse(value.modelResolution);
     if (
       model.status !== 'resolved' ||
-      (model.resolvedModel !== 'gpt-5.6-luna' &&
-        model.resolvedModel !== 'gpt-5.6-terra')
+      model.requestedModel !== 'gpt-6-astra' ||
+      model.resolvedModel !== 'gpt-6-astra'
     ) {
       throw new Error('invalid-runtime-checkpoint');
     }
@@ -5599,10 +5606,7 @@ export class AgentOrchestrator {
       version: RUNTIME_STATE_VERSION,
       turn: parsedTurn,
       rootManagerInvocationId,
-      modelResolution: model as unknown as Extract<
-        ModelResolution,
-        { status: 'resolved' }
-      >,
+      modelResolution: model,
       ...(plan === undefined ? {} : { plan }),
       outcomes,
       paused,

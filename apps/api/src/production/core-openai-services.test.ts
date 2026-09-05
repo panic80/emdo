@@ -29,10 +29,8 @@ const principal = Object.freeze({
 const validEnvironment = Object.freeze({
   EMDO_OPENAI_AGENT_API_KEY: `sk-proj-${'a'.repeat(40)}`,
   EMDO_OPENAI_AGENT_PRICING_VERSION: 'openai-agents-2026-08-15',
-  EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '101',
-  EMDO_OPENAI_AGENT_GPT_5_6_LUNA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: '202',
-  EMDO_OPENAI_AGENT_GPT_5_6_TERRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '303',
-  EMDO_OPENAI_AGENT_GPT_5_6_TERRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: '404',
+  EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '101',
+  EMDO_OPENAI_AGENT_GPT_6_ASTRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS: '202',
 });
 
 const financeSyntheticEnvironment = Object.freeze({
@@ -106,7 +104,7 @@ const makeDependencies = (
       input.fetch ??
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ id: 'gpt-5.6-luna' }), {
+          new Response(JSON.stringify({ id: 'gpt-6-astra' }), {
             status: 200,
             headers: { 'content-type': 'application/json' },
           }),
@@ -149,7 +147,7 @@ describe('production OpenAI agent service bundle', () => {
       },
       {
         ...validEnvironment,
-        EMDO_OPENAI_AGENT_GPT_5_6_LUNA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '0',
+        EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: '0',
       },
       { ...validEnvironment, EMDO_OPENAI_AGENT_UNKNOWN: 'unexpected' },
     ]) {
@@ -220,7 +218,7 @@ describe('production OpenAI agent service bundle', () => {
       return modelLookupCalls === 1
         ? modelLookup.promise
         : Promise.resolve(
-            new Response(JSON.stringify({ id: 'gpt-5.6-luna' }), {
+            new Response(JSON.stringify({ id: 'gpt-6-astra' }), {
               status: 200,
             }),
           );
@@ -232,12 +230,12 @@ describe('production OpenAI agent service bundle', () => {
     );
     if (bundle === undefined) throw new Error('test-bundle-unavailable');
 
-    const first = bundle.modelAvailability.isAvailable('gpt-5.6-luna');
-    const second = bundle.modelAvailability.isAvailable('gpt-5.6-luna');
+    const first = bundle.modelAvailability.isAvailable('gpt-6-astra');
+    const second = bundle.modelAvailability.isAvailable('gpt-6-astra');
     expect(first).toBe(second);
     expect(fetch).toHaveBeenCalledOnce();
     expect(fetch).toHaveBeenCalledWith(
-      'https://api.openai.com/v1/models/gpt-5.6-luna',
+      'https://api.openai.com/v1/models/gpt-6-astra',
       expect.objectContaining({
         cache: 'no-store',
         method: 'GET',
@@ -245,17 +243,17 @@ describe('production OpenAI agent service bundle', () => {
       }),
     );
     modelLookup.resolve(
-      new Response(JSON.stringify({ id: 'gpt-5.6-luna' }), { status: 200 }),
+      new Response(JSON.stringify({ id: 'gpt-6-astra' }), { status: 200 }),
     );
     await expect(first).resolves.toBe(true);
     await expect(
-      bundle.modelAvailability.isAvailable('gpt-5.6-luna'),
+      bundle.modelAvailability.isAvailable('gpt-6-astra'),
     ).resolves.toBe(true);
     expect(fetch).toHaveBeenCalledOnce();
 
     advanceClock(10_001);
     await expect(
-      bundle.modelAvailability.isAvailable('gpt-5.6-luna'),
+      bundle.modelAvailability.isAvailable('gpt-6-astra'),
     ).resolves.toBe(true);
     expect(fetch).toHaveBeenCalledTimes(2);
     await expect(
@@ -278,25 +276,39 @@ describe('production OpenAI agent service bundle', () => {
     if (bundle === undefined) throw new Error('test-bundle-unavailable');
 
     await expect(
-      bundle.modelAvailability.isAvailable('gpt-5.6-terra'),
+      bundle.modelAvailability.isAvailable('gpt-6-astra'),
     ).resolves.toBe(false);
     expect(
       bundle.costCalculator.calculateCadMinor({
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         inputTokens: 1,
         outputTokens: 1,
       }),
     ).toBe(1);
     expect(
       bundle.costCalculator.calculateCadMinor({
-        model: 'gpt-5.6-terra',
+        model: 'gpt-6-astra',
         inputTokens: 1_000_000,
         outputTokens: 1_000_000,
       }),
-    ).toBe(707);
+    ).toBe(556);
+    for (const [inputTokens, outputTokens, expected] of [
+      [8_000, 0, 2], // 101 cents/M input, including the 1.25x cache write.
+      [272_000, 0, 35],
+      [272_001, 0, 69], // Long-context pricing begins above the boundary.
+      [0, 1_000_000, 202],
+    ]) {
+      expect(
+        bundle.costCalculator.calculateCadMinor({
+          model: 'gpt-6-astra',
+          inputTokens: inputTokens!,
+          outputTokens: outputTokens!,
+        }),
+      ).toBe(expected);
+    }
     expect(() =>
       bundle.costCalculator.calculateCadMinor({
-        model: 'gpt-5.6-luna',
+        model: 'gpt-6-astra',
         inputTokens: -1,
         outputTokens: 1,
       }),

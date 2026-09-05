@@ -13,8 +13,8 @@ export type AgentEvalCoverage =
   | 'freshness'
   | 'disclosure'
   | 'partial-failure'
-  | 'luna-terra-fallback'
-  | 'dual-model-unavailable'
+  | 'astra-model-routing'
+  | 'astra-unavailable'
   | 'approval-interruption';
 
 export interface AgentEvalTurn {
@@ -119,23 +119,22 @@ export type AgentEvalTraceEvent =
   | (TraceEventBase & {
       readonly type: 'model-resolution';
       readonly status: 'resolved';
-      readonly requestedModel: 'gpt-5.6-luna' | 'gpt-5.6-terra';
-      readonly resolvedModel: 'gpt-5.6-luna' | 'gpt-5.6-terra';
+      readonly requestedModel: 'gpt-6-astra';
+      readonly resolvedModel: 'gpt-6-astra';
       readonly reason:
         | 'default'
         | 'dependent-cross-domain'
         | 'failed-output-validation'
         | 'low-confidence-reconciliation'
         | 'complex-reasoning'
-        | 'luna-unavailable'
-        | 'terra-unavailable';
+        | 'model-execution-failed';
       readonly escalationTrigger?: 'complex-reasoning';
     })
   | (TraceEventBase & {
       readonly type: 'model-resolution';
       readonly status: 'unavailable';
-      readonly requestedModel: 'gpt-5.6-luna' | 'gpt-5.6-terra';
-      readonly attemptedModels: readonly ('gpt-5.6-luna' | 'gpt-5.6-terra')[];
+      readonly requestedModel: 'gpt-6-astra';
+      readonly attemptedModels: readonly 'gpt-6-astra'[];
       readonly reason:
         | 'no-configured-model-available'
         | 'required-complex-model-unavailable'
@@ -145,7 +144,7 @@ export type AgentEvalTraceEvent =
         | 'dependent-cross-domain'
         | 'failed-output-validation'
         | 'low-confidence-reconciliation'
-        | 'luna-unavailable'
+        | 'model-execution-failed'
         | 'complex-reasoning';
       readonly safeErrorCode:
         | 'agent-model-unavailable'
@@ -289,8 +288,8 @@ export type AgentEvalAssertion =
   | Readonly<{
       type: 'model-resolution';
       status: 'resolved';
-      requestedModel: 'gpt-5.6-luna' | 'gpt-5.6-terra';
-      resolvedModel: 'gpt-5.6-luna' | 'gpt-5.6-terra';
+      requestedModel: 'gpt-6-astra';
+      resolvedModel: 'gpt-6-astra';
       reason: Extract<
         AgentEvalTraceEvent,
         { readonly type: 'model-resolution'; readonly status: 'resolved' }
@@ -300,8 +299,8 @@ export type AgentEvalAssertion =
   | Readonly<{
       type: 'model-resolution';
       status: 'unavailable';
-      requestedModel: 'gpt-5.6-luna' | 'gpt-5.6-terra';
-      attemptedModels: readonly ('gpt-5.6-luna' | 'gpt-5.6-terra')[];
+      requestedModel: 'gpt-6-astra';
+      attemptedModels: readonly 'gpt-6-astra'[];
       reason: Extract<
         AgentEvalTraceEvent,
         { readonly type: 'model-resolution'; readonly status: 'unavailable' }
@@ -310,7 +309,7 @@ export type AgentEvalAssertion =
         | 'dependent-cross-domain'
         | 'failed-output-validation'
         | 'low-confidence-reconciliation'
-        | 'luna-unavailable'
+        | 'model-execution-failed'
         | 'complex-reasoning';
       safeErrorCode:
         | 'agent-model-unavailable'

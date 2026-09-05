@@ -217,8 +217,8 @@ describe('PostgresApprovalResumeBoundary', () => {
       usage: { inputTokens: 0, outputTokens: 0, modelCostCadMinor: 0 },
       modelResolution: {
         status: 'resolved',
-        requestedModel: 'gpt-5.6-terra',
-        resolvedModel: 'gpt-5.6-terra',
+        requestedModel: 'gpt-6-astra',
+        resolvedModel: 'gpt-6-astra',
         reason: 'default',
       },
     });

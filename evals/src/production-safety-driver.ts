@@ -359,8 +359,8 @@ const pushLineageEvents = (
     },
     modelResolution: {
       status: 'resolved',
-      requestedModel: 'gpt-5.6-luna',
-      resolvedModel: 'gpt-5.6-luna',
+      requestedModel: 'gpt-6-astra',
+      resolvedModel: 'gpt-6-astra',
       reason: 'default',
     },
     localTraceReference: 'eval-lineage-trace',

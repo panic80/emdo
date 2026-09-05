@@ -47,3 +47,6 @@ Start with the [local development runbook](docs/runbooks/local-development.md)
 and [MVP acceptance ledger](docs/release/mvp-acceptance.md). Security and data
 boundaries are recorded in
 [docs/architecture/security-boundaries.md](docs/architecture/security-boundaries.md).
+
+See the [Astra migration notes](docs/astra-migration.md) for the active model,
+required rate configuration, database update, and pending-approval behavior.

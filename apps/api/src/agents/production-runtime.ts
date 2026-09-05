@@ -92,7 +92,7 @@ const REQUESTED_MODEL_ESCALATION_TRIGGERS = Object.freeze([
 ] as const);
 type RequestedModelEscalationTrigger = Exclude<
   ModelEscalationTrigger,
-  'luna-unavailable'
+  'model-execution-failed'
 >;
 
 /**

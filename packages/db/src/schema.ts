@@ -2365,7 +2365,7 @@ export const managerTurns = emdoSchema.table(
     ),
     check(
       'manager_turns_runtime_check',
-      sql`length(${table.managerAgentVersion}) between 5 and 64 and ${table.managerAgentVersion} ~ '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' and ${table.requestedModel} in ('gpt-5.6-luna', 'gpt-5.6-terra', 'provider-free-mvp-v1') and ${table.ownershipTokenHash} ~ '^[a-f0-9]{64}$'`,
+      sql`length(${table.managerAgentVersion}) between 5 and 64 and ${table.managerAgentVersion} ~ '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' and ${table.requestedModel} in ('gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-6-astra', 'provider-free-mvp-v1') and ${table.ownershipTokenHash} ~ '^[a-f0-9]{64}$'`,
     ),
     check(
       'manager_turns_state_check',
@@ -3244,7 +3244,7 @@ export const financeDocumentExtractions = emdoSchema.table(
     ),
     check(
       'finance_document_extractions_model_check',
-      sql`${table.model} is null or ${table.model} = 'gpt-5.6-terra'`,
+      sql`${table.model} is null or ${table.model} in ('gpt-5.6-terra', 'gpt-6-astra')`,
     ),
     check(
       'finance_document_extractions_payload_check',

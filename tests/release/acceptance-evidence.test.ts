@@ -175,7 +175,7 @@ const gateProofs: Readonly<Record<string, Readonly<Record<string, unknown>>>> =
       evalCaseCount: 18,
     },
     'agent-evals-production-runtime': {
-      lunaTerraRouting: 'passed',
+      astraRouting: 'passed',
       approvalInterruption: 'passed',
       usageBudget: 'passed',
       resolvedModelRecorded: true,
@@ -252,7 +252,7 @@ const providerProofs: Readonly<
 > = {
   'openai-agents': {
     managerSpecialistRun: 'passed',
-    resolvedModel: 'gpt-5.6-luna',
+    resolvedModel: 'gpt-6-astra',
     toolTrace: 'passed',
   },
   'openai-transcription': {

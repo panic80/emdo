@@ -327,7 +327,7 @@ describe('AgentOrchestrator eval driver', () => {
   });
 
   it('maps dual model unavailability to a failed phase with local features intact', async () => {
-    const evalCase = caseById('dual-model-unavailable');
+    const evalCase = caseById('astra-unavailable');
     const reference = 'trace-model-unavailable-1';
     const safeError = {
       code: 'agent-model-unavailable',
@@ -341,8 +341,8 @@ describe('AgentOrchestrator eval driver', () => {
         safeError,
         modelResolution: {
           status: 'unavailable',
-          requestedModel: 'gpt-5.6-luna',
-          attemptedModels: ['gpt-5.6-luna', 'gpt-5.6-terra'],
+          requestedModel: 'gpt-6-astra',
+          attemptedModels: ['gpt-6-astra'],
           reason: 'no-configured-model-available',
           safeError,
         },
@@ -355,9 +355,9 @@ describe('AgentOrchestrator eval driver', () => {
     const traces = queuedTraceSource({
       [reference]: [
         traceEvent(reference, evalCase.turn.runId, 'model.unavailable', {
-          requestedModel: 'gpt-5.6-luna',
+          requestedModel: 'gpt-6-astra',
           resolvedModel: null,
-          attemptedModels: ['gpt-5.6-luna', 'gpt-5.6-terra'],
+          attemptedModels: ['gpt-6-astra'],
           reason: 'no-configured-model-available',
           safeErrorCode: 'agent-model-unavailable',
         }),

@@ -45,6 +45,7 @@ describe('database migration runner', () => {
       '0020_manager_specialist_disclosure',
       '0021_blocked_visual_decision_claim',
       '0022_registered_agent_invocation_lineage',
+      '0023_astra_model_migration',
     ]);
     expect(migrations.map(({ index }) => index)).toEqual(
       migrations.map((_, index) => index),

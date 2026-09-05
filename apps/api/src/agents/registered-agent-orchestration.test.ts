@@ -91,13 +91,13 @@ const agent = (
         : ['agent.delegations', 'agent.specialist-outcomes'],
     riskCeiling: 'none',
     modelPolicy: Object.freeze({
-      defaultModel: 'gpt-5.6-luna',
-      complexModel: 'gpt-5.6-terra',
+      defaultModel: 'gpt-6-astra',
+      complexModel: 'gpt-6-astra',
       escalationReasons: [
         'dependent-cross-domain',
         'failed-output-validation',
         'low-confidence-reconciliation',
-        'luna-unavailable',
+        'model-execution-failed',
         'complex-reasoning',
       ] as const,
     }),
@@ -260,8 +260,8 @@ const setup = (execute: AgentExecutionProvider['execute']) => {
     modelRouter: {
       resolve: async () => ({
         status: 'resolved' as const,
-        requestedModel: 'gpt-5.6-luna' as const,
-        resolvedModel: 'gpt-5.6-luna' as const,
+        requestedModel: 'gpt-6-astra' as const,
+        resolvedModel: 'gpt-6-astra' as const,
         reason: 'default' as const,
       }),
     },
@@ -630,8 +630,8 @@ const orchestratorDependencies = () => ({
   modelRouter: {
     resolve: async () => ({
       status: 'resolved' as const,
-      requestedModel: 'gpt-5.6-luna' as const,
-      resolvedModel: 'gpt-5.6-luna' as const,
+      requestedModel: 'gpt-6-astra' as const,
+      resolvedModel: 'gpt-6-astra' as const,
       reason: 'default' as const,
     }),
   },

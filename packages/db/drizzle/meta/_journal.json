@@ -162,6 +162,13 @@
       "when": 1788033480548,
       "tag": "0022_registered_agent_invocation_lineage",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1788640146035,
+      "tag": "0023_astra_model_migration",
+      "breakpoints": true
     }
   ]
 }

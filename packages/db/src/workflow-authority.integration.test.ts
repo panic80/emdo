@@ -203,11 +203,11 @@ const seedAuthorityFixtures = async (client: import('pg').Client) => {
        (id, household_id, space_id, original_owner_user_id, agent_id,
         agent_version, requested_model, status)
      values ($1, $3, $4, $5, 'scheduler.agent', '1.0.0',
-             'gpt-5.6-luna', 'running'),
+             'gpt-6-astra', 'running'),
             ($2, $3, $6, $7, 'scheduler.agent', '1.0.0',
-             'gpt-5.6-luna', 'running'),
+             'gpt-6-astra', 'running'),
             ($8, $3, $4, $5, 'scheduler.agent', '1.0.0',
-             'gpt-5.6-luna', 'running')`,
+             'gpt-6-astra', 'running')`,
     [
       ids.runA,
       ids.runB,

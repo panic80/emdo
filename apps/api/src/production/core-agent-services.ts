@@ -1796,7 +1796,7 @@ export const createRequestScopedCoreAgentRuntimeFactory = (
         if (global !== true) return false;
         return (
           (await rawInput.openAi.modelAvailability.isAvailable(
-            'gpt-5.6-terra',
+            'gpt-6-astra',
           )) === true
         );
       } catch {
@@ -1815,7 +1815,7 @@ export const createRequestScopedCoreAgentRuntimeFactory = (
         try {
           return (
             (await rawInput.openAi.modelAvailability.isAvailable(
-              'gpt-5.6-terra',
+              'gpt-6-astra',
             )) === true
           );
         } catch {
@@ -2098,11 +2098,11 @@ export const createRequestScopedManagerFinanceAgentRuntimeFactory = (
     } as const;
     const check = async (): Promise<boolean> => {
       try {
-        const [global, terra] = await Promise.all([
+        const [global, astra] = await Promise.all([
           rawInput.checkGlobalDependencies(),
-          rawInput.openAi.modelAvailability.isAvailable('gpt-5.6-terra'),
+          rawInput.openAi.modelAvailability.isAvailable('gpt-6-astra'),
         ]);
-        return global === true && terra === true;
+        return global === true && astra === true;
       } catch {
         return false;
       }

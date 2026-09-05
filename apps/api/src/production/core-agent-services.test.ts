@@ -1418,7 +1418,7 @@ describe('request-scoped core agent runtime factory', () => {
     await expect(factory?.check()).resolves.toBe(true);
     expect(checkGlobalDependencies).toHaveBeenCalledOnce();
     expect(isAvailable).toHaveBeenCalledOnce();
-    expect(isAvailable).toHaveBeenCalledWith('gpt-5.6-terra');
+    expect(isAvailable).toHaveBeenCalledWith('gpt-6-astra');
   });
 
   it('composes a manager-only fallback without Google, and a guarded Finance graph only with workflow persistence', async () => {
@@ -1491,11 +1491,9 @@ describe('request-scoped core agent runtime factory', () => {
     await expect(financeOnly?.check()).resolves.toBe(true);
   });
 
-  it('treats Terra as the required ready model when Luna is unavailable', async () => {
+  it('requires Astra availability for registered agent work', async () => {
     const readPool = { connect: vi.fn() } as never;
-    const isAvailable = vi.fn(
-      async (model: string) => model === 'gpt-5.6-terra',
-    );
+    const isAvailable = vi.fn(async (model: string) => model === 'gpt-6-astra');
     const factory = createRequestScopedManagerFinanceAgentRuntimeFactory({
       principal,
       requestId: ids.request,
@@ -1524,7 +1522,7 @@ describe('request-scoped core agent runtime factory', () => {
 
     await expect(factory?.check()).resolves.toBe(true);
     expect(isAvailable).toHaveBeenCalledOnce();
-    expect(isAvailable).toHaveBeenCalledWith('gpt-5.6-terra');
+    expect(isAvailable).toHaveBeenCalledWith('gpt-6-astra');
   });
 
   it('adds Finance to the registered Scheduler graph without exposing Shopping', () => {
