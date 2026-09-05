@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -935,6 +935,264 @@ describeDatabase(
         );
         await admin.query(`delete from emdo.finance_documents where id = $1`, [
           ids.ownerUploadedDocument,
+        ]);
+      }
+    });
+
+    it('finds private match candidates beyond the activity page and excludes ineligible ledger rows', async () => {
+      const repository = new PostgresFinanceDocumentRepository(
+        databasePool(app),
+      );
+      const prefix = `match-candidate-${randomUUID()}`;
+      const transaction = {
+        recordType: 'transaction',
+        currency: 'CAD',
+        effectiveAmountCadMinor: -123,
+        postedOn: '2026-09-05',
+        description: 'Grocer',
+        reversal: null,
+      };
+      const seed = async (
+        suffix: string,
+        payload: Record<string, unknown>,
+        options: {
+          owner?: string;
+          space?: string;
+          tombstoned?: boolean;
+          old?: boolean;
+        } = {},
+      ) => {
+        await admin.query(
+          `insert into emdo.sync_entities
+             (household_id, space_id, original_owner_user_id, entity_type, entity_id,
+              payload, actor_intent, revision, tombstoned_at, created_at, updated_at)
+           values ($1, $2, $3, 'finance.transaction', $4, $5::jsonb,
+                   'Synthetic document matching regression', 1,
+                   case when $6::boolean then pg_catalog.clock_timestamp() end,
+                   pg_catalog.clock_timestamp(),
+                   pg_catalog.clock_timestamp() - case when $7::boolean then interval '1 day' else interval '0 days' end)`,
+          [
+            ids.household,
+            options.space ?? ids.ownerPrivateSpace,
+            options.owner ?? ids.owner,
+            `${prefix}-${suffix}`,
+            payload,
+            options.tombstoned ?? false,
+            options.old ?? false,
+          ],
+        );
+      };
+      try {
+        for (let index = 0; index < 60; index += 1) {
+          await seed(`unrelated-${index}`, {
+            ...transaction,
+            effectiveAmountCadMinor: -500,
+          });
+        }
+        await seed(
+          'legacy-match',
+          { ...transaction, amountConflict: false },
+          { old: true },
+        );
+        await seed('modern-match', transaction, { old: true });
+        await seed(
+          'date-edge',
+          { ...transaction, postedOn: '2026-09-12' },
+          { old: true },
+        );
+        await seed('wrong-direction', {
+          ...transaction,
+          effectiveAmountCadMinor: 123,
+        });
+        await seed('wrong-currency', { ...transaction, currency: 'USD' });
+        await seed('outside-window', {
+          ...transaction,
+          postedOn: '2026-09-13',
+        });
+        await seed('reversed', {
+          ...transaction,
+          reversal: { operationId: randomUUID(), reason: 'Reversed' },
+        });
+        await seed('conflicted', { ...transaction, amountConflict: true });
+        await seed('deleted', transaction, { tombstoned: true });
+        await seed('other-owner', transaction, {
+          owner: ids.collaborator,
+          space: ids.collaboratorPrivateSpace,
+        });
+        const candidates = await repository.listMatchCandidates({
+          principal: ownerRepositoryPrincipal,
+          requestId: ids.ownerRequest,
+          amountMinorUnits: -123,
+          occurredOn: '2026-09-05',
+        });
+        expect(candidates.map(({ recordId }) => recordId)).toEqual(
+          ['date-edge', 'legacy-match', 'modern-match'].map(
+            (suffix) => `${prefix}-${suffix}`,
+          ),
+        );
+        await expect(
+          repository.listMatchCandidates({
+            principal: {
+              ...ownerRepositoryPrincipal,
+              privateSpaceId: ids.collaboratorPrivateSpace,
+            },
+            requestId: ids.ownerRequest,
+            amountMinorUnits: -123,
+            occurredOn: '2026-09-05',
+          }),
+        ).rejects.toMatchObject({ code: 'authorization-revoked' });
+      } finally {
+        await admin.query(
+          'delete from emdo.sync_entities where entity_id like $1',
+          [`${prefix}-%`],
+        );
+      }
+    });
+
+    it('rejects the exact approved tuple after another transaction replaces the pending review', async () => {
+      const repository = new PostgresFinanceDocumentRepository(
+        databasePool(app),
+      );
+      const documentId = randomUUID();
+      const extractionId = randomUUID();
+      const scope = {
+        principal: ownerRepositoryPrincipal,
+        requestId: ids.ownerRequest,
+        documentId,
+        extractionRevision: 1,
+      };
+      const selectedFacts = {
+        documentType: 'receipt',
+        sourceLocale: 'en-CA',
+        currency: 'CAD',
+        chunks: [
+          {
+            ordinal: 0,
+            pageStart: 1,
+            pageEnd: 1,
+            content: 'Approved total CAD 1.23',
+            embedding: null,
+          },
+        ],
+        evidence: [],
+        matchSuggestions: [],
+      };
+      try {
+        await withPrincipal(ownerPrincipal, async (client) => {
+          await insertDocument(client, {
+            id: documentId,
+            ownerUserId: ids.owner,
+            spaceId: ids.ownerPrivateSpace,
+            storageObjectId: `review-race-${documentId}`,
+            displayName: 'Concurrent review.pdf',
+            plaintextHash: createHash('sha256')
+              .update(documentId)
+              .digest('hex'),
+            ciphertextHash: sha256('b'),
+          });
+          await client.query(
+            "update emdo.finance_documents set state = 'extracting', extraction_revision = 1 where id = $1",
+            [documentId],
+          );
+          await client.query(
+            `insert into emdo.finance_document_extractions
+               (id, document_id, household_id, space_id, original_owner_user_id, revision, attempt, state)
+             values ($1, $2, $3, $4, $5, 1, 1, 'queued')`,
+            [
+              extractionId,
+              documentId,
+              ids.household,
+              ids.ownerPrivateSpace,
+              ids.owner,
+            ],
+          );
+          await client.query(
+            "update emdo.finance_document_extractions set state = 'extracting' where id = $1",
+            [extractionId],
+          );
+          await client.query(
+            "update emdo.finance_documents set state = 'awaiting-review' where id = $1",
+            [documentId],
+          );
+          await client.query(
+            "update emdo.finance_document_extractions set state = 'awaiting-review', completed_at = pg_catalog.clock_timestamp() where id = $1",
+            [extractionId],
+          );
+        });
+        const approved = await repository.replaceCurrentReviewDraft({
+          ...scope,
+          reviewToken: 'A'.repeat(43),
+          idempotencyKey: `review-approved:${documentId}`,
+          selectedFacts,
+        });
+        const replacement = await repository.replaceCurrentReviewDraft({
+          ...scope,
+          reviewToken: 'B'.repeat(43),
+          idempotencyKey: `review-replacement:${documentId}`,
+          selectedFacts: {
+            ...selectedFacts,
+            chunks: [
+              {
+                ...selectedFacts.chunks[0],
+                content: 'Replacement total CAD 999.00',
+              },
+            ],
+          },
+        });
+        const embeddings = [
+          { ordinal: 0, embedding: Array.from({ length: 1536 }, () => 0.5) },
+        ];
+        await expect(
+          repository.commitReview({
+            ...scope,
+            reviewBatchId: approved.review.id,
+            payloadHash: approved.review.payloadHash,
+            reviewToken: 'A'.repeat(43),
+            idempotencyKey: approved.review.idempotencyKey,
+            embeddings,
+          }),
+        ).rejects.toMatchObject({ code: 'review-unavailable' });
+        const state = await admin.query(
+          `select document.state,
+                  (select count(*)::int from emdo.finance_document_chunks where document_id = document.id) as chunks,
+                  (select state from emdo.finance_document_review_batches where id = $2) as approved_state,
+                  (select state from emdo.finance_document_review_batches where id = $3) as replacement_state
+             from emdo.finance_documents as document where document.id = $1`,
+          [documentId, approved.review.id, replacement.review.id],
+        );
+        expect(state.rows).toEqual([
+          {
+            state: 'awaiting-review',
+            chunks: 0,
+            approved_state: 'invalidated',
+            replacement_state: 'pending',
+          },
+        ]);
+        await expect(
+          repository.commitReview({
+            ...scope,
+            reviewBatchId: replacement.review.id,
+            payloadHash: replacement.review.payloadHash,
+            reviewToken: 'B'.repeat(43),
+            idempotencyKey: replacement.review.idempotencyKey,
+            embeddings,
+          }),
+        ).resolves.toMatchObject({ status: 'committed', chunksCommitted: 1 });
+      } finally {
+        await admin.query(
+          'delete from emdo.finance_document_chunks where document_id = $1',
+          [documentId],
+        );
+        await admin.query(
+          'delete from emdo.finance_document_review_batches where document_id = $1',
+          [documentId],
+        );
+        await admin.query(
+          'delete from emdo.finance_document_extractions where document_id = $1',
+          [documentId],
+        );
+        await admin.query('delete from emdo.finance_documents where id = $1', [
+          documentId,
         ]);
       }
     });

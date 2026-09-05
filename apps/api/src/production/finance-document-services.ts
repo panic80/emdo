@@ -11,7 +11,6 @@ import {
 } from '@emdo/db/api';
 import {
   EffectiveAuthorizationScopeFingerprintSchema,
-  FinancePageSchema,
   GuardedActionPermitSchema,
   IdempotencyKeySchema,
   IsoDateTimeSchema,
@@ -42,6 +41,7 @@ import {
   FinanceExperienceV1Schema,
   FinanceExperienceSnapshotSchema,
   FinanceLocaleSchema,
+  financeDocumentTransactionMatchAmount,
   redactFinanceDocumentEnvelopeForReview,
   redactFinanceDocumentText,
   suggestFinanceDocumentMatches,
@@ -115,6 +115,7 @@ type Repository = Pick<
   | 'getOwnerQuota'
   | 'list'
   | 'listMatches'
+  | 'listMatchCandidates'
   | 'replaceCurrentReviewDraft'
 >;
 
@@ -271,20 +272,6 @@ const asPrivatePrincipal = (
     scopeFingerprint: parsed.data.collectionAuthorizationScopeFingerprint,
   });
 };
-
-const asExperiencePrincipal = (
-  principal: AuthenticatedPrincipal,
-): Omit<AuthenticatedPrincipal, 'privateSpaceId'> =>
-  Object.freeze({
-    userId: principal.userId,
-    sessionId: principal.sessionId,
-    householdId: principal.householdId,
-    role: principal.role,
-    emailVerified: principal.emailVerified,
-    spaceAccessGrantId: principal.spaceAccessGrantId,
-    collectionAuthorizationScopeFingerprint:
-      principal.collectionAuthorizationScopeFingerprint,
-  });
 
 const stableJson = (input: unknown): string => {
   if (input === null) return 'null';
@@ -1130,8 +1117,7 @@ export const createProductionFinanceDocumentGateway = (
   };
 
   const getSuggestedMatches = async (input: {
-    readonly principal: AuthenticatedPrincipal;
-    readonly repositoryPrincipal: FinanceDocumentRepositoryPrincipal;
+    readonly principal: FinanceDocumentRepositoryPrincipal;
     readonly requestId: string;
     readonly documentId: string;
     readonly extractionRevision: number;
@@ -1148,50 +1134,37 @@ export const createProductionFinanceDocumentGateway = (
     ) {
       return [] as const;
     }
-    try {
-      const page = FinancePageSchema.parse(
-        await dependencies.financeRead.list({
-          limit: 50,
-          principal: asExperiencePrincipal(input.principal),
-          requestId: input.requestId,
-        }),
-      );
-      const records = page.items.flatMap((item) =>
-        item.recordType === 'transaction' && item.state === 'active'
-          ? [
-              {
-                recordType: 'transaction' as const,
-                recordId: item.id,
-                currency: item.currency,
-                amountMinorUnits: item.amountCadMinor,
-                occurredOn: item.postedOn,
-                merchantOrPayee: item.description,
-              },
-            ]
-          : [],
-      );
-      return suggestFinanceDocumentMatches({
-        source: {
-          documentId: input.documentId,
-          extractionRevision: input.extractionRevision,
-          documentType: input.envelope.documentType,
-          currency: input.envelope.currency,
-          amountMinorUnits,
-          occurredOn,
-          merchantOrPayee,
-        },
-        records,
-        limit: 100,
-      }).map((match) => ({
-        recordType: match.recordType,
-        recordId: match.recordId,
-        scoreBasisPoints: match.scoreBasisPoints,
-        reasons: [...match.reasons],
-      }));
-    } catch {
-      // Suggestions are optional. A projection outage must not block review.
-      return [] as const;
-    }
+    const transactionAmount = financeDocumentTransactionMatchAmount({
+      documentType: input.envelope.documentType,
+      amountMinorUnits,
+    });
+    if (transactionAmount === null) return [] as const;
+    // Query the complete owner-private amount/date candidate set before
+    // ranking. An incomplete lookup must not be saved as an empty match set.
+    const records = await dependencies.repository.listMatchCandidates({
+      principal: input.principal,
+      requestId: input.requestId,
+      amountMinorUnits: transactionAmount,
+      occurredOn,
+    });
+    return suggestFinanceDocumentMatches({
+      source: {
+        documentId: input.documentId,
+        extractionRevision: input.extractionRevision,
+        documentType: input.envelope.documentType,
+        currency: input.envelope.currency,
+        amountMinorUnits,
+        occurredOn,
+        merchantOrPayee,
+      },
+      records,
+      limit: 100,
+    }).map((match) => ({
+      recordType: match.recordType,
+      recordId: match.recordId,
+      scoreBasisPoints: match.scoreBasisPoints,
+      reasons: [...match.reasons],
+    }));
   };
 
   const reviewFor = (input: {
@@ -1300,7 +1273,11 @@ export const createProductionFinanceDocumentGateway = (
     readonly requestId: string;
     readonly operation: FinanceDocumentGuardedActionOperation;
     readonly intent: FinanceDocumentGuardedActionIntent;
-  }): Promise<FinanceDocumentGuardedActionTarget> => {
+  }): Promise<
+    FinanceDocumentGuardedActionTarget & {
+      readonly review?: StoredFinanceDocumentReviewDraft;
+    }
+  > => {
     const documentId =
       input.intent.kind === 'accept-document-match'
         ? undefined
@@ -1433,11 +1410,13 @@ export const createProductionFinanceDocumentGateway = (
             : undefined;
       if (
         review === undefined ||
+        review.documentId !== metadata.id ||
         metadata.extractionRevision !== review.extractionRevision
       ) {
         return error('document-state-conflict');
       }
       return Object.freeze({
+        review,
         targetBindingHash: guardedTargetHash({
           operation: input.operation,
           documentId: metadata.id,
@@ -1499,30 +1478,23 @@ export const createProductionFinanceDocumentGateway = (
    * These mutation helpers are reachable only through the request-scoped
    * guarded port below.  In particular, they do not accept a client review
    * token or a caller-provided approval identifier: both values are resolved
-   * from the current owner-scoped state after the shared proposal gateway has
-   * minted an exact permit.
+   * from the owner-scoped review used to verify the exact permit. The database
+   * checks that same review tuple under the document lock before committing.
    */
   const commitReviewedDraftUnderPermit = async (input: {
     readonly principal: FinanceDocumentRepositoryPrincipal;
     readonly requestId: string;
     readonly documentId: string;
+    readonly approvedReview: StoredFinanceDocumentReviewDraft;
+    readonly alreadyCommitted: boolean;
   }) => {
-    const pending = await dependencies.repository.getCurrentReviewDraft({
+    const detailInput = {
       principal: input.principal,
       requestId: input.requestId,
       documentId: input.documentId,
-    });
-    if (pending === undefined) {
-      const committed = await dependencies.repository.getCurrentCommittedReview(
-        {
-          principal: input.principal,
-          requestId: input.requestId,
-          documentId: input.documentId,
-        },
-      );
-      if (committed === undefined) return error('document-state-conflict');
-      return detailFor(input);
-    }
+    };
+    if (input.alreadyCommitted) return detailFor(detailInput);
+    const pending = input.approvedReview;
     const reviewToken = storedReviewTokenFor({
       key: reviewTokenHmacKey,
       principal: input.principal,
@@ -1546,7 +1518,7 @@ export const createProductionFinanceDocumentGateway = (
       idempotencyKey: pending.idempotencyKey,
       embeddings,
     });
-    return detailFor(input);
+    return detailFor(detailInput);
   };
 
   const acceptSuggestedMatchUnderPermit = async (input: {
@@ -1681,12 +1653,14 @@ export const createProductionFinanceDocumentGateway = (
             rawInput.intent,
           ) as FinanceDocumentGuardedActionIntent;
           const current = scoped(rawInput.scope);
-          return await resolveGuardedDocumentTarget({
-            principal: current.principal,
-            requestId: current.scope.requestId,
-            operation,
-            intent,
-          });
+          const { targetBindingHash, preview } =
+            await resolveGuardedDocumentTarget({
+              principal: current.principal,
+              requestId: current.scope.requestId,
+              operation,
+              intent,
+            });
+          return Object.freeze({ targetBindingHash, preview });
         } catch (cause) {
           throw safeError(cause);
         }
@@ -1748,13 +1722,18 @@ export const createProductionFinanceDocumentGateway = (
           }
 
           if (operation === 'finance-document-review-commit') {
-            if (intent.kind !== 'commit-document-review') {
+            if (
+              intent.kind !== 'commit-document-review' ||
+              target.review === undefined
+            ) {
               return error('invalid-input');
             }
             const committed = await commitReviewedDraftUnderPermit({
               principal: current.principal,
               requestId: current.scope.requestId,
               documentId: intent.documentId,
+              approvedReview: target.review,
+              alreadyCommitted: target.preview.beforeState === 'committed',
             });
             if (
               committed.document.id !== intent.documentId ||
@@ -2085,8 +2064,7 @@ export const createProductionFinanceDocumentGateway = (
           ),
         );
         const matches = await getSuggestedMatches({
-          principal: input.principal,
-          repositoryPrincipal: principal,
+          principal,
           requestId: input.requestId,
           documentId: extraction.documentId,
           extractionRevision: extraction.extractionRevision,
@@ -2132,8 +2110,7 @@ export const createProductionFinanceDocumentGateway = (
         const principal = asPrivatePrincipal(input.principal);
         const envelope = redactFinanceDocumentEnvelopeForReview(input.envelope);
         const matches = await getSuggestedMatches({
-          principal: input.principal,
-          repositoryPrincipal: principal,
+          principal,
           requestId: input.requestId,
           documentId: input.documentId,
           extractionRevision: input.expectedExtractionRevision,

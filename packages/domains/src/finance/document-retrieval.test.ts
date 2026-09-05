@@ -53,7 +53,7 @@ describe('finance document retrieval domain', () => {
           recordType: 'transaction',
           recordId: 'match',
           currency: 'CAD',
-          amountMinorUnits: 1299,
+          amountMinorUnits: -1299,
           occurredOn: '2026-08-21',
           merchantOrPayee: 'Toronto Cafe',
         },
@@ -61,7 +61,7 @@ describe('finance document retrieval domain', () => {
           recordType: 'transaction',
           recordId: 'wrong-amount',
           currency: 'CAD',
-          amountMinorUnits: 1300,
+          amountMinorUnits: -1300,
           occurredOn: '2026-08-20',
           merchantOrPayee: 'Cafe Toronto',
         },
@@ -118,4 +118,50 @@ describe('finance document retrieval domain', () => {
       }),
     ).toEqual([]);
   });
+
+  it.each([
+    ['receipt', 123, 'transaction', -123],
+    ['receipt', -123, 'transaction', 123],
+    ['invoice', 123, 'transaction', -123],
+    ['invoice', 123, 'bill', 123],
+    ['insurance', 123, 'transaction', -123],
+    ['loan', 123, 'transaction', -123],
+    ['pay-stub', 123, 'transaction', 123],
+  ] as const)(
+    'matches %s total %i to the correct %s direction',
+    (documentType, total, recordType, signedAmount) => {
+      const record = {
+        recordType,
+        currency: 'CAD',
+        occurredOn: '2026-09-05',
+        merchantOrPayee: 'Exact merchant',
+      };
+      const matches = suggestFinanceDocumentMatches({
+        source: {
+          documentId: '018f1f5e-2000-7000-8000-000000000001',
+          extractionRevision: 1,
+          documentType,
+          currency: 'CAD',
+          amountMinorUnits: total,
+          occurredOn: record.occurredOn,
+          merchantOrPayee: record.merchantOrPayee,
+        },
+        records: [
+          {
+            ...record,
+            recordId: 'right-direction',
+            amountMinorUnits: signedAmount,
+          },
+          {
+            ...record,
+            recordId: 'wrong-direction',
+            amountMinorUnits: -signedAmount,
+          },
+        ],
+      });
+      expect(matches.map(({ recordId }) => recordId)).toEqual([
+        'right-direction',
+      ]);
+    },
+  );
 });

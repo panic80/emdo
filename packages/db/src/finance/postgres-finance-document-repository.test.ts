@@ -274,6 +274,41 @@ const lockRows = (
     : undefined;
 
 describe('PostgresFinanceDocumentRepository', () => {
+  it('rejects oversized or malformed match candidate sets instead of returning partial results', async () => {
+    const candidate = {
+      recordType: 'transaction',
+      recordId: 'candidate',
+      currency: 'CAD',
+      amountMinorUnits: -123,
+      occurredOn: '2026-09-05',
+      merchantOrPayee: 'Grocer',
+    };
+    let rows: readonly Record<string, unknown>[] = [candidate];
+    const { pool } = poolFor(
+      (sql) =>
+        lockRows(sql) ??
+        (sql.includes('finance_document_match_candidates') ? rows : []),
+    );
+    const repository = new PostgresFinanceDocumentRepository(pool);
+    const input = {
+      principal,
+      requestId: ids.request,
+      amountMinorUnits: -123,
+      occurredOn: '2026-09-05',
+    };
+    await expect(repository.listMatchCandidates(input)).resolves.toEqual([
+      candidate,
+    ]);
+    rows = Array.from({ length: 100_001 }, () => candidate);
+    await expect(repository.listMatchCandidates(input)).rejects.toMatchObject({
+      code: 'invalid-result',
+    });
+    rows = [{ ...candidate, amountMinorUnits: Number.MAX_SAFE_INTEGER + 1 }];
+    await expect(repository.listMatchCandidates(input)).rejects.toMatchObject({
+      code: 'invalid-result',
+    });
+  });
+
   it('validates server-owned scope input and installs exact durable claims before readiness', async () => {
     const { pool, query } = poolFor((sql) => {
       const lock = lockRows(sql);

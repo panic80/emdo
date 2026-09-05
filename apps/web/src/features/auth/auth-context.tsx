@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from 'react';
@@ -77,8 +78,12 @@ export function AuthProvider({
     useState(false);
   const [memorySeal, setMemorySeal] =
     useState<AuthContextValue['memorySeal']>('none');
+  const refreshGeneration = useRef(0);
+  const refreshSealed = useRef(false);
 
   const sealForPeerTeardown = useCallback(() => {
+    refreshGeneration.current += 1;
+    refreshSealed.current = true;
     setSession(undefined);
     setCsrfToken(undefined);
     setSessionBinding(undefined);
@@ -88,6 +93,8 @@ export function AuthProvider({
   }, []);
 
   const sealAfterLogout = useCallback((status: 'complete' | 'incomplete') => {
+    refreshGeneration.current += 1;
+    refreshSealed.current = status === 'incomplete';
     setSession(undefined);
     setCsrfToken(undefined);
     setServerSessionKnownRevoked(true);
@@ -102,14 +109,19 @@ export function AuthProvider({
   }, []);
 
   const refresh = useCallback(async () => {
+    if (refreshSealed.current) return;
+    const generation = ++refreshGeneration.current;
+    const isCurrent = () => generation === refreshGeneration.current;
     try {
       const result = await client.getSession();
+      if (!isCurrent()) return;
       if (!result) {
         setSession(undefined);
         setCsrfToken(undefined);
         setServerSessionKnownRevoked(true);
         try {
           const hint = await inspectOfflineSession();
+          if (!isCurrent()) return;
           if (hint?.status === 'logout-pending') {
             setSessionBinding(hint.sessionBinding);
             setMemorySeal('local-cleanup-pending');
@@ -119,6 +131,7 @@ export function AuthProvider({
         } catch {
           // Anonymous sign-in remains available when local storage is invalid.
         }
+        if (!isCurrent()) return;
         setSessionBinding(undefined);
         setMemorySeal('none');
         setState('anonymous');
@@ -140,15 +153,18 @@ export function AuthProvider({
         // Reading remains available when the proof endpoint is temporarily
         // unavailable; every protected mutation still fails closed.
       }
+      if (!isCurrent()) return;
       const authenticatedBinding = await bindAuthenticatedSession(
         result.session.id,
       );
+      if (!isCurrent()) return;
       let localHint: BrowserOfflineSessionHint | null = null;
       try {
         localHint = await inspectOfflineSession();
       } catch {
         // Online session use can continue while offline storage is separately locked.
       }
+      if (!isCurrent()) return;
       if (localHint && localHint.sessionBinding !== authenticatedBinding) {
         setSession(undefined);
         setSessionBinding(undefined);
@@ -169,6 +185,7 @@ export function AuthProvider({
         setState('authenticated');
       }
     } catch (error) {
+      if (!isCurrent()) return;
       setSession(undefined);
       setCsrfToken(undefined);
       setServerSessionKnownRevoked(false);
@@ -178,6 +195,7 @@ export function AuthProvider({
       if (sessionTransportFailed || !isOnline()) {
         try {
           const hint = await inspectOfflineSession();
+          if (!isCurrent()) return;
           if (hint?.status === 'active' && hint.canEditOffline) {
             setSessionBinding(hint.sessionBinding);
             setMemorySeal('none');
@@ -194,6 +212,7 @@ export function AuthProvider({
           // Invalid or incomplete key state stays locked.
         }
       }
+      if (!isCurrent()) return;
       setSessionBinding(undefined);
       setMemorySeal('none');
       setState('unavailable');
@@ -201,12 +220,9 @@ export function AuthProvider({
   }, [client, inspectOfflineSession, isOnline]);
 
   useEffect(() => {
-    let active = true;
-    void refresh().catch(() => {
-      if (active) setState('unavailable');
-    });
+    void refresh();
     return () => {
-      active = false;
+      refreshGeneration.current += 1;
     };
   }, [refresh]);
 
@@ -216,6 +232,7 @@ export function AuthProvider({
       new Date(session.session.expiresAt).getTime() - Date.now();
     const timeout = window.setTimeout(
       () => {
+        refreshGeneration.current += 1;
         setSession(undefined);
         setSessionBinding(undefined);
         setCsrfToken(undefined);

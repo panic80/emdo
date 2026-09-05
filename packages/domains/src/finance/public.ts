@@ -6,6 +6,9 @@ export { financeSafeError } from './guard.js';
 export type { FinanceSafeError } from './guard.js';
 
 export {
+  FINANCE_DOCUMENT_MATCH_DATE_WINDOW_DAYS,
+  FINANCE_DOCUMENT_MAXIMUM_MATCH_CANDIDATES,
+  financeDocumentTransactionMatchAmount,
   fuseFinanceEvidenceRanks,
   suggestFinanceDocumentMatches,
 } from './document-retrieval.js';

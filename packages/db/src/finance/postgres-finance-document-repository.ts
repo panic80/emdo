@@ -8,6 +8,8 @@ import {
   type JsonValue,
 } from '@emdo/contracts';
 import {
+  FINANCE_DOCUMENT_MATCH_DATE_WINDOW_DAYS,
+  FINANCE_DOCUMENT_MAXIMUM_MATCH_CANDIDATES,
   FinanceDocumentEnvelopeV1Schema,
   type FinanceDocumentEnvelopeV1,
 } from '@emdo/domains/finance';
@@ -309,6 +311,18 @@ const EvidenceInputSchema = ScopedInputSchema.extend({
 });
 const MatchInputSchema = ScopedInputSchema.extend({
   matchId: UuidSchema,
+});
+const MatchCandidatesInputSchema = ScopedInputSchema.extend({
+  amountMinorUnits: z.number().int().safe(),
+  occurredOn: z.iso.date(),
+});
+const MatchCandidateSchema = z.strictObject({
+  recordType: z.literal('transaction'),
+  recordId: z.string().trim().min(1).max(512),
+  currency: z.literal('CAD'),
+  amountMinorUnits: z.number().int().safe(),
+  occurredOn: z.iso.date(),
+  merchantOrPayee: z.string().trim().min(1).max(2_000),
 });
 const CommittedReviewInputSchema = DocumentInputSchema.extend({
   reviewToken: ReviewTokenSchema,
@@ -2135,6 +2149,61 @@ export class PostgresFinanceDocumentRepository {
         return deepFreeze(
           parseResult(CurrentExtractionRowSchema, row, 'current extraction'),
         ) as FinanceDocumentCurrentExtraction;
+      },
+    );
+  }
+
+  /** Filter before limiting, in one snapshot of the uploader's private ledger. */
+  async listMatchCandidates(
+    input: unknown,
+  ): Promise<readonly z.output<typeof MatchCandidateSchema>[]> {
+    const parsed = parseInput(MatchCandidatesInputSchema, input);
+    const principal = asPrincipal(parsed.principal);
+    return withScopedTransaction(
+      this.pool,
+      { principal, requestId: parsed.requestId },
+      async (client) => {
+        const result = await client.query(
+          `/* finance_document_match_candidates */
+           select 'transaction'::text as "recordType",
+                  entity.entity_id as "recordId",
+                  entity.payload ->> 'currency' as "currency",
+                  entity.payload -> 'effectiveAmountCadMinor' as "amountMinorUnits",
+                  entity.payload ->> 'postedOn' as "occurredOn",
+                  entity.payload ->> 'description' as "merchantOrPayee"
+             from emdo.sync_entities as entity
+            where entity.household_id = $1::uuid
+              and entity.space_id = $2::uuid
+              and entity.original_owner_user_id = $3::uuid
+              and entity.entity_type = 'finance.transaction'
+              and entity.tombstoned_at is null
+              and entity.payload ->> 'recordType' = 'transaction'
+              and entity.payload ->> 'currency' = 'CAD'
+              and entity.payload -> 'effectiveAmountCadMinor' = to_jsonb($4::bigint)
+              and entity.payload ->> 'postedOn' between
+                    ($5::date - $6::integer)::text and ($5::date + $6::integer)::text
+              and entity.payload -> 'reversal' = 'null'::jsonb
+              and coalesce(entity.payload -> 'amountConflict', 'false'::jsonb) = 'false'::jsonb
+            order by entity.entity_id asc
+            limit $7`,
+          [
+            ...scopeValues(principal),
+            parsed.amountMinorUnits,
+            parsed.occurredOn,
+            FINANCE_DOCUMENT_MATCH_DATE_WINDOW_DAYS,
+            FINANCE_DOCUMENT_MAXIMUM_MATCH_CANDIDATES + 1,
+          ],
+        );
+        // The extra row detects overflow; never silently truncate suggestions.
+        return deepFreeze(
+          parseResult(
+            z
+              .array(MatchCandidateSchema)
+              .max(FINANCE_DOCUMENT_MAXIMUM_MATCH_CANDIDATES),
+            result.rows,
+            'complete document match candidates',
+          ),
+        );
       },
     );
   }

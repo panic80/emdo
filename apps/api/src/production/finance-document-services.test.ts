@@ -1,6 +1,7 @@
 import { createHash, createHmac } from 'node:crypto';
 
 import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
+import { FinanceDocumentRepositoryError } from '@emdo/db/api';
 import { financeDocumentOriginalAssociatedData } from '@emdo/integrations/finance-documents';
 import { hashCanonicalJson } from '@emdo/toolbox';
 import { describe, expect, it, vi } from 'vitest';
@@ -375,12 +376,24 @@ const createHarness = () => {
       };
       return { status: 'created' as const, review: storedReview };
     }),
-    commitReview: vi.fn(async () => {
+    commitReview: vi.fn(async (input: Record<string, unknown>) => {
+      if (
+        storedReview === undefined ||
+        input.reviewBatchId !== storedReview.id ||
+        input.extractionRevision !== storedReview.extractionRevision ||
+        input.payloadHash !== storedReview.payloadHash
+      ) {
+        throw new FinanceDocumentRepositoryError(
+          'review-unavailable',
+          'The approved review is no longer pending',
+        );
+      }
       reviewCommitted = true;
       currentDocument = uploadedMetadata('committed');
       return { status: 'committed' as const };
     }),
     listMatches: vi.fn(async (): Promise<unknown> => []),
+    listMatchCandidates: vi.fn(async (): Promise<readonly unknown[]> => []),
     getMatchById: vi.fn(async () => ({
       id: IDS.match,
       documentId: IDS.document,
@@ -626,6 +639,198 @@ const installLegacyReview = (
 };
 
 describe('production Finance document gateway', () => {
+  it('never substitutes a concurrently edited draft for the approved review', async () => {
+    const harness = createHarness();
+    await harness.gateway.getReview(
+      request({ documentId: IDS.document, principal }),
+    );
+    const approved = harness.currentStoredReview()!;
+    await harness.gateway.updateReview(
+      request({
+        documentId: IDS.document,
+        expectedExtractionRevision: 1,
+        envelope: {
+          ...envelope,
+          total: { currency: 'CAD', minorUnits: 99900 },
+        },
+        idempotencyKey: 'review:concurrent-edit',
+        principal,
+      }),
+    );
+    const replacement = harness.currentStoredReview()!;
+    expect(replacement.payloadHash).not.toBe(approved.payloadHash);
+    // Approval creation and permit validation see the earlier draft; an edit
+    // has won the database lock by the time the final commit runs.
+    harness.repository.getCurrentReviewDraft
+      .mockResolvedValueOnce(approved)
+      .mockResolvedValueOnce(approved);
+    await expect(
+      executeGuardedDocumentAction(harness.gateway, {
+        operation: 'finance-document-review-commit',
+        intent: { kind: 'commit-document-review', documentId: IDS.document },
+      }),
+    ).rejects.toMatchObject({ code: 'review-token-invalid' });
+    expect(harness.repository.commitReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewBatchId: approved.id,
+        extractionRevision: approved.extractionRevision,
+        payloadHash: approved.payloadHash,
+      }),
+    );
+    expect(harness.currentStoredReview()).toBe(replacement);
+    expect(
+      await harness.gateway.get(
+        request({ documentId: IDS.document, principal }),
+      ),
+    ).toMatchObject({ document: { state: 'awaiting-review' } });
+  });
+
+  it('rejects an edit that arrives while the approved review embeddings are pending', async () => {
+    const harness = createHarness();
+    await harness.gateway.getReview(
+      request({ documentId: IDS.document, principal }),
+    );
+    const approved = harness.currentStoredReview()!;
+    harness.embeddings.embed.mockImplementationOnce(async ({ chunks }) => {
+      await harness.gateway.updateReview(
+        request({
+          documentId: IDS.document,
+          expectedExtractionRevision: 1,
+          envelope: {
+            ...envelope,
+            total: { currency: 'CAD', minorUnits: 99900 },
+          },
+          idempotencyKey: 'review:during-embeddings',
+          principal,
+        }),
+      );
+      return { vectors: chunks.map(() => vector(1)) };
+    });
+    await expect(
+      executeGuardedDocumentAction(harness.gateway, {
+        operation: 'finance-document-review-commit',
+        intent: { kind: 'commit-document-review', documentId: IDS.document },
+      }),
+    ).rejects.toMatchObject({ code: 'review-token-invalid' });
+    expect(harness.repository.commitReview).toHaveBeenCalledWith(
+      expect.objectContaining({ payloadHash: approved.payloadHash }),
+    );
+  });
+
+  it('keeps the resolved review payload out of proposal previews', async () => {
+    const harness = createHarness();
+    await harness.gateway.getReview(
+      request({ documentId: IDS.document, principal }),
+    );
+    const target = await harness.gateway
+      .createGuardedActionPort(principal)
+      .materializeTarget({
+        scope: guardedScope,
+        operation: 'finance-document-review-commit',
+        intent: { kind: 'commit-document-review', documentId: IDS.document },
+      });
+    expect(Object.keys(target).sort()).toEqual([
+      'preview',
+      'targetBindingHash',
+    ]);
+  });
+
+  it.each([123, -123])(
+    'matches a signed ledger transaction for a receipt total of %i',
+    async (total) => {
+      const harness = createHarness();
+      harness.repository.listMatchCandidates.mockResolvedValue([
+        {
+          recordType: 'transaction',
+          recordId: IDS.transaction,
+          currency: 'CAD',
+          amountMinorUnits: -total,
+          occurredOn: '2026-08-25',
+          merchantOrPayee: 'Grocer',
+        },
+        {
+          recordType: 'transaction',
+          recordId: 'opposite-direction',
+          currency: 'CAD',
+          amountMinorUnits: total,
+          occurredOn: '2026-08-25',
+          merchantOrPayee: 'Grocer',
+        },
+      ]);
+      await harness.gateway.updateReview(
+        request({
+          documentId: IDS.document,
+          expectedExtractionRevision: 1,
+          envelope: {
+            ...envelope,
+            total: { currency: 'CAD', minorUnits: total },
+          },
+          idempotencyKey: 'review:transaction-direction',
+          principal,
+        }),
+      );
+      expect(harness.repository.listMatchCandidates).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amountMinorUnits: -total,
+          occurredOn: '2026-08-25',
+          principal: expect.objectContaining({
+            userId: principal.userId,
+            householdId: principal.householdId,
+            privateSpaceId: principal.privateSpaceId,
+          }),
+        }),
+      );
+      expect(harness.currentStoredReview()!.selectedFacts).toMatchObject({
+        matchSuggestions: [
+          expect.objectContaining({ recordId: IDS.transaction }),
+        ],
+      });
+    },
+  );
+
+  it('ranks the complete candidate set instead of using the first activity page', async () => {
+    const harness = createHarness();
+    const candidate = {
+      recordType: 'transaction',
+      currency: 'CAD',
+      amountMinorUnits: -123,
+      occurredOn: '2026-08-25',
+    };
+    harness.repository.listMatchCandidates.mockResolvedValue([
+      ...Array.from({ length: 60 }, (_, index) => ({
+        ...candidate,
+        recordId: `unrelated-${index}`,
+        merchantOrPayee: 'Different store',
+      })),
+      { ...candidate, recordId: IDS.transaction, merchantOrPayee: 'Grocer' },
+    ]);
+    await harness.gateway.getReview(
+      request({ documentId: IDS.document, principal }),
+    );
+    expect(harness.currentStoredReview()!.selectedFacts).toMatchObject({
+      matchSuggestions: [
+        expect.objectContaining({ recordId: IDS.transaction }),
+      ],
+    });
+    expect(harness.financeRead.list).not.toHaveBeenCalled();
+  });
+
+  it('does not persist an empty match set when the candidate search is incomplete', async () => {
+    const harness = createHarness();
+    harness.repository.listMatchCandidates.mockRejectedValue(
+      new FinanceDocumentRepositoryError(
+        'invalid-result',
+        'candidate overflow',
+      ),
+    );
+    await expect(
+      harness.gateway.getReview(
+        request({ documentId: IDS.document, principal }),
+      ),
+    ).rejects.toMatchObject({ code: 'finance-documents-unavailable' });
+    expect(harness.repository.replaceCurrentReviewDraft).not.toHaveBeenCalled();
+  });
+
   it('returns document-not-found before falling through to inaccessible extraction or match collections', async () => {
     const harness = createHarness();
     harness.repository.getMetadata.mockResolvedValue(undefined as never);

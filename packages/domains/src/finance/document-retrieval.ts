@@ -125,6 +125,30 @@ const MatchRecordSchema = z.strictObject({
   merchantOrPayee: z.string().trim().min(1).max(2_000),
 });
 
+export const FINANCE_DOCUMENT_MATCH_DATE_WINDOW_DAYS = 7;
+export const FINANCE_DOCUMENT_MAXIMUM_MATCH_CANDIDATES = 100_000;
+
+/** Document totals retain their sign: a negative expense total is a refund. */
+export const financeDocumentTransactionMatchAmount = (
+  source: Pick<
+    z.output<typeof MatchSourceSchema>,
+    'documentType' | 'amountMinorUnits'
+  >,
+): number | null => {
+  if (source.amountMinorUnits === null) return null;
+  switch (source.documentType) {
+    case 'receipt':
+    case 'invoice':
+    case 'insurance':
+    case 'loan':
+      return -source.amountMinorUnits;
+    case 'pay-stub':
+      return source.amountMinorUnits;
+    default:
+      return null;
+  }
+};
+
 const documentTypeAccepts = (
   documentType: z.output<typeof MatchSourceSchema>['documentType'],
   recordType: z.output<typeof MatchRecordSchema>['recordType'],
@@ -193,8 +217,15 @@ export const suggestFinanceDocumentMatches = (input: {
   const parsed = z
     .strictObject({
       source: MatchSourceSchema,
-      records: z.array(MatchRecordSchema).max(100_000),
-      dateWindowDays: z.number().int().min(0).max(31).default(7),
+      records: z
+        .array(MatchRecordSchema)
+        .max(FINANCE_DOCUMENT_MAXIMUM_MATCH_CANDIDATES),
+      dateWindowDays: z
+        .number()
+        .int()
+        .min(0)
+        .max(31)
+        .default(FINANCE_DOCUMENT_MATCH_DATE_WINDOW_DAYS),
       limit: z.number().int().min(1).max(100).default(20),
     })
     .parse(input);
@@ -221,7 +252,10 @@ export const suggestFinanceDocumentMatches = (input: {
         );
         if (
           record.currency !== 'CAD' ||
-          record.amountMinorUnits !== source.amountMinorUnits ||
+          record.amountMinorUnits !==
+            (record.recordType === 'transaction'
+              ? financeDocumentTransactionMatchAmount(source)
+              : source.amountMinorUnits) ||
           Math.abs(utcDay(record.occurredOn) - sourceDay) > maximumDistanceMs ||
           similarity < 5_000 ||
           !documentTypeAccepts(source.documentType, record.recordType)

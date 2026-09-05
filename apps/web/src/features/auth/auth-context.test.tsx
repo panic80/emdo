@@ -1,12 +1,35 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { AuthProvider, useAuth } from './auth-context.js';
+import {
+  AuthProvider,
+  useAuth,
+  type AuthContextValue,
+} from './auth-context.js';
 import {
   AuthClientError,
   type AuthSession,
   type EmdoAuthClient,
 } from './auth-client.js';
+import type { BrowserOfflineSessionHint } from '../../offline/logout-purge.js';
+
+const activeSession: AuthSession = {
+  session: { id: 'session-1', expiresAt: '2999-08-16T12:00:00.000Z' },
+  user: {
+    id: 'user-1',
+    email: 'member@example.ca',
+    emailVerified: true,
+    name: 'Member',
+  },
+};
+
+function deferred<Value>() {
+  let resolve!: (value: Value) => void;
+  const promise = new Promise<Value>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
 
 function client(session: AuthSession | null | Error): EmdoAuthClient {
   return {
@@ -49,6 +72,167 @@ function OfflineProbe() {
 }
 
 describe('AuthProvider', () => {
+  describe.each(['complete', 'incomplete', 'peer'] as const)(
+    '%s logout seal',
+    (seal) => {
+      it.each([
+        'session',
+        'csrf',
+        'binding',
+        'offline-hint',
+        'anonymous-hint',
+        'failed-hint',
+      ] as const)('discards a refresh paused at %s', async (stage) => {
+        let auth!: AuthContextValue;
+        function Capture() {
+          auth = useAuth();
+          return null;
+        }
+        const authClient = client(activeSession);
+        const inspect = vi.fn(
+          async (): Promise<BrowserOfflineSessionHint | null> => null,
+        );
+        render(
+          <AuthProvider client={authClient} inspectOfflineSession={inspect}>
+            <Capture />
+          </AuthProvider>,
+        );
+        await waitFor(() => expect(auth.state).toBe('authenticated'));
+        const entered = vi.fn();
+        const gate = deferred<void>();
+        const pause = async () => {
+          entered();
+          await gate.promise;
+        };
+        if (stage === 'session') {
+          vi.mocked(authClient.getSession).mockImplementationOnce(async () => {
+            await pause();
+            return activeSession;
+          });
+        } else if (stage === 'csrf') {
+          vi.mocked(authClient.getMutationCsrf).mockImplementationOnce(
+            async () => {
+              await pause();
+              return 'stale-csrf-proof';
+            },
+          );
+        } else if (stage === 'binding') {
+          vi.spyOn(crypto.subtle, 'digest').mockImplementationOnce(async () => {
+            await pause();
+            return new Uint8Array(32).buffer;
+          });
+        } else {
+          if (stage === 'anonymous-hint')
+            vi.mocked(authClient.getSession).mockResolvedValueOnce(null);
+          if (stage === 'failed-hint')
+            vi.mocked(authClient.getSession).mockRejectedValueOnce(
+              new AuthClientError('session-network-unavailable', 'offline'),
+            );
+          const binding = auth.sessionBinding!;
+          inspect.mockImplementationOnce(async () => {
+            await pause();
+            return {
+              version: 1,
+              status: 'active',
+              canEditOffline: true,
+              sessionBinding: binding,
+            };
+          });
+        }
+        let refresh!: Promise<void>;
+        act(() => {
+          refresh = auth.refresh();
+        });
+        await waitFor(() => expect(entered).toHaveBeenCalledOnce());
+        act(() => {
+          if (seal === 'peer') auth.sealForPeerTeardown();
+          else auth.sealAfterLogout(seal);
+        });
+        const sealed = auth;
+        expect(sealed).toMatchObject({
+          state: seal === 'complete' ? 'anonymous' : 'logout-pending',
+          session: undefined,
+          csrfToken: undefined,
+          serverSessionKnownRevoked: seal !== 'peer',
+          memorySeal:
+            seal === 'peer'
+              ? 'peer-teardown'
+              : seal === 'incomplete'
+                ? 'local-cleanup-pending'
+                : 'none',
+        });
+        await act(async () => {
+          gate.resolve();
+          await refresh;
+        });
+        expect(auth).toBe(sealed);
+      });
+
+      it('allows a fresh sign-in only after local logout cleanup is complete', async () => {
+        let auth!: AuthContextValue;
+        function Capture() {
+          auth = useAuth();
+          return null;
+        }
+        const authClient = client(activeSession);
+        const inspect = async () => null;
+        render(
+          <AuthProvider client={authClient} inspectOfflineSession={inspect}>
+            <Capture />
+          </AuthProvider>,
+        );
+        await waitFor(() => expect(auth.state).toBe('authenticated'));
+        act(() => {
+          if (seal === 'peer') auth.sealForPeerTeardown();
+          else auth.sealAfterLogout(seal);
+        });
+        vi.mocked(authClient.getSession).mockClear();
+        await act(() => auth.refresh());
+        if (seal !== 'complete') {
+          expect(authClient.getSession).not.toHaveBeenCalled();
+          expect(auth.state).toBe('logout-pending');
+          act(() => auth.sealAfterLogout('complete'));
+          await act(() => auth.refresh());
+        }
+        expect(auth.state).toBe('authenticated');
+      });
+    },
+  );
+
+  it('keeps the newest refresh result when an older session request fails late', async () => {
+    let auth!: AuthContextValue;
+    function Capture() {
+      auth = useAuth();
+      return null;
+    }
+    const authClient = client(activeSession);
+    const inspect = async () => null;
+    render(
+      <AuthProvider client={authClient} inspectOfflineSession={inspect}>
+        <Capture />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(auth.state).toBe('authenticated'));
+    const gate = deferred<void>();
+    vi.mocked(authClient.getSession).mockImplementationOnce(async () => {
+      await gate.promise;
+      throw new Error('late failure');
+    });
+    let oldRefresh!: Promise<void>;
+    act(() => {
+      oldRefresh = auth.refresh();
+    });
+    vi.mocked(authClient.getSession).mockResolvedValueOnce(null);
+    await act(() => auth.refresh());
+    expect(auth.state).toBe('anonymous');
+    const latest = auth;
+    await act(async () => {
+      gate.resolve();
+      await oldRefresh;
+    });
+    expect(auth).toBe(latest);
+  });
+
   it('exposes an authenticated cookie-backed session without exposing a token', async () => {
     const session = {
       session: { id: 'session-1', expiresAt: '2999-08-16T12:00:00.000Z' },
