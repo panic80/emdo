@@ -1,7 +1,14 @@
 :root {
   color-scheme: light;
   --color-canvas: #ffffff;
+  --color-surface: #ffffff;
   --color-ink: #07162f;
+  /* Text/icons drawn on top of a --color-ink fill. */
+  --color-on-ink: #ffffff;
+  --color-ink-hover: #0b264e;
+  --color-ink-soft: #344054;
+  --color-border-strong: #aab3be;
+  --color-hover: #f7f9fa;
   --color-muted: #667085;
   --color-eucalyptus: #087154;
   --color-eucalyptus-deep: #075f48;
@@ -19,4 +26,25 @@
   --font-sans:
     Inter, 'Avenir Next', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --motion-fast: 160ms ease-out;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-canvas: #0f1419;
+  --color-surface: #171d26;
+  --color-ink: #f2f5f8;
+  --color-on-ink: #0f1419;
+  --color-ink-hover: #dfe6ee;
+  --color-ink-soft: #c9d2dd;
+  --color-border-strong: #3a434f;
+  --color-hover: #1e242e;
+  --color-muted: #9aa5b4;
+  --color-eucalyptus: #4db8a8;
+  --color-eucalyptus-deep: #0b6b53;
+  --color-selection: #16332c;
+  --color-divider: #2a3038;
+  --color-track: #1e242e;
+  --color-warning: #ff8c5a;
+  --color-danger: #ff6b57;
+  --shadow-float: 0 12px 30px rgb(0 0 0 / 45%);
 }
