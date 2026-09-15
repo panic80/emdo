@@ -1,0 +1,23 @@
+[Unit]
+Description=Short-lived EMDO synthetic staging test login gateway
+After=network.target
+[Service]
+Type=simple
+DynamicUser=yes
+LoadCredential=preview.json:/etc/emdo/preview.json
+Environment=PREVIEW_SECRET_FILE=%d/preview.json
+Environment=PREVIEW_UPSTREAM=http://127.0.0.1:18080
+Environment=PREVIEW_PUBLIC_ORIGIN=https://bot.32cbgg8.com
+Environment=PREVIEW_AUTH_ORIGIN=https://staging.emdo.invalid
+Environment=PREVIEW_PORT=18081
+ExecStart=/usr/bin/node /opt/emdo-preview/server.mjs
+Restart=on-failure
+RestartSec=5
+RuntimeMaxSec=14400
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+[Install]
+WantedBy=multi-user.target
