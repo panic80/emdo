@@ -16,6 +16,10 @@ cleanupOutdatedCaches();
 
 self.addEventListener('fetch', (event) => {
   if (event.request.mode !== 'navigate') return;
+  // The shared host serves a separate POS application under this prefix.
+  // Its navigation must never fall back to EMDO's cached application shell.
+  const pathname = new URL(event.request.url).pathname;
+  if (pathname === '/pos' || pathname.startsWith('/pos/')) return;
   event.respondWith(
     (async () => {
       try {

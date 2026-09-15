@@ -202,6 +202,21 @@ test.beforeEach(async ({ page }) => {
   await mockAuthenticatedSession(page);
 });
 
+test('does not replace the shared POS application with EMDO when offline', async ({
+  page,
+}) => {
+  await establishControlledClient(page, '/finance');
+  await page.context().setOffline(true);
+  try {
+    const response = await page.goto('/finance');
+    expect(response?.status()).toBe(200);
+    expect(await response?.text()).toContain('<div id="root">');
+    await expect(page.goto('/pos/live/')).rejects.toThrow(/net::ERR_/u);
+  } finally {
+    await page.context().setOffline(false);
+  }
+});
+
 test('defers a real service worker update while an offline edit is pending', async ({
   page,
 }) => {

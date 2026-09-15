@@ -260,7 +260,7 @@ export_digest_lock() {
 
 reset_config_values() {
   local key
-  for key in EMDO_DOMAIN ACME_EMAIL POWERSYNC_JWKS_URI SECRETS_DIR STAGING_HTTP_PORT BACKUP_DIR BACKUP_AGE_RECIPIENTS_FILE BACKUP_AGE_IDENTITY_FILE; do
+  for key in EMDO_INGRESS_MODE EMDO_NGINX_TRUSTED_PEER EMDO_DOMAIN ACME_EMAIL POWERSYNC_JWKS_URI SECRETS_DIR STAGING_HTTP_PORT BACKUP_DIR BACKUP_AGE_RECIPIENTS_FILE BACKUP_AGE_IDENTITY_FILE; do
     unset "DEPLOY_CONFIG_$key"
   done
   DEPLOY_CONFIG_SEEN='|'
@@ -273,7 +273,7 @@ config_value() {
 
 is_allowed_config_key() {
   case "$1" in
-    EMDO_DOMAIN | ACME_EMAIL | POWERSYNC_JWKS_URI | SECRETS_DIR | STAGING_HTTP_PORT | BACKUP_DIR | BACKUP_AGE_RECIPIENTS_FILE | BACKUP_AGE_IDENTITY_FILE)
+    EMDO_INGRESS_MODE | EMDO_NGINX_TRUSTED_PEER | EMDO_DOMAIN | ACME_EMAIL | POWERSYNC_JWKS_URI | SECRETS_DIR | STAGING_HTTP_PORT | BACKUP_DIR | BACKUP_AGE_RECIPIENTS_FILE | BACKUP_AGE_IDENTITY_FILE)
       return 0
       ;;
     *)
@@ -308,6 +308,30 @@ load_deployment_config() {
   done < "$config_file"
 }
 
+# Admit one explicit private IPv4 peer, never a CIDR, hostname or broad trust range.
+assert_ingress_config() {
+  case "${EMDO_INGRESS_MODE:-direct}" in
+    direct)
+      [[ -z "${EMDO_NGINX_TRUSTED_PEER:-}" ]] || die 'trusted Nginx peer requires shared-nginx ingress'
+      ;;
+    shared-nginx)
+      local peer="${EMDO_NGINX_TRUSTED_PEER:-}" octet
+      [[ "$peer" =~ ^(10|127)\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ||
+         "$peer" =~ ^192\.168\.[0-9]{1,3}\.[0-9]{1,3}$ ||
+         "$peer" =~ ^172\.(1[6-9]|2[0-9]|3[01])\.[0-9]{1,3}\.[0-9]{1,3}$ ]] ||
+        die 'shared-nginx requires one explicit private IPv4 EMDO_NGINX_TRUSTED_PEER'
+      local -a octets
+      IFS=. read -r -a octets <<< "$peer"
+      for octet in "${octets[@]}"; do
+        if [[ "$octet" != 0 && "$octet" == 0* ]] || ((10#$octet > 255)); then
+          die 'invalid trusted Nginx IPv4 peer'
+        fi
+      done
+      ;;
+    *) die 'EMDO_INGRESS_MODE must be direct or shared-nginx' ;;
+  esac
+}
+
 export_required_config() {
   local key
   for key in EMDO_DOMAIN ACME_EMAIL POWERSYNC_JWKS_URI SECRETS_DIR; do
@@ -315,6 +339,11 @@ export_required_config() {
     printf -v "$key" '%s' "$(config_value "$key")"
     export "${key?}"
   done
+  EMDO_INGRESS_MODE="$(config_value EMDO_INGRESS_MODE)"
+  EMDO_NGINX_TRUSTED_PEER="$(config_value EMDO_NGINX_TRUSTED_PEER)"
+  export EMDO_INGRESS_MODE EMDO_NGINX_TRUSTED_PEER
+  EMDO_INGRESS_MODE="${EMDO_INGRESS_MODE:-direct}"
+  assert_ingress_config
   assert_absolute_scoped_directory "$SECRETS_DIR" SECRETS_DIR
   require_directory "$SECRETS_DIR"
 }
@@ -1350,10 +1379,12 @@ assert_isolated_project_absent() {
 }
 
 production_compose() {
-  docker compose \
-    --project-name emdo-production \
-    --file "$COMPOSE_DIR/compose.yml" \
-    "$@"
+  assert_ingress_config
+  local -a compose_files=(--file "$COMPOSE_DIR/compose.yml")
+  if [[ "${EMDO_INGRESS_MODE:-direct}" == shared-nginx ]]; then
+    compose_files+=(--file "$COMPOSE_DIR/compose.shared-nginx.yml")
+  fi
+  docker compose --project-name emdo-production "${compose_files[@]}" "$@"
 }
 
 staging_compose() {
@@ -1571,7 +1602,7 @@ prepare_finance_normalized_staging_state() {
     "EMDO_OPENAI_AGENT_PRICING_VERSION=$pricing_version" \
     "EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS=$input_rate" \
     "EMDO_OPENAI_AGENT_GPT_6_ASTRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS=$output_rate" >> "$pending/normalized-worker.env"
-  : > "$pending/normalized-fixture-placeholder.env"
+  printf '%s\n' '# Fixture values are supplied after synthetic provisioning.' > "$pending/normalized-fixture-placeholder.env"
   chmod 0600 "$pending/"*.env
   chown 0:0 "$pending/"*.env
   mv -- "$pending/normalized-worker.env" "$pending/normalized-fixture-placeholder.env" "$secret_dir/"

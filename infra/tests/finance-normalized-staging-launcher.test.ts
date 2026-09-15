@@ -165,6 +165,34 @@ ${script.slice(start, end)}
   },
 );
 
+it('prepares a nonempty placeholder accepted by lifecycle file validation', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'normalized-prepare-'));
+  const start = common.indexOf('load_finance_normalized_staging_state() {');
+  const end = common.indexOf(
+    '\nassert_finance_normalized_effective_environment()',
+    start,
+  );
+  try {
+    const result = run(`
+${common.slice(start, end)}
+FINANCE_STAGING_SECRET_DIR=finance-secrets
+state='${dir}'
+SECRETS_DIR="$state/base"
+mkdir "$state/finance-secrets" "$SECRETS_DIR"
+printf '%s\\n' 'EMDO_EXTERNAL_PROVIDERS_ENABLED=false' > "$SECRETS_DIR/worker.env"
+chown() { :; }
+assert_root_owned_bounded_file() { [[ -f "$1" && ! -L "$1" && -s "$1" && $(wc -c < "$1") -le "$3" ]] || die unsafe; }
+prepare_finance_normalized_staging_state "$state" synthetic-keyring synthetic-key synthetic-pricing 1 1
+[[ "$EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING" == true ]]
+[[ "$FINANCE_NORMALIZED_STAGING_FIXTURE_ENV_FILE" == */normalized-fixture-placeholder.env ]]
+load_finance_normalized_staging_state "$state"
+`);
+    expect(result.status, result.stderr).toBe(0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 it('reloads durable normalized mode for acceptance and teardown and rejects incomplete credentials', () => {
   const dir = mkdtempSync(join(tmpdir(), 'normalized-state-'));
   const start = common.indexOf('load_finance_normalized_staging_state() {');
