@@ -125,6 +125,67 @@ function submit(container: HTMLElement) {
 }
 
 describe('reviewed PDF source selections', () => {
+  it('saves manual whole-span headers and context without a blank-confirmation own key', async () => {
+    const { container, save } = setup({ proposed: false });
+    await screen.findByRole('button', { name: 'Add column' });
+    for (const [index, text] of ['Date', 'Description', 'Amount'].entries()) {
+      fireEvent.click(screen.getByRole('button', { name: 'Add column' }));
+      fireEvent.click(
+        screen.getByRole('checkbox', { name: `Source span ${index}: ${text}` }),
+      );
+    }
+    for (const [column, names] of [
+      [1, ['3: 2026-09-13']],
+      [2, ['4: Coffee', '5: beans']],
+      [3, ['6: -12.3400']],
+    ] as const) {
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: `Select spans for row 1, column ${column}`,
+        }),
+      );
+      for (const name of names)
+        fireEvent.click(
+          screen.getByRole('checkbox', { name: `Source span ${name}` }),
+        );
+    }
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Select spans for currency context' }),
+    );
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Source span 7: CAD' }),
+    );
+    for (const [label, value] of [
+      ['PDF report provider', 'Example'],
+      ['PDF report name', 'Statement'],
+      ['Layout version', '1'],
+      ['Transaction date · required', '0'],
+      ['Description · required', '1'],
+      ['Amount representation', 'signed'],
+      ['Amount · required', '2'],
+      ['Currency · required', 'context'],
+      ['Date format', 'yyyy-mm-dd'],
+      ['Decimal separator', '.'],
+    ] as const)
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    confirmReview();
+    submit(container);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    const payload = save.mock.calls[0]![0] as {
+      proposal: {
+        definition: {
+          pdfSelection: {
+            headerCells: object[];
+            context: { currency: object };
+          };
+        };
+      };
+    };
+    const selection = payload.proposal.definition.pdfSelection;
+    for (const cell of [...selection.headerCells, selection.context.currency])
+      expect(Object.hasOwn(cell, 'confirmedBlank')).toBe(false);
+  });
+
   it('requires an explicit account currency entry when no currency source span exists', async () => {
     const { container, save } = setup({ noCurrency: true });
     await ready();

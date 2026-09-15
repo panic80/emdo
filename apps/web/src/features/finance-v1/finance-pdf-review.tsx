@@ -712,8 +712,7 @@ function PdfReviewEditor({
                             onChange={(event) => {
                               if (!active) return;
                               changeCell(active.key, {
-                                ...active.cell,
-                                confirmedBlank: undefined,
+                                joiner: active.cell.joiner,
                                 spans: event.target.checked
                                   ? [...active.cell.spans, span]
                                   : active.cell.spans.filter(
