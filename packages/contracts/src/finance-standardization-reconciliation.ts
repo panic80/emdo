@@ -51,7 +51,11 @@ export const FinanceStandardizationReconciliationSchema = z.strictObject({
       z.strictObject({
         id: UuidSchema,
         reservationId: UuidSchema.nullable(),
-        decision: z.enum(['confirm-not-sent', 'accept-actual-cost']),
+        decision: z.enum([
+          'confirm-not-sent',
+          'accept-actual-cost',
+          'retain-reserved-cost',
+        ]),
         reviewedBy: UuidSchema,
         reviewedAt: IsoDateTimeSchema,
         receiptId: UuidSchema.nullable(),
@@ -63,10 +67,21 @@ export const LookupFinanceStandardizationReceiptSchema = z.strictObject({
   expectedRevision: Revision,
   reservationId: UuidSchema,
 });
-export const ResolveFinanceStandardizationSchema = z.strictObject({
-  expectedRevision: Revision,
-  reservationId: UuidSchema.nullable(),
-  decision: z.enum(['confirm-not-sent', 'accept-actual-cost']),
-  receiptId: UuidSchema.nullable(),
-  acknowledgeNoApproval: z.literal(true),
-});
+export const ResolveFinanceStandardizationSchema = z
+  .strictObject({
+    expectedRevision: Revision,
+    reservationId: UuidSchema.nullable(),
+    decision: z.enum([
+      'confirm-not-sent',
+      'accept-actual-cost',
+      'retain-reserved-cost',
+    ]),
+    receiptId: UuidSchema.nullable(),
+    acknowledgeNoApproval: z.literal(true),
+  })
+  .refine(
+    (value) =>
+      value.decision !== 'retain-reserved-cost' ||
+      (value.reservationId !== null && value.receiptId === null),
+    'Retaining reserved cost requires the exact reservation and no cost receipt.',
+  );

@@ -134,7 +134,8 @@ export class PostgresFinanceStandardizationExecutionRepository {
           | 'finance-standardization-proposal.v2'
           | 'finance-standardization-proposal.v3'
           | 'finance-standardization-proposal.v4'
-          | 'finance-standardization-proposal.v5';
+          | 'finance-standardization-proposal.v5'
+          | 'finance-standardization-proposal.v6';
         promptProjection?: z.infer<typeof FinancePromptProjectionReceiptSchema>;
       };
     },

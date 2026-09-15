@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   ReviewedFinancePdfSelectionSchema,
+  FinancePdfCellProvenanceSchema,
   type ReviewedFinancePdfSelection,
 } from '@emdo/contracts';
 import {
@@ -75,6 +76,73 @@ beforeAll(async () => {
 });
 
 describe('deterministic reviewed PDF whole-span tables', () => {
+  it('requires explicit data-only blank confirmation and retains canonical page/row/column provenance', async () => {
+    const blank = {
+      spans: [],
+      joiner: '' as const,
+      confirmedBlank: true as const,
+    };
+    const selection = structuredClone(selected);
+    selection.rows[0].cells[0] = blank;
+    const result = await extractReviewedFinancePdfTable(
+      bytes,
+      selection,
+      source,
+    );
+    const provenance = result.cellProvenance.find(
+      (cell) => cell.role === 'data' && cell.logicalRow === 1,
+    )!;
+    expect(result.table.rows[0].cells).toEqual(['']);
+    expect(provenance).toEqual({
+      role: 'data',
+      logicalRow: 1,
+      column: 1,
+      page: 1,
+      sourceAnchor: 'pdf-page-1:row-1:column-1:confirmed-blank',
+      sourceSpans: [],
+      joiner: '',
+      value: '',
+      confirmedBlank: true,
+    });
+    expect(FinancePdfCellProvenanceSchema.safeParse(provenance).success).toBe(
+      true,
+    );
+    for (const change of [
+      { page: 2 },
+      { logicalRow: 2 },
+      { column: 2 },
+      { value: '10' },
+      { role: 'header' },
+      { confirmedBlank: undefined },
+    ])
+      expect(
+        FinancePdfCellProvenanceSchema.safeParse({ ...provenance, ...change })
+          .success,
+      ).toBe(false);
+    for (const invalid of [
+      { ...selection, headerCells: [blank] },
+      { ...selection, context: { ...selection.context, currency: blank } },
+      { ...selection, context: { ...selection.context, asOf: blank } },
+      { ...selection, rows: [{ cells: [{ spans: [], joiner: '' }] }] },
+      {
+        ...selection,
+        rows: [
+          { cells: [{ ...selected.rows[0].cells[0], confirmedBlank: true }] },
+        ],
+      },
+    ])
+      expect(ReviewedFinancePdfSelectionSchema.safeParse(invalid).success).toBe(
+        false,
+      );
+    await expect(
+      extractReviewedFinancePdfTable(
+        bytes,
+        { ...selection, expectedSourceDigest: '0'.repeat(64) },
+        source,
+      ),
+    ).rejects.toThrow('source-digest-mismatch');
+  });
+
   it('preserves exact selected PDF field facts through deterministic normalization and rejects missing provenance', async () => {
     const texts = [
       'Date',
@@ -159,6 +227,174 @@ describe('deterministic reviewed PDF whole-span tables', () => {
     expect(normalizeExtractedReport(definition, forged).status).toBe(
       'mapping-review-required',
     );
+    const blankSelection: ReviewedFinancePdfSelection =
+      structuredClone(selection);
+    blankSelection.rows[0].cells[4] = {
+      spans: [],
+      joiner: '',
+      confirmedBlank: true,
+    };
+    const blankExtracted = await extractReviewedFinancePdfTable(
+      original,
+      blankSelection,
+      source,
+    );
+    const blankDefinition = { ...definition, pdfSelection: blankSelection };
+    const blankTable = {
+      ...blankExtracted.table,
+      pdfCellProvenance: blankExtracted.cellProvenance,
+      extractionReview: {
+        ...table.extractionReview,
+        selectionDigest: blankExtracted.reviewFacts.selectionDigest,
+      },
+    };
+    const blankNormalized = normalizeExtractedReport(
+      blankDefinition,
+      blankTable,
+    );
+    expect(blankNormalized.status).toBe('normalized');
+    expect(blankNormalized.rows[0]!.unmapped[0]).toMatchObject({
+      raw: '',
+      pdfSource: {
+        confirmedBlank: true,
+        logicalRow: 1,
+        column: 5,
+        sourceSpans: [],
+        sourceAnchor: 'pdf-page-1:row-1:column-5:confirmed-blank',
+      },
+    });
+    expect(normalizeExtractedReport(definition, blankTable).status).toBe(
+      'mapping-review-required',
+    );
+  });
+  it('normalizes a reviewed bank PDF with split amounts, blank cells, short dates and explicit currency', async () => {
+    const texts = [
+      'Date',
+      'Description',
+      'Debits',
+      'Credits',
+      'Dec 01',
+      'Deposit',
+      '12.34',
+      'Dec 02',
+      'Purchase',
+      '5.67',
+    ];
+    const original = financePdfFixture([texts]);
+    const inspected = await inspect(original);
+    const cell = (text: string) => ({
+      spans: [
+        {
+          ...inspected.pages[0].spans.find((span) => span.text === text)!,
+          textLength: text.length,
+          truncated: false as const,
+        },
+      ],
+      joiner: '' as const,
+    });
+    const blank = {
+      spans: [],
+      joiner: '' as const,
+      confirmedBlank: true as const,
+    };
+    const selection: ReviewedFinancePdfSelection = {
+      expectedSourceDigest: createHash('sha256').update(original).digest('hex'),
+      page: 1,
+      reviewedPageInventory: inspected.pages.map(
+        ({ page, width, height, rotation, textStatus, text, spans }) => ({
+          page,
+          width,
+          height,
+          rotation,
+          textStatus,
+          textLength: text.length,
+          spanCount: spans.length,
+        }),
+      ),
+      headerCells: texts.slice(0, 4).map(cell),
+      rows: [
+        { cells: [cell('Dec 01'), cell('Deposit'), blank, cell('12.34')] },
+        { cells: [cell('Dec 02'), cell('Purchase'), cell('5.67'), blank] },
+      ],
+      context: { asOf: null, currency: null },
+      confirmedHeaderAndCellSelection: true,
+      confirmedContextSelection: true,
+      acknowledgeUnselectedContent: true,
+    };
+    const extracted = await extractReviewedFinancePdfTable(
+      original,
+      selection,
+      source,
+    );
+    const definition = {
+      providerKey: source.providerKey,
+      reportName: 'Synthetic split bank PDF',
+      reportType: 'bank-transactions',
+      layoutVersion: '1',
+      pdfSelection: selection,
+      headers: texts.slice(0, 4),
+      bindings: [
+        ...['transactionDate', 'description', 'debit', 'credit'].map(
+          (field, i) => ({ field, column: texts[i], context: null }),
+        ),
+        { field: 'currency', column: null, context: 'currency' },
+      ],
+      dateFormat: 'mmm dd',
+      dateYear: 2025,
+      currencyCode: 'CAD',
+      decimalSeparator: '.',
+      groupingSeparator: ',',
+      quantityUnit: null,
+      valuationMultiplier: null,
+      identifierScheme: null,
+      identifierNamespace: null,
+    };
+    const table = {
+      ...extracted.table,
+      pdfCellProvenance: extracted.cellProvenance,
+      extractionReview: {
+        version: 'reviewed-pdf.v1',
+        sourceDigest: extracted.reviewFacts.sourceDigest,
+        selectionDigest: extracted.reviewFacts.selectionDigest,
+        coverage: 'selected-spans-only',
+        rowNumbering: 'logical-selection-order-not-pdf-row-numbers',
+      },
+    };
+    const normalized = normalizeExtractedReport(definition, table);
+    expect(normalized.status).toBe('normalized');
+    expect(
+      normalized.rows.map((row) => [
+        row.fields.transactionDate,
+        row.fields.amount,
+        row.fields.currency,
+      ]),
+    ).toEqual([
+      ['2025-12-01', '12.34', 'CAD'],
+      ['2025-12-02', '-5.67', 'CAD'],
+    ]);
+    expect(normalized.rows[0]!.provenance.amount).toMatchObject({
+      derivation: 'credit-minus-debit',
+      sourceProvenance: {
+        debit: {
+          pdfSource: {
+            confirmedBlank: true,
+            page: 1,
+            logicalRow: 1,
+            column: 3,
+          },
+        },
+        credit: { pdfSource: { sourceSpans: [{ text: '12.34' }] } },
+      },
+    });
+    expect(normalized.rows[0]!.provenance.currency).toMatchObject({
+      reviewedCurrencyCode: 'CAD',
+      contextAnchor: 'reviewed-mapping:currency',
+    });
+    expect(normalized.rows[0]!.provenance.currency.pdfSource).toBeUndefined();
+    expect(
+      normalizeExtractedReport({ ...definition, currencyCode: null }, table)
+        .status,
+    ).toBe('row-review-required');
   });
   it('re-extracts genuine PDF bytes with exact decimal/context text and complete source geometry', async () => {
     const result = await extractReviewedFinancePdfTable(

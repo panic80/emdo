@@ -102,6 +102,8 @@ describe('database migration runner', () => {
       '0077_finance_function_execute_privileges',
       '0078_finance_pdf_extraction_capacity',
       '0079_finance_pdf_prompt_projection',
+      '0080_finance_bank_layout_prompt_v6',
+      '0081_finance_standardization_retained_cost_retry',
     ]);
     expect(migrations.map(({ index }) => index)).toEqual(
       migrations.map((_, index) => index),

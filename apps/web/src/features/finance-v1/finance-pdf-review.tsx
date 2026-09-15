@@ -43,6 +43,8 @@ const bankFields = [
   'transactionDate',
   'description',
   'amount',
+  'debit',
+  'credit',
   'currency',
   'externalId',
   'fee',
@@ -66,6 +68,8 @@ const fieldNames: Record<string, string> = {
   transactionDate: 'Transaction date',
   description: 'Description',
   amount: 'Amount',
+  debit: 'Debit / withdrawal',
+  credit: 'Credit / deposit',
   currency: 'Currency',
   externalId: 'External reference',
   fee: 'Fee',
@@ -143,6 +147,17 @@ function PdfReviewEditor({
       ]),
     ),
   );
+  const [amountRepresentation, setAmountRepresentation] = useState(
+    definition?.bindings.some(
+      (binding) => binding.field === 'debit' || binding.field === 'credit',
+    )
+      ? 'pair'
+      : 'signed',
+  );
+  const [dateFormat, setDateFormat] = useState<string>(
+    definition?.dateFormat ?? '',
+  );
+  const [currencyCode, setCurrencyCode] = useState('');
   const baseline = useRef<{ digest: string; inventory: string } | undefined>(
     undefined,
   );
@@ -170,10 +185,23 @@ function PdfReviewEditor({
   const omittedPages =
     tableInspection?.pages.filter((page) => page.page !== tablePage) ?? [];
   const fields =
-    reportType === 'bank-transactions' ? bankFields : positionFields;
+    reportType === 'bank-transactions'
+      ? bankFields.filter((field) =>
+          amountRepresentation === 'pair'
+            ? field !== 'amount'
+            : field !== 'debit' && field !== 'credit',
+        )
+      : positionFields;
   const requiredFields = new Set(
     reportType === 'bank-transactions'
-      ? ['transactionDate', 'description', 'amount', 'currency']
+      ? [
+          'transactionDate',
+          'description',
+          ...(amountRepresentation === 'pair'
+            ? ['debit', 'credit']
+            : ['amount']),
+          'currency',
+        ]
       : ['asOf', 'instrumentIdentifier', 'quantity', 'currency'],
   );
 
@@ -296,11 +324,16 @@ function PdfReviewEditor({
           moveToSource();
         }}
       >
-        <span>{pdfCellText(cell) || 'Choose source spans'}</span>
+        <span>
+          {pdfCellText(cell) ||
+            (cell.confirmedBlank ? 'Confirmed blank' : 'Choose source spans')}
+        </span>
         <small>
           {cell.spans.length
             ? `Page ${tablePage} · spans ${cell.spans.map((span) => span.index).join(', ')}`
-            : 'No text selected'}
+            : cell.confirmedBlank
+              ? `Page ${tablePage} · ${pdfTargetLabel(key)} · reviewed blank`
+              : 'No text selected'}
         </small>
       </button>
     );
@@ -340,9 +373,14 @@ function PdfReviewEditor({
           {(field === 'asOf' || field === 'currency') && (
             <option
               value="context"
-              disabled={!draft.context[field].spans.length}
+              disabled={
+                !draft.context[field].spans.length &&
+                !(field === 'currency' && currencyCode)
+              }
             >
-              Selected {field === 'asOf' ? 'as-of date' : 'currency'} context
+              {field === 'currency' && currencyCode
+                ? 'Confirmed account currency'
+                : `Selected ${field === 'asOf' ? 'as-of date' : 'currency'} context`}
             </option>
           )}
         </select>
@@ -424,7 +462,15 @@ function PdfReviewEditor({
                     : headers[Number(bindings[field])],
                 context: bindings[field] === 'context' ? field : null,
               })),
-            dateFormat: form.get('dateFormat'),
+            ...(reportType === 'bank-transactions' && currencyCode
+              ? { currencyCode }
+              : {}),
+            dateFormat,
+            ...(dateFormat === 'mmm dd'
+              ? { dateYear: Number(form.get('dateYear')) }
+              : definition?.dateYear !== undefined
+                ? { dateYear: null }
+                : {}),
             decimalSeparator: form.get('decimalSeparator'),
             groupingSeparator: form.get('groupingSeparator'),
             quantityUnit:
@@ -667,6 +713,7 @@ function PdfReviewEditor({
                               if (!active) return;
                               changeCell(active.key, {
                                 ...active.cell,
+                                confirmedBlank: undefined,
                                 spans: event.target.checked
                                   ? [...active.cell.spans, span]
                                   : active.cell.spans.filter(
@@ -938,6 +985,30 @@ function PdfReviewEditor({
                         {pdfCellText(active.cell) ||
                           'Select whole spans from the source list.'}
                       </p>
+                      {active.key.startsWith('r:') && (
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={active.cell.confirmedBlank === true}
+                            disabled={
+                              locked || !!limitation || viewPage !== tablePage
+                            }
+                            onChange={(event) =>
+                              changeCell(
+                                active.key,
+                                event.target.checked
+                                  ? {
+                                      spans: [],
+                                      joiner: '',
+                                      confirmedBlank: true,
+                                    }
+                                  : emptyPdfCell(),
+                              )
+                            }
+                          />
+                          I checked the original: this data cell is blank
+                        </label>
+                      )}
                       {!!active.cell.spans.length && (
                         <>
                           <label>
@@ -1086,6 +1157,22 @@ function PdfReviewEditor({
           <fieldset disabled={locked}>
             <legend>Source field meanings</legend>
             <div className="finance-pdf-review__form-grid">
+              {reportType === 'bank-transactions' && (
+                <label>
+                  Amount representation
+                  <select
+                    value={amountRepresentation}
+                    onChange={(event) =>
+                      setAmountRepresentation(event.target.value)
+                    }
+                  >
+                    <option value="signed">One signed amount column</option>
+                    <option value="pair">
+                      Separate debit and credit columns
+                    </option>
+                  </select>
+                </label>
+              )}
               {fields
                 .filter((field) => requiredFields.has(field))
                 .map(fieldControl)}
@@ -1113,7 +1200,8 @@ function PdfReviewEditor({
                 Date format
                 <select
                   name="dateFormat"
-                  defaultValue={definition?.dateFormat ?? ''}
+                  value={dateFormat}
+                  onChange={(event) => setDateFormat(event.target.value)}
                   required
                 >
                   <option value="" disabled>
@@ -1124,8 +1212,51 @@ function PdfReviewEditor({
                   <option value="dd/mm/yyyy">DD/MM/YYYY</option>
                   <option value="dd.mm.yyyy">DD.MM.YYYY</option>
                   <option value="yyyy/mm/dd">YYYY/MM/DD</option>
+                  {reportType === 'bank-transactions' && (
+                    <option value="mmm dd">
+                      English month and day (Jan 02)
+                    </option>
+                  )}
                 </select>
               </label>
+              {dateFormat === 'mmm dd' && (
+                <label>
+                  Statement year from original
+                  <input
+                    name="dateYear"
+                    type="number"
+                    min={1900}
+                    max={9999}
+                    step={1}
+                    required
+                    defaultValue={definition?.dateYear ?? ''}
+                  />
+                  <small>
+                    Check the year against the original. Use separate selections
+                    for transactions from different years.
+                  </small>
+                </label>
+              )}
+              {reportType === 'bank-transactions' && (
+                <label>
+                  Confirmed account currency
+                  <input
+                    aria-label="Confirmed account currency"
+                    value={currencyCode}
+                    maxLength={3}
+                    pattern="[A-Z]{3}"
+                    placeholder="e.g. CAD"
+                    onChange={(event) =>
+                      setCurrencyCode(event.target.value.toUpperCase())
+                    }
+                  />
+                  <small>
+                    Confirm from your account details; a $ symbol alone does not
+                    identify the currency. Leave empty when currency is selected
+                    from the PDF.
+                  </small>
+                </label>
+              )}
               <label>
                 Decimal separator
                 <select

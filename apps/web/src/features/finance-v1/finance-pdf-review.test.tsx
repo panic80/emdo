@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FinancePdfReview } from './finance-pdf-review.js';
 import {
   pdfPageLimitation,
+  draftFromPdfSelection,
   verifiedPdfInspection,
   verifyPdfSelection,
 } from './finance-pdf-review-model.js';
@@ -36,9 +37,39 @@ afterEach(() => {
 });
 
 function setup(
-  options: { proposed?: boolean; role?: string; questions?: string[] } = {},
+  options: {
+    proposed?: boolean;
+    role?: string;
+    questions?: string[];
+    bankPair?: boolean;
+    noCurrency?: boolean;
+  } = {},
 ) {
   const fixture = pdfReviewFixture();
+  if (options.bankPair) {
+    const definition = fixture.definition;
+    definition.headers.push('Closing total');
+    definition.pdfSelection!.headerCells.push({
+      spans: [fixture.inspection.selectedPage!.spans[9]!],
+      joiner: '',
+    });
+    definition.pdfSelection!.rows[0]!.cells.push({
+      spans: [],
+      joiner: '',
+      confirmedBlank: true,
+    });
+    definition.bindings = definition.bindings.filter(
+      (binding) => binding.field !== 'amount',
+    );
+    definition.bindings.push(
+      { field: 'debit', column: 'Amount', context: null },
+      { field: 'credit', column: 'Closing total', context: null },
+    );
+    definition.dateFormat = 'mmm dd';
+    definition.dateYear = 2026;
+  }
+  if (options.noCurrency)
+    fixture.definition.pdfSelection!.context.currency = null;
   const fetcher = vi.fn<
     (path: string, init?: RequestInit) => Promise<Response>
   >(async (path) =>
@@ -94,6 +125,151 @@ function submit(container: HTMLElement) {
 }
 
 describe('reviewed PDF source selections', () => {
+  it('requires an explicit account currency entry when no currency source span exists', async () => {
+    const { container, save } = setup({ noCurrency: true });
+    await ready();
+    expect(screen.getByLabelText('Confirmed account currency')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('Confirmed account currency'), {
+      target: { value: 'cad' },
+    });
+    fireEvent.change(screen.getByLabelText('Currency · required'), {
+      target: { value: 'context' },
+    });
+    confirmReview();
+    submit(container);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0]![0]).toMatchObject({
+      proposal: {
+        definition: {
+          currencyCode: 'CAD',
+          pdfSelection: { context: { currency: null } },
+          bindings: expect.arrayContaining([
+            { field: 'currency', column: null, context: 'currency' },
+          ]),
+        },
+      },
+    });
+  });
+
+  it('reviews separate debit/credit bindings and an explicit statement year, then can switch back to signed amounts', async () => {
+    const { container, save } = setup({ bankPair: true });
+    await ready();
+    expect(screen.getByLabelText('Amount representation')).toHaveValue('pair');
+    expect(screen.getByLabelText(/Debit \/ withdrawal/)).toHaveValue('2');
+    expect(screen.getByLabelText(/Credit \/ deposit/)).toHaveValue('3');
+    expect(
+      screen.queryByLabelText('Amount · required'),
+    ).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Date format'), {
+      target: { value: 'yyyy-mm-dd' },
+    });
+    expect(
+      screen.queryByRole('spinbutton', { name: /Statement year/ }),
+    ).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Date format'), {
+      target: { value: 'mmm dd' },
+    });
+    fireEvent.change(
+      screen.getByRole('spinbutton', { name: /Statement year/ }),
+      { target: { value: '2025' } },
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Select spans for row 1, column 4' }),
+    );
+    fireEvent.click(
+      screen.getByLabelText('I checked the original: this data cell is blank'),
+    );
+    confirmReview();
+    submit(container);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0]![0]).toMatchObject({
+      proposal: {
+        definition: {
+          dateFormat: 'mmm dd',
+          dateYear: 2025,
+          bindings: expect.arrayContaining([
+            { field: 'debit', column: 'Amount', context: null },
+            { field: 'credit', column: 'Closing total', context: null },
+          ]),
+        },
+      },
+    });
+    fireEvent.change(screen.getByLabelText('Amount representation'), {
+      target: { value: 'signed' },
+    });
+    fireEvent.change(screen.getByLabelText('Amount · required'), {
+      target: { value: '2' },
+    });
+    fireEvent.change(screen.getByLabelText('Date format'), {
+      target: { value: 'yyyy-mm-dd' },
+    });
+    confirmReview();
+    submit(container);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    const second = save.mock.calls[1]![0] as {
+      proposal: {
+        definition: { dateYear: number | null; bindings: { field: string }[] };
+      };
+    };
+    expect(second.proposal.definition.dateYear).toBeNull();
+    expect(
+      second.proposal.definition.bindings.map((binding) => binding.field),
+    ).toContain('amount');
+    expect(
+      second.proposal.definition.bindings.map((binding) => binding.field),
+    ).not.toContain('debit');
+  });
+
+  it('offers blank confirmation only for data cells and clears it on source selection', async () => {
+    setup();
+    await screen.findByRole('button', { name: 'Add column' });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Select spans for heading 1' }),
+    );
+    expect(
+      screen.queryByLabelText(
+        'I checked the original: this data cell is blank',
+      ),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Select spans for row 1, column 1' }),
+    );
+    fireEvent.click(
+      screen.getByLabelText('I checked the original: this data cell is blank'),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Select spans for row 1, column 1' }),
+    ).toHaveTextContent('Confirmed blank');
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Source span 3: 2026-09-13' }),
+    );
+    expect(
+      screen.getByLabelText('I checked the original: this data cell is blank'),
+    ).not.toBeChecked();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Select spans for currency context' }),
+    );
+    expect(
+      screen.queryByLabelText(
+        'I checked the original: this data cell is blank',
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it('never inherits proposed blank-cell confirmation as human review', () => {
+    const { definition } = pdfReviewFixture();
+    const selection = structuredClone(definition.pdfSelection!);
+    selection.rows[0]!.cells[0] = {
+      spans: [],
+      joiner: '',
+      confirmedBlank: true,
+    };
+    expect(draftFromPdfSelection(selection).rows[0]![0]).toEqual({
+      spans: [],
+      joiner: ' ',
+    });
+  });
+
   it('prepopulates only verified whole spans, requires fresh review, and sends a source-only candidate with exact decimal text', async () => {
     const { container, save, definition, fetcher } = setup({
       questions: ['Does the currency apply to this row?'],

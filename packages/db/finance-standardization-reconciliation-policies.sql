@@ -81,11 +81,14 @@ DECLARE r emdo.finance_standardization_runs; s emdo.finance_standardization_spen
 BEGIN
  PERFORM emdo.standardization_app_book(w,b,true);
  IF NOT emdo.finance_book_access(w,b,ARRAY['administrator']) THEN RAISE EXCEPTION 'standardization-admin-required' USING ERRCODE='42501';END IF;
- IF decision NOT IN ('confirm-not-sent','accept-actual-cost') OR k !~ '^[a-fA-F0-9-]{36}$' THEN RAISE EXCEPTION 'standardization-resolution-invalid' USING ERRCODE='23514';END IF;
+ IF decision NOT IN ('confirm-not-sent','accept-actual-cost','retain-reserved-cost') OR k !~ '^[a-fA-F0-9-]{36}$' THEN RAISE EXCEPTION 'standardization-resolution-invalid' USING ERRCODE='23514';END IF;
  PERFORM pg_advisory_xact_lock(hashtextextended(w::text||':'||emdo.current_user_id()::text||':'||k,0));
  h:=encode(sha256(convert_to(jsonb_build_array(b,rid,expected,reservation,decision,receipt_id)::text,'UTF8')),'hex');
  SELECT * INTO prior FROM emdo.finance_command_receipts WHERE workspace_id=w AND user_id=emdo.current_user_id() AND idempotency_key=k;
  IF FOUND THEN IF prior.operation<>'standardization.resolve' OR prior.payload_hash<>h THEN RAISE EXCEPTION 'standardization-idempotency-conflict' USING ERRCODE='23514';END IF;RETURN;END IF;
+ IF decision='retain-reserved-cost' THEN
+  PERFORM 1 FROM emdo.finance_automation_authority_epochs WHERE workspace_id=w FOR UPDATE;
+ END IF;
  SELECT * INTO r FROM emdo.finance_standardization_runs WHERE id=rid AND workspace_id=w AND book_id=b FOR UPDATE;
  IF NOT FOUND OR r.revision<>expected OR r.status NOT IN ('indeterminate','cancelled','authority-revoked') OR coalesce(r.lease_expires_at>clock_timestamp(),false) THEN RAISE EXCEPTION 'standardization-resolution-conflict' USING ERRCODE='23514';END IF;
  IF reservation IS NULL THEN
@@ -93,7 +96,10 @@ BEGIN
  ELSE
   SELECT * INTO s FROM emdo.finance_standardization_spend WHERE id=reservation AND run_id=rid FOR UPDATE;
   IF NOT FOUND OR s.attempt<>r.attempt THEN RAISE EXCEPTION 'standardization-reservation-conflict' USING ERRCODE='23514';END IF;
-  IF decision='confirm-not-sent' THEN
+  IF decision='retain-reserved-cost' THEN
+   IF r.status<>'indeterminate' OR r.attempt>=3 OR s.status<>'indeterminate' OR receipt_id IS NOT NULL OR emdo.standardization_denial(r) IS NOT NULL THEN RAISE EXCEPTION 'standardization-retained-cost-not-retryable' USING ERRCODE='23514';END IF;
+   -- Preserve the entire uncertain spend record. This review never settles cost.
+  ELSIF decision='confirm-not-sent' THEN
    IF receipt_id IS NOT NULL OR s.status='completed' OR (s.status<>'not-sent' AND s.dispatch_phase<>'not-dispatched') THEN RAISE EXCEPTION 'standardization-not-sent-unproven' USING ERRCODE='23514';END IF;
    UPDATE emdo.finance_standardization_spend SET status='not-sent',actual_cad_minor=0,settled_at=clock_timestamp() WHERE id=reservation;
   ELSE

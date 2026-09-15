@@ -561,6 +561,20 @@
       "when": 1789449928271,
       "tag": "0079_finance_pdf_prompt_projection",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1789449928272,
+      "tag": "0080_finance_bank_layout_prompt_v6",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1789449928273,
+      "tag": "0081_finance_standardization_retained_cost_retry",
+      "breakpoints": true
     }
   ]
 }

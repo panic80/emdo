@@ -100,6 +100,13 @@ export function reconciliationChoices(
     reservation,
     receipt,
     isLatest,
+    canRetainReservation:
+      canResolve &&
+      record.status === 'indeterminate' &&
+      isLatest &&
+      !!reservation &&
+      reservation.attempt < 3 &&
+      reservation.status === 'indeterminate',
     canConfirmNotSent:
       canResolve &&
       (record.spend.length === 0 ||

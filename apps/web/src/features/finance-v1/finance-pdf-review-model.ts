@@ -75,7 +75,10 @@ export function draftFromPdfSelection(
 ): PdfReviewDraft {
   return structuredClone({
     headers: selection.headerCells,
-    rows: selection.rows.map((row) => row.cells),
+    // Proposals are suggestions, never evidence of a human blank-cell confirmation.
+    rows: selection.rows.map((row) =>
+      row.cells.map((cell) => (cell.confirmedBlank ? emptyPdfCell() : cell)),
+    ),
     context: {
       asOf: selection.context.asOf ?? emptyPdfCell(),
       currency: selection.context.currency ?? emptyPdfCell(),

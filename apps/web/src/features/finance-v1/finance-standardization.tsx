@@ -1056,6 +1056,30 @@ function StandardizationWorkspace({
     </section>
   );
 }
+const analysisFindingLabels: Record<string, string> = {
+  'provider-incomplete-output-max-output-tokens':
+    'The analysis reached its response limit before finishing a mapping. No candidate was saved.',
+  'provider-incomplete-output-content-filter':
+    'The provider did not complete this analysis. No candidate was saved.',
+  'provider-incomplete-output':
+    'The provider returned an incomplete analysis. No candidate was saved.',
+  'provider-structured-validation':
+    'The analysis response did not match the required mapping format. No candidate was saved.',
+  'provider-canonical-validation':
+    'The proposed mapping failed financial validation. No candidate was saved.',
+  'provider-canonical-validation-bank-amount-bindings':
+    'The analysis could not establish a valid signed amount or debit/credit pair. Review the original statement.',
+  'provider-canonical-validation-required-fields-missing':
+    'The proposed mapping was missing required financial fields. No candidate was saved.',
+  'provider-canonical-validation-duplicate-field':
+    'The proposed mapping assigned a financial field more than once. No candidate was saved.',
+  'provider-canonical-validation-heading-absent':
+    'The proposed mapping referenced a heading absent from its source layout. No candidate was saved.',
+  'provider-transport':
+    'The analysis request did not return a verified response. Review the saved outcome before retrying.',
+  'provider-receipt-missing':
+    'The response receipt could not be verified. Review the saved outcome before retrying.',
+};
 function StandardizationFindings({
   title,
   findings,
@@ -1072,9 +1096,10 @@ function StandardizationFindings({
           <li key={index}>
             <Icon name="info" size={15} />
             <span>
-              {/^[a-z][a-z0-9-]+$/u.test(finding)
-                ? finding.replaceAll('-', ' ')
-                : finding}
+              {analysisFindingLabels[finding] ??
+                (/^[a-z][a-z0-9-]+$/u.test(finding)
+                  ? finding.replaceAll('-', ' ')
+                  : finding)}
             </span>
           </li>
         ))}

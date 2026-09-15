@@ -14,7 +14,7 @@ describe.skipIf(!url)('migrated PDF spend projection guard', () => {
         )
       ).rows[0].body as string;
       const marker =
-        "ELSIF ex.envelope->>'kind'='pdf-layout' AND lineage->>'promptVersion'='finance-standardization-proposal.v5' THEN";
+        "ELSIF ex.envelope->>'kind'='pdf-layout' AND lineage->>'promptVersion' IN ('finance-standardization-proposal.v5','finance-standardization-proposal.v6') THEN";
       const start = definition.indexOf(marker);
       expect(start).toBeGreaterThan(0);
       const end = definition.indexOf(' ELSIF projection IS NOT NULL', start);

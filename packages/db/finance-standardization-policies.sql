@@ -82,7 +82,7 @@ BEGIN
  UPDATE emdo.finance_standardization_runs SET status='cancelled',revision=revision+1,delivery_pending=false,lease_token=NULL,lease_expires_at=NULL,updated_at=clock_timestamp() WHERE id=rid;
  ELSE
  reason:=emdo.standardization_denial(r);
- IF r.status<>'blocked' OR r.attempt>=3 OR reason IS NOT NULL OR EXISTS(SELECT FROM emdo.finance_standardization_spend WHERE run_id=rid AND status IN ('reserved','indeterminate')) THEN RAISE EXCEPTION 'standardization-not-retryable' USING ERRCODE='23514'; END IF;
+ IF r.status<>'blocked' OR r.attempt>=3 OR reason IS NOT NULL OR EXISTS(SELECT FROM emdo.finance_standardization_spend s WHERE s.run_id=rid AND (s.status='reserved' OR (s.status='indeterminate' AND NOT EXISTS(SELECT FROM emdo.finance_standardization_reconciliations e WHERE e.run_id=rid AND e.reservation_id=s.id AND e.source_digest=r.source_digest AND e.kind='resolution' AND e.facts->>'decision'='retain-reserved-cost' AND e.run_revision<r.revision)))) THEN RAISE EXCEPTION 'standardization-not-retryable' USING ERRCODE='23514'; END IF;
  UPDATE emdo.finance_standardization_runs SET status='queued',revision=revision+1,delivery_revision=delivery_revision+1,delivery_pending=true,delivery_token=NULL,delivery_expires_at=NULL,lease_token=NULL,lease_expires_at=NULL,blockers='[]'::jsonb,updated_at=clock_timestamp() WHERE id=rid;
  END IF;
  INSERT INTO emdo.finance_command_receipts(workspace_id,user_id,idempotency_key,operation,payload_hash,result) VALUES(w,emdo.current_user_id(),k,'standardization.change',h,jsonb_build_object('id',rid));RETURN jsonb_build_object('id',rid);
@@ -180,7 +180,7 @@ BEGIN
  SELECT * INTO r FROM emdo.finance_standardization_runs WHERE id=rid FOR UPDATE;
  IF r.revision<>rev OR r.lease_token IS DISTINCT FROM token OR r.status NOT IN ('extracting','proposing') THEN RETURN false; END IF;
  IF outcome NOT IN ('blocked','indeterminate','authority-revoked') OR length(reason) NOT BETWEEN 1 AND 500 THEN RAISE EXCEPTION 'standardization-invalid-outcome' USING ERRCODE='23514'; END IF;
- IF EXISTS(SELECT FROM emdo.finance_standardization_spend WHERE run_id=rid AND status IN ('reserved','indeterminate')) THEN outcome:='indeterminate'; END IF;
+ IF EXISTS(SELECT FROM emdo.finance_standardization_spend s WHERE s.run_id=rid AND (s.status='reserved' OR (s.status='indeterminate' AND NOT EXISTS(SELECT FROM emdo.finance_standardization_reconciliations e WHERE e.run_id=rid AND e.reservation_id=s.id AND e.source_digest=r.source_digest AND e.kind='resolution' AND e.facts->>'decision'='retain-reserved-cost' AND e.run_revision<r.revision)))) THEN outcome:='indeterminate'; END IF;
  UPDATE emdo.finance_standardization_runs SET status=outcome,revision=revision+1,blockers=jsonb_build_array(reason),lease_token=NULL,lease_expires_at=NULL,updated_at=clock_timestamp() WHERE id=rid;RETURN true;
 END $$;
 GRANT SELECT,INSERT ON emdo.finance_report_mapping_versions TO emdo_finance_standardization_executor;
