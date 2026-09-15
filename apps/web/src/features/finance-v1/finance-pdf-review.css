@@ -1,0 +1,417 @@
+.finance-pdf-review {
+  margin-top: 24px;
+  padding: 24px;
+  border: 1px solid #b7cec5;
+  border-radius: 10px;
+  background: #fff;
+  min-width: 0;
+}
+.finance-pdf-review__heading,
+.finance-pdf-review__tools,
+.finance-pdf-review__section-title,
+.finance-pdf-review__source-bar,
+.finance-pdf-review__pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.finance-pdf-review__heading {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.finance-pdf-review__heading > div {
+  min-width: 0;
+}
+.finance-pdf-review__eyebrow {
+  display: block;
+  font-size: 10px;
+  color: #08765b;
+  text-transform: uppercase;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  margin-bottom: 7px;
+}
+.finance-workspace .finance-pdf-review h4 {
+  margin: 0;
+  font-size: 20px;
+}
+.finance-workspace .finance-pdf-review__heading p {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+}
+.finance-pdf-review__tools {
+  margin: 16px 0;
+}
+.finance-pdf-review__source-bar {
+  padding: 16px;
+  background: #f4f8f6;
+  border: 1px solid #dce8e2;
+  border-radius: 8px;
+  margin: 20px 0;
+  gap: 24px;
+  align-items: flex-start;
+}
+.finance-pdf-review__source-bar > label {
+  min-width: 180px;
+}
+.finance-pdf-review__source-bar > div {
+  padding-top: 3px;
+}
+.finance-pdf-review__source-bar strong,
+.finance-pdf-review__source-bar span {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 7px;
+}
+.finance-pdf-review__source-bar > details {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.finance-pdf-review__source-bar code {
+  overflow-wrap: anywhere;
+}
+.finance-pdf-review__note {
+  padding: 14px 16px;
+  background: #fcf8ed;
+  border-left: 3px solid #b29149;
+  border-radius: 4px;
+}
+.finance-pdf-review__workspace {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.45fr);
+  gap: 24px;
+  margin-top: 24px;
+}
+.finance-pdf-review__source,
+.finance-pdf-review__table-panel {
+  min-width: 0;
+}
+.finance-pdf-review__source {
+  scroll-margin-top: 90px;
+}
+.finance-pdf-review__section-title {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.finance-pdf-review__section-title > span {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
+  border-radius: 50%;
+  background: #e8f1ed;
+  color: #075e49;
+  font-size: 11px;
+  font-weight: 650;
+}
+.finance-workspace .finance-pdf-review h5 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.finance-workspace .finance-pdf-review h6 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.finance-workspace .finance-pdf-review__section-title p {
+  margin: 3px 0 0;
+  font-size: 12px;
+}
+.finance-workspace .finance-pdf-review__hint {
+  font-size: 11px;
+  line-height: 1.7;
+}
+.finance-pdf-review__spans {
+  max-height: 460px;
+  overflow: auto;
+  border: 1px solid #dbe4e0;
+  border-radius: 7px;
+  overscroll-behavior: contain;
+}
+.finance-workspace .finance-pdf-review__span {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid #e7ede9;
+  margin: 0;
+  background: #fff;
+}
+.finance-pdf-review__span:has(input:checked) {
+  background: #eef6f2;
+}
+.finance-pdf-review__span input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+.finance-pdf-review__span > span {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.finance-pdf-review__span small {
+  color: #526777;
+  font-size: 10px;
+  font-weight: 400;
+}
+.finance-pdf-review__exact-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: #172c3e;
+  font-weight: 450;
+}
+.finance-pdf-review__pagination {
+  justify-content: space-between;
+  gap: 4px;
+  margin: 8px 0;
+}
+.finance-pdf-review__pagination > span {
+  font-size: 10px;
+  color: #637585;
+}
+.finance-workspace .finance-pdf-review__pagination .button {
+  padding: 8px;
+  min-height: 36px;
+  font-size: 11px;
+}
+.finance-pdf-review__page-text {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 11px/1.7 var(--font-mono, monospace);
+  padding: 12px;
+  background: #f6f8fa;
+}
+.finance-pdf-review__table-scroll {
+  overflow: auto;
+  border: 1px solid #dbe4e0;
+  border-radius: 7px;
+  max-height: 620px;
+}
+.finance-workspace .finance-pdf-review__table-scroll table {
+  margin: 0;
+  min-width: 100%;
+  width: max-content;
+}
+.finance-pdf-review__table-scroll th:first-child {
+  min-width: 78px;
+}
+.finance-workspace .finance-pdf-review__table-scroll td,
+.finance-workspace .finance-pdf-review__table-scroll th {
+  vertical-align: top;
+  padding: 10px;
+}
+.finance-pdf-review__table-scroll th > span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+.finance-pdf-review__cell {
+  display: block;
+  width: 160px;
+  min-height: 74px;
+  text-align: left;
+  border: 1px solid #d5dfda;
+  border-radius: 6px;
+  background: #fff;
+  padding: 10px;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+.finance-pdf-review__cell > span {
+  display: block;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.finance-pdf-review__cell > small {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: #506a5f;
+  line-height: 1.6;
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+}
+.finance-pdf-review__cell[aria-pressed='true'] {
+  border-color: #08765b;
+  background: #eef6f2;
+  box-shadow: 0 0 0 1px #08765b;
+}
+.finance-pdf-review__cell:hover:not(:disabled) {
+  border-color: #08765b;
+}
+.finance-pdf-review__cell:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.finance-pdf-review__remove,
+.finance-pdf-review__active li button {
+  display: block;
+  border: 0;
+  background: transparent;
+  color: #556d63;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 8px 0;
+  min-height: 32px;
+}
+.finance-pdf-review__empty {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  color: #637d71;
+  padding: 20px;
+  border: 1px dashed #bed0c7;
+  border-radius: 7px;
+  background: #f9fbfa;
+}
+.finance-workspace .finance-pdf-review__empty p {
+  margin: 0;
+}
+.finance-pdf-review__context {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.finance-pdf-review__context .finance-pdf-review__cell {
+  width: 100%;
+}
+.finance-pdf-review__active {
+  padding: 16px;
+  background: #f5f8f6;
+  border-radius: 7px;
+  border: 1px solid #dce7e1;
+}
+.finance-pdf-review__active ol {
+  padding-left: 20px;
+}
+.finance-pdf-review__active li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+}
+.finance-pdf-review__active li button {
+  display: inline-block;
+}
+.finance-workspace .finance-pdf-review__form {
+  display: block;
+  margin-top: 28px;
+  border-top: 1px solid #dbe4e0;
+  padding-top: 24px;
+}
+.finance-pdf-review__form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.finance-workspace .finance-pdf-review fieldset {
+  display: block;
+  border: 0;
+  padding: 0;
+  margin: 0 0 24px;
+}
+.finance-workspace .finance-pdf-review legend {
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 650;
+}
+.finance-pdf-review__form label {
+  min-width: 0;
+}
+.finance-pdf-review__optional-fields {
+  margin-top: 12px;
+}
+.finance-pdf-review__optional-fields > .finance-pdf-review__form-grid {
+  padding-top: 12px;
+}
+.finance-pdf-review__form small {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+.finance-workspace .finance-pdf-review__check {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.7;
+  margin: 16px 0;
+}
+.finance-pdf-review__check input {
+  flex: 0 0 auto;
+  margin-top: 4px;
+}
+.finance-pdf-review__coverage {
+  display: flex;
+  gap: 12px;
+  background: #f2f6f8;
+  border-radius: 7px;
+  padding: 16px;
+  margin: 0 0 24px;
+}
+.finance-pdf-review__coverage svg {
+  flex: 0 0 auto;
+  color: #506c7d;
+}
+.finance-pdf-review__coverage strong {
+  font-size: 12px;
+}
+.finance-workspace .finance-pdf-review__coverage p {
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+@media (max-width: 1050px) {
+  .finance-pdf-review__workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .finance-pdf-review__spans {
+    max-height: 300px;
+  }
+  .finance-pdf-review__form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  .finance-pdf-review {
+    padding: 16px 12px;
+    margin-inline: -6px;
+  }
+  .finance-pdf-review__source-bar {
+    padding: 12px;
+    gap: 16px;
+  }
+  .finance-pdf-review__source-bar > label,
+  .finance-pdf-review__source-bar > details {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+  .finance-pdf-review__context,
+  .finance-pdf-review__form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .finance-pdf-review__coverage {
+    padding: 12px;
+    gap: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .finance-pdf-review__cell {
+    transition: none;
+  }
+}

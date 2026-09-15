@@ -1,3 +1,12 @@
+import { FinanceOfxInspectionSchema } from '../production/finance-ofx-inspection.js';
+import {
+  FinanceImageOcrFactsSchema,
+  FinanceImageOcrWordSchema,
+} from '@emdo/contracts';
+import {
+  FinanceTaxReadInputSchema,
+  FinanceTaxReadOutputSchema,
+} from '@emdo/contracts';
 import { z } from 'zod';
 
 import {
@@ -26,6 +35,9 @@ import {
   shoppingSchemaRegistrations,
 } from '@emdo/agent-shopping';
 import {
+  InspectFinanceReportSourceSchema,
+  FinancePdfPageRenderSchema,
+  ProposeFinanceMappingFromSourceSchema,
   ActionProposalSchema,
   AgentInvocationContextSchema,
   CapabilityDescriptorSchema,
@@ -1035,6 +1047,282 @@ export const specialistCapabilitySchemas = {
     }),
     output: CalendarWriteResultSchema,
   },
+  'finance.reports.inspect': {
+    input: InspectFinanceReportSourceSchema,
+    output: z.strictObject({
+      schemaVersion: z.literal(1),
+      evidenceId: UuidSchema,
+      filename: z.string(),
+      format: z.enum([
+        'csv',
+        'xlsx',
+        'pdf',
+        'png',
+        'jpeg',
+        'webp',
+        'ofx',
+        'qfx',
+      ]),
+      ofx: FinanceOfxInspectionSchema.nullable().optional(),
+      pdfOcr: z
+        .strictObject({
+          standardizationRunId: UuidSchema,
+          extractionRevision: z.number().int().min(1).max(3),
+          extractionDigest: Sha256Schema,
+          sourceDigest: Sha256Schema,
+          pageCount: z.number().int().min(1).max(25),
+          pages: z
+            .array(
+              z.strictObject({
+                pageNumber: z.number().int().min(1).max(25),
+                kind: z.enum(['embedded-text', 'ocr', 'unresolved']),
+                reason: z.string().nullable(),
+              }),
+            )
+            .max(25),
+          selectedPage: z.number().int().min(1).max(25),
+          render: FinancePdfPageRenderSchema.nullable(),
+          complete: z.literal(false),
+          requiresVisualReview: z.literal(true),
+        })
+        .nullable()
+        .optional(),
+      image: z
+        .strictObject({
+          standardizationRunId: UuidSchema,
+          extractionRevision: z.number().int().positive().max(3),
+          extractionDigest: Sha256Schema,
+          sourceDigest: Sha256Schema,
+          wordInventoryDigest: Sha256Schema,
+          status: z.enum(['extracted', 'no-text']),
+          qualityStatus: z.enum(['high-confidence', 'uncertain', 'unreadable']),
+          width: z.number().int().positive().max(8192),
+          height: z.number().int().positive().max(8192),
+          coordinateSpace: z.literal('image-pixels-top-left'),
+          engine: FinanceImageOcrFactsSchema.shape.engine,
+          textBasis: z.literal('machine-transcription-requires-review'),
+          text: z.string().max(4000),
+          textLength: z.number().int().min(0).max(65536),
+          textOffset: z.number().int().min(0).max(65536),
+          nextTextOffset: z.number().int().nonnegative().nullable(),
+          words: z
+            .array(
+              FinanceImageOcrWordSchema.extend({
+                text: z.string().min(1).max(200),
+                textLength: z.number().int().positive().max(10000),
+                truncated: z.boolean(),
+              }),
+            )
+            .max(20),
+          totalWords: z.number().int().min(0).max(5000),
+          wordOffset: z.number().int().nonnegative(),
+          nextWordOffset: z.number().int().nonnegative().nullable(),
+          complete: z.literal(false),
+          requiresVisualReview: z.literal(true),
+        })
+        .nullable()
+        .optional(),
+      pdf: z
+        .strictObject({
+          sourceDigest: Sha256Schema,
+          status: z.enum(['extracted', 'needs-ocr', 'unavailable']),
+          reason: z.string().nullable(),
+          totalPages: z.number().int().nullable(),
+          pages: z
+            .array(
+              z.strictObject({
+                page: z.number().int(),
+                width: z.number(),
+                height: z.number(),
+                rotation: z.number(),
+                textStatus: z.enum(['text-extracted', 'no-extractable-text']),
+                textLength: z.number().int().min(0).max(262144),
+                spanCount: z.number().int().min(0).max(20000),
+              }),
+            )
+            .max(25),
+          selectedPage: z.number().int().nullable(),
+          text: z.string().max(4000),
+          textOffset: z.number().int(),
+          nextTextOffset: z.number().int().nullable(),
+          spans: z
+            .array(
+              z.strictObject({
+                index: z.number().int(),
+                text: z.string().max(200),
+                textLength: z.number().int().min(0).max(262144),
+                transform: z.array(z.number()).length(6),
+                width: z.number(),
+                height: z.number(),
+                direction: z.string(),
+                fontName: z.string(),
+                hasEOL: z.boolean(),
+                textOffset: z.number().int(),
+                truncated: z.boolean(),
+              }),
+            )
+            .max(20),
+          nextSpanOffset: z.number().int().nullable(),
+          totalSpans: z.number().int().nullable(),
+        })
+        .nullable(),
+      tableId: z.string().nullable(),
+      sheet: z.string().nullable(),
+      dateSystem: z.enum(['1900', '1904']).nullable(),
+      tableCandidates: z
+        .array(
+          z.strictObject({
+            tableId: z.string(),
+            sheet: z.string(),
+            range: z.string(),
+            headerRow: z.number().int(),
+            totalRows: z.number().int(),
+            issues: z.array(z.string()),
+          }),
+        )
+        .max(20),
+      nextCandidateOffset: z.number().int().nullable(),
+      totalCandidates: z.number().int(),
+      extractionIssues: z.array(z.string()),
+      cellProvenance: z
+        .array(
+          z.strictObject({
+            address: z.string(),
+            sourceRow: z.number().int(),
+            column: z.number().int(),
+            type: z.string(),
+            raw: z.string().nullable(),
+            value: z.string().nullable(),
+            numberFormat: z.string().nullable(),
+            numberFormatId: z.number().int(),
+            formula: z.string().nullable(),
+            formulaAttributes: z.array(
+              z.strictObject({ name: z.string(), value: z.string() }),
+            ),
+            valueOrigin: z.enum(['source', 'cached-formula', 'unavailable']),
+            truncated: z.boolean(),
+          }),
+        )
+        .max(20),
+      nextProvenanceOffset: z.number().int().nullable(),
+      headers: z.array(z.string()).max(100),
+      rows: z
+        .array(
+          z.strictObject({
+            sourceRow: z.number().int(),
+            cells: z.array(z.string()).max(100),
+            truncated: z.boolean(),
+          }),
+        )
+        .max(5),
+      nextOffset: z.number().int().nullable(),
+      totalRows: z.number().int(),
+      sourceReference: z.string(),
+    }),
+  },
+  'finance.reports.propose-mapping': {
+    input: ProposeFinanceMappingFromSourceSchema,
+    output: z.strictObject({
+      schemaVersion: z.literal(1),
+      id: UuidSchema,
+      version: z.number().int(),
+      revision: z.number().int(),
+      status: z.literal('candidate'),
+      validationStatus: z.string(),
+      unresolvedQuestions: z.array(z.string()).max(30),
+      sourceReference: z.string(),
+    }),
+  },
+  'finance.tax.read': {
+    input: FinanceTaxReadInputSchema,
+    output: FinanceTaxReadOutputSchema,
+  },
+  'finance.books.read': {
+    input: z.strictObject({
+      schemaVersion: z.literal(1),
+      view: z.enum([
+        'books',
+        'trial-balance',
+        'commercial',
+        'imports',
+        'import-review',
+        'valuation-runs',
+        'investment-lots',
+        'budgets',
+        'budget',
+        'budget-vs-actuals',
+        'forecasts',
+        'forecast',
+        'cash-dividends',
+        'cash-dividend',
+        'corporate-action-settlement',
+        'automation-schedules',
+        'standardization-runs',
+        'standardization-run',
+        'standardization-reconciliation',
+        'automation-runs',
+        'automation-run',
+        'planning-result',
+        'journal-drafts',
+        'journal-draft',
+        'journal-draft-lines',
+        'journal-draft-history',
+        'investment-reconciliations',
+        'investment-reconciliation',
+        'investment-reconciliation-history',
+        'fec-mapping',
+        'generated-reports',
+        'generated-report',
+        'valuation',
+      ]),
+      bookId: UuidSchema.nullable(),
+      importId: UuidSchema.nullable(),
+      valuationId: UuidSchema.nullable(),
+      reportId: UuidSchema.nullable().optional(),
+      automationRunId: UuidSchema.nullable().optional(),
+      planningResultId: UuidSchema.nullable().optional(),
+      journalDraftId: UuidSchema.nullable().optional(),
+      reconciliationCaseId: UuidSchema.nullable().optional(),
+      standardizationRunId: UuidSchema.nullable().optional(),
+      dividendId: UuidSchema.nullable().optional(),
+      settlementId: UuidSchema.nullable().optional(),
+      budgetId: UuidSchema.nullable().optional(),
+      forecastId: UuidSchema.nullable().optional(),
+      planningRevision: z
+        .number()
+        .int()
+        .positive()
+        .max(2147483646)
+        .nullable()
+        .optional(),
+      offset: z.number().int().min(0).max(1000000).default(0),
+      limit: z.number().int().min(1).max(100).default(50),
+    }),
+    output: z.strictObject({
+      schemaVersion: z.literal(1),
+      view: z.string(),
+      bookId: UuidSchema.nullable(),
+      currency: z.string().nullable(),
+      records: z
+        .array(
+          z.strictObject({
+            id: z.string(),
+            fields: z
+              .array(
+                z.strictObject({
+                  name: z.string(),
+                  value: z.string().nullable(),
+                }),
+              )
+              .max(64),
+          }),
+        )
+        .max(100),
+      nextOffset: z.number().int().nonnegative().nullable(),
+      sourceReferences: z.array(z.string()).max(100),
+      amountEncoding: z.literal('decimal-string'),
+    }),
+  },
   'finance.records.read': {
     input: z.strictObject({
       schemaVersion: z.literal(1),
@@ -1461,8 +1749,23 @@ const requiredDataClasses: Record<ProductionCapabilityId, readonly string[]> = {
   'google-calendar.event.create': ['calendar.events'],
   'google-calendar.event.update': ['calendar.events'],
   'google-calendar.event.delete': ['calendar.events'],
-  'finance.records.read': financeManifest.readableDataClasses,
-  'finance.records.write': financeManifest.readableDataClasses,
+  'finance.reports.inspect': ['finance.documents', 'finance.document-evidence'],
+  'finance.reports.propose-mapping': [
+    'finance.documents',
+    'finance.document-evidence',
+  ],
+  'finance.tax.read': ['finance.tax-cases'],
+  'finance.books.read': [
+    'finance.accounts',
+    'finance.transactions',
+    'finance.imports',
+  ],
+  'finance.records.read': financeManifest.readableDataClasses.filter(
+    (value) => value !== 'finance.tax-cases',
+  ),
+  'finance.records.write': financeManifest.readableDataClasses.filter(
+    (value) => value !== 'finance.tax-cases',
+  ),
   'finance.statement.import': ['finance.imports', 'finance.transactions'],
   'finance.analytics.calculate': ['finance.transactions', 'finance.budgets'],
   'finance.documents.search': [
@@ -1489,6 +1792,10 @@ const requiredScopes: Record<ProductionCapabilityId, readonly string[]> = {
   'google-calendar.event.create': ['google-calendar.events.write'],
   'google-calendar.event.update': ['google-calendar.events.write'],
   'google-calendar.event.delete': ['google-calendar.events.write'],
+  'finance.reports.inspect': [],
+  'finance.reports.propose-mapping': [],
+  'finance.tax.read': [],
+  'finance.books.read': [],
   'finance.records.read': [],
   'finance.records.write': [],
   'finance.statement.import': [],

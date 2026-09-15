@@ -4,7 +4,8 @@ Staging runs on the production VPS only on demand and uses separate networks,
 volumes, credentials, keys, and synthetic data.
 
 1. Confirm production is healthy.
-2. Confirm at least 1.75 GiB available memory and 10 GiB free disk.
+2. Confirm at least 1.75 GiB available memory (2.25 GiB for normalized Finance)
+   and 10 GiB free disk.
 3. Select the successful `main` publish run and exact image digests.
 4. Run `infra/scripts/preflight-staging.sh`.
 5. Run `infra/scripts/deploy-staging.sh`; refuse a non-empty database or any
@@ -19,3 +20,8 @@ volumes, credentials, keys, and synthetic data.
 
 The six steady-state staging services are capped near 1.25 GiB. A green local
 Compose render is not proof of same-VPS staging.
+
+The explicit normalized Finance lane is documented in
+[Normalized Finance private staging](../implementation/finance-normalized-staging.md).
+It requires the updated fixed staging operator, explicit budgets and dedicated
+provider configuration. Its separate result remains non-release-eligible.

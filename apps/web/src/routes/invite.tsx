@@ -46,16 +46,16 @@ export function InviteRoute() {
         </Link>
         <header>
           <p className="auth-eyebrow">Invitation onboarding</p>
-          <h1 id="invite-heading">Join your household</h1>
+          <h1 id="invite-heading">Join your workspace</h1>
           <p>
-            Your private space stays private; shared household spaces are
+            Your private space stays private; shared workspace spaces are
             explicit.
           </p>
         </header>
 
         {!validLink ? (
           <div className="auth-alert" role="alert">
-            This invitation link is invalid or incomplete. Ask the household
+            This invitation link is invalid or incomplete. Ask the workspace
             owner for a new invitation.
           </div>
         ) : complete ? (
@@ -148,7 +148,7 @@ export function InviteRoute() {
           </>
         )}
         <p className="auth-boundary">
-          No public sign-up or household creation is available.
+          No public sign-up or workspace creation is available.
         </p>
       </section>
     </main>

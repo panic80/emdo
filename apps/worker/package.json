@@ -16,13 +16,19 @@
     "pdf-parse": "2.4.5",
     "pg": "8.23.0",
     "pg-boss": "12.27.0",
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "openai": "6.49.0",
+    "pdfjs-dist": "5.4.296"
   },
   "devDependencies": {
     "@emdo/contracts": "workspace:*",
     "@emdo/db": "workspace:*",
     "@emdo/domains": "workspace:*",
     "@emdo/integrations": "workspace:*",
-    "esbuild": "0.28.2"
+    "@types/pg": "8.21.0",
+    "esbuild": "0.28.2",
+    "@emdo/agent-core": "workspace:*",
+    "@emdo/agent-finance": "workspace:*",
+    "@openai/agents": "0.14.3"
   }
 }

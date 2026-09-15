@@ -179,6 +179,6 @@ Do not run these concurrently. Record exact failures and fix only batch-owned re
 
 **Step 3:** Run the isolated PostgreSQL 17 integration once more against the final source and remove the instance. Do not claim provider or browser evidence from this database run.
 
-**Step 4:** Request one independent Terra review covering media parsing/worker isolation, spend hashes and ACLs, durable transition ambiguity, auth-gated composition, shutdown, package closure, and evidence wording. Address Critical/Important findings with focused RED tests.
+**Step 4:** Request one independent Astra review covering media parsing/worker isolation, spend hashes and ACLs, durable transition ambiguity, auth-gated composition, shutdown, package closure, and evidence wording. Address Critical/Important findings with focused RED tests.
 
 **Step 5:** Commit the implementation, push `codex/emdo-mvp`, and verify exact-SHA CI. Keep the overall MVP open: real OpenAI endpoint smokes, real browser recording/storage, authenticated staging/production, the complete agent runtime, and worker provider graph remain separate blockers.

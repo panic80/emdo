@@ -50,6 +50,7 @@ describe('worker executable lifecycle', () => {
     const events: string[] = [];
     let queueOperationalError: (() => void) | undefined;
     const composition: WorkerProcessComposition = {
+      financeAutomationDispatch: async () => ({ status: 'denied' }),
       providerStatus: {
         overall: 'degraded',
         email: 'unavailable',
@@ -111,10 +112,14 @@ describe('worker executable lifecycle', () => {
       },
       startQueue: async ({
         dependencies: queueDependencies,
+        financeAutomationDispatch,
         onOperationalEvent,
       }) => {
         events.push('queue:start');
         expect(queueDependencies).toBe(composition.jobDependencies);
+        expect(financeAutomationDispatch).toBe(
+          composition.financeAutomationDispatch,
+        );
         queueOperationalError = () =>
           onOperationalEvent({ code: 'queue-runtime-error' });
         return {

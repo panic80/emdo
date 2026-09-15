@@ -4,6 +4,8 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
+import { financePdfFixture } from '../../../packages/integrations/src/finance-documents/test-fixtures/pdf.js';
+import { FINANCE_PDF_REPORT_LIMITS } from '../../../packages/integrations/src/finance-documents/pdf-report-extraction.js';
 
 const apiRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -35,6 +37,7 @@ describe('API production package', () => {
     ) as { readonly entries: readonly { readonly tag: string }[] };
     const expectedArtifacts = [
       'audio-inspector-worker.js',
+      'pdf-report-worker.js',
       'cli/bootstrap-owner.js',
       'cli/migrate.js',
       'cli/purge-finance-imports.js',
@@ -80,6 +83,7 @@ describe('API production package', () => {
 
     for (const entrypoint of [
       './dist/audio-inspector-worker.js',
+      './dist/pdf-report-worker.js',
       './dist/index.js',
       './dist/cli/bootstrap-owner.js',
       './dist/cli/migrate.js',
@@ -115,6 +119,31 @@ describe('API production package', () => {
     ) as string[];
     expect(apiExports).toContain('startApiFromEnvironment');
     expect(apiExports).not.toContain('startApiServer');
+
+    // Exercise the actual emitted worker and its installed PDF.js worker/font/CMap
+    // resolution, not only a main-thread module import or mocked parser response.
+    const builtPdf = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          '--input-type=module',
+          '--eval',
+          `import { Worker } from 'node:worker_threads';
+       const worker = new Worker(new URL('./dist/pdf-report-worker.js', import.meta.url), {
+         workerData: { bytes: new Uint8Array(Buffer.from(${JSON.stringify(financePdfFixture().toString('base64'))}, 'base64')), limits: ${JSON.stringify(FINANCE_PDF_REPORT_LIMITS)} },
+         execArgv: [], stdout: true, stderr: true
+       });
+       worker.stdout.resume(); worker.stderr.resume();
+       const timer = setTimeout(() => { void worker.terminate(); process.exitCode = 1; }, 10000);
+       worker.once('message', async result => { clearTimeout(timer); await worker.terminate(); console.log(JSON.stringify(result)); });
+       worker.once('error', () => { clearTimeout(timer); process.exitCode = 1; });`,
+        ],
+        { cwd: apiRoot, encoding: 'utf8', stdio: 'pipe' },
+      ),
+    ) as { status: string; totalPages: number; pages: { text: string }[] };
+    expect(builtPdf.status).toBe('extracted');
+    expect(builtPdf.totalPages).toBe(2);
+    expect(builtPdf.pages[0].text).toContain('1234.500');
 
     const invalidApiStartup = spawnSync(process.execPath, ['./dist/index.js'], {
       cwd: apiRoot,
@@ -207,10 +236,13 @@ describe('API production package', () => {
       'file-type',
       'jose',
       'kysely',
+      'luxon',
       'music-metadata',
       'nanostores',
       'pdf-parse',
+      'pdfjs-dist',
       'pg',
+      'saxes',
       'zod',
     ]);
     expect(

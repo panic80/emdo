@@ -1,5 +1,22 @@
+export { PostgresFinanceScheduleDueRepository } from '../finance-schedule-repository.js';
+export {
+  PostgresFinanceDeliveryRepository,
+  FinanceDeliverySchema,
+  type FinanceDelivery,
+} from '../finance-delivery-repository.js';
 import { Pool, type PoolConfig } from 'pg';
 import { z } from 'zod';
+export {
+  PostgresFinanceGeneratedReportExecutionRepository,
+  FinanceGeneratedReportNotAppliedError,
+} from '../finance-generated-report-repository.js';
+export { PostgresFinanceAutomationExecutionRepository } from '../finance-automation-repository.js';
+export {
+  PostgresFinancePlanningExecutionRepository,
+  FinancePlanningResultNotAppliedError,
+  type FinancePlanningExecutionStore,
+  type FinancePlanningAutomationCapability,
+} from '../finance-planning-execution-repository.js';
 
 import type { DatabasePool } from '../scoped-repository.js';
 
@@ -53,7 +70,11 @@ const WorkerDatabaseClientConfigSchema = z.strictObject({
     .max(60_000)
     .default(10_000),
   applicationName: z.string().trim().min(1).max(63).default('emdo-worker'),
-  fixedRole: z.enum(['emdo_worker_executor', 'emdo_worker_dispatch_executor']),
+  fixedRole: z.enum([
+    'emdo_worker_executor',
+    'emdo_worker_dispatch_executor',
+    'emdo_finance_scheduler',
+  ]),
 });
 
 export interface EmdoWorkerDatabaseClient {
@@ -63,6 +84,10 @@ export interface EmdoWorkerDatabaseClient {
 }
 
 const fixedRoleBindings = Object.freeze({
+  emdo_finance_scheduler: Object.freeze({
+    login: 'emdo_finance_scheduler_login',
+    statement: 'set role emdo_finance_scheduler',
+  }),
   emdo_worker_executor: Object.freeze({
     login: 'emdo_worker_executor_login',
     statement: 'set role emdo_worker_executor',
@@ -80,7 +105,10 @@ export const createDatabaseClient = (input: {
   readonly idleTimeoutMillis?: number;
   readonly connectionTimeoutMillis?: number;
   readonly applicationName?: string;
-  readonly fixedRole: 'emdo_worker_executor' | 'emdo_worker_dispatch_executor';
+  readonly fixedRole:
+    | 'emdo_worker_executor'
+    | 'emdo_worker_dispatch_executor'
+    | 'emdo_finance_scheduler';
 }): EmdoWorkerDatabaseClient => {
   const config = WorkerDatabaseClientConfigSchema.parse(input);
   const poolConfig: PoolConfig = {
@@ -191,3 +219,17 @@ export const createDatabaseClient = (input: {
     close: () => pool.end(),
   });
 };
+export {
+  PostgresFinanceStandardizationExecutionRepository,
+  PostgresFinanceStandardizationDeliveryRepository,
+} from '../finance-standardization-execution-repository.js';
+export {
+  PostgresFinanceExtractionExecutionRepository,
+  FinanceExtractionNotAppliedError,
+} from '../finance-extraction-execution-repository.js';
+
+export {
+  PostgresFinanceJournalDraftExecutionRepository,
+  FinanceJournalDraftResultNotAppliedError,
+  type FinanceJournalDraftExecutionStore,
+} from '../finance-journal-draft-execution-repository.js';

@@ -15,6 +15,7 @@ import {
 import type { FinanceExperienceSnapshot } from '@emdo/domains/finance';
 
 import * as databaseApi from '../api.js';
+import * as activation from '../finance-legacy-activation-projection.js';
 import type { DatabaseClient, DatabasePool } from '../scoped-repository.js';
 import { ExperienceQueryCursorCodec } from './experience-query-cursor-codec.js';
 
@@ -164,7 +165,12 @@ const poolFor = (
   ) => readonly Record<string, unknown>[],
 ) => {
   const query = vi.fn(async (sql: string, values: readonly unknown[] = []) => {
-    const rows = respond(sql, values);
+    const response = respond(sql, values);
+    const rows =
+      response.length === 0 &&
+      sql.includes('select emdo.resolve_legacy_finance_route')
+        ? [{ route: { kind: 'legacy' } }]
+        : response;
     return { rowCount: rows.length, rows };
   });
   const client: DatabaseClient = { query, release: vi.fn() };
@@ -1558,5 +1564,207 @@ describe('PostgreSQL experience read gateways', () => {
     expect(query.mock.calls.map(([sql]) => sql).join('\n')).not.toMatch(
       /sealed_cursor|provider_version|evidence_hash|encrypted|token|payload/iu,
     );
+  });
+});
+
+describe('activated Finance experience reads', () => {
+  const route = {
+    kind: 'normalized' as const,
+    migrationId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f70',
+    bookId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f71',
+    activatedAt: '2026-08-10T00:00:00.000Z',
+  };
+  const transaction = {
+    id: 'transaction-one',
+    legacyEntityId: 'transaction-one',
+    economicTransactionId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f72',
+    journalId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f73',
+    financialAccountId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f74',
+    legacyAccountId: 'account-one',
+    categoryId: null,
+    effectiveOn: '2026-08-10',
+    description: 'Posted normalized purchase',
+    createdAt: '2026-08-10T12:00:00.000Z',
+    updatedAt: '2026-08-10T12:00:00.000Z',
+    nativeAmount: '-12.34',
+    currency: 'CAD' as const,
+    amountCadMinor: -1234,
+    originalFingerprint: null,
+    originalSourceHash: null,
+    originalSourceRow: null,
+    externalId: null,
+  };
+  it('uses posted normalized records for snapshot, pages and Today without reading activated legacy snapshots', async () => {
+    const resolver = vi
+      .spyOn(activation, 'resolveLegacyFinanceRoute')
+      .mockResolvedValue(route);
+    const projection = vi
+      .spyOn(activation, 'readLegacyFinanceCompatibility')
+      .mockResolvedValue({
+        kind: 'ready',
+        accounts: [],
+        transactions: [transaction],
+        archives: [],
+        nextCursor: null,
+        nextEntityId: null,
+      });
+    const { pool, query } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope'))
+        return [{ authorized: true }];
+      if (sql.includes('experience_finance_source_spaces'))
+        return [{ id: privateFinancePrincipal.privateSpaceId }];
+      if (sql.includes('experience_today_finance_count'))
+        return [{ budget_count: 0, transaction_count: 0 }];
+      if (sql.includes('experience_today_shopping_count'))
+        return [{ item_count: 0, retailer_count: 0 }];
+      return [];
+    });
+    try {
+      const gateway = gatewaysFor(pool);
+      const input = {
+        principal: privateFinancePrincipal,
+        requestId: principal.sessionId,
+      };
+      const snapshot = await gateway.financeRead.readSnapshot(input);
+      expect(snapshot.reviewedCadTotals).toEqual([
+        { label: 'uncategorized', amountCadMinor: -1234 },
+      ]);
+      expect(snapshot).toMatchObject({
+        ledgerAuthority: 'normalized',
+        budgets: [],
+      });
+      expect(
+        query.mock.calls.some(([sql]) =>
+          sql.includes('experience_finance_snapshot'),
+        ),
+      ).toBe(false);
+      const page = await gateway.financeRead.list({
+        principal,
+        requestId: principal.sessionId,
+        limit: 10,
+      });
+      expect(page).toMatchObject({
+        ledgerAuthority: 'normalized',
+        items: [{ id: transaction.id, amountCadMinor: -1234 }],
+      });
+      const today = await gateway.todayRead.read({
+        principal,
+        requestId: principal.sessionId,
+        date: '2026-08-10',
+      });
+      expect(today.finance).toMatchObject({
+        transactionCount: 1,
+        budgetCount: 0,
+      });
+      const legacyPageSql = query.mock.calls.find(([sql]) =>
+        sql.includes('experience_finance_entities'),
+      );
+      expect(legacyPageSql?.[0]).toContain('not (space_id = any($6::uuid[]))');
+      expect(legacyPageSql?.[1]?.[5]).toEqual([
+        privateFinancePrincipal.privateSpaceId,
+      ]);
+    } finally {
+      resolver.mockRestore();
+      projection.mockRestore();
+    }
+  });
+  it('drains normalized projection pages before calculating snapshot totals', async () => {
+    const resolver = vi
+      .spyOn(activation, 'resolveLegacyFinanceRoute')
+      .mockResolvedValue(route);
+    const projection = vi
+      .spyOn(activation, 'readLegacyFinanceCompatibility')
+      .mockResolvedValueOnce({
+        kind: 'ready',
+        accounts: [],
+        archives: [],
+        transactions: [transaction],
+        nextCursor: {
+          effectiveOn: transaction.effectiveOn,
+          id: transaction.economicTransactionId,
+        },
+        nextEntityId: transaction.id,
+      })
+      .mockResolvedValueOnce({
+        kind: 'ready',
+        accounts: [],
+        archives: [],
+        transactions: [
+          {
+            ...transaction,
+            id: 'transaction-two',
+            economicTransactionId: '018f1f5e-7b24-7d2b-a8e1-4b2c3d4e5f75',
+          },
+        ],
+        nextCursor: null,
+        nextEntityId: null,
+      });
+    const { pool } = poolFor((sql) =>
+      sql.includes('lock_active_request_scope') ? [{ authorized: true }] : [],
+    );
+    try {
+      const snapshot = await gatewaysFor(pool).financeRead.readSnapshot({
+        principal: privateFinancePrincipal,
+        requestId: principal.sessionId,
+      });
+      expect(snapshot.reviewedCadTotals).toEqual([
+        { label: 'uncategorized', amountCadMinor: -2468 },
+      ]);
+      expect(snapshot.recentActivity).toHaveLength(2);
+      expect(projection.mock.calls[1]?.[3]).toMatchObject({
+        after: {
+          effectiveOn: transaction.effectiveOn,
+          id: transaction.economicTransactionId,
+        },
+      });
+    } finally {
+      resolver.mockRestore();
+      projection.mockRestore();
+    }
+  });
+  it('propagates revoked book authority and never falls back to a legacy snapshot', async () => {
+    const resolver = vi
+      .spyOn(activation, 'resolveLegacyFinanceRoute')
+      .mockRejectedValue(new Error('emdo:forbidden'));
+    const { pool, query } = poolFor((sql) =>
+      sql.includes('lock_active_request_scope') ? [{ authorized: true }] : [],
+    );
+    try {
+      await expect(
+        gatewaysFor(pool).financeRead.readSnapshot({
+          principal: privateFinancePrincipal,
+          requestId: principal.sessionId,
+        }),
+      ).rejects.toThrow();
+      expect(
+        query.mock.calls.some(([sql]) =>
+          sql.includes('experience_finance_snapshot'),
+        ),
+      ).toBe(false);
+    } finally {
+      resolver.mockRestore();
+    }
+  });
+  it('fails closed for normalized amounts the CAD view cannot represent', async () => {
+    const resolver = vi
+      .spyOn(activation, 'resolveLegacyFinanceRoute')
+      .mockResolvedValue(route);
+    const projection = vi
+      .spyOn(activation, 'readLegacyFinanceCompatibility')
+      .mockResolvedValue({ kind: 'unsupported-currency', currency: 'USD' });
+    const { pool } = poolFor((sql) =>
+      sql.includes('lock_active_request_scope') ? [{ authorized: true }] : [],
+    );
+    try {
+      await expect(
+        gatewaysFor(pool).financeRead.readSnapshot({
+          principal: privateFinancePrincipal,
+          requestId: principal.sessionId,
+        }),
+      ).rejects.toMatchObject({ code: 'invalid-result' });
+    } finally {
+      resolver.mockRestore();
+      projection.mockRestore();
+    }
   });
 });

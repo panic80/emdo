@@ -85,6 +85,35 @@ const providers = (events: string[]): WorkerProviderRuntime => ({
   },
 });
 
+describe('recurring Finance scheduler configuration', () => {
+  it('requires separate fixed scheduler credentials, matching database and Finance v2 flag', () => {
+    const enabled = {
+      ...environment,
+      EMDO_FINANCE_SCHEDULES_ENABLED: 'true',
+      EMDO_FINANCE_V2_ENABLED: 'true',
+      EMDO_FINANCE_SCHEDULER_DATABASE_URL:
+        'postgresql://emdo_finance_scheduler_login:synthetic@postgres/emdo_app',
+    };
+    expect(loadProductionWorkerConfig(enabled).financeSchedulesEnabled).toBe(
+      true,
+    );
+    for (const override of [
+      { EMDO_FINANCE_V2_ENABLED: 'false' },
+      { EMDO_FINANCE_SCHEDULER_DATABASE_URL: undefined },
+      {
+        EMDO_FINANCE_SCHEDULER_DATABASE_URL:
+          environment.EMDO_WORKER_EXECUTOR_DATABASE_URL,
+      },
+      {
+        EMDO_FINANCE_SCHEDULER_DATABASE_URL:
+          'postgresql://emdo_finance_scheduler_login:synthetic@other/emdo_app',
+      },
+    ])
+      expect(() =>
+        loadProductionWorkerConfig({ ...enabled, ...override }),
+      ).toThrow();
+  });
+});
 describe('production worker composition', () => {
   it('keeps the direct artifact provider-neutral and fails closed without external loader injection', async () => {
     let databaseCreations = 0;
@@ -113,6 +142,9 @@ describe('production worker composition', () => {
   it('validates the dedicated runtime configuration and deterministic defaults', () => {
     expect(loadProductionWorkerConfig(environment)).toEqual({
       applicationOrigin: 'https://emdo.example',
+      financeV2Enabled: false,
+      financeSchedulesEnabled: false,
+      financeStandardizationEnabled: false,
       queueDatabaseUrl: environment.EMDO_WORKER_DATABASE_URL,
       executorDatabaseUrl: environment.EMDO_WORKER_EXECUTOR_DATABASE_URL,
       dispatcherDatabaseUrl: environment.EMDO_WORKER_DISPATCHER_DATABASE_URL,
@@ -149,6 +181,56 @@ describe('production worker composition', () => {
     ).toThrow('Production worker configuration is invalid');
   });
 
+  it('opts FinanceV2 in through the existing executor pool and fails closed on missing privileges', async () => {
+    expect(
+      loadProductionWorkerConfig({
+        ...environment,
+        EMDO_FINANCE_V2_ENABLED: 'true',
+      }).financeV2Enabled,
+    ).toBe(true);
+    expect(() =>
+      loadProductionWorkerConfig({
+        ...environment,
+        EMDO_FINANCE_V2_ENABLED: 'yes',
+      }),
+    ).toThrow('configuration is invalid');
+    for (const ready of [true, false]) {
+      const roles: string[] = [];
+      let closes = 0;
+      const task = createProductionWorkerComposition({
+        environment: { ...environment, EMDO_FINANCE_V2_ENABLED: 'true' },
+        createDatabase(input) {
+          roles.push(input.fixedRole);
+          return {
+            scopedPool: {
+              async connect() {
+                return {
+                  async query() {
+                    return { rowCount: 1, rows: [{ ready }] };
+                  },
+                  release() {},
+                };
+              },
+            },
+            async checkReady() {},
+            async close() {
+              closes++;
+            },
+          };
+        },
+      });
+      if (ready) {
+        const composition = await task;
+        expect(typeof composition.financeAutomationDispatch).toBe('function');
+        await composition.close();
+      } else await expect(task).rejects.toThrow('composition is unavailable');
+      expect(roles).toEqual([
+        'emdo_worker_executor',
+        'emdo_worker_dispatch_executor',
+      ]);
+      expect(closes).toBe(2);
+    }
+  });
   it('wires durable PostgreSQL repositories and closes every resource once', async () => {
     const events: string[] = [];
     const database = (name: 'executor' | 'dispatcher') =>

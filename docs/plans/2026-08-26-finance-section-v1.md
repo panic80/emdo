@@ -135,7 +135,7 @@ validated PDF, JPEG, and PNG only.
 - Use OpenAI Responses file/image input for scans and images.
 - Set `store: false`, structured output, no tools, no background mode, no
   OpenAI Files, and no hosted vector store.
-- Default to `gpt-5.6-terra` with at most normal-detail plus one eligible
+- Use `gpt-6-astra` with explicit `medium` reasoning through Responses, with at most normal-detail plus one eligible
   high-detail retry.
 - Treat document content as untrusted data, validate the versioned schema, and
   serialize provider extraction to one active VPS job.
@@ -191,7 +191,7 @@ managed independently and is never bundled beside the data. Restore remains
 backward-compatible and must prove, in isolation, authenticated decryption,
 hash equality, evidence readback, and denial to another user.
 
-Only the Sol root may handle Git, secrets, PR merge, and staging. Reuse the
+Only the Astra root may handle Git, secrets, PR merge, and staging. Reuse the
 existing ignored local `OPENAI_API_KEY`; copy it without output to protected
 staging secret `EMDO_OPENAI_FINANCE_API_KEY`. Enable only Finance extraction in
 staging. Use synthetic users/documents and a run-scoped document master key

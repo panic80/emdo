@@ -353,11 +353,37 @@ const invocations = [
 ])[];
 
 describe('standard specialist Task6 adapters', () => {
-  it('executes all 16 non-provider capabilities through finite validated outputs', async () => {
+  it('executes configured capabilities and fails closed for unavailable normalized Finance services', async () => {
     const services = createServices();
     const executors = createStandardSpecialistCapabilityExecutors(services);
 
-    expect(Object.keys(executors)).toHaveLength(16);
+    const optionalFinance = [
+      'finance.reports.inspect',
+      'finance.reports.propose-mapping',
+      'finance.tax.read',
+      'finance.books.read',
+    ] as const;
+    expect(Object.keys(executors).sort()).toEqual(
+      [...invocations.map(([id]) => id), ...optionalFinance].sort(),
+    );
+    for (const id of optionalFinance) {
+      await expect(
+        executors[id](
+          id === 'finance.books.read'
+            ? {
+                schemaVersion: 1,
+                view: 'books',
+                bookId: null,
+                importId: null,
+                valuationId: null,
+                offset: 0,
+                limit: 50,
+              }
+            : {},
+          context,
+        ),
+      ).rejects.toThrow(/unavailable/);
+    }
     for (const [capabilityId, input] of invocations) {
       const output = await executors[capabilityId](input, context);
       expect(

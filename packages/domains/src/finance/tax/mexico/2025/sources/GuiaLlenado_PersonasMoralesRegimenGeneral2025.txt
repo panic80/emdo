@@ -1,0 +1,1782 @@
+Versión 1
+
+1 / 121
+
+Versión 1
+
+ÍNDICE
+Objetivo ....................................................................................................................................................................5
+I. Acceso al sistema ................................................................................................................................................5
+a) Acceso con e.firma ......................................................................................................................................7
+b) Acceso con Contraseña .............................................................................................................................8
+II. Menú principal de la declaración ..................................................................................................................8
+III. Configuración de la declaración ...................................................................................................................9
+IV. Administración de la declaración .............................................................................................................. 12
+V. Llenado de la declaración ............................................................................................................................. 13
+1. Ingresos ............................................................................................................................................................ 13
+a) Ingresos exentos o no acumulables .................................................................................................. 14
+b) Ingresos nominales ................................................................................................................................. 16
+c) Ajuste anual por inflación ..................................................................................................................... 20
+d) ¿Tienes ingresos que solo se acumulan en la declaración anual? .......................................... 22
+e) Total de ingresos acumulables ............................................................................................................ 31
+2. Deducciones autorizadas .............................................................................................................................. 31
+a) Sueldos, salarios y asimilados ............................................................................................................. 32
+b) Gastos........................................................................................................................................................... 44
+c) Deducciones relacionadas con la nómina ........................................................................................ 54
+d) Deducción de inversiones ..................................................................................................................... 56
+e) Costo de lo vendido ................................................................................................................................. 58
+f) Ajuste anual por inflación ...................................................................................................................... 62
+g) ¿Tienes facilidades administrativas o estímulos deducibles? .................................................. 63
+h) Total de deducciones autorizadas...................................................................................................... 65
+3. Determinación ................................................................................................................................................. 65
+a) Total de ingresos acumulables ............................................................................................................ 66
+b) Total de deducciones autorizadas ...................................................................................................... 67
+c) Otras facilidades y estímulos por aplicar ......................................................................................... 67
+
+2 / 121
+
+Versión 1
+
+d) Utilidad o Pérdida Fiscal antes de PTU, según corresponda ..................................................... 70
+e) PTU pagada en el ejercicio .................................................................................................................... 71
+f) Utilidad o Pérdida fiscal del ejercicio, según corresponda......................................................... 72
+g) Pérdidas fiscales de ejercicios anteriores........................................................................................ 72
+h) Resultado fiscal......................................................................................................................................... 80
+i) Impuesto causado del ejercicio ............................................................................................................ 80
+j) Estímulos por aplicar al impuesto causado...................................................................................... 81
+k) Impuesto sobre la Renta del Ejercicio............................................................................................... 82
+l) Impuesto acreditable por dividendos o utilidades distribuidas ............................................... 83
+m) Impuesto acreditable pagado en el extranjero ........................................................................... 86
+n) Pagos provisionales efectuados ......................................................................................................... 92
+o) ISR retenido al contribuyente.............................................................................................................. 93
+p) ISR a cargo o a favor del ejercicio, según corresponda .............................................................. 95
+q) ¿Te autorizaron aplicar un coeficiente de utilidad menor en pagos provisionales al
+determinado en el ejercicio? ..................................................................................................................... 95
+4. Pago ................................................................................................................................................................... 96
+a) Impuesto a cargo o a favor ................................................................................................................... 97
+b) Subsidio para el empleo ......................................................................................................................... 98
+c) Compensaciones ....................................................................................................................................... 98
+d) Estímulos al impuesto a cargo .......................................................................................................... 100
+e) Total de aplicaciones............................................................................................................................. 102
+f) Cantidad a cargo ..................................................................................................................................... 103
+g) Cantidad a pagar .................................................................................................................................... 103
+h) ¿Realizaste en las últimas 48 horas un pago para este concepto? ....................................... 103
+i) Fecha del pago realizado en las últimas 48 horas........................................................................ 104
+j) Importe pagado en las últimas 48 horas ........................................................................................ 104
+k) Monto pagado con anterioridad ....................................................................................................... 105
+l) Impuesto a cargo .................................................................................................................................... 105
+
+3 / 121
+
+Versión 1
+
+m) Recargos por la diferencia entre los pagos provisionales realizados ................................ 106
+5. Datos adicionales .......................................................................................................................................... 108
+a) Coeficiente de utilidad del ejercicio ................................................................................................ 108
+b) ¿Estás obligado a calcular y pagar PTU del ejercicio que declara? ....................................... 109
+c) Cuenta de Capital de Aportación (CUCA) ........................................................................................ 112
+d) Cuenta de Utilidad Fiscal Neta (CUFIN) .......................................................................................... 112
+e) ¿Cuentas con algún esquema reportable? .................................................................................... 114
+f) Indica si te dedicas exclusivamente a la generación de energía proveniente de fuentes
+renovables o de sistemas de cogeneración de electricidad eficiente ...................................... 115
+VI. Vista previa y envío de la declaración..................................................................................................... 117
+VII. Consulta de la declaración ....................................................................................................................... 118
+Ejemplo de Acuse de recibo ................................................................................................................... 121
+VIII. Documentos relacionados...................................................................................................................... 121
+
+4 / 121
+
+Versión 1
+
+Objetivo
+Poner a disposición de las y los contribuyentes una guía que permita conocer la forma en que se
+presenta la declaración “Del ejercicio” y “Del ejercicio por terminación anticipada” en el
+aplicativo “Presenta tu declaración anual personas morales. Régimen General ejercicios 2019
+y posteriores”.
+I. Acceso al sistema
+Ingresa a sat.gob.mx y sigue la ruta que se indica a continuación:
+• Da clic en Trámites y servicios.
+
+• Da clic en Declaraciones para empresas y posteriormente selecciona la opción Anual.
+
+5 / 121
+
+Versión 1
+
+• Selecciona Régimen General ejercicios 2019 en adelante y Régimen Simplificado de Confianza.
+
+6 / 121
+
+Versión 1
+
+• Da clic en Ingresa al servicio.
+
+a) Acceso con e.firma
+Para ingresar con e.firma, carga el certificado (.cer), la clave privada (.key), captura la contraseña
+de la clave privada y da clic en “Enviar”.
+
+7 / 121
+
+Versión 1
+
+b) Acceso con Contraseña
+Para ingresar con Contraseña, captura el RFC, Contraseña, Captcha y da clic en “Enviar”.
+
+II. Menú principal de la declaración
+Al ingresar al sistema, se visualiza el menú con las opciones:
+•
+•
+
+Presentar declaración
+Consultas
+
+8 / 121
+
+Versión 1
+
+III. Configuración de la declaración
+Da clic en “Presentar declaración” para ingresar a la “Configuración de la declaración”.
+Selecciona el “Ejercicio” a presentar, posteriormente, en “Periodo” selecciona la opción “Del
+Ejercicio” y el “Tipo de declaración” que presentas.
+
+Cuando en el campo “Periodo” se selecciona la opción “Del ejercicio por Terminación
+Anticipada”, además de seleccionar el “Tipo de declaración”, debes elegir el mes en el que
+concluyó tu ejercicio en el campo “Último periodo a declarar”.
+
+Una vez configurada la declaración, según corresponda, en el apartado “Obligaciones a declarar”
+responde “Sí” o “No” a la pregunta: “¿Estás obligado a dictaminar estados financieros en términos
+del 32-A del CFF?”.
+
+En caso de responder “Sí”, da clic en “Siguiente” para ingresar a la sección “Administración de la
+declaración”.
+
+9 / 121
+
+Versión 1
+
+En caso de responder “No”, se muestra la pregunta “¿Optas por dictaminar tus estados
+financieros en términos del 32-A del CFF?”, debes responder “Sí” o “No”.
+
+Si respondes “Sí”, puedes continuar, da clic en “Siguiente” para ingresar a la sección
+“Administración de la declaración”.
+
+Si respondes “No”, se muestra una tercera pregunta “¿Estás obligado a presentar la información
+sobre tu situación fiscal, de acuerdo al artículo 32-H del CFF?”, responde “Sí” o “No”.
+
+10 / 121
+
+Versión 1
+
+Si respondes “Sí”, se visualiza la obligación “ISR por ingresos sujetos a regímenes fiscales
+preferentes”. Da clic en “Siguiente” para ingresar a la sección “Administración de la declaración”.
+
+Si respondes “No”, selecciona la opción “ISR personas morales” y da clic en “Siguiente” para
+ingresar a la sección “Administración de la declaración”.
+
+11 / 121
+
+Versión 1
+
+Exclusivamente cuando el periodo corresponde a “Del Ejercicio por Terminación Anticipada”, y
+respondes “Sí” a la pregunta “¿Estás obligado a dictaminar estados financieros en términos del 32A del CFF?”, se muestra un mensaje con las instrucciones para cumplir con dicha obligación:
+
+IV. Administración de la declaración
+Al ingresar en este apartado, se visualiza una ventana en la que se indican las fechas de corte de
+la información precargada. Espera a que se cargue la información necesaria y da clic en “Aceptar”.
+
+En la sección “Administración de la declaración”, se visualiza un apartado con las instrucciones
+de los pasos a seguir para el llenado de la declaración. Da clic en la obligación registrada para
+continuar.
+
+12 / 121
+
+Versión 1
+
+V. Llenado de la declaración
+La declaración se compone de los siguientes apartados:
+1.
+2.
+3.
+4.
+5.
+
+Ingresos
+Deducciones autorizadas
+Determinación
+Pago
+Datos adicionales
+
+1. Ingresos
+En el apartado “Ingresos” se visualizan los campos:
+a) Ingresos exentos o no acumulables
+b) Ingresos nominales
+c) Ajuste anual por inflación
+d) ¿Tienes ingresos que solo se acumulan en la declaración anual?
+e) Total de ingresos acumulables
+
+13 / 121
+
+Versión 1
+
+a) Ingresos exentos o no acumulables
+En el campo “Ingresos exentos o no acumulables” da clic en “Capturar”.
+
+Para informar tus ingresos exentos o no acumulables, da clic en "Agregar”.
+
+14 / 121
+
+Versión 1
+
+Selecciona el “Tipo de ingreso” que obtuviste en el ejercicio y captura el “Importe” correspondiente.
+
+Da clic en “Guardar”.
+
+15 / 121
+
+Versión 1
+
+Si no obtuviste ingresos exentos o no acumulables, selecciona la opción "Sin ingresos exentos" o
+"Sin ingresos no acumulables".
+
+Al terminar de capturar tus ingresos exentos o no acumulables, da clic en “Cerrar”.
+
+b) Ingresos nominales
+El campo “Ingresos nominales” está precargado con la información de los pagos provisionales. Da
+clic en “Detallar” para desglosar los conceptos de los ingresos obtenidos en el ejercicio.
+
+16 / 121
+
+Versión 1
+
+A continuación, se visualizan las pestañas “Detalle” e “Ingresos de pagos provisionales”.
+
+Selecciona el “Tipo de ingreso” que obtuviste en el ejercicio, captura el “Importe” correspondiente
+y da clic en “Guardar”.
+
+17 / 121
+
+Versión 1
+
+Para capturar otro registro, da clic en “Agregar”, sin duplicar los conceptos.
+
+Al terminar de capturar tus ingresos nominales, da clic en “Cerrar”.
+
+En la pestaña “Ingresos de pagos provisionales”, se visualiza la información de los pagos
+provisionales presentados en el ejercicio, así como el importe de los ingresos que se consideran
+para efectos de la acumulación.
+
+18 / 121
+
+Versión 1
+
+En la declaración con periodo “Del Ejercicio por Terminación Anticipada”, se visualiza la
+información desde el primer periodo del ejercicio hasta el periodo seleccionado en el campo
+“Último periodo a declarar”.
+
+Si requieres modificar la información precargada, realiza los cambios correspondientes en tus
+pagos provisionales.
+Finalmente, da clic en “Cerrar”.
+
+19 / 121
+
+Versión 1
+
+c) Ajuste anual por inflación
+En el campo “Ajuste anual por inflación”, da clic en “Capturar”.
+
+A continuación, responde “Sí” o “No” en la pregunta “¿La determinación del ajuste corresponde a
+un ejercicio menor a 12 meses?”
+Al responder “Sí”, se muestra el campo “Indica el mes de inicio de operaciones”.
+
+Selecciona el mes en el que iniciaste operaciones.
+
+Al responder “No”, se oculta el campo “Indica el mes de inicio de operaciones”.
+
+20 / 121
+
+Versión 1
+
+Para la declaración con periodo “Del Ejercicio por Terminación Anticipada”, los campos “¿La
+determinación del ajuste corresponde a un ejercicio menor a 12 meses?” y “Mes final de
+operaciones”, se muestran precargados e inhabilitados para captura.
+
+En caso de que el ejercicio de inicio de operaciones sea igual al del campo “Ejercicio” del apartado
+de “Configuración de la declaración”, se habilita el campo “Indica el mes de inicio de
+operaciones”, donde seleccionas una opción.
+
+Posteriormente, captura los importes que correspondan en los campos “Saldo promedio anual de
+créditos” y “Saldo promedio anual de deudas” para que el aplicativo determine la “Diferencia en
+saldos promedio anual de créditos” o la “Diferencia en saldos promedio anual de deudas” y realice
+el cálculo del “Ajuste por inflación acumulable”, o bien, si fuera el caso, del “Ajuste Anual por
+inflación deducible”. Da clic en “Cerrar” para continuar.
+
+21 / 121
+
+Versión 1
+
+Si resulta “Ajuste Anual por inflación acumulable”, el importe se muestra en el apartado “Ingresos”.
+En caso de que resulte un importe en el campo “Ajuste Anual por inflación deducible”, se muestra
+en el apartado “Deducciones autorizadas”.
+
+d) ¿Tienes ingresos que solo se acumulan en la declaración anual?
+En el campo “¿Tienes ingresos que solo se acumulan en la declaración anual?” responde “Sí” o “No”,
+según corresponda.
+
+22 / 121
+
+Versión 1
+
+Cuando respondes “Sí” se habilitan los campos:
+•
+•
+•
+
+Ingresos que solo se acumulan en la declaración anual
+Ingresos procedentes de fuente ubicada en el extranjero
+Ingresos del extranjero por dividendos distribuidos
+
+Da clic en “Capturar” del ingreso que desees declarar.
+
+En el campo “Ingresos que solo se acumulan en la declaración anual”, al dar clic en “Capturar” se
+muestra una ventana emergente con los campos a capturar. A continuación, da clic en “Agregar”.
+Selecciona el “Tipo de ingreso” y captura el “Importe” correspondiente.
+
+23 / 121
+
+Versión 1
+
+Al seleccionar el “Tipo de ingreso”, se habilita el campo de “Importe” donde puedes registrar el
+monto que se acumula a tus demás ingresos:
+
+Si percibiste utilidades distribuidas de un fideicomiso, captura el importe del ingreso, RFC de la
+fiduciaria y del fideicomiso, así como el impuesto que se pagó a su nombre y da clic en “Guardar”.
+
+24 / 121
+
+Versión 1
+
+Si en el ejercicio que declaras iniciaste operaciones, captura el importe acumulado del ingreso
+obtenido a través de la opción “Ingresos por inicio de operaciones” y, en su caso, el importe del
+“ISR retenido”. Da clic en “Guardar”.
+
+En los demás casos, solo captura el importe del ingreso que se acumula en el ejercicio.
+Al guardar el registro, se muestra en la parte inferior de la ventana la opción seleccionada y el
+monto capturado. Al terminar de capturar tus ingresos que solo se acumulan en la declaración
+anual, da clic en “Cerrar”.
+
+25 / 121
+
+Versión 1
+
+En el campo “Ingresos procedentes de fuente ubcada en el extranjero”, al dar clic en “Capturar”, se
+muestra una venta emergente de detalle:
+
+Selecciona el “País de fuente ubicada en el extranjero” y captura el importe que corresponda en los
+campos “Ingresos procedentes de fuente ubicada en el extranjero” e “ISR pagado en el extranjero
+por los ingresos procedentes de fuente ubicada en el extranjero”, para que el aplicativo realice el
+cálculo del campo “Ingreso acumulable”. Asimismo, captura el importe correspondiente en el
+campo “ISR acreditable pagado en el extranjero” y da clic en “Guardar”.
+
+Para capturar otro registro, da clic en “Agregar”. Al terminar de capturar tus ingresos procedentes
+de fuente ubicada en el extranjero, da clic en “Cerrar”.
+
+26 / 121
+
+Versión 1
+
+En el campo “Ingresos del extranjero por dividendos distribuidos”, da clic en “Capturar”.
+
+Responde “Sí” o “No” a la pregunta “¿Deseas acreditar el monto proporcional del impuesto pagado
+por dividendos indirectos en segundo nivel?”.
+
+27 / 121
+
+Versión 1
+
+Al responder “Sí” selecciona la opción que corresponda en el campo “País de la Sociedad pagadora
+de dividendos al residente en México en primer nivel (MPI)” y “País de la Sociedad pagadora de
+dividendos al residente en el extranjero pagador de dividendos al residente en México en segundo
+nivel (MPI2)”.
+
+Asimismo, captura la información correspondiente en los campos: “Número de identificación fiscal
+de la Sociedad pagadora de dividendos al residente en México en primer nivel (MPI)”, “Número de
+identificación fiscal de la Sociedad pagadora de dividendos al residente en el extranjero pagador
+de dividendos al residente en México en segundo nivel (MPI2)”, “Dividendos percibidos en el
+extranjero”, “El monto proporcional del impuesto pagado en el extranjero directo en primer nivel
+(MPI)”, “El monto proporcional del impuesto pagado en el extranjero indirecto en segundo nivel
+(MPI2)” para que el aplicativo realice el cálculo del campo “Ingreso acumulable”.
+
+28 / 121
+
+Versión 1
+
+Finalmente, captura el monto en el campo “ISR acreditable pagado en el extranjero”, el cual no
+puede ser mayor a la suma del campo “El monto proporcional del impuesto pagado en el
+extranjero directo en primer nivel” y “El monto proporcional del impuesto extranjero indirecto en
+segundo nivel”. Da clic en “Guardar”.
+
+Cuando respondes “No”, selecciona la opción que corresponda en el campo “País de la Sociedad
+pagadora de dividendos al residente en México en primer nivel (MPI)”.
+
+29 / 121
+
+Versión 1
+
+Asimismo, captura la información correspondiente en los campos “Número de identificación fiscal
+de la Sociedad pagadora de dividendos al residente en México en primer nivel (MPI)”, “Dividendos
+percibidos en el extranjero”, “El monto proporcional del impuesto pagado en el extranjero directo
+en primer nivel (MPI)”. A continuación, el aplicativo realiza el cálculo del campo “Ingreso
+acumulable”.
+Finalmente, captura el importe en el campo “ISR acreditable pagado en el extranjero”, el cual no
+puede ser mayor a la suma del monto proporcional del impuesto pagado en el extranjero directo
+en primer nivel. Da clic en “Guardar”.
+
+Al terminar de capturar tus ingresos del extranjero por dividendos distribuidos. Da clic en “Cerrar”.
+
+30 / 121
+
+Versión 1
+
+e) Total de ingresos acumulables
+En el campo “Total de ingresos acumulables” se muestra la suma de las cantidades registradas en
+el apartado “Ingresos”.
+
+2. Deducciones autorizadas
+En el apartado “Deducciones autorizadas” se visualizan los campos:
+a)
+b)
+c)
+d)
+e)
+f)
+g)
+h)
+
+Sueldos, salarios y asimilados
+Gastos
+Deducciones relacionadas con la nómina
+Deducción de inversiones
+Costo de lo vendido
+Ajuste anual por inflación deducible
+¿Tienes facilidades administrativas o estímulos deducibles?
+Total de deducciones autorizadas
+
+31 / 121
+
+Versión 1
+
+a) Sueldos, salarios y asimilados
+En el campo “Sueldos, salarios y asimilados”, da clic en “Capturar”.
+
+Al ingresar al detalle, se muestran los apartados:
+•
+•
+
+•
+
+Datos de comprobantes de pago de nómina
+Determinación de la nómina a deducir
+a) Sueldos y salarios
+b) Asimilados a salarios
+c) Sueldos, salarios y asimilados a salarios
+Subsidio para el empleo
+
+32 / 121
+
+Versión 1
+
+En el apartado “Datos de comprobantes de pago de nómina”, se visualiza la información de los
+CFDI de nómina que fueron emitidos durante el ejercicio que estás declarando.
+
+En el apartado “Determinación de la nómina a deducir”, subapartado “Sueldos y salarios”, se
+muestra el cálculo para la determinación de la nómina por sueldos y salarios gravada y exenta
+deducible.
+
+En el campo “Nómina por sueldos y salarios”, al dar clic en “Ver detalle” se habilita el apartado
+“Total de nómina por sueldos y salarios”.
+
+33 / 121
+
+Versión 1
+
+A continuación, se muestra la información de las declaraciones de entero de retenciones
+presentadas. Asimismo, se visualiza el importe de la nómina exenta y gravada considerada como
+posible deducción. Da clic en “Cerrar”. Si requieres modificar la información precargada, realiza los
+cambios correspondientes en tus pagos definitivos por retenciones.
+
+En la declaración con periodo “Del Ejercicio por Terminación Anticipada”, se visualiza la
+información desde el primer periodo del ejercicio, hasta el periodo seleccionado en el campo
+“Último periodo a declarar” de la “Configuración de la declaración”.
+
+34 / 121
+
+Versión 1
+
+En el campo “Nómina por sueldos y salarios no deducible”, al dar clic en “Capturar”, se muestra el
+cálculo para la determinación de la nómina por sueldos y salarios no deducible.
+
+Captura los importes que correspondan en el campo “Otros conceptos no deducibles” en las
+columnas “Exenta” y “Gravada” del apartado y elige el porcentaje en el campo “Selecciona el
+porcentaje a aplicar en la nómina exenta”. Al finalizar da clic en “Cerrar”.
+
+En el subapartado “Asimilados a salarios”, se muestra el cálculo para la determinación de la
+“Nómina por asimilados a salarios deducible”.
+
+35 / 121
+
+Versión 1
+
+A continuación, se muestra la información de las declaraciones de entero de retenciones
+presentadas. Asimismo, se visualiza el importe de la nómina exenta y gravada considerada como
+posible deducción, da clic en “Cerrar”. Si requieres modificar la información precargada, realiza los
+cambios correspondientes en tus pagos definitivos por retenciones.
+
+En la declaración con periodo “Del Ejercicio por Terminación Anticipada”, se visualiza la
+información desde el primer periodo del ejercicio, hasta el periodo seleccionado en el campo
+“Último periodo a declarar” de la “Configuración de la declaración”.
+
+36 / 121
+
+Versión 1
+
+En el campo “Nómina por asimilados a salarios no deducible”, da clic en “Capturar”.
+
+Si timbraste el concepto de viáticos u otros conceptos no deducibles en los CFDI de asimilados a
+salarios, captura el importe correspondiente en los campos “Viáticos” y “Otros conceptos no
+deducibles”. Además, captura el importe que corresponda en el campo “Anticipos y rendimientos
+de sociedades civiles y cooperativas”, para que el aplicativo realice el cálculo del campo “Nómina
+por asimilados salarios no deducible”. Da clic en “Cerrar”.
+
+En el apartado de “Sueldos, salarios y asimilados a salarios”, se muestra el resultado de la nómina
+deducible y la nómina no deducible por ambos conceptos.
+
+37 / 121
+
+Versión 1
+
+En el campo “Mano de obra a aplicar en costo de lo vendido” da clic en “Capturar”.
+
+Captura el importe que corresponda en los campos “Nómina de mano de obra directa de
+fabricación” y “Nómina de mano de obra indirecta de fabricación” para que el aplicativo realice al
+cálculo del campo “Mano de obra a aplicar en costo de lo vendido”. Da clic en “Cerrar”.
+
+En el apartado “Subsidio para el empleo”, se muestra información precargada de las siguientes
+fuentes:
+1. CFDI de nómina
+2. Pagos provisionales o definitivos (en los que haya aplicado subsidio como forma de pago)
+3. Declaración anual
+En el campo “Subsidio pagado en nómina del ejercicio”, al dar clic en “Ver detalle”, se muestra la
+información contenida en los CFDI de nómina emitidos en el año que se precargan en la
+declaración anual. Al finalizar, da clic en “Cerrar”.
+
+38 / 121
+
+Versión 1
+
+En la declaración con periodo “Del Ejercicio por Terminación Anticipada”, se visualiza la
+información desde el primer periodo del ejercicio hasta el periodo seleccionado en el campo
+“Último periodo a declarar” de la “Configuración de la declaración”.
+
+39 / 121
+
+Versión 1
+
+En su caso, captura el importe en el campo “Subsidio pagado devuelto por la autoridad”.
+
+En el campo “Subsidio aplicado en pagos provisionales”, se muestra la información de los importes
+acreditados contra el ISR de cada periodo, para conocer los montos da clic en el botón “Ver detalle”.
+
+40 / 121
+
+Versión 1
+
+A continuación, se muestra la información en el campo “Subsidio aplicado en pagos provisionales”,
+da clic en “Cerrar”. Si requieres modificar la información precargada, realiza los cambios
+correspondientes en tus pagos provisionales.
+
+En la declaración con periodo “Del Ejercicio por Terminación Anticipada”, se visualiza la
+información desde el primer periodo del ejercicio hasta el periodo seleccionado en el campo
+“Último periodo a declarar”.
+
+41 / 121
+
+Versión 1
+
+En el campo “Subsidio aplicado en retenciones de sueldos, salarios y asimilados”, da clic en “Ver
+detalle”.
+
+A continuación, se muestra la información del “Subsidio aplicado en retenciones de sueldos,
+salarios y asimilados”, da clic en “Cerrar”. Si requieres modificar la información precargada, realiza
+los cambios correspondientes en tus pagos definitivos por retenciones.
+
+En la declaración con periodo “Del Ejercicio por Terminación Anticipada”, se visualiza la
+información desde el primer periodo del ejercicio hasta el periodo seleccionado en el campo
+“Último periodo a declarar”.
+
+42 / 121
+
+Versión 1
+
+Por lo que respecta al campo “Subsidio aplicado en otras retenciones” da clic en el botón “Ver
+detalle”, en el cual se puede visualizar por concepto el importe de subsidio para el empleo aplicado.
+
+Verifica los importes y si deseas modificar la información presenta una declaración del concepto
+que lo requiera para actualizar la información.
+
+43 / 121
+
+Versión 1
+
+b) Gastos
+En el campo “Gastos”, da clic en el botón “Capturar”.
+
+A continuación, se muestran los siguientes conceptos:
+•
+•
+•
+•
+•
+•
+
+Anticipos y rendimientos de sociedades civiles y cooperativas
+Viáticos y gastos de viaje
+Honorarios pagados a personas físicas/RESICO
+Uso o goce temporal de bienes pagados a personas físicas
+Intereses Netos
+Devoluciones, descuentos y bonificaciones
+
+Captura en el campo “Importe” la cantidad que pretendes deducir en los campos “Anticipos y
+rendimientos de sociedades civiles y cooperativas” y “Viáticos y gastos de viaje”.
+
+44 / 121
+
+Versión 1
+
+En el campo “Honorarios pagados a personas físicas/RESICO”, da clic en “Capturar”.
+
+A continuación, se muestra la información de las declaraciones de entero de retenciones
+presentadas en el ejercicio. Captura en cada mes el importe de los honorarios pagados a personas
+físicas o Régimen Simplificado de Confianza. Solo son deducibles los importes de aquellos periodos
+en los que se encuentren presentados y, en su caso, pagados.
+
+45 / 121
+
+Versión 1
+
+En la columna “ISR a cargo de retenciones por pago de honorarios o RESICO” se muestra una
+ventana con el desglose de la cantidad pagada en el mes. Da clic en cada uno de los montos.
+
+A continuación, se visualiza una ventana con el desglose de la cantidad a pagar en dicho mes. Da
+clic en “Cerrar”.
+
+En la declaración con periodo “Del Ejercicio por Terminación Anticipada”, se visualiza la
+información desde el primer periodo del ejercicio hasta el periodo seleccionado en el campo
+“Último periodo a declarar”.
+
+46 / 121
+
+Versión 1
+
+Si requieres modificar la información precargada, realiza los cambios correspondientes en tus
+pagos definitivos por retenciones. Da clic en “Cerrar”.
+En el campo “Uso o goce temporal de bienes pagados a personas físicas” da clic en “Capturar”.
+
+A continuación, se muestra la información de las declaraciones de entero de retenciones
+presentadas en el ejercicio. Captura en cada mes el importe del pago por el uso o goce temporal
+de bienes inmuebles. Solo son deducibles aquellos importes de los periodos que estén
+debidamente presentados y, en su caso, pagados.
+
+47 / 121
+
+Versión 1
+
+Al dar clic en la columna “ISR a cargo de retenciones por el uso o goce temporal de bienes
+inmuebles”, se muestra una ventana con el desglose de la cantidad pagada en el mes. Si requieres
+modificar la información precargada, realiza los cambios correspondientes en tus pagos definitivos
+por retenciones. Da clic en “Cerrar”.
+
+En la declaración con periodo “Del Ejercicio por Terminación Anticipada”, se visualiza la
+información desde el primer periodo del ejercicio hasta el periodo seleccionando en el campo
+“Último periodo a declarar”.
+
+48 / 121
+
+Versión 1
+
+En el campo “Intereses Netos”, da clic en “Capturar”.
+
+Después, da clic en "Agregar" para capturar el saldo remanente de ejercicios anteriores del interés
+neto pendiente de deducir.
+
+Selecciona el año en el campo “Año del interés neto no deducido”.
+
+49 / 121
+
+Versión 1
+
+Registra la cantidad en el campo “Interés neto no deducido pendiente de aplicar”.
+
+En el campo “Interés neto no deducido actualizado”, da clic en “Capturar”.
+
+Selecciona el año en que se actualizó por última vez y el mes en que se generó o se actualizó por
+última vez el interés neto no deducido para que el aplicativo realice el cálculo del campo “Interés
+neto actualizado” y da clic en “Cerrar”.
+
+50 / 121
+
+Versión 1
+
+A continuación, se muestra el mensaje “Manifiesto bajo protesta de decir verdad que los datos
+asentados son correctos”, da clic en “Aceptar”.
+
+Captura el importe que corresponda en el campo “Interés neto por aplicar en este ejercicio” para
+que el aplicativo realice el cálculo del campo “Remanente de interés neto no deducido” y da clic en
+“Guardar”.
+
+Al terminar de capturar tus intereses netos, da clic en “Cerrar”.
+
+51 / 121
+
+Versión 1
+
+El campo “Devoluciones, descuentos y bonificaciones” se encuentra precargado con la información
+de las facturas emitidas en el año. Da clic en “Capturar” para mostrar el detalle de las facturas de
+tipo ingreso y egreso consideradas en el ejercicio.
+
+En caso de que la cantidad no corresponda a las facturas expedidas, puedes modificar el monto,
+ya que es un dato sugerido. Al finalizar, da clic en “Cerrar”.
+
+52 / 121
+
+Versión 1
+
+En la declaración con periodo “Del Ejercicio por Terminación Anticipada”, se visualiza la
+información desde el primer periodo del ejercicio hasta el periodo seleccionado en el campo
+“Último periodo a declarar”.
+
+Si requieres agregar algún otro concepto de deducciones autorizadas, da clic en “Agregar”,
+selecciona el “Concepto” y captura el monto en el campo “Importe” de los gastos efectuados en el
+ejercicio. Al terminar el registro, da clic en “Guardar”.
+
+Selecciona el “Concepto” que corresponda y captura el monto en el campo “Importe”
+correspondiente al mismo. Una vez agregado el importe, da clic en el botón de “Guardar” y
+continúa.
+Si eres una persona moral autorizada para aplicar los beneficios del decreto del “Plan México”,
+puedes agregar el importe del gasto realizado que corresponda.
+
+53 / 121
+
+Versión 1
+
+Los registros se visualizan en la parte inferior de la ventana. Al finalizar, da clic en “Cerrar”.
+
+c) Deducciones relacionadas con la nómina
+En el campo “Deducciones relacionadas con la nómina”, da clic en “Capturar”.
+
+En la ventana emergente “Deducciones relacionadas con la nómina”, se muestran los conceptos:
+
+54 / 121
+
+Versión 1
+
+•
+•
+•
+
+Total de deducciones relacionadas con la nómina
+Gastos relacionados a la mano de obra
+Deducciones autorizadas relacionas con la nómina
+
+Da clic en “Agregar” para capturar la información de todos tus gastos que estén relacionados con
+la nómina.
+
+Selecciona el “Concepto” que corresponda y captura la cantidad en el campo “Importe” de los
+gastos efectuados en el ejercicio.
+
+Da clic en “Guardar”.
+
+55 / 121
+
+Versión 1
+
+A continuación, captura el monto que corresponda en el campo “Gastos relacionados a la mano de
+obra” para que el aplicativo realice el cálculo del campo “Deducciones autorizadas relacionadas
+con la nómina”. Da clic en “Cerrar”.
+
+d) Deducción de inversiones
+En el campo “Deducciones de inversiones”, da clic en “Capturar”.
+
+Da clic en “Agregar” para capturar tus deducciones de inversiones actualizadas.
+
+56 / 121
+
+Versión 1
+
+Selecciona la opción que corresponda en los campos “Depreciación aplicada”, “Tipo de inversión”
+y “Subtipo de inversión”.
+Si eres una persona moral autorizada para aplicar los beneficios del decreto del “Plan México”,
+puedes seleccionar las opciones respectivas en el campo “Depreciación aplicada”.
+A continuación, captura el importe de los campos “Monto de la inversión” y “Gastos relacionados”
+para que el aplicativo realice el cálculo del campo “Monto original de la inversión”. Posteriormente,
+captura el importe que corresponda en el campo “Deducción actualizada” y da clic en “Guardar”.
+
+A continuación, captura el importe que corresponda en el campo “Deducción de inversiones para
+costo de lo vendido” para que el aplicativo realice el cálculo del campo “Deducciones autorizadas
+por inversiones” y da clic en “Cerrar”.
+
+57 / 121
+
+Versión 1
+
+e) Costo de lo vendido
+En el campo “Costo de lo vendido” da clic en “Capturar”.
+
+Selecciona la opción que te corresponda en el campo “Tipo de determinación del costo” para
+determinar el costo de lo vendido.
+
+58 / 121
+
+Versión 1
+
+Si eliges la opción “Históricos”, selecciona el concepto que elijas en el campo “Método de valuación
+de los inventarios” y el “Sistema de costos utilizado”.
+
+A continuación, captura los importes que correspondan en los campos “Inventario inicial”,
+“Compras netas nacionales”, “Compras netas extranjeras” e “Inventario final” para que el
+aplicativo realice el cálculo del campo “Total de materiales utilizados o comercializados”.
+
+59 / 121
+
+Versión 1
+
+A dicho monto, se le suman los importes precargados de los campos: “Mano de obra directa de
+fabricación”, “Gastos relacionados a la mano de obra”, “Deducción de inversiones” y “Mano de
+obra indirecta de fabricación”. Captura los importes que correspondan en los campos “Maquilas”
+y “Gastos indirectos” para que el aplicativo realice el cálculo del campo “Costo de lo vendido”.
+
+Para determinar el costo de producción, captura los importes que correspondan en los campos
+“Importe de las materias primas”, “Mano de obra directa” y “Costos indirectos de fabricación”. Da
+clic en “Cerrar”.
+
+Si eliges la opción “Predeterminados”, selecciona la opción en el campo “Tipo de costo
+predeterminado” y “Método de valuación de los inventarios”.
+
+60 / 121
+
+Versión 1
+
+Posteriormente, captura el importe que corresponda en el campo “Costo de lo vendido” para
+determinar el costo de producción captura los importes que correspondan en los campos
+“Importe de las materias primas”, “Mano de obra directa” y “Costos indirectos de fabricación”. Da
+clic en “Cerrar”.
+
+61 / 121
+
+Versión 1
+
+f) Ajuste anual por inflación
+Si en el campo “Ajuste anual por inflación” ubicado en el apartado “Ingresos”, hay un resultado, en
+el campo “Ajuste Anual por inflación deducible” el importe se muestra en el apartado “Deducciones
+autorizadas”. Da clic en “Ver detalle”.
+
+A continuación, se muestra precargada la información con la que se fue determinado el “Ajuste
+Anual por inflación deducible” capturada en el apartado de “Ingresos”. Da clic en “Cerrar”.
+
+Si al determinar el ajuste anual por inflación se obtuvo un monto acumulable, no se visualiza el
+botón “Ver detalle” del campo “Ajuste anual por inflación deducible”.
+
+62 / 121
+
+Versión 1
+
+g) ¿Tienes facilidades administrativas o estímulos deducibles?
+En el campo “¿Tienes facilidades administrativas o estímulos deducibles?” responde “Sí” o “No”,
+según corresponda.
+
+Si respondes “Sí”, se habilita el campo “Facilidades administrativas y estímulos deducibles”, da clic
+en “Capturar”.
+
+Da clic en “Agregar” para capturar los estímulos que te corresponda aplicar en la declaración anual.
+
+63 / 121
+
+Versión 1
+
+Selecciona la opción en el campo “Tipo de estímulo” para que el aplicativo realice la precarga del
+campo “Monto efectivamente pagado por el gasto realizado”.
+
+Captura el monto que corresponda en el campo “Importe a aplicar en esta declaración” y da clic en
+“Guardar”.
+
+Al terminar de capturar tus estímulos, se muestran los registros en la parte inferior, da clic en
+“Cerrar” para continuar.
+
+64 / 121
+
+Versión 1
+
+h) Total de deducciones autorizadas
+En el campo “Total de deducciones autorizadas”, se muestra la suma de las cantidades registradas
+en el apartado “Deducciones autorizadas”.
+
+3. Determinación
+En el apartado “Determinación” se visualizan los siguientes campos:
+a) Total de ingresos acumulables.
+b) Total de deducciones autorizadas.
+c) Otras facilidades y estímulos por aplicar.
+d) Utilidad Fiscal o Pérdida Fiscal antes de PTU, según corresponda.
+e) PTU pagada en el ejercicio.
+f) Utilidad Fiscal o Pérdida fiscal del ejercicio, según corresponda.
+g) Pérdidas fiscales de ejercicios anteriores.
+h) Resultado fiscal.
+i) Impuesto causado del ejercicio.
+j) Estímulos por aplicar al Impuesto Causado.
+k) Impuesto sobre la Renta del Ejercicio.
+l) Impuesto acreditable por dividendos o utilidades distribuidas.
+m) Impuesto acreditable pagado en el extranjero.
+n) Pagos provisionales efectuados.
+o) ISR retenido al contribuyente.
+
+65 / 121
+
+Versión 1
+
+p) ISR a cargo o a favor del ejercicio, según corresponda.
+q) ¿Te autorizaron aplicar un coeficiente de utilidad menor en pagos provisionales al
+determinado en el ejercicio?
+
+a) Total de ingresos acumulables
+El importe del campo “Total de ingresos acumulables” se precarga de la sección “Ingresos”.
+
+66 / 121
+
+Versión 1
+
+b) Total de deducciones autorizadas
+El importe del campo “Total de deducciones autorizadas”, se precarga de la sección
+“Deducciones autorizadas”.
+
+c) Otras facilidades y estímulos por aplicar
+El campo “Otras facilidades y estímulos deducibles por aplicar” se muestra a los contribuyentes
+que tienen autorización para aplicar los beneficios concedidos en el decreto del “Plan México”,
+siempre y cuando sus ingresos sean superiores a sus deducciones. Para detallar la información,
+da clic en “Capturar”.
+Para poder aplicar el porcentaje adicional de deducción por gastos de capacitación e innovación
+en esta sección, tienen que estar previamente registrados en el campo “Gastos” del apartado
+“Deducciones autorizadas”.
+
+La ventana que se visualiza contiene el botón “Instrucciones” con los pasos a seguir para agregar
+las facilidades y estímulos que correspondan. Da clic en “Cerrar”.
+
+67 / 121
+
+Versión 1
+
+Para registrar la facilidad o estímulo por aplicar, da clic en “Agregar”, hasta por el monto que se
+visualiza en el campo "Límite por aplicar”.
+
+Selecciona la opción a aplicar en el campo “Tipo de estímulo”, o si no cuentas con estímulos por
+aplicar, selecciona la opción “Sin otras facilidades y estímulos por aplicar”.
+
+68 / 121
+
+Versión 1
+
+Al seleccionar cualquiera de los estímulos, se visualiza un mensaje emergente descriptivo de los
+estímulos. Da clic en “Aceptar”.
+
+Captura el importe que corresponda en los campos “Gastos realizados en el ejercicio inmediato
+anterior”, “Gastos del segundo ejercicio inmediato anterior” y “Gastos del tercer ejercicio inmediato
+anterior”.
+
+Posteriormente, captura el monto que corresponda en el campo “Importe por aplicar en esta
+declaración”, el cual, no debe ser superior a la cantidad que se visualiza en el campo “Importe
+máximo 25%”. Da clic en “Guardar”.
+
+69 / 121
+
+Versión 1
+
+Los registros se visualizan en la parte inferior de la ventana, así como el monto del campo “Total
+por aplicar” en la declaración a presentar. Al finalizar, da clic en “Cerrar”.
+
+d) Utilidad Fiscal o Pérdida Fiscal antes de PTU, según corresponda
+El aplicativo realiza el cálculo del campo “Utilidad Fiscal antes de PTU” o “Pérdida Fiscal antes de
+PTU”, según corresponda.
+
+70 / 121
+
+Versión 1
+
+e) PTU pagada en el ejercicio
+En el campo “PTU pagada en el ejercicio”, da clic en “Capturar”.
+
+Se muestra el importe de la “PTU timbrada y pagada a mayo del ejercicio que declara”, el cual
+corresponde a la información manifestada en los CFDI de nómina.
+
+En el campo “PTU pendiente de aplicar del ejercicio que declara” captura el importe de la PTU que
+aplicas en el ejercicio que no se disminuyó en pagos provisionales, para que el aplicativo realice el
+cálculo del campo “Total PTU pagada en el ejercicio”.
+Posteriormente, captura el importe correspondiente para el campo “PTU no deducible”, para
+obtener el monto “Total PTU pagada”, que se aplica en el ejercicio. Da clic en “Cerrar”.
+
+71 / 121
+
+Versión 1
+
+f) Utilidad Fiscal o Pérdida Fiscal del ejercicio, según corresponda.
+El aplicativo calcula el resultado en el campo “Utilidad fiscal del ejercicio” o “Pérdida fiscal del
+ejercicio”, según corresponda.
+
+g) Pérdidas fiscales de ejercicios anteriores
+En el campo “Pérdidas fiscales de ejercicios anteriores”, da clic en “Capturar”.
+
+Si tienes pérdidas fiscales de ejercicio anteriores, se muestra precargado el saldo remanente de
+tus pérdidas pendientes de aplicar.
+
+72 / 121
+
+Versión 1
+
+En la columna “Acciones”, se habilita el ícono
+“Editar”, al seleccionarlo se abre una ventana
+emergente con los siguientes campos: “Origen de la pérdida”, “Año en que se generó la pérdida”,
+“Pérdidas pendientes de aplicar”, “Pérdida fiscal actualizada”, “Por aplicar en este ejercicio” y
+“Remanente”.
+Selecciona la opción que corresponda en el campo “Origen de la pérdida”.
+
+Si seleccionas la opción “Escisión” en el campo “Origen de la pérdida”, captura el dato solicitado de
+la sociedad en el campo “RFC Escindente”.
+
+73 / 121
+
+Versión 1
+
+Asimismo, puedes seleccionar la opción “Propia”.
+Los campos “Año en que se generó la pérdida” y “Pérdida pendientes de aplicar” contienen
+información precargada, de ser el caso.
+
+Para que el aplicativo calcule el importe de la “Pérdida fiscal actualizada”, selecciona el botón
+“Capturar”. A continuación, registra la información relativa a la pérdida fiscal a registrar.
+
+Especifica el ejercicio en el campo “Año en que se actualizó por última vez”, así como el periodo en
+el campo “Mes en que se generó o se actualizó por última vez la pérdida”; con ello, se obtiene el
+factor de actualización para el cálculo correspondiente.
+
+Con la información capturada se calcula el campo “Pérdida actualizada”, en caso de considerar que
+el resultado es distinto al de papeles de trabajo, el monto es un dato sugerido que puedes
+modificar. Al finalizar, da clic en “Cerrar”.
+
+74 / 121
+
+Versión 1
+
+Se muestra el mensaje “Manifiesto bajo protesta de decir verdad que los datos asentados son
+correctos”, da clic en “Aceptar”. Registra el importe de la pérdida en el campo “Por aplicar en este
+ejercicio”. Da clic en el botón “Guardar”.
+
+En caso de requerirlo, en la columna “Acciones” se muestra el botón “Eliminar” para borrar los
+registros precargados.
+
+75 / 121
+
+Versión 1
+
+En caso de que no visualices tus pérdidas fiscales de ejercicios anteriores, puedes capturarlas al
+dar clic en “Agregar”.
+
+Se habilita una ventana para que se detalle la pérdida a aplicar, captura la información solicitada
+en los campos “Origen de la pérdida”, “Año en que se generó la pérdida”, “Pérdidas pendientes de
+aplicar”, “Pérdida fiscal actualizada” y “Por aplicar en este ejercicio”.
+La aplicación realiza el cálculo del campo “Remanente” de forma automática. Da clic en “Guardar”.
+
+Registrada la pérdida, da clic en “Cerrar” para continuar.
+
+76 / 121
+
+Versión 1
+
+En los casos en que, en el ejercicio inmediato anterior al que se declara, se determinó una pérdida
+fiscal del ejercicio, el aplicativo habilita los apartados “Primera actualización” y “Segunda
+actualización”, dentro de la ventana emergente del campo “Pérdida fiscal actualizada” para que se
+realice el cálculo correspondiente.
+Para las pérdidas generadas en los ejercicios anteriores al indicado se habilita únicamente la
+segunda actualización con los campos y validaciones correspondientes.
+La primera actualización contiene los siguientes campos:
+➢
+➢
+➢
+➢
+➢
+➢
+➢
+➢
+➢
+
+Año del ejercicio anterior
+Primer mes de la segunda mitad del ejercicio en que se generó la pérdida
+INPC del último mes del ejercicio en el que se generó la pérdida /MES
+INPC del último mes del ejercicio en el que se generó la pérdida /INPC
+INPC del primer mes de la segunda mitad del ejercicio en el que se generó la pérdida/MES
+INPC del primer mes de la segunda mitad del ejercicio en el que se generó la pérdida/INPC
+Factor de actualización del periodo
+Pérdidas pendientes de aplicar
+Pérdida actualizada
+
+77 / 121
+
+Versión 1
+
+Al especificar el periodo para el campo “Primer mes de la segunda mitad del ejercicio en que se
+generó la pérdida”, se carga de forma automática los valores para los campos “Mes” e “INPC” del
+campo “INPC del primer mes de la segunda mitad del ejercicio en el que se generó la pérdida”.
+Asimismo, el aplicativo determina el “Factor de actualización del periodo” y obtiene la “Pérdida
+fiscal actualizada”, la cual puede modificarse en caso de no estar de acuerdo con el cálculo
+sugerido.
+
+El apartado para la segunda actualización contiene los siguientes campos:
+➢
+➢
+➢
+➢
+➢
+➢
+➢
+
+Año en que se actualizó por última vez
+Mes en que se generó o se actualizó por última vez la pérdida
+INPC del último mes de la primera mitad en que se aplica o se actualiza la pérdida
+INPC del mes en que se generó o se actualizó por última vez la pérdida
+Factor de actualización del periodo
+Pérdidas pendientes de aplicar
+Pérdida actualizada
+
+78 / 121
+
+Versión 1
+
+De igual forma, al precisarse el ejercicio en el campo “Año en que se actualizó por última vez” y el
+periodo en el campo “Mes en que se generó o se actualizó por última vez la pérdida”, se cargan de
+forma automática los valores para el “Mes” e “INPC” del campo “INPC del mes en que se generó o
+se actualizó por última vez la pérdida” y el aplicativo realiza de forma automática el cálculo del
+campo “Factor de actualización del periodo” y “Pérdida actualizada”, la cual también se puede
+modificar en caso de no estar de acuerdo con el dato sugerido. Da clic en “Cerrar”.
+
+A continuación, se muestra el mensaje “Manifiesto bajo protesta de decir verdad que los datos
+asentados son correctos”. Selecciona “Aceptar”.
+
+Captura el importe que corresponda en el campo “Por aplicar en este ejercicio” para que el
+aplicativo realice el cálculo del “Remanente”. Da clic en “Guardar”.
+
+79 / 121
+
+Versión 1
+
+Los registros efectuados se visualizan en la parte inferior de la ventana. Si estás de acuerdo con
+la información registrada, da clic en “Cerrar”.
+
+h) Resultado fiscal
+El aplicativo realiza el cálculo del campo “Resultado fiscal”.
+
+i) Impuesto causado del ejercicio
+El aplicativo realiza el cálculo del campo “Impuesto causado del ejercicio”.
+
+80 / 121
+
+Versión 1
+
+j) Estímulos por aplicar al impuesto causado
+En el campo “Estímulos por aplicar al impuesto causado”, da clic en “Capturar”.
+
+A continuación, se muestran los campos “Límite de estímulos a aplicar” y “Monto por aplicar”.
+
+Da clic en “Agregar”, para registrar los estímulos al impuesto causado, hasta por el monto del
+"Límite de estímulos a aplicar".
+
+81 / 121
+
+Versión 1
+
+Selecciona una opción en el campo “Tipo de estímulo”. Posteriormente, ingresa el importe que
+corresponda en los campos “Saldo pendiente de aplicar de ejercicios anteriores”, “Importe del
+estímulo correspondiente del ejercicio” y “Por aplicar en declaración anual” para que el aplicativo
+realice el cálculo del “Remanente”. Da clic en “Guardar”.
+
+Los registros efectuados se visualizan en la parte inferior de la ventana. Da clic en “Cerrar”.
+
+k) Impuesto sobre la Renta del Ejercicio
+El aplicativo realiza el cálculo del campo “Impuesto sobre la Renta del Ejercicio”.
+
+82 / 121
+
+Versión 1
+
+l) Impuesto acreditable por dividendos o utilidades distribuidas
+En el campo “Impuesto acreditable por dividendos o utilidades distribuidas”, da clic en el botón
+“Capturar”.
+
+A continuación, se muestran los campos “Límite del impuesto acreditable por dividendos o
+utilidades distribuidas” y “Monto por aplicar”. Si cuentas con ISR por dividendos pendiente de
+acreditar de ejercicio anteriores, se visualiza la información precargada, así como los campos que
+tienes que capturar.
+
+Da clic en “Agregar” si deseas agregar otro registro.
+
+83 / 121
+
+Versión 1
+
+Captura la información correspondiente a los campos “Total de dividendos pagado” e “ISR por
+dividendos a acreditar”. El campo “ISR remanente” o “ISR por dividendos pagado” es precargado
+de la declaración de pago definitivo por el concepto “ISR por dividendos”.
+
+Si das clic en el importe de “ISR remanente o ISR por dividendos pagado”, se visualiza una ventana
+con el desglose del ISR por dividendos pagados en el ejercicio. Da clic en “Cerrar”.
+
+84 / 121
+
+Versión 1
+
+En la declaración con periodo “Del Ejercicio por Terminación Anticipada”, se visualiza la
+información desde el primer periodo del ejercicio hasta el periodo seleccionado en el campo
+“Último periodo a declarar”.
+
+Los registros efectuados se visualizan en la parte inferior de la ventana. Si estás de acuerdo con
+la información registrada, da clic en “Cerrar”.
+
+85 / 121
+
+Versión 1
+
+m) Impuesto acreditable pagado en el extranjero
+En el campo “Impuesto acreditable pagado en el extranjero”, da clic en “Capturar”.
+
+A continuación, se muestran los campos “Límite del impuesto pagado en el extranjero a aplicar” y
+“Monto por aplicar”. Asimismo, se muestra precargado el saldo remanente del impuesto
+acreditable pagado en el extranjero de ejercicios anteriores pendiente de aplicar.
+En la columna “Acciones” se habilita el ícono
+“Editar”, al seleccionarlo se abre una ventana
+emergente con los siguientes campos: “Origen del impuesto acreditable pagado en el extranjero”,
+“Año en que se pagó el impuesto del ejercicio”, “Impuesto pendiente de acreditar”, “Impuesto
+pendiente de acreditar actualizado”, “Impuesto a acreditar en este ejercicio” y “Remanente”.
+
+86 / 121
+
+Versión 1
+
+Selecciona la opción que corresponda en el campo “Origen del impuesto acreditable pagado en el
+extranjero”.
+
+Si seleccionas la opción “Escisión”, captura la información que corresponda en el campo “RFC
+Escindente”.
+
+Además, puedes seleccionar la opción “Propia”.
+
+87 / 121
+
+Versión 1
+
+El aplicativo precarga el año en que se pagó el impuesto del ejercicio y el importe del campo
+“Impuesto pendiente de acreditar”.
+
+Para que el aplicativo calcule el importe del campo “Impuesto pendiente de acreditar actualizado”,
+selecciona el botón “Capturar”. A continuación, registra la información relativa en el campo
+“Impuesto pendiente de acreditar”.
+
+Selecciona el ejercicio en el campo “Año en que se actualizó por última vez” y el periodo en el campo
+“Mes en que se generó o se actualizó por última vez el impuesto acreditable pagado en el
+extranjero” pendiente de acreditar.
+
+88 / 121
+
+Versión 1
+
+Con la información capturada, el aplicativo calcula el “Impuesto pendiente de acreditar
+actualizado”, en caso de considerar que el resultado es distinto al de papeles de trabajo, el monto
+es un dato sugerido que puedes modificar. Al finalizar da clic en “Cerrar”.
+
+Se muestra el mensaje “Manifiesto bajo protesta de decir verdad que los datos asentados son
+correctos”. Da clic en “Aceptar”. Registra el importe del “Impuesto a acreditar en este ejercicio” y da
+clic en “Guardar”.
+
+En caso de requerirlo, en la columna “Acciones” se muestra el botón “Eliminar” para borrar los
+registros precargados.
+
+89 / 121
+
+Versión 1
+
+Si no visualizas tu impuesto acreditable pagado en el extranjero como parte de la precarga de
+información, captúralo al dar clic en “Agregar”.
+
+Se habilita una ventana para detallar el impuesto pagado en el extranjero a aplicar, captura la
+información solicitada en los campos: “Origen del impuesto acreditable pagado en el extranjero”,
+“Año en que se pagó el impuesto del ejercicio”, “Impuesto pendiente de acreditar”, “Impuesto
+pendiente de acreditar actualizado” e “Impuesto a acreditar en este ejercicio”.
+
+90 / 121
+
+Versión 1
+
+El aplicativo realiza el cálculo del campo “Remanente” de forma automática. Da clic en “Guardar”.
+
+31,380
+
+En los casos en que, en el ejercicio inmediato anterior al que se declara, se determinó un impuesto
+acreditable pagado en el extranjero, se aplicarán los apartados “Primera actualización” y “Segunda
+actualización”, dentro de la ventana emergente del campo “Impuesto acreditable pagado en el
+extranjero actualizado” para que se realice el cálculo correspondiente.
+Para el impuesto acreditable pagado en el extranjero pendiente de acreditar generado en
+ejercicios anteriores al indicado, se habilita únicamente la segunda actualización con los campos y
+validaciones correspondientes.
+
+91 / 121
+
+Versión 1
+
+Los campos y funcionalidades del apartado “Impuesto acreditable pagado en el extranjero
+actualizado” operan como la sección “Pérdida fiscal autorizada”.
+n) Pagos provisionales efectuados
+En el campo “Pagos provisionales efectuados” da clic en “Ver detalle”.
+
+A continuación, se visualiza la información de los pagos provisionales presentados y pagados
+durante el ejercicio, así como importe del campo “Importe de pagos provisionales por acreditar” e
+“ISR pagado por fideicomisos”. Este detalle contiene el “Estatus”, “No. de operación” y la “Fecha de
+presentación” de cada declaración presentada para cada periodo del ejercicio; para continuar da
+clic en “Cerrar”.
+
+92 / 121
+
+Versión 1
+
+En la declaración con periodo “Del Ejercicio por Terminación Anticipada”, se visualiza la
+información desde el primer periodo del ejercicio hasta el periodo seleccionado en el campo
+“Último periodo a declarar”.
+
+Si requieres modificar la información precargada, realiza los cambios correspondientes en tus
+pagos provisionales.
+o) ISR retenido al contribuyente
+En el campo “ISR retenido al contribuyente”, da clic en el botón “Ver detalle”.
+
+A continuación, se visualiza la información del impuesto retenido en el ejercicio, da clic en “Cerrar”.
+
+93 / 121
+
+Versión 1
+
+En la declaración con periodo “Del Ejercicio por Terminación Anticipada”, se visualiza la
+información desde el primer periodo del ejercicio hasta el periodo seleccionado en el campo
+“Último periodo a declarar”.
+
+Si requieres modificar la información precargada, realiza los cambios correspondientes en tus
+pagos provisionales.
+
+94 / 121
+
+Versión 1
+
+p) ISR a cargo o a favor del ejercicio, según corresponda.
+El aplicativo realiza el cálculo del campo “ISR a cargo del ejercicio” o “ISR a favor del ejercicio”,
+según corresponda.
+
+q) ¿Te autorizaron aplicar un coeficiente de utilidad menor en pagos provisionales al
+determinado en el ejercicio?
+En el campo “¿Te autorizaron aplicar un coeficiente de utilidad menor en pagos provisionales al
+determinado en el ejercicio?”, selecciona “Sí” o “No”, según corresponda.
+
+95 / 121
+
+Versión 1
+
+Si respondes “Sí” en el apartado “Pago” se muestran los campos “Impuesto a cargo” y “Recargos
+por la diferencia entre los pagos provisionales realizados”.
+
+4. Pago
+En el apartado “Pago” se visualizan los siguientes campos:
+a)
+b)
+c)
+d)
+e)
+f)
+
+Impuesto a cargo o a favor
+Subsidio para el empleo
+Compensaciones
+Estímulos al impuesto a cargo
+Total de aplicaciones
+Cantidad a cargo
+
+96 / 121
+
+Versión 1
+
+g)
+
+Cantidad a pagar
+
+Si presentas una declaración complementaria y realizaste algún pago en las últimas 48 horas por
+este concepto a través de una línea de captura emitida por la propia declaración, se muestran los
+siguientes campos:
+h)
+i)
+j)
+k)
+
+¿Realizó en las últimas 48 horas un pago para este concepto?
+Fecha del pago realizado en las últimas 48 horas
+Importe pagado en las últimas 48 horas
+Monto pagado con anterioridad
+
+Adicionalmente, si respondes “Sí” a la pregunta “¿Te autorizaron aplicar un coeficiente de utilidad
+menor en pagos provisionales al determinado en el ejercicio?” ubicada en el apartado
+“Determinación”, se muestran los campos:
+l) Impuesto a cargo
+m) Recargos por la diferencia entre los pagos provisionales realizados
+a) Impuesto a cargo o a favor
+El monto del campo “Impuesto a cargo” o “Impuesto a favor” muestra el importe determinado en
+el módulo “Determinación”, en el concepto “ISR a cargo del ejercicio” o “ISR a favor del ejercicio”.
+•
+
+A cargo.
+
+97 / 121
+
+Versión 1
+
+•
+
+A favor.
+
+b) Subsidio para el empleo
+En el campo “Subsidio para el empleo” da clic en “Capturar”.
+
+A continuación, se muestra el importe en el campo “Subsidio disponible para su aplicación”.
+Captura el importe en el campo “Subsidio que se aplica en la declaración anual” para que el
+aplicativo realice el cálculo del campo “Subsidio pendiente de aplicar” y da clic en “Cerrar”.
+
+c) Compensaciones
+En el campo “Compensaciones”, da clic en “Capturar”.
+
+98 / 121
+
+Versión 1
+
+Después en “Agregar”.
+
+Selecciona la opción que corresponda en los campos “Tipo”, “Periodicidad”, “Periodo”, “Ejercicio”,
+“Concepto” y Saldo a aplicar”. Da clic en “Continuar”.
+
+Captura la información que corresponda en los campos “Tipo de declaración”, “Número de
+operación”, "Monto del saldo a favor original”, “Remanente histórico antes de la aplicación”, “Fecha
+en que se presentó la declaración del saldo a favor (dd-mm-aaaa)” y “Remanente actualizado antes
+de la aplicación”. Da clic en “Terminar”.
+
+99 / 121
+
+Versión 1
+
+d) Estímulos al impuesto a cargo
+En el campo “Estímulos al impuesto a cargo” da clic en “Capturar”.
+
+A continuación, se muestra el campo “Límite a aplicar”. Da clic en “Agregar” para capturar los
+estímulos al impuesto a cargo que te corresponda aplicar en la declaración anual.
+
+Selecciona la opción que corresponda en el campo “Tipo de estímulo”.
+
+Si seleccionas la opción “Acreditamiento del pago del derecho especial sobre minería”, se habilitan
+los campos “Base para calcular el límite del estímulo”, “Importe del estímulo correspondiente del
+ejercicio” y “Por aplicar en declaración anual”. Captura los importes correspondientes y da clic en
+“Guardar”.
+
+100 / 121
+
+Versión 1
+
+Al seleccionar la opción en el campo: “Estímulo a gasolinas en zona fronteriza norte y sur”,
+“Estímulo a gasolinas en regiones cercanas a zona fronteriza” o “Estímulo complementario
+combustibles”, se habilitan los campos “Saldo pendiente de aplicar de ejercicios anteriores”,
+“Importe del estímulo correspondiente del ejercicio”, “Aplicado en pagos provisionales”, “Por
+aplicar en la declaración anual” y “Remanente”. Captura los importes correspondientes y da clic en
+“Guardar”.
+
+Cuando seleccionas la opción en el campo “Estímulo por las inversiones en equipos de
+alimentación para vehículos eléctricos”, se habilitan los campos “Base para calcular el límite del
+estímulo”, “Saldo pendiente de aplicar de ejercicios anteriores”, “Importe del estímulo
+correspondiente del ejercicio”, “Por aplicar en la declaración anual” y “Remanente”. Captura los
+importes correspondientes y da clic en “Guardar”.
+
+101 / 121
+
+Versión 1
+
+Al terminar de capturar tus estímulos al impuesto a cargo, da clic en “Cerrar”.
+
+e) Total de aplicaciones
+El aplicativo realiza el cálculo del campo “Total de aplicaciones”.
+
+102 / 121
+
+Versión 1
+
+f) Cantidad a cargo
+El aplicativo realiza el cálculo del campo “Cantidad a cargo”.
+
+g) Cantidad a pagar
+El aplicativo realiza el cálculo del campo “Cantidad a pagar”.
+
+h) ¿Realizó en las últimas 48 horas un pago para este concepto?
+En el campo “¿Realizó en las últimas 48 horas un pago para este concepto?”. Selecciona “Sí” o “No”,
+según corresponda.
+
+103 / 121
+
+Versión 1
+
+i) Fecha del pago realizado en las últimas 48 horas
+Si identifica un pago previo, el aplicativo precarga el campo “Fecha del pago realizado con
+anterioridad”.
+
+j) Importe pagado en las últimas 48 horas
+En el campo “Monto pagado con anterioridad” indica el monto que pagaste previamente por este
+concepto a través de una línea de captura emitida por la autoridad.
+
+104 / 121
+
+Versión 1
+
+k) Monto pagado con anterioridad
+En el campo “Monto pagado con anterioridad”, da clic en “Capturar”.
+
+La información que se muestra corresponde al monto pagado con anterioridad.
+
+l) Impuesto a cargo
+El aplicativo realiza el cálculo del campo “Impuesto a cargo”.
+
+105 / 121
+
+Versión 1
+
+m) Recargos por la diferencia entre los pagos provisionales realizados
+En el campo “Recargos por la diferencia entre los pagos provisionales realizados”, da clic en
+“Capturar”.
+
+Los campos “Coeficiente de utilidad del ejercicio”, “Coeficiente de utilidad disminuido” y “Número
+de oficio de autorización de la disminución del coeficiente de utilidad” están precargados. Da clic
+en “Agregar” para capturar la información requerida por cada periodo.
+
+Selecciona la opción que corresponda en los campos “Periodo del recargo” y “Monto de recargos”,
+da clic en “Guardar” y luego en “Cerrar”.
+
+106 / 121
+
+Versión 1
+
+107 / 121
+
+Versión 1
+
+5. Datos adicionales
+En el apartado “Datos adicionales”, se visualizan los siguientes campos:
+a)
+b)
+c)
+d)
+e)
+f)
+
+Coeficiente de utilidad del ejercicio
+¿Estás obligado a calcular y pagar PTU del ejercicio que declara?
+Cuenta de Capital de Aportación (CUCA)
+Cuenta de Utilidad Fiscal Neta (CUFIN)
+¿Cuenta con algún esquema reportable?
+Indica si te dedicas exclusivamente a la generación de energía proveniente de fuentes
+renovables o de sistemas de cogeneración de electricidad eficiente
+
+a) Coeficiente de utilidad del ejercicio
+El aplicativo realiza el cálculo del campo “Coeficiente de utilidad del ejercicio”. Da clic en “Ver
+detalle”.
+
+A continuación, se muestra la forma en que se determinó el Coeficiente de Utilidad a utilizar en
+los pagos provisionales del siguiente ejercicio fiscal. Da clic en “Cerrar”.
+
+108 / 121
+
+Versión 1
+
+b) ¿Estás obligado a calcular y pagar PTU del ejercicio que declara?
+En el campo “¿Estás obligado a calcular y pagar PTU del ejercicio que declara?”, responde “Sí” o
+“No”, según corresponda.
+
+Si respondes “Sí”, se habilita la pregunta “¿Deseas que se determine el cálculo automático de la
+PTU del ejercicio?”. Responde “Sí” o “No”.
+
+109 / 121
+
+Versión 1
+
+Si respondes “Sí”, se habilitan los campos:
+•
+•
+•
+•
+
+PTU generada durante el ejercicio
+PTU no cobrada en el ejercicio
+PTU a disminuir por pagos en exceso de ejercicios anteriores
+PTU del ejercicio
+
+En el campo “PTU generada durante el ejercicio”, da clic en “Ver detalle”.
+
+Captura el importe que corresponda en el campo “Deducción inmediata de bienes nuevos de
+activo fijo que hubiera correspondido”, para que el aplicativo realice el cálculo del campo “PTU
+generada” y da clic en “Cerrar”.
+
+110 / 121
+
+Versión 1
+
+En el campo “PTU no cobrada en el ejercicio”, da clic en “Ver detalle”.
+
+Si lo requieres, modifica el importe precargado en el campo “PTU total a distribuir entre los
+trabajadores del ejercicio inmediato anterior”. A continuación, el aplicativo realiza el cálculo del
+campo “PTU no cobrada en el ejercicio”. Da clic en “Cerrar”.
+
+Captura el importe que corresponda en el campo “PTU a disminuir por pagos en exceso de
+ejercicios anteriores” para que el aplicativo realice el cálculo del campo “PTU del ejercicio”.
+
+111 / 121
+
+Versión 1
+
+c) Cuenta de Capital de Aportación (CUCA)
+En el campo “Cuenta de Capital de Aportación (CUCA)”, da clic en “Capturar”.
+
+Para determinar el saldo de la Cuenta de Capital de Aportación (CUCA), captura el importe que
+corresponda en los campos “Saldo inicial de la CUCA”, “Aportaciones de capital”, “Primas netas por
+suscripción de acciones efectuadas por los socios o accionistas” y “Reducciones de capital” para
+que el aplicativo realice el cálculo del campo “Resultado”. Posteriormente, captura el importe que
+corresponda en el campo “Saldo actualizado de la CUCA al 31 de diciembre” y da clic en “Cerrar”.
+
+d) Cuenta de Utilidad Fiscal Neta (CUFIN)
+En el campo “Cuenta de Utilidad Fiscal Neta (CUFIN)”, da clic en “Capturar”.
+
+112 / 121
+
+Versión 1
+
+A continuación, se muestra los datos del campo “Resultado fiscal del ejercicio”. Captura el importe
+que corresponda en los campos “ISR del ejercicio pagado en los términos del artículo 9 LISR”,
+“Importe de las partidas no deducibles”, “Monto a restar de la utilidad fiscal neta” y “Disminución
+por acreditamiento del ISR pagado por dividendos en el ejercicio”, para que el aplicativo realice el
+cálculo del campo “UFIN”. Asimismo, captura el importe que corresponda en el campo “Diferencia
+a disminuir de saldo de CUFIN de ejercicios anteriores actualizado” para que el aplicativo realice el
+cálculo de los campos “UFIN del ejercicio” y “Diferencia a disminuir de saldo de CUFIN del ejercicio”.
+
+Posteriormente, captura el importe que corresponda en los campos “Saldo de la Cuenta de Utilidad
+Fiscal Neta actualizado”, “Dividendos o utilidades percibidos de otras personas morales”, “Ingresos,
+dividendos o utilidades sujetos a regímenes fiscales preferentes (REFIPRES)”, “Dividendos o
+utilidades pagados con las utilidades distribuidas (UFIN)” y “Utilidades distribuidas por reducción
+de capital”, para que el aplicativo realice el cálculo de los campos “Cuenta de Utilidad Fiscal Neta”,
+“Cuenta de Utilidad Fiscal Neta al término del ejercicio” y “Diferencia a disminuir de saldos de CUFIN
+de ejercicios posteriores”. Después da clic en “Cerrar”.
+
+113 / 121
+
+Versión 1
+
+e) ¿Cuenta con algún esquema reportable?
+En el campo “¿Cuenta con algún esquema reportable?” responde “Sí” o “No”, según corresponda.
+
+En caso de que respondas “Sí”, da clic en “Agregar”.
+
+A continuación, captura el “Número de identificación del esquema reportable” y da clic en
+“Guardar”.
+
+114 / 121
+
+Versión 1
+
+Si requieres eliminar algún registro, da clic en el ícono que se ubica en la columna “Eliminar”.
+
+f) Indica si te dedicas exclusivamente a la generación de energía proveniente de fuentes
+renovables o de sistemas de cogeneración de electricidad eficiente
+En el campo “Indica si te dedicas exclusivamente a la generación de energía proveniente de
+fuentes renovables o de sistemas de cogeneración de electricidad eficiente” responde “Sí” o “No”,
+según corresponda.
+
+Si respondes “Sí”, captura los importes que corresponda en los campos “Cifras al cierre del
+ejercicio. Saldo de la Cuenta de Utilidad Fiscal Neta por inversión en energías renovables” y
+“Dividendos o utilidades distribuidos. Provenientes de la Cuenta de Utilidad Fiscal Neta por
+inversión en energías de fuentes renovables o sistemas de cogeneración de electricidad eficiente”.
+
+115 / 121
+
+Versión 1
+
+Después, selecciona la opción en el campo “Porcentaje de deducción aplicado tratándose de
+inversión en energías renovables”.
+
+Posteriormente, captura los importes que correspondan en los campos: “Saldo Inicial en el
+ejercicio (Cuenta de Utilidad Fiscal Neta por inversiones en energías renovables)”, “Retiros en el
+ejercicio (Cuenta de Utilidad Fiscal Neta por inversiones en energías renovables)”, “Retiros
+realizados en ejercicios anteriores (Cuenta de Utilidad Fiscal Neta por inversiones en energías
+renovables)”, “Monto Total de retiros realizados al ejercicio de que se trate (Cuenta de Utilidad
+Fiscal Neta por inversiones en energías renovables)” y “Monto de los Ingresos que corresponden
+a la generación de energía proveniente de fuentes renovables o de sistemas de cogeneración de
+electricidad eficiente”.
+
+116 / 121
+
+Versión 1
+
+VI. Vista previa y envío de la declaración
+Da clic en “Administración de la declaración”.
+
+Para generar la vista previa de tu declaración o realizar el envío de la misma da clic en “Vista
+previa” o “Enviar declaración”, según corresponda.
+
+117 / 121
+
+Versión 1
+
+VII. Consulta de la declaración
+En el menú principal da clic en “Consultas”. A continuación, se despliegan las opciones:
+•
+
+De la declaración
+
+118 / 121
+
+Versión 1
+
+•
+•
+•
+
+Por obligación
+Declaraciones pagadas
+Acuse de recibo de la declaración
+
+Selecciona la opción a consultar, captura los datos solicitados y da clic en “Buscar” para realizar
+la búsqueda de la declaración o acuse correspondiente. Es importante precisar que los campos
+identificados con un (*) son obligatorios.
+
+119 / 121
+
+Versión 1
+
+120 / 121
+
+Versión 1
+
+Ejemplo de Acuse de recibo
+
+VIII. Documentos relacionados
+En el Portal del SAT puedes consultar las guías de llenado, sigue estos pasos:
+Ingresa a Trámites y servicios / Declaraciones para empresas / Anual / Documentos
+relacionados
+
+121 / 121
+
+

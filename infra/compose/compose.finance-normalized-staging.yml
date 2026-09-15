@@ -1,0 +1,61 @@
+# Explicit fourth overlay after base, staging, and finance-staging. Never included
+# unless explicitly opted in. Provider access requires a separately authorized run.
+services:
+  api:
+    env_file:
+      - path: '${FINANCE_NORMALIZED_STAGING_API_ENV_FILE:?Run-scoped normalized API keyring env file is required}'
+        required: true
+    environment:
+      EMDO_FINANCE_SYNTHETIC_STAGING: 'true'
+      EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING: '${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:?Explicit normalized staging opt-in is required}'
+      EMDO_FINANCE_V2_ENABLED: '${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:?Explicit normalized staging opt-in is required}'
+      EMDO_FINANCE_STANDARDIZATION_ENABLED: '${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:?Explicit normalized staging opt-in is required}'
+      EMDO_FINANCE_SCHEDULES_ENABLED: 'false'
+      EMDO_EXTERNAL_PROVIDERS_ENABLED: 'false'
+  worker:
+    env_file: !override
+      - path: '${FINANCE_NORMALIZED_STAGING_WORKER_ENV_FILE:?Run-scoped worker database credentials, shared Finance keyring, provider key and verified CAD pricing are required}'
+        required: true
+    environment:
+      EMDO_FINANCE_SYNTHETIC_STAGING: 'true'
+      EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING: '${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:?Explicit normalized staging opt-in is required}'
+      EMDO_FINANCE_V2_ENABLED: '${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:?Explicit normalized staging opt-in is required}'
+      EMDO_FINANCE_STANDARDIZATION_ENABLED: '${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:?Explicit normalized staging opt-in is required}'
+      EMDO_FINANCE_SCHEDULES_ENABLED: 'false'
+      EMDO_EXTERNAL_PROVIDERS_ENABLED: 'false'
+    networks: !override
+      - backend
+      - finance-normalized-egress
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+          cpus: '0.75'
+  synthetic-data:
+    environment:
+      EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING: '${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:?Explicit normalized staging opt-in is required}'
+    command:
+      [
+        node,
+        dist/cli/seed-synthetic.js,
+        --fail-if-nonempty,
+        --staging-only,
+        --finance-normalized-synthetic-gates,
+      ]
+  staging-acceptance:
+    env_file:
+      - path: '${FINANCE_NORMALIZED_STAGING_FIXTURE_ENV_FILE:?Run-scoped normalized fixture IDs from synthetic seed output are required}'
+        required: true
+    environment:
+      EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING: '${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:?Explicit normalized staging opt-in is required}'
+    command:
+      [
+        node,
+        dist/cli/staging-acceptance.js,
+        --all-mvp-gates,
+        --require-synthetic,
+        --finance-normalized-synthetic-gates,
+      ]
+networks:
+  finance-normalized-egress:
+    name: emdo-staging-${STAGING_RUN_ID:?STAGING_RUN_ID is required}-finance-normalized-egress

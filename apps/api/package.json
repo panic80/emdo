@@ -27,10 +27,13 @@
     "file-type": "22.0.1",
     "jose": "6.2.8",
     "kysely": "0.29.4",
+    "luxon": "3.7.2",
     "music-metadata": "11.14.0",
     "nanostores": "1.4.2",
     "pdf-parse": "2.4.5",
+    "pdfjs-dist": "5.4.296",
     "pg": "8.23.0",
+    "saxes": "6.0.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The Finance image reader accepts only authenticated PNG, JPEG and WebP
+  bytes on stdin and emits PGM/TSV on stdout. Keep ImageMagick's broader
+  delegate/coder surface disabled even when this file is used outside the
+  container image.
+-->
+<policymap>
+  <policy domain="resource" name="memory" value="128MiB" />
+  <policy domain="resource" name="map" value="128MiB" />
+  <policy domain="resource" name="disk" value="128MiB" />
+  <policy domain="resource" name="file" value="64MiB" />
+  <policy domain="resource" name="area" value="16MP" />
+  <policy domain="resource" name="width" value="8192" />
+  <policy domain="resource" name="height" value="8192" />
+  <policy domain="resource" name="list-length" value="2" />
+  <policy domain="resource" name="thread" value="1" />
+  <policy domain="resource" name="time" value="15" />
+
+  <!-- No external delegates or filters. The coder allowlist below controls
+       which image formats can be decoded or written. -->
+  <policy domain="delegate" rights="none" pattern="*" />
+  <policy domain="filter" rights="none" pattern="*" />
+
+  <!-- The only input coders are the three upload formats. PGM is the
+       controlled internal output consumed by Tesseract. -->
+  <policy domain="coder" rights="none" pattern="*" />
+  <policy domain="coder" rights="read" pattern="{PNG,JPEG,WEBP}" />
+  <policy domain="coder" rights="read|write" pattern="{PNM,PGM}" />
+
+  <!-- Do not allow ImageMagick's @file indirection or arbitrary filesystem
+       paths. A single '-' is the authenticated stdin/stdout boundary. -->
+  <policy domain="path" rights="none" pattern="@*" />
+  <policy domain="path" rights="none" pattern="*" />
+  <policy domain="path" rights="read|write" pattern="-" />
+  <policy domain="path" rights="read|write" pattern="*:-" />
+  <policy domain="path" rights="read|write" pattern="/tmp/*" />
+</policymap>

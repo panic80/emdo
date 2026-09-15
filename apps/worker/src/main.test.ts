@@ -135,6 +135,26 @@ const moduleLoader = async (): Promise<PgBossRuntimeModule> => ({
 });
 
 describe('production pg-boss worker bootstrap', () => {
+  it('registers and drains opted-in Finance work on the verified queue runtime', async () => {
+    FakePgBoss.instances.length = 0;
+    const handle = await startDeterministicWorker({
+      databaseUrl: 'postgresql://emdo_worker_login:secret@db.example/emdo',
+      dependencies: createDependencies(),
+      financeAutomationDispatch: async () => ({ status: 'denied' }),
+      onOperationalEvent() {},
+      moduleLoader,
+    });
+    const runtime = FakePgBoss.instances[0]!;
+    expect(runtime.events).toContain('work:emdo.finance.automation.v1');
+    expect(runtime.events.indexOf('probe:queue-role')).toBeLessThan(
+      runtime.events.indexOf('work:emdo.finance.automation.v1'),
+    );
+    await handle.stop();
+    expect(runtime.events).toContain(
+      'off:emdo.finance.automation.v1:worker-emdo.finance.automation.v1:true',
+    );
+  });
+
   it('uses the real pg-boss constructor boundary and registers only after startup', async () => {
     FakePgBoss.instances.length = 0;
     const operationalEvents: unknown[] = [];

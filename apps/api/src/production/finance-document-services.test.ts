@@ -520,6 +520,7 @@ const createHarness = () => {
     }),
     readSnapshot: vi.fn(
       async (): Promise<{
+        readonly ledgerAuthority?: 'legacy' | 'normalized';
         readonly reviewedCadTotals: readonly unknown[];
         readonly budgets: readonly unknown[];
         readonly recentActivity?: readonly unknown[];
@@ -565,6 +566,7 @@ const createHarness = () => {
     setFinancePage: (items: readonly unknown[]) =>
       financeRead.list.mockResolvedValue({ schemaVersion: 1, items }),
     setFinanceSnapshot: (snapshot: {
+      readonly ledgerAuthority?: 'legacy' | 'normalized';
       readonly reviewedCadTotals: readonly unknown[];
       readonly budgets: readonly unknown[];
       readonly recentActivity?: readonly unknown[];
@@ -1923,6 +1925,7 @@ describe('production Finance document gateway', () => {
       },
     ]);
     harness.setFinanceSnapshot({
+      ledgerAuthority: 'normalized',
       reviewedCadTotals: [{ label: 'groceries', amountCadMinor: 125 }],
       budgets: [
         {
@@ -1936,6 +1939,7 @@ describe('production Finance document gateway', () => {
       request({ locale: 'fr-CA' as const, principal }),
     );
     expect(experience.locale).toBe('fr-CA');
+    expect(experience.ledgerAuthority).toBe('normalized');
     expect(experience.reviewedCadTotals).toEqual([
       { label: 'groceries', amountCadMinor: 125 },
     ]);

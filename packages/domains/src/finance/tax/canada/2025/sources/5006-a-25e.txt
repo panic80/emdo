@@ -1,0 +1,125 @@
+﻿5006-A (Front)
+
+Protected B when completed
+
+2025
+
+Schedule ON428-A
+
+Low-income Individuals and Families Tax (LIFT) Credit
+
+To find out if you are eligible for the low-income individuals and families tax (LIFT) credit, go to canada.ca/on-tax-info.
+
+Complete this schedule and attach a copy to your paper return.
+
+Calculating your maximum allowable credit
+
+Line 1: Amount from line 10100 of your return ^
+
+Line 2: Amount from line 10400 of your return ^
+
+Line 3: Line 1 plus line 2 = ^
+
+Line 4: Applicable rate 5.05%
+
+Line 5: Line 3 multiplied by the percentage from line 4 (maximum $875) = ^
+
+Line 6: Net income from line 23600 of your return (or the amount you would have entered if the instructions on line 23600 said "if negative, show in brackets") ^
+
+Line 7: Amount from line 21300 of your return ^
+
+Line 8: Amount of registered disability savings plan (RDSP) income repayment included on line 23200 of your return ^
+
+Line 9: Add lines 6 to 8. = ^
+
+Line 10: Amount from line 11700 of your return ^
+
+Line 11: Amount of RDSP income included on line 12500 of your return ^
+
+Line 12: Line 10 plus line 11 = ^
+
+Line 13: Line 9 minus line 12 (if negative, enter "0") Your adjusted net income = ^
+
+If you were single at the end of the year, complete Part A to calculate your credit.
+
+If you had a spouse or common-law partner at the end of the year, complete Part B on the next page.
+
+Note:
+If your spouse or common-law partner died at any time during the year, complete Part A as if you were single.
+
+Part A - Calculating the credit for single individuals
+
+Line 14: Amount from line 5 above (maximum $875) ^
+
+Line 15: Amount from line 13 above ^
+
+Line 16: Individual income threshold 32,500.00
+
+Line 17: Line 15 minus line 16 (if negative, enter "0") = ^
+
+Line 18: Applicable rate 5%
+
+Line 19: Line 17 multiplied by the percentage from line 18 = ^
+
+Line 20: Line 14 minus line 19 (if negative, enter "0") Enter this amount on line 62140 of your Form ON428. = ^
+
+
+5006-A (Back)
+
+Part B - Calculating the credit for individuals with a spouse or common-law partner
+
+Line 21: Net income from line 23600 of your spouse's or common-law partner's return (or the amount they would have entered if the instructions on line 23600 said "if negative, show in brackets") ^
+
+Line 22: Amount from line 21300 of your spouse's or common-law partner's return ^
+
+Line 23: Amount of RDSP income repayment included on line 23200 of your spouse's or common-law partner's return ^
+
+Line 24: Add lines 21 to 23. = ^
+
+Line 25: Amount from line 11700 of your spouse's or common-law partner's return ^
+
+Line 26: Amount of RDSP income included on line 12500 of your spouse's or common-law partner's return ^
+
+Line 27: Line 25 plus line 26 = ^
+
+Line 28: Line 24 minus line 27 (if negative, enter "0") Your spouse's or common-law partner's adjusted net income = ^
+
+Line 29: Amount from line 5 of the previous page (maximum $875) ^
+
+Line 30: Amount from line 13 of the previous page ^
+
+Line 31: Individual income threshold 32,500.00
+
+Line 32: Line 30 minus line 31 (if negative, enter "0") = ^
+
+Line 33: Amount from line 30 above ^
+
+Line 34: Amount from line 28 above ^
+
+Line 35: Line 33 plus line 34 Adjusted family net income = ^
+
+Line 36: Family income threshold 65,0000.00
+
+Line 37: Line 35 minus line 36 (if negative, enter "0") = ^
+
+Line 38: Enter whichever is more: amount from line 32 or line 37. ^
+
+Line 39: Applicable rate 5%
+
+Line 40: Line 38 multiplied by the percentage from line 39 = ^
+
+Line 41: Line 29 minus line 40 (if negative, enter "0") Enter this amount on line 62140 of your Form ON428. = ^
+
+See the privacy notice on your return.
+
+
+ 
+
+
+
+
+
+
+
+
+

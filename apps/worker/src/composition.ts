@@ -1,4 +1,18 @@
 import {
+  startStandardizationDeliveryDispatcher,
+  type StandardizationDeliveryStore,
+  type StandardizationReceiptReconciler,
+} from './finance-standardization-delivery.js';
+import type { createFinanceStandardizationWorker } from './finance-standardization-worker.js';
+import {
+  startFinanceScheduler,
+  type FinanceScheduleStore,
+} from './finance-scheduler.js';
+import {
+  startFinanceDeliveryDispatcher,
+  type FinanceDeliveryStore,
+} from './finance-delivery.js';
+import {
   EmailNotificationSender,
   InvitationEmailSender,
 } from '@emdo/integrations/email';
@@ -10,6 +24,7 @@ import { PushNotificationSender } from '@emdo/integrations/push';
 import type { WebPushTransport } from '@emdo/integrations/push';
 
 import type { WorkerJobDependencies } from './jobs.js';
+import type { createFinanceAutomationDispatcher } from './finance-automation-worker.js';
 import {
   createInvitationDeliveryService,
   type InvitationDeliveryRepository,
@@ -63,6 +78,17 @@ export interface WorkerProviderBindings {
 }
 
 export const createWorkerComposition = (input: {
+  readonly standardizationDispatch?: ReturnType<
+    typeof createFinanceStandardizationWorker
+  >;
+  readonly standardizationDeliveries?: StandardizationDeliveryStore;
+  /** Fixed-executor provider-receipt reconciliation for indeterminate spend. */
+  readonly standardizationReconcileReceipts?: StandardizationReceiptReconciler;
+  readonly financeDeliveries?: FinanceDeliveryStore;
+  readonly financeSchedules?: FinanceScheduleStore;
+  readonly financeAutomationDispatch?: ReturnType<
+    typeof createFinanceAutomationDispatcher
+  >;
   readonly applicationOrigin: string;
   readonly providerStatus: WorkerProviderStatus;
   readonly repositories: WorkerCompositionRepositories;
@@ -125,12 +151,24 @@ export const createWorkerComposition = (input: {
   return Object.freeze({
     providerStatus: Object.freeze({ ...input.providerStatus }),
     jobDependencies,
-    startOutboxDispatcher({
+    ...(input.standardizationDispatch
+      ? { standardizationDispatch: input.standardizationDispatch }
+      : {}),
+    ...(input.financeAutomationDispatch
+      ? { financeAutomationDispatch: input.financeAutomationDispatch }
+      : {}),
+    async startOutboxDispatcher({
+      enqueueFinance,
+      enqueueStandardization,
       signal,
       enqueue,
       onFatalError,
     }: Parameters<WorkerProcessComposition['startOutboxDispatcher']>[0]) {
-      return startWorkerOutboxDispatcher({
+      if (input.standardizationDeliveries && !enqueueStandardization)
+        throw new Error('Standardization delivery queue unavailable');
+      if (input.financeDeliveries && !enqueueFinance)
+        throw new Error('Finance delivery queue is unavailable');
+      const generic = await startWorkerOutboxDispatcher({
         repository: outbox,
         enqueue,
         dispatcherId: input.outbox.dispatcherId,
@@ -140,6 +178,44 @@ export const createWorkerComposition = (input: {
         signal,
         onFatalError,
       });
+      const finance =
+        input.financeDeliveries && enqueueFinance
+          ? startFinanceDeliveryDispatcher({
+              repository: input.financeDeliveries,
+              enqueue: enqueueFinance,
+              signal,
+              onFatalError,
+            })
+          : undefined;
+      const standardization =
+        input.standardizationDeliveries && enqueueStandardization
+          ? startStandardizationDeliveryDispatcher({
+              repository: input.standardizationDeliveries,
+              enqueue: enqueueStandardization,
+              reconcileReceipts: input.standardizationReconcileReceipts,
+              signal,
+              onFatalError,
+            })
+          : undefined;
+      const scheduler = input.financeSchedules
+        ? startFinanceScheduler({
+            repository: input.financeSchedules,
+            signal,
+            onFatalError,
+          })
+        : undefined;
+      return {
+        async stop() {
+          const results = await Promise.allSettled([
+            standardization?.stop(),
+            scheduler?.stop(),
+            finance?.stop(),
+            generic.stop(),
+          ]);
+          if (results.some((result) => result.status === 'rejected'))
+            throw new Error('Outbox shutdown failed');
+        },
+      };
     },
     close(): Promise<void> {
       closePromise ??= closeRepositories();

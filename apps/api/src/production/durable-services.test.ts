@@ -326,6 +326,31 @@ const dependencies = (): ProductionDurableServiceDependencies => {
 };
 
 describe('production durable API service composition', () => {
+  it('constructs normalized planning only behind Finance v2 enablement', async () => {
+    for (const enabled of [false, true]) {
+      const result = await createProductionDurableServiceBindings(
+        {
+          EMDO_API_DATABASE_URL: databaseUrl,
+          EMDO_FINANCE_V2_ENABLED: String(enabled),
+        },
+        dependencies(),
+      );
+      if (enabled) {
+        expect(result.bindings.financePlanning?.service).toMatchObject({
+          listBudgets: expect.any(Function),
+          getBudget: expect.any(Function),
+          budgetVsActuals: expect.any(Function),
+          getForecast: expect.any(Function),
+          saveBudget: expect.any(Function),
+          saveForecast: expect.any(Function),
+        });
+        expect(result.bindings.financePlanning?.check).toEqual(
+          expect.any(Function),
+        );
+      } else expect(result.bindings.financePlanning).toBeUndefined();
+    }
+  });
+
   it('selects only the provider-free manager/shopping persistence graph for exact synthetic staging', async () => {
     const adapters = dependencies();
     coreAgentMocks.createProviderFreePersistence.mockReturnValue({

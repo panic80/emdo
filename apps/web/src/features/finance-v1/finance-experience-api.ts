@@ -9,6 +9,7 @@ export type FinanceExperience = FinanceExperienceV1;
 // See finance-document-api: the public finance barrel is not browser-safe yet.
 const FinanceExperienceV1Schema = z.object({
   schemaVersion: z.literal(1),
+  ledgerAuthority: z.enum(['legacy', 'normalized']).optional(),
   locale: z.enum(['en-CA', 'fr-CA', 'ja-JP', 'ko-KR']),
   connectivity: z.enum(['online', 'offline', 'unavailable']),
   quota: z.object({

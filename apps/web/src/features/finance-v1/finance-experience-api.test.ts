@@ -10,6 +10,7 @@ function experienceResponse(input: {
   return new Response(
     JSON.stringify({
       schemaVersion: 1,
+      ledgerAuthority: 'normalized',
       locale: 'en-CA',
       connectivity: 'online',
       quota: {
@@ -55,6 +56,7 @@ describe('Finance experience browser parser', () => {
 
     const experience = await readFinanceExperience('en-CA');
 
+    expect(experience.ledgerAuthority).toBe('normalized');
     expect(experience.reviewedCadTotals).toHaveLength(1_000);
     expect(experience.budgets).toHaveLength(1_000);
   });

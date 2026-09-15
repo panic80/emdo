@@ -1,0 +1,362 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1632" height="2495" viewBox="0 0 1632 2495">
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#94a3b8"/></marker></defs>
+<rect width="100%" height="100%" fill="#07111f"/>
+<text x="45" y="48" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="28px" fill="#f8fafc" font-weight="700">EMDO · Investments</text>
+<text x="45" y="76" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14px" fill="#94a3b8" font-weight="400">Implementation revision 0076 · 15 domain tables · dashed edges cross domain boundaries</text>
+<path d="M1587,632 C1407,632 1407,397 1227,397" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,162 C1407,162 1407,397 1227,397" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,2277 C1407,2277 1407,397 1227,397" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,162 C1407,162 1407,632 1227,632" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,2277 C1407,2277 1407,632 1227,632" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,632 C1407,632 1407,867 1227,867" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,2277 C1407,2277 1407,867 1227,867" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,632 C816,632 816,224 405,224" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,2277 C816,2277 816,224 405,224" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,632 C1013,632 1013,215 799,215" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M833,215 C816,215 816,215 799,215" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M1227,2277 C1013,2277 1013,215 799,215" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,632 C1210,632 1210,215 1193,215" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,2277 C1210,2277 1210,215 1193,215" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,867 C1407,867 1407,1102 1227,1102" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,632 C1407,632 1407,1102 1227,1102" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,162 C1407,162 1407,1102 1227,1102" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,397 C1407,397 1407,1102 1227,1102" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1193,215 C1210,215 1210,1102 1227,1102" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,1807 C1407,1807 1407,1102 1227,1102" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M833,514 C619,514 619,514 405,514" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M439,703 C422,703 422,514 405,514" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M439,514 C422,514 422,514 405,514" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M1227,2277 C816,2277 816,514 405,514" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,867 C1013,867 1013,514 799,514" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M833,514 C816,514 816,514 799,514" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M833,215 C816,215 816,514 799,514" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M799,703 C619,703 619,514 439,514" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M1227,2277 C1013,2277 1013,514 799,514" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M405,514 C816,514 816,1337 1227,1337" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,1572 C1407,1572 1407,1337 1227,1337" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1193,514 C1210,514 1210,1572 1227,1572" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,1807 C1407,1807 1407,1572 1227,1572" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,162 C1407,162 1407,1572 1227,1572" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,1807 C1407,1807 1407,1572 1227,1572" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,867 C1210,867 1210,514 1193,514" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,632 C1210,632 1210,514 1193,514" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,162 C1210,162 1210,514 1193,514" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,397 C1210,397 1210,514 1193,514" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1193,215 C1013,215 1013,514 833,514" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M1227,2277 C1210,2277 1210,514 1193,514" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,632 C816,632 816,649 405,649" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M833,703 C816,703 816,703 799,703" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M1227,2277 C1013,2277 1013,703 799,703" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,632 C1210,632 1210,703 1193,703" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,867 C1210,867 1210,703 1193,703" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1193,215 C1013,215 1013,703 833,703" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M1227,1807 C1210,1807 1210,703 1193,703" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,2277 C1210,2277 1210,703 1193,703" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,632 C816,632 816,938 405,938" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,397 C816,397 816,938 405,938" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,867 C816,867 816,938 405,938" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M833,215 C619,215 619,938 405,938" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M1227,2277 C816,2277 816,938 405,938" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,632 C1013,632 1013,929 799,929" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M833,215 C816,215 816,929 799,929" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M1227,2277 C1013,2277 1013,929 799,929" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,632 C1407,632 1407,1807 1227,1807" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,162 C1407,162 1407,1807 1227,1807" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,2277 C1407,2277 1407,1807 1227,1807" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M405,1164 C619,1164 619,929 833,929" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M799,703 C816,703 816,929 833,929" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M1227,2277 C1210,2277 1210,929 1193,929" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M833,703 C619,703 619,1164 405,1164" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M1227,2277 C816,2277 816,1164 405,1164" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,632 C1013,632 1013,1219 799,1219" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,397 C1013,397 1013,1219 799,1219" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,867 C1013,867 1013,1219 799,1219" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M833,215 C816,215 816,1219 799,1219" fill="none" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M1227,2042 C1013,2042 1013,1219 799,1219" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,2277 C1013,2277 1013,1219 799,1219" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,632 C1407,632 1407,2042 1227,2042" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,162 C1407,162 1407,2042 1227,2042" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,397 C1407,397 1407,2042 1227,2042" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1587,2277 C1407,2277 1407,2042 1227,2042" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,632 C1210,632 1210,1164 1193,1164" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,162 C1210,162 1210,1164 1193,1164" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M1227,2277 C1210,2277 1210,1164 1193,1164" fill="none" stroke="#64748b" stroke-width="1.4" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<g><rect x="45" y="110" width="360" height="228" rx="12" fill="#0f2136" stroke="#f59e0b" stroke-width="2"/>
+<text x="61" y="136" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_fx_observations</text>
+<text x="61" y="156" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">Investments · 9 columns</text>
+<text x="61" y="178" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="61" y="196" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="61" y="214" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">created_at</text>
+<text x="61" y="232" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+<text x="61" y="250" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">as_of</text>
+<text x="61" y="268" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">from_currency</text>
+<text x="61" y="286" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">to_currency</text>
+<text x="61" y="304" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">rate</text>
+<text x="61" y="322" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">source_reference</text>
+</g>
+<g><rect x="439" y="110" width="360" height="210" rx="12" fill="#0f2136" stroke="#f59e0b" stroke-width="2"/>
+<text x="455" y="136" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_instrument_identifiers</text>
+<text x="455" y="156" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">Investments · 8 columns</text>
+<text x="455" y="178" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="455" y="196" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="455" y="214" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">created_at</text>
+<text x="455" y="232" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+<text x="455" y="250" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">instrument_id  FK</text>
+<text x="455" y="268" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">scheme</text>
+<text x="455" y="286" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">value</text>
+<text x="455" y="304" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">namespace</text>
+</g>
+<g><rect x="833" y="110" width="360" height="210" rx="12" fill="#0f2136" stroke="#f59e0b" stroke-width="2"/>
+<text x="849" y="136" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_instruments</text>
+<text x="849" y="156" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">Investments · 8 columns</text>
+<text x="849" y="178" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="849" y="196" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="849" y="214" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">created_at</text>
+<text x="849" y="232" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+<text x="849" y="250" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">name</text>
+<text x="849" y="268" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">kind</text>
+<text x="849" y="286" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">quantity_unit</text>
+<text x="849" y="304" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">valuation_multiplier</text>
+</g>
+<g><rect x="45" y="345" width="360" height="338" rx="12" fill="#0f2136" stroke="#f59e0b" stroke-width="2"/>
+<text x="61" y="371" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_investment_corporate_action_effects</text>
+<text x="61" y="391" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">Investments · 17 columns</text>
+<text x="61" y="413" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="61" y="431" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="61" y="449" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">created_at</text>
+<text x="61" y="467" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+<text x="61" y="485" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">action_id  FK</text>
+<text x="61" y="503" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">source_lot_id  FK</text>
+<text x="61" y="521" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">successor_lot_id  FK</text>
+<text x="61" y="539" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">financial_account_id</text>
+<text x="61" y="557" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">instrument_id</text>
+<text x="61" y="575" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">source_original_quantity</text>
+<text x="61" y="593" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">source_disposed_quantity</text>
+<text x="61" y="611" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">source_remaining_quantity</text>
+<text x="61" y="629" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">source_native_cost_basis</text>
+<text x="61" y="647" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">source_functional_cost_basis</text>
+<text x="61" y="665" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">+ 3 more columns</text>
+</g>
+<g><rect x="439" y="345" width="360" height="338" rx="12" fill="#0f2136" stroke="#f59e0b" stroke-width="2"/>
+<text x="455" y="371" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_investment_corporate_action_lots</text>
+<text x="455" y="391" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">Investments · 17 columns</text>
+<text x="455" y="413" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="455" y="431" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="455" y="449" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">created_at</text>
+<text x="455" y="467" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+<text x="455" y="485" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">action_id  FK</text>
+<text x="455" y="503" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">source_lot_id  FK</text>
+<text x="455" y="521" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">successor_lot_key</text>
+<text x="455" y="539" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">financial_account_id  FK</text>
+<text x="455" y="557" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">instrument_id  FK</text>
+<text x="455" y="575" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">acquired_on</text>
+<text x="455" y="593" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">acquisition_sequence</text>
+<text x="455" y="611" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">quantity</text>
+<text x="455" y="629" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">native_cost</text>
+<text x="455" y="647" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">functional_cost</text>
+<text x="455" y="665" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">+ 3 more columns</text>
+</g>
+<g><rect x="833" y="345" width="360" height="338" rx="12" fill="#0f2136" stroke="#f59e0b" stroke-width="2"/>
+<text x="849" y="371" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_investment_corporate_actions</text>
+<text x="849" y="391" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">Investments · 22 columns</text>
+<text x="849" y="413" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="849" y="431" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="849" y="449" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">created_at</text>
+<text x="849" y="467" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+<text x="849" y="485" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">action_type</text>
+<text x="849" y="503" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">financial_account_id  FK</text>
+<text x="849" y="521" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">instrument_id  FK</text>
+<text x="849" y="539" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">effective_on</text>
+<text x="849" y="557" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">numerator</text>
+<text x="849" y="575" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">denominator</text>
+<text x="849" y="593" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">fractional_treatment</text>
+<text x="849" y="611" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">evidence_id  FK</text>
+<text x="849" y="629" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">source_reference</text>
+<text x="849" y="647" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">cash_in_lieu  ?</text>
+<text x="849" y="665" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">+ 8 more columns</text>
+</g>
+<g><rect x="45" y="580" width="360" height="138" rx="12" fill="#0f2136" stroke="#f59e0b" stroke-width="2"/>
+<text x="61" y="606" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_investment_lot_revisions</text>
+<text x="61" y="626" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">Investments · 4 columns</text>
+<text x="61" y="648" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  PK</text>
+<text x="61" y="666" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  PK</text>
+<text x="61" y="684" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">revision</text>
+<text x="61" y="702" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">updated_at</text>
+</g>
+<g><rect x="439" y="580" width="360" height="246" rx="12" fill="#0f2136" stroke="#f59e0b" stroke-width="2"/>
+<text x="455" y="606" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_investment_lots</text>
+<text x="455" y="626" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">Investments · 10 columns</text>
+<text x="455" y="648" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="455" y="666" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="455" y="684" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">created_at</text>
+<text x="455" y="702" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+<text x="455" y="720" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">movement_id  FK</text>
+<text x="455" y="738" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">acquisition_sequence</text>
+<text x="455" y="756" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">native_currency</text>
+<text x="455" y="774" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">native_cost</text>
+<text x="455" y="792" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">functional_cost</text>
+<text x="455" y="810" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">source_reference</text>
+</g>
+<g><rect x="833" y="580" width="360" height="246" rx="12" fill="#0f2136" stroke="#f59e0b" stroke-width="2"/>
+<text x="849" y="606" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_investment_movements</text>
+<text x="849" y="626" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">Investments · 10 columns</text>
+<text x="849" y="648" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="849" y="666" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="849" y="684" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">created_at</text>
+<text x="849" y="702" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+<text x="849" y="720" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">financial_account_id  FK</text>
+<text x="849" y="738" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">instrument_id  FK</text>
+<text x="849" y="756" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">effective_on</text>
+<text x="849" y="774" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">quantity</text>
+<text x="849" y="792" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">journal_id  FK</text>
+<text x="849" y="810" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">source_reference</text>
+</g>
+<g><rect x="45" y="815" width="360" height="246" rx="12" fill="#0f2136" stroke="#f59e0b" stroke-width="2"/>
+<text x="61" y="841" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_investment_openings</text>
+<text x="61" y="861" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">Investments · 10 columns</text>
+<text x="61" y="883" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="61" y="901" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="61" y="919" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">created_at</text>
+<text x="61" y="937" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+<text x="61" y="955" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">financial_account_id  FK</text>
+<text x="61" y="973" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">instrument_id  FK</text>
+<text x="61" y="991" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">as_of</text>
+<text x="61" y="1009" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">quantity</text>
+<text x="61" y="1027" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">evidence_id  FK</text>
+<text x="61" y="1045" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">source_reference</text>
+</g>
+<g><rect x="439" y="815" width="360" height="228" rx="12" fill="#0f2136" stroke="#f59e0b" stroke-width="2"/>
+<text x="455" y="841" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_investment_prices</text>
+<text x="455" y="861" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">Investments · 9 columns</text>
+<text x="455" y="883" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="455" y="901" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="455" y="919" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">created_at</text>
+<text x="455" y="937" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+<text x="455" y="955" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">instrument_id  FK</text>
+<text x="455" y="973" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">as_of</text>
+<text x="455" y="991" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">price</text>
+<text x="455" y="1009" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">currency</text>
+<text x="455" y="1027" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">source_reference</text>
+</g>
+<g><rect x="833" y="815" width="360" height="228" rx="12" fill="#0f2136" stroke="#f59e0b" stroke-width="2"/>
+<text x="849" y="841" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_lot_allocations</text>
+<text x="849" y="861" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">Investments · 9 columns</text>
+<text x="849" y="883" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="849" y="901" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="849" y="919" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">created_at</text>
+<text x="849" y="937" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+<text x="849" y="955" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">lot_id  FK</text>
+<text x="849" y="973" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">disposal_id  FK</text>
+<text x="849" y="991" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">quantity</text>
+<text x="849" y="1009" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">native_cost</text>
+<text x="849" y="1027" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">functional_cost</text>
+</g>
+<g><rect x="45" y="1050" width="360" height="228" rx="12" fill="#0f2136" stroke="#f59e0b" stroke-width="2"/>
+<text x="61" y="1076" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_lot_disposals</text>
+<text x="61" y="1096" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">Investments · 9 columns</text>
+<text x="61" y="1118" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="61" y="1136" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="61" y="1154" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">created_at</text>
+<text x="61" y="1172" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+<text x="61" y="1190" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">movement_id  FK</text>
+<text x="61" y="1208" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">method</text>
+<text x="61" y="1226" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">native_currency</text>
+<text x="61" y="1244" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">input_snapshot</text>
+<text x="61" y="1262" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">result</text>
+</g>
+<g><rect x="439" y="1050" width="360" height="338" rx="12" fill="#0f2136" stroke="#f59e0b" stroke-width="2"/>
+<text x="455" y="1076" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_observed_positions</text>
+<text x="455" y="1096" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">Investments · 17 columns</text>
+<text x="455" y="1118" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="455" y="1136" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="455" y="1154" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">created_at</text>
+<text x="455" y="1172" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+<text x="455" y="1190" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">financial_account_id  FK</text>
+<text x="455" y="1208" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">instrument_id  FK</text>
+<text x="455" y="1226" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">as_of</text>
+<text x="455" y="1244" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">quantity</text>
+<text x="455" y="1262" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">reported_market_value  ?</text>
+<text x="455" y="1280" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">reported_book_cost  ?</text>
+<text x="455" y="1298" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">reported_price  ?</text>
+<text x="455" y="1316" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">reported_accrued_interest  ?</text>
+<text x="455" y="1334" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">mapping_id  FK</text>
+<text x="455" y="1352" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">source_facts  ?</text>
+<text x="455" y="1370" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">+ 3 more columns</text>
+</g>
+<g><rect x="833" y="1050" width="360" height="228" rx="12" fill="#0f2136" stroke="#f59e0b" stroke-width="2"/>
+<text x="849" y="1076" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_valuation_runs</text>
+<text x="849" y="1096" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">Investments · 9 columns</text>
+<text x="849" y="1118" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="849" y="1136" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="849" y="1154" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">created_at</text>
+<text x="849" y="1172" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+<text x="849" y="1190" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">as_of</text>
+<text x="849" y="1208" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">calculation_version</text>
+<text x="849" y="1226" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">input_snapshot</text>
+<text x="849" y="1244" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">result</text>
+<text x="849" y="1262" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">created_by  FK</text>
+</g>
+<g><rect x="1227" y="110" width="360" height="104" rx="12" fill="#111c2d" stroke="#475569" stroke-width="1"/>
+<text x="1243" y="136" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.auth_users</text>
+<text x="1243" y="156" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">external context</text>
+<text x="1243" y="178" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+</g>
+<g><rect x="1227" y="345" width="360" height="104" rx="12" fill="#111c2d" stroke="#475569" stroke-width="1"/>
+<text x="1243" y="371" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_book_evidence</text>
+<text x="1243" y="391" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">external context</text>
+<text x="1243" y="413" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="1243" y="431" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="1243" y="449" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+</g>
+<g><rect x="1227" y="580" width="360" height="104" rx="12" fill="#111c2d" stroke="#475569" stroke-width="1"/>
+<text x="1243" y="606" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_books</text>
+<text x="1243" y="626" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">external context</text>
+<text x="1243" y="648" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="1243" y="666" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+</g>
+<g><rect x="1227" y="815" width="360" height="104" rx="12" fill="#111c2d" stroke="#475569" stroke-width="1"/>
+<text x="1243" y="841" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_financial_accounts</text>
+<text x="1243" y="861" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">external context</text>
+<text x="1243" y="883" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="1243" y="901" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="1243" y="919" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+</g>
+<g><rect x="1227" y="1050" width="360" height="104" rx="12" fill="#111c2d" stroke="#475569" stroke-width="1"/>
+<text x="1243" y="1076" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_investment_cash_dividends</text>
+<text x="1243" y="1096" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">external context</text>
+<text x="1243" y="1118" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="1243" y="1136" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="1243" y="1154" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+</g>
+<g><rect x="1227" y="1285" width="360" height="104" rx="12" fill="#111c2d" stroke="#475569" stroke-width="1"/>
+<text x="1243" y="1311" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_investment_corporate_action_settlement_allocations</text>
+<text x="1243" y="1331" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">external context</text>
+</g>
+<g><rect x="1227" y="1520" width="360" height="104" rx="12" fill="#111c2d" stroke="#475569" stroke-width="1"/>
+<text x="1243" y="1546" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_investment_corporate_action_settlements</text>
+<text x="1243" y="1566" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">external context</text>
+<text x="1243" y="1588" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="1243" y="1606" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="1243" y="1624" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+</g>
+<g><rect x="1227" y="1755" width="360" height="104" rx="12" fill="#111c2d" stroke="#475569" stroke-width="1"/>
+<text x="1243" y="1781" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_journals</text>
+<text x="1243" y="1801" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">external context</text>
+<text x="1243" y="1823" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="1243" y="1841" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="1243" y="1859" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+</g>
+<g><rect x="1227" y="1990" width="360" height="104" rx="12" fill="#111c2d" stroke="#475569" stroke-width="1"/>
+<text x="1243" y="2016" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.finance_report_mapping_versions</text>
+<text x="1243" y="2036" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">external context</text>
+<text x="1243" y="2058" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+<text x="1243" y="2076" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">workspace_id  FK</text>
+<text x="1243" y="2094" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">book_id  FK</text>
+</g>
+<g><rect x="1227" y="2225" width="360" height="104" rx="12" fill="#111c2d" stroke="#475569" stroke-width="1"/>
+<text x="1243" y="2251" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15px" fill="#f8fafc" font-weight="700">emdo.workspaces</text>
+<text x="1243" y="2271" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#94a3b8" font-weight="400">external context</text>
+<text x="1243" y="2293" font-family="ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11px" fill="#cbd5e1" font-weight="400">id  PK</text>
+</g>
+</svg>

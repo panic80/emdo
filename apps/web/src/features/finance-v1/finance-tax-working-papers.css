@@ -1,0 +1,387 @@
+.finance-tax-working,
+.finance-tax-run {
+  min-width: 0;
+  animation: tax-reveal 170ms ease-out;
+}
+.finance-tax-working-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding-bottom: 15px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #e2e9df;
+}
+.finance-tax-working-boundary {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 18px 20px;
+  border: 1px solid #e7dfcb;
+  border-radius: 11px;
+  background: #fffdf6;
+  margin: 19px 0;
+}
+.finance-tax-working-boundary > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #7e6a37;
+}
+.finance-tax-working-boundary strong {
+  color: #5d512d;
+  font-size: 13px;
+  font-weight: 650;
+}
+.finance-tax-working-boundary p:last-child {
+  margin-bottom: 0;
+}
+.finance-tax-working-progress {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid #dfe8de;
+  border-radius: 11px;
+  margin: 24px 0 17px;
+  overflow: hidden;
+}
+.finance-tax-working-progress > div {
+  padding: 18px 20px;
+  border-right: 1px solid #dfe8de;
+}
+.finance-tax-working-progress > div:last-child {
+  border: 0;
+  background: #f6f9f4;
+}
+.finance-tax-working-progress > div > span {
+  font-size: 10px;
+  font-weight: 600;
+  color: #597151;
+}
+.finance-tax-working-progress strong {
+  display: block;
+  font-size: 28px;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  margin-top: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.finance-tax-working-progress small {
+  letter-spacing: 0;
+  margin-top: 7px;
+}
+.finance-tax-working-progress p {
+  margin: 13px 0 0;
+  font-size: 12px;
+}
+.finance-tax-working-toolbar {
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin: 27px 0 17px;
+}
+.finance-tax-working-toolbar label {
+  width: min(290px, 100%);
+}
+.finance-tax-working :is(label, select),
+.finance-tax-run :is(label, select) {
+  min-width: 0;
+  max-width: 100%;
+}
+.finance-tax-working-groups {
+  border-top: 1px solid #dee7da;
+}
+.finance-tax-working-groups > details {
+  border-bottom: 1px solid #dee7da;
+}
+.finance-tax-working-groups > details > summary {
+  padding: 19px 10px;
+  font-size: 13px;
+  border-radius: 7px;
+}
+.finance-tax-working-groups > details > summary:hover {
+  background: #f5f8f3;
+}
+.finance-tax-working-groups > details > summary small {
+  display: inline;
+  margin-left: 13px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.finance-tax-working-inputs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.finance-tax-working-inputs > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(120px, 0.7fr);
+  gap: 20px;
+  padding: 21px 12px;
+  border-top: 1px solid #e8eee4;
+}
+.finance-tax-working-input-name > strong {
+  display: block;
+  font-size: 12px;
+  line-height: 1.6;
+  font-weight: 580;
+}
+.finance-tax-working-input-name .finance-tax-badge {
+  display: inline-block;
+  margin-top: 9px;
+}
+.finance-tax-working-input-value > strong {
+  display: block;
+  font-size: 17px;
+  line-height: 1.5;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.finance-tax-working-input-value details {
+  margin-top: 6px;
+}
+.finance-tax-working-input-value p {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.finance-tax-working-input-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+.finance-tax-working-input-action .finance-tax-check {
+  margin: 0 0 3px;
+  font-size: 11px;
+}
+.finance-tax-working-next,
+.finance-tax-run-download {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  padding: 24px;
+  border: 1px solid #dfe8dc;
+  border-radius: 12px;
+  background: #f7f9f5;
+  margin: 27px 0;
+}
+.finance-tax-working-next > div:first-child,
+.finance-tax-run-download > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.finance-tax-working-next > .finance-tax-actions {
+  flex: 0 1 270px;
+}
+.finance-tax-working-next p:last-child {
+  margin-bottom: 0;
+}
+.finance-tax-working-review-list {
+  list-style: none;
+  margin: 12px 0 24px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.finance-tax-working-review-list > li {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid #e0e7dc;
+  border-radius: 8px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+.finance-tax-working-review-list > li > strong,
+.finance-tax-working-review-list > li > span {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 7px;
+}
+.finance-tax-run-list {
+  list-style: none;
+  margin: 22px 0;
+  padding: 0;
+  border-top: 1px solid #dfe8da;
+}
+.finance-tax-run-list button {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 17px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #e3ebde;
+  padding: 21px 12px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.finance-tax-run-list button > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.finance-tax-run-list button:hover {
+  background: #f5f8f2;
+}
+.finance-tax-run-list strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.finance-tax-run-list .finance-tax-badge {
+  font-size: 10px;
+}
+.finance-tax-run > .finance-tax-heading {
+  margin-top: 25px;
+}
+.finance-tax-run-blockers,
+.finance-tax-run-limits {
+  margin: 28px 0;
+  padding: 22px;
+  border: 1px solid #e9e0ce;
+  border-radius: 10px;
+  background: #fffcf5;
+}
+.finance-tax-run-limits ul {
+  padding-left: 19px;
+  margin-bottom: 0;
+  color: #675d42;
+  font-size: 12px;
+  line-height: 1.9;
+}
+.finance-tax-run-fields {
+  margin: 29px 0;
+  scroll-margin-top: 85px;
+}
+.finance-tax-run-fields .finance-tax-heading > label {
+  width: min(225px, 100%);
+}
+.finance-tax-run-fields .finance-tax-exact {
+  overflow-wrap: anywhere;
+}
+.finance-tax-run .finance-tax-run-download select {
+  width: 100%;
+}
+@media (max-width: 800px) {
+  .finance-tax-working-inputs > li {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  }
+  .finance-tax-working-input-action {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .finance-tax-working-next,
+  .finance-tax-run-download {
+    flex-direction: column;
+    gap: 14px;
+  }
+  .finance-tax-working-next > .finance-tax-actions {
+    flex: auto;
+  }
+}
+@media (max-width: 600px) {
+  .finance-tax-working-progress {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .finance-tax-working-progress > div {
+    padding: 15px;
+  }
+  .finance-tax-working-progress > div:nth-child(2) {
+    border-right: 0;
+  }
+  .finance-tax-working-progress > div:last-child {
+    grid-column: 1 / -1;
+    border-top: 1px solid #dfe8de;
+  }
+  .finance-tax-working-progress > div:last-child p {
+    margin-top: 6px;
+  }
+  .finance-tax-working-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .finance-tax-working-inputs > li,
+  .finance-tax-working-review-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .finance-tax-working-inputs > li {
+    gap: 15px;
+    padding: 20px 5px;
+  }
+  .finance-tax-working-groups > details > summary {
+    padding-left: 4px;
+  }
+  .finance-tax-working-groups > details > summary small {
+    display: block;
+    margin-left: 17px;
+  }
+  .finance-tax-working-next,
+  .finance-tax-run-download,
+  .finance-tax-run-blockers,
+  .finance-tax-run-limits {
+    padding: 17px;
+  }
+  .finance-tax-run-list button {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .finance-tax-run-list button > span:first-child {
+    flex-basis: calc(100% - 30px);
+  }
+  .finance-tax-run-list button > svg {
+    display: none;
+  }
+  .finance-tax-run-fields :is(table, tbody) {
+    display: block;
+  }
+  .finance-tax-run-fields thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .finance-tax-run-fields tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-bottom: 1px solid #dfe6da;
+  }
+  .finance-tax-run-fields tbody tr > * {
+    display: block;
+    min-width: 0;
+    border-bottom: 0;
+    padding: 13px 16px;
+  }
+  .finance-tax-run-fields tbody tr > th {
+    grid-column: 1 / -1;
+    background: #f3f7ef;
+  }
+  .finance-tax-run-fields tbody tr > td:last-child {
+    grid-column: 1 / -1;
+  }
+  .finance-tax-run-fields td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: #61745d;
+    font-size: 10px;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+}
+@media (max-width: 480px) {
+  .finance-tax-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .finance-tax-working,
+  .finance-tax-run {
+    animation: none;
+  }
+}

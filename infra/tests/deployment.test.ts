@@ -122,7 +122,7 @@ describe('container and edge configuration', () => {
     }
   });
 
-  it('builds the three application targets from Node 24 and drops root', async () => {
+  it('builds application targets plus the native OCR target and drops root', async () => {
     const dockerfile = await read('Dockerfile');
 
     const pinnedNode = 'node:24.13.0-bookworm-slim@sha256:[0-9a-f]{64}';
@@ -131,6 +131,9 @@ describe('container and edge configuration', () => {
     );
     expect(dockerfile).toMatch(new RegExp(`^FROM ${pinnedNode} AS api$`, 'm'));
     expect(dockerfile).toMatch(
+      new RegExp(`^FROM ${pinnedNode} AS finance-ocr-node$`, 'm'),
+    );
+    expect(dockerfile).toMatch(
       new RegExp(`^FROM ${pinnedNode} AS worker$`, 'm'),
     );
     expect(dockerfile).toMatch(
@@ -138,14 +141,14 @@ describe('container and edge configuration', () => {
     );
     expect(
       dockerfile.match(/node:24\.13\.0-bookworm-slim@sha256:/g),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
     expect(dockerfile).toContain(
       'node:24.13.0-bookworm-slim@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f',
     );
     expect(dockerfile).toContain(
       'nginxinc/nginx-unprivileged:1.29.1-alpine@sha256:27985295bdb22a1ef8f712863210bd5877c0f3006494a593e86b3fe0fa55467e',
     );
-    expect(dockerfile.match(/^USER (?!root\b).+$/gm)).toHaveLength(3);
+    expect(dockerfile.match(/^USER (?!root\b).+$/gm)).toHaveLength(4);
     expect(dockerfile).toContain('pnpm install --frozen-lockfile');
     expect(dockerfile).toContain('pnpm build');
     expect(dockerfile).toContain('pnpm --filter @emdo/api deploy --prod');
@@ -436,7 +439,7 @@ describe('container and edge configuration', () => {
       /loopback-ingress:\n\s+name: emdo-staging-\$\{STAGING_RUN_ID:\?STAGING_RUN_ID is required\}-loopback-ingress\n(?!\s+internal: true)/,
     );
     expect(common).toContain(
-      'for resource in edge egress auth-egress backend loopback-ingress finance-extraction-egress; do',
+      'for resource in edge egress auth-egress backend loopback-ingress finance-extraction-egress finance-normalized-egress; do',
     );
     expect(staging).toMatch(
       /api:[\s\S]*?networks: !override\n\s+- backend\n\s+- edge\n\s+- auth-egress/,

@@ -20,9 +20,10 @@ export type RegisteredAgentReadiness =
   | Readonly<{ status: 'unavailable'; reasonCode: string }>;
 
 export interface RegisteredSpecialistDescriptor {
-  readonly id: FinanceV1RegisteredSpecialistId;
+  readonly id: string;
   readonly version: string;
-  readonly section: 'schedule' | 'finance';
+  readonly section: string;
+  readonly entitlementRequirements?: readonly string[];
   readonly enabled: true;
   readonly readiness: () => Promise<RegisteredAgentReadiness>;
   readonly allowedParents: readonly ['manager'];
@@ -59,7 +60,17 @@ export interface AvailableRegisteredAgentProfile {
   readonly registrations: readonly RegisteredSpecialistDescriptor[];
 }
 
+export interface SectionAgentRegistration {
+  readonly section: string;
+  readonly definition: RegisteredAgentDefinition;
+  readonly readiness: () => Promise<RegisteredAgentReadiness>;
+  readonly entitlementRequirements: readonly string[];
+}
+
 export interface AvailableRegisteredAgentSelection {
+  /** Server-owned registrations; never accepted from model output or user payloads. */
+  readonly sections?: readonly SectionAgentRegistration[];
+  readonly enabledEntitlements?: readonly string[];
   readonly scheduler?: Readonly<{
     readiness: () => Promise<RegisteredAgentReadiness>;
   }>;
@@ -145,11 +156,51 @@ export const createAvailableRegisteredAgentProfile = (
   const specialistIds = FINANCE_V1_REGISTERED_SPECIALIST_IDS.filter(
     (id) => input[id] !== undefined,
   );
+  const additional = (input.sections ?? []).filter((registration) =>
+    registration.entitlementRequirements.every((capability) =>
+      input.enabledEntitlements?.includes(capability),
+    ),
+  );
+  const ids = new Set<string>(specialistIds);
+  const sections = new Set<string>(
+    specialistIds.map((id) => (id === 'scheduler' ? 'schedule' : id)),
+  );
+  for (const registration of additional) {
+    const manifest = AgentManifestSchema.parse(
+      registration.definition.manifest,
+    );
+    if (
+      ids.has(manifest.id) ||
+      sections.has(registration.section) ||
+      manifest.id === 'manager' ||
+      manifest.kind !== 'specialist' ||
+      !/^[a-z][a-z0-9-]{0,63}$/.test(registration.section) ||
+      typeof registration.readiness !== 'function' ||
+      manifest.capabilityAllowlist.some((id) => id.startsWith('agent.')) ||
+      registration.definition.capabilityReferences.some(
+        (reference) => reference.kind === 'delegation',
+      )
+    ) {
+      throw new Error('api-section-registration-invalid');
+    }
+    ids.add(manifest.id);
+    sections.add(registration.section);
+  }
   const managerManifest = AgentManifestSchema.parse({
     ...managerAgentDefinition.manifest,
-    capabilityAllowlist: specialistIds.map((id) => `agent.${id}.delegate`),
+    capabilityAllowlist: [...ids].map((id) => `agent.${id}.delegate`),
   });
-  const manager = withManifest(managerAgentDefinition, managerManifest);
+  const manager = withManifest(
+    {
+      ...managerAgentDefinition,
+      capabilityReferences: managerManifest.capabilityAllowlist.map((id) => ({
+        id,
+        version: '1.0.0',
+        kind: 'delegation' as const,
+      })),
+    },
+    managerManifest,
+  );
   const specialists = specialistIds.map((id) =>
     id === 'scheduler'
       ? financeV1SchedulerDefinition
@@ -158,6 +209,26 @@ export const createAvailableRegisteredAgentProfile = (
   const registrations = specialistIds.map((id, index) =>
     descriptorFor(id, specialists[index]!, input[id]!.readiness),
   );
+  for (const registration of additional) {
+    const definition = withManifest(
+      registration.definition,
+      AgentManifestSchema.parse(registration.definition.manifest),
+    );
+    specialists.push(definition);
+    registrations.push(
+      Object.freeze({
+        ...descriptorFor(
+          definition.manifest.id as FinanceV1RegisteredSpecialistId,
+          definition,
+          registration.readiness,
+        ),
+        section: registration.section,
+        entitlementRequirements: Object.freeze([
+          ...registration.entitlementRequirements,
+        ]),
+      }),
+    );
+  }
   return Object.freeze({
     manager,
     specialists: Object.freeze(specialists),

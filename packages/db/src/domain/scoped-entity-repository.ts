@@ -7,7 +7,12 @@ import {
 } from '@emdo/contracts';
 import { z } from 'zod';
 
-import type { DatabasePool } from '../scoped-repository.js';
+import {
+  resolveLegacyFinanceRoute,
+  readLegacyFinanceCompatibility,
+} from '../finance-legacy-activation-projection.js';
+import { legacyTransactionReadRecord } from '../finance-legacy-record-compatibility.js';
+import type { DatabaseClient, DatabasePool } from '../scoped-repository.js';
 import {
   firstResultRow,
   parseDurablePrincipal,
@@ -195,6 +200,61 @@ export class PostgresScopedDomainEntityRepository {
     );
   }
 
+  /** Normalized compatibility is read-only and must never fall back after activation. */
+  async #normalizedFinanceRecords(
+    client: DatabaseClient,
+    request: { entityId?: string; afterEntityId?: string; limit: number },
+  ): Promise<readonly ScopedDomainEntity[] | undefined> {
+    if (this.#scope.entityType !== 'finance.transaction') return undefined;
+    const owner = firstResultRow(
+      await client.query(
+        'select original_owner_user_id from emdo.spaces where household_id=$1 and id=$2 and tombstoned_at is null',
+        [this.#principal.householdId, this.#scope.spaceId],
+      ),
+    );
+    if (!owner) return [];
+    const scope = {
+      workspaceId: this.#principal.householdId,
+      sourceSpaceId: this.#scope.spaceId,
+      sourceOwnerUserId: UuidSchema.parse(owner.original_owner_user_id),
+    };
+    const route = await resolveLegacyFinanceRoute(client, scope);
+    if (route.kind === 'legacy') return undefined;
+    const page = await readLegacyFinanceCompatibility(client, route, scope, {
+      order: 'entity-id',
+      limit: request.limit,
+      ...(request.entityId ? { entityId: request.entityId } : {}),
+      ...(request.afterEntityId
+        ? { afterEntityId: request.afterEntityId }
+        : {}),
+    });
+    if (page.kind !== 'ready')
+      throw new ScopedDomainEntityError(
+        'invalid-result',
+        `Normalized Finance compatibility unavailable: ${page.kind}`,
+      );
+    return Object.freeze(
+      page.transactions.map((transaction) => {
+        const record = legacyTransactionReadRecord(
+          transaction,
+          scope,
+          route.bookId,
+          {
+            createdAt: transaction.createdAt,
+            updatedAt: transaction.updatedAt,
+          },
+        );
+        return parseEntity({
+          entity_id: transaction.id,
+          payload: record,
+          revision: 1,
+          tombstoned_at: null,
+          updated_at: transaction.updatedAt,
+        });
+      }),
+    );
+  }
+
   async get(entityIdInput: string): Promise<ScopedDomainEntity | undefined> {
     const entityId = EntityIdSchema.parse(entityIdInput);
     return withDurableTransaction(
@@ -205,6 +265,11 @@ export class PostgresScopedDomainEntityRepository {
         spaceId: this.#scope.spaceId,
       },
       async (client) => {
+        const normalized = await this.#normalizedFinanceRecords(client, {
+          entityId,
+          limit: 1,
+        });
+        if (normalized !== undefined) return normalized[0];
         const row = firstResultRow(
           await client.query(
             `select entity_id, payload, revision, tombstoned_at, updated_at
@@ -236,6 +301,13 @@ export class PostgresScopedDomainEntityRepository {
         spaceId: this.#scope.spaceId,
       },
       async (client) => {
+        const normalized = await this.#normalizedFinanceRecords(client, {
+          ...(request.afterEntityId
+            ? { afterEntityId: request.afterEntityId }
+            : {}),
+          limit: request.limit,
+        });
+        if (normalized !== undefined) return normalized;
         const result = await client.query(
           `select entity_id, payload, revision, tombstoned_at, updated_at
              from emdo.sync_entities

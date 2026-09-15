@@ -1,0 +1,406 @@
+.finance-dividends {
+  margin-block: 24px;
+  padding: 24px;
+  border: 1px solid #dce4e4;
+  border-radius: 12px;
+  background: #fff;
+  min-width: 0;
+}
+.finance-dividend-heading,
+.finance-dividend-list-heading,
+.finance-dividend-source-strip {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.finance-dividend-heading > div,
+.finance-dividend-list-heading > div,
+.finance-dividend-source-strip > div {
+  min-width: 0;
+  flex: 1;
+}
+.finance-dividend-heading > .button {
+  flex-shrink: 0;
+}
+.finance-dividend-eyebrow {
+  display: block;
+  margin-bottom: 7px;
+  color: #527366;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.finance-workspace .finance-dividends h4 {
+  font-size: 20px;
+  margin: 0 0 8px;
+}
+.finance-workspace .finance-dividends h5 {
+  font-size: 16px;
+  line-height: 1.45;
+  margin: 0 0 7px;
+  overflow-wrap: anywhere;
+  scroll-margin-top: 92px;
+}
+.finance-workspace .finance-dividends p {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.finance-workspace .finance-dividends small {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.6;
+  font-weight: 400;
+  color: #587065;
+}
+.finance-dividend-list-heading {
+  padding-top: 20px;
+  border-top: 1px solid #e5eaea;
+  margin-top: 16px;
+  align-items: center;
+}
+.finance-dividend-empty {
+  padding: 22px;
+  border: 1px dashed #d8e2dd;
+  border-radius: 9px;
+  background: #fafcfb;
+}
+.finance-workspace .finance-dividend-list {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0;
+}
+.finance-workspace .finance-dividend-list li {
+  padding: 0;
+  border: 0;
+  display: block;
+  margin-top: 9px;
+}
+.finance-dividend-list button {
+  display: flex;
+  width: 100%;
+  text-align: left;
+  justify-content: space-between;
+  gap: 20px;
+  border: 1px solid #dce5df;
+  border-radius: 9px;
+  padding: 15px 17px;
+  background: #fff;
+  color: #234d3c;
+  cursor: pointer;
+  transition:
+    background 150ms,
+    border-color 150ms;
+}
+.finance-dividend-list button:hover {
+  background: #f7faf8;
+  border-color: #9ab5a4;
+}
+.finance-dividend-list button > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.finance-dividend-list button > span:last-child {
+  text-align: right;
+  flex-shrink: 0;
+}
+.finance-dividend-list strong {
+  font-size: 13px;
+}
+.finance-dividend-pagination,
+.finance-dividend-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 15px;
+  margin-block: 16px;
+}
+.finance-dividend-pagination {
+  justify-content: space-between;
+}
+.finance-dividend-pagination > span,
+.finance-dividend-actions > span {
+  font-size: 11px;
+  color: #596d63;
+}
+.finance-dividend-source-picker,
+.finance-dividend-review,
+.finance-dividend-saved {
+  min-width: 0;
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid #dfe7e2;
+}
+.finance-dividend-source-picker .finance-dividend-list-heading {
+  border: 0;
+  padding: 0;
+  margin: 0 0 20px;
+}
+.finance-workspace .finance-dividend-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 20px;
+  min-width: 0;
+}
+.finance-dividend-span {
+  grid-column: 1 / -1;
+}
+.finance-workspace .finance-dividend-fields label {
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+}
+.finance-workspace .finance-dividend-fields :is(input, select, textarea) {
+  width: 100%;
+  min-width: 0;
+  font-size: 13px;
+}
+.finance-workspace .finance-dividend-fields input[readonly] {
+  background: #f0f5f1;
+  color: #3b5b45;
+}
+.finance-workspace
+  .finance-dividends
+  .finance-dividend-review
+  form.finance-dividend-form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  margin-top: 20px;
+}
+.finance-workspace .finance-dividend-form fieldset {
+  display: block;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid #dbe4df;
+  border-radius: 9px;
+  background: #fbfcfb;
+}
+.finance-workspace .finance-dividend-form legend {
+  font-size: 13px;
+  font-weight: 600;
+  padding-inline: 7px;
+  color: #355b44;
+}
+.finance-dividend-amounts {
+  display: grid;
+  gap: 18px;
+}
+.finance-workspace .finance-dividend-form .finance-dividend-amount {
+  background: #fff;
+  scroll-margin-top: 92px;
+}
+.finance-workspace .finance-dividend-form .finance-dividend-amounts > fieldset {
+  grid-column: auto;
+}
+.finance-dividend-conversion {
+  padding: 12px 14px;
+  margin-bottom: 0;
+  border-radius: 7px;
+  background: #f2f7f3;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 12px;
+}
+.finance-dividend-conversion strong {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.finance-workspace .finance-dividend-conversion small {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.finance-dividend-source-strip {
+  padding: 18px;
+  margin-top: 20px;
+  border: 1px solid #d9e5dc;
+  background: #f5f9f6;
+  border-radius: 9px;
+  align-items: center;
+}
+.finance-dividend-source-strip span {
+  display: block;
+  margin-bottom: 6px;
+  color: #4b6b57;
+  font-size: 11px;
+}
+.finance-dividend-source-strip strong {
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+}
+.finance-dividend-notice {
+  padding: 18px;
+  border: 1px solid #e5d9bd;
+  border-radius: 9px;
+  background: #fffcf4;
+  color: #675739;
+  margin-block: 18px;
+  font-size: 12px;
+}
+.finance-dividend-amount-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-block: 22px;
+}
+.finance-dividend-amount-summary > div {
+  min-width: 0;
+  padding: 17px;
+  border: 1px solid #dfe8e1;
+  border-radius: 9px;
+  background: #f7faf8;
+}
+.finance-dividend-amount-summary span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: #46664f;
+}
+.finance-dividend-amount-summary strong {
+  display: block;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  color: #294e38;
+}
+.finance-dividend-confirm {
+  padding: 20px;
+  border: 1px solid #bcd3c2;
+  border-radius: 10px;
+  background: #f1f8f3;
+  margin-block: 22px;
+}
+.finance-workspace .finance-dividend-confirm label {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 13px;
+  font-size: 12px;
+  line-height: 1.75;
+  font-weight: 400;
+}
+.finance-workspace .finance-dividend-confirm input[type='checkbox'] {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  margin: 0;
+}
+.finance-dividend-confirm .button {
+  margin-top: 16px;
+}
+.finance-dividend-badge {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #eef5ee;
+  color: #396144;
+  font-size: 11px;
+  font-weight: 600;
+}
+.finance-dividend-provenance {
+  border-top: 1px solid #e1e7e3;
+  padding-top: 13px;
+  margin-block: 20px;
+}
+.finance-dividend-provenance dl {
+  display: grid;
+  gap: 15px;
+  margin: 20px 0;
+}
+.finance-dividend-provenance dl > div {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 18px;
+}
+.finance-dividend-provenance dt {
+  font-size: 11px;
+  color: #4c6a55;
+}
+.finance-dividend-provenance dd {
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.finance-dividend-provenance code {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.finance-workspace .finance-dividends .finance-table-scroll table {
+  display: table;
+  width: 100%;
+  min-width: 620px;
+  margin: 0;
+}
+.finance-workspace .finance-dividends table th {
+  font-size: 12px;
+}
+.finance-workspace .finance-dividend-number {
+  font-variant-numeric: tabular-nums;
+}
+.finance-dividend-source-focus:focus,
+.finance-dividends [tabindex='-1']:focus {
+  outline: none;
+}
+@media (min-width: 1100px) {
+  .finance-dividend-amounts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .finance-workspace .finance-dividend-amount .finance-dividend-fields {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 13px;
+  }
+  .finance-dividend-conversion {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .finance-dividends {
+    padding: 16px;
+  }
+  .finance-dividend-heading,
+  .finance-dividend-list-heading,
+  .finance-dividend-source-strip {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .finance-workspace .finance-dividend-fields,
+  .finance-dividend-amount-summary,
+  .finance-dividend-provenance dl > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .finance-workspace .finance-dividend-form fieldset {
+    padding: 15px;
+  }
+  .finance-workspace .finance-dividend-form .finance-dividend-amount {
+    padding: 14px;
+  }
+  .finance-dividend-amount-summary {
+    gap: 9px;
+  }
+  .finance-dividend-amount-summary > div {
+    padding: 14px;
+  }
+  .finance-dividend-conversion {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .finance-dividend-list button {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .finance-dividend-list button > span:last-child {
+    text-align: left;
+  }
+  .finance-dividend-provenance dl > div {
+    gap: 5px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .finance-dividend-list button {
+    transition: none;
+  }
+}

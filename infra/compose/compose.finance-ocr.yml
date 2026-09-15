@@ -1,0 +1,42 @@
+# Opt-in isolation overlay for the native Finance OCR helper image. It is
+# intentionally separate from compose.yml so the general worker keeps its
+# provider network while this helper has no network namespace or credentials.
+services:
+  finance-ocr:
+    image: '${FINANCE_OCR_IMAGE:?FINANCE_OCR_IMAGE must be an immutable Finance OCR image reference}'
+    profiles: [finance-ocr]
+    restart: 'no'
+    init: true
+    user: '10003:10004'
+    volumes:
+      - finance-ocr-socket:/run/emdo/finance-ocr
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    network_mode: none
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev,mode=0700,uid=10003,gid=10004
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '1.0'
+          pids: 32
+    pids_limit: 32
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: '3'
+
+  worker:
+    environment:
+      EMDO_FINANCE_IMAGE_OCR_TRANSPORT: unix-socket
+    group_add: ['10004']
+    volumes:
+      - finance-ocr-socket:/run/emdo/finance-ocr:ro
+
+volumes:
+  finance-ocr-socket:

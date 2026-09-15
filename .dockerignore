@@ -46,6 +46,8 @@
 !infra/
 !infra/compose/
 !infra/compose/web.nginx.conf
+!infra/finance-ocr/
+!infra/finance-ocr/**
 !infra/scripts/
 !infra/scripts/prune-deployed-workspace.mjs
 !infra/scripts/validate-runtime-package.mjs
@@ -64,3 +66,7 @@ apps/web/public/@powersync/**
 **/src/test/**
 **/*.test.*
 **/*.spec.*
+
+# Unwired local PDF.js copies are not application release assets.
+apps/web/public/pdfjs
+apps/web/public/pdfjs/**

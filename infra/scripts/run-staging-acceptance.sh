@@ -261,6 +261,31 @@ assert_compose_healthy staging_compose
 curl --fail --silent --show-error \
   "http://127.0.0.1:$STAGING_HTTP_PORT/healthz" >/dev/null
 
+if [[ "${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:-false}" == true ]]; then
+  assert_finance_normalized_effective_environment "$state_dir"
+  [[ "$FINANCE_NORMALIZED_STAGING_FIXTURE_ENV_FILE" == */normalized-fixture.env ]] || die 'Normalized seed handoff is missing'
+  normalized_probe="$(mktemp "$state_dir/.normalized-probe.XXXXXX")"
+  trap 'rm -f -- "$normalized_probe"' EXIT
+  staging_compose --profile operations run --rm --no-deps staging-acceptance > "$normalized_probe"
+  normalized_book="$(env_file_value "$FINANCE_NORMALIZED_STAGING_FIXTURE_ENV_FILE" EMDO_FINANCE_NORMALIZED_SYNTHETIC_BOOK_ID)"
+  node -e '
+    const fs = require("node:fs");
+    const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    if (value.schemaVersion !== 1 || value.evidenceClass !== "finance-normalized-synthetic-staging-probe" ||
+        value.releaseEligible !== false || value.outcome !== "passed" || value.environment !== "staging" ||
+        value.sourceSha !== process.env.EMDO_STAGING_SOURCE_SHA || value.bookId !== process.argv[2] ||
+        !value.proof || ["originalReadback", "liveProposal", "authoredSourceReview", "explicitMappingApproval", "normalizedImport", "explicitRowReview", "exactPostingReadback", "emdoReadback", "idempotentCommit"].some(k => value.proof[k] !== "passed")) process.exit(1);
+    value.workflowRunId = process.env.EMDO_STAGING_WORKFLOW_RUN_ID;
+    value.stagingRunId = process.env.EMDO_STAGING_WORKFLOW_RUN_ID;
+    fs.writeFileSync(process.argv[1], JSON.stringify(value) + "\n");
+  ' "$normalized_probe" "$normalized_book"
+  chmod 0600 "$normalized_probe"
+  mv -- "$normalized_probe" "$state_dir/finance-normalized-synthetic-staging-probe.json"
+  trap - EXIT
+  log "Normalized Finance synthetic probe passed for run $run_id; not release eligible"
+  exit 0
+fi
+
 if [[ "$EMDO_FINANCE_SYNTHETIC_STAGING" == true ]]; then
   finance_handoff_path="$(finance_staging_restore_verifier_input_path "$state_dir")"
   finance_probe_pending=''

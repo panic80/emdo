@@ -1,0 +1,182 @@
+{
+  "country": "DE",
+  "subdivision": "DE-FED",
+  "year": 2025,
+  "capturedAt": "2026-09-14T05:00:00.000Z",
+  "policy": "Official BMF, ELSTER, federal legal portal and official tax-office bytes are pinned by SHA-256. Derived text captures are inspection aids; the runtime only trusts the source references in sources.ts.",
+  "sources": [
+    {
+      "file": "estg-current.pdf",
+      "url": "https://www.gesetze-im-internet.de/estg/EStG.pdf",
+      "sha256": "e9480c773127a89216c2439b02534d56321c9174f28f1f4d591afa8b754a5445",
+      "bytes": 1329540,
+      "locator": "EStG §§2, 9a, 10, 10c, 15, 18, 32a and 35"
+    },
+    {
+      "file": "gewstg-current.pdf",
+      "url": "https://www.gesetze-im-internet.de/gewstg/GewStG.pdf",
+      "sha256": "328b2785f254b851ef3541585045cfce3e9ea7ca9a167bb27617254cd13e9122",
+      "bytes": 147000,
+      "locator": "GewStG §§7, 10, 11, 14 and 16"
+    },
+    {
+      "file": "solzg-current.pdf",
+      "url": "https://www.gesetze-im-internet.de/solzg_1995/SolzG_1995.pdf",
+      "sha256": "be5cb860421a1ad67a23b6418567235d88d241629683a4deb21ca8427c5d2dd9",
+      "bytes": 62186,
+      "locator": "SolzG §§3 and 4"
+    },
+    {
+      "file": "bmf-lsth-2025-estg-32a.html",
+      "url": "https://amtliche-handbuecher.bundesfinanzministerium.de/lsth/2025/A-Einkommensteuergesetz/IV-Tarif-31-34b/Paragraf-32a/inhalt.html",
+      "sha256": "291049d17be1ac102aa6217797627f0ccca157ead95a4c364c18e2c1545bbf73",
+      "bytes": 793893,
+      "locator": "2025 §32a tariff formula and x whole-euro floor"
+    },
+    {
+      "file": "bmf-lsth-2025-estg-9a.html",
+      "url": "https://amtliche-handbuecher.bundesfinanzministerium.de/lsth/2025/A-Einkommensteuergesetz/II-Einkommen-2-24b/4-Ueberschuss-d-Einnahmen-ueber-die-Werbungsk-8-9a/Paragraf-9a/inhalt.html",
+      "sha256": "0eadb0f72354d08ec8299ff4ffa5717a108debaf993b8e67dc3fd68d5c0ea809",
+      "bytes": 789071,
+      "locator": "2025 employee Werbungskosten-Pauschbetrag €1,230"
+    },
+    {
+      "file": "bmf-esth-2025-estg-35.html",
+      "url": "https://amtliche-handbuecher.bundesfinanzministerium.de/esth/2025/A-Einkommensteuergesetz/V-Steuerermaessigungen-34c-35c/3-Steuererm.-bei-Eink-aus-Gewerbebetrieb_35/Paragraf-35/inhalt.html",
+      "sha256": "7830c095445a9a7892bba8184f3ec028989fd45ecc1e85eef2e6f8f872154252",
+      "bytes": 903089,
+      "locator": "2025 §35 four-times-trade-tax-measure credit and allocation ceiling"
+    },
+    {
+      "file": "bmf-lsth-2025-solzg.html",
+      "url": "https://amtliche-handbuecher.bundesfinanzministerium.de/lsth/2025/B-Anhaenge/Anhang-27/I/inhalt.html",
+      "sha256": "a927bdf58ace23c37edf7e98e922ec8ad473711b5f20af8be35b1a48ddcced4d",
+      "bytes": 822788,
+      "locator": "2025 single €19,950 threshold, 5.5% rate and 11.9% cap"
+    },
+    {
+      "file": "bmf-esth-2025-vorsorge.html",
+      "url": "https://amtliche-handbuecher.bundesfinanzministerium.de/esth/2025/tabellarische-Uebersicht/Vorsorgeaufwendunge.html",
+      "sha256": "fc79b6407d4ce44367fbaf4dd1b430909ac30507bef00d66bce4e2bbb81e5a48",
+      "bytes": 888698,
+      "locator": "2025 €29,344 pension cap, 100% old-age provision and basic health/care deductions"
+    },
+    {
+      "file": "bmf-esth-2025-table.html",
+      "url": "https://amtliche-handbuecher.bundesfinanzministerium.de/esth/2025/tabellarische-Uebersicht/inhalt.html",
+      "sha256": "1e42aed68228aeced922ab05d91e31a6d21f2ddc8865a2d9aadb04012e9ef004",
+      "bytes": 974972,
+      "locator": "2025 BMF tabular overview used for independent tariff and allowance review"
+    },
+    {
+      "file": "bmf-tax-changes-2025.html",
+      "url": "https://www.bundesfinanzministerium.de/Content/DE/Standardartikel/Themen/Steuern/das-aendert-sich-2025.html",
+      "sha256": "c9eb4f647c854b096270b15c4f0d42d3f3f9533befd79c4ecd56927ccf5043dd",
+      "bytes": 209536,
+      "locator": "2025 basic allowance and surcharge threshold change notice"
+    },
+    {
+      "file": "elster-income-tax-instructions-2025.html",
+      "url": "https://www.elster.de/eportal/helpGlobal?themaGlobal=help_est_ufa_10_2025",
+      "sha256": "cf9cfd2cf6bdb89b6daa29de9c409dcabe39dc1fc85ffaaa1fdf95df6eee73d5",
+      "bytes": 1047509,
+      "locator": "2025 ESt1A, Anlage N, Anlage G, Anlage S and Vorsorgeaufwand availability"
+    },
+    {
+      "file": "elster-all-forms.html",
+      "url": "https://www.elster.de/eportal/formulare-leistungen/alleformulare",
+      "sha256": "cdcf87c49daf82bb72f073d4007bcf57a60aeedb727f8e3ffb6b0365936ceb4e",
+      "bytes": 274071,
+      "locator": "Official ELSTER forms catalogue"
+    },
+    {
+      "file": "est1a-2025-forms-and-instructions.pdf",
+      "url": "https://www.finanzamt-rente-im-ausland.de/export/sites/fmria/de/.galleries/formulare/Formulare-2025-Einkommensteuer/ESt-1_A_2025-RiA-komplett.pdf",
+      "sha256": "23cb25939f1269c1ace8e4d382dd32dd896daf93fc24c527e10ebbe55afb4cb5",
+      "bytes": 2295343,
+      "locator": "ESt1A 2025 form bundle and Anlage Vorsorgeaufwand"
+    },
+    {
+      "file": "fms-est1a-2025.html",
+      "url": "https://formulare-bfinv.de/ffw/action/invoke.do?id=034037_25",
+      "sha256": "9f8ccc72b9589030f5729b2abcf92bd7dc361c4d499a8673bd9fed06a0f356b3",
+      "bytes": 89343,
+      "locator": "Official FMS ESt1A 2025 interactive capture, form a034037_25"
+    },
+    {
+      "file": "fms-anlage-n-2025.html",
+      "url": "https://formulare-bfinv.de/ffw/action/invoke.do?id=034027_25",
+      "sha256": "8f21b22cb04009db7165902ed43fd5161f3703382ec6aed618e58b0ebd03057c",
+      "bytes": 115144,
+      "locator": "Official FMS Anlage N 2025 interactive capture, form a034027_25 page 1"
+    },
+    {
+      "file": "fms-anlage-g-2025.html",
+      "url": "https://formulare-bfinv.de/ffw/action/invoke.do?id=034094_25",
+      "sha256": "ec151d6bf5b283410370ed6eb04e9420aaafba10bbd34e3090bc45a1144daecc",
+      "bytes": 25450,
+      "locator": "Official FMS Anlage G 2025 electronic-form availability notice"
+    },
+    {
+      "file": "fms-anlage-s-2025.html",
+      "url": "https://formulare-bfinv.de/ffw/action/invoke.do?id=034095_25",
+      "sha256": "570bf39bc4288fda1de075d43dd295debe014f2adfd52be18eca6f0df9a32336",
+      "bytes": 25454,
+      "locator": "Official FMS Anlage S 2025 electronic-form availability notice"
+    },
+    {
+      "file": "fms-vorsorgeaufwand-2025.html",
+      "url": "https://formulare-bfinv.de/ffw/action/invoke.do?id=034098_25",
+      "sha256": "305d0b3a9b4453239776334d9463d33f50d11ab24e7b81406971d88acae72165",
+      "bytes": 111499,
+      "locator": "Official FMS Anlage Vorsorgeaufwand 2025 interactive capture, form a034098_25 page 1"
+    },
+    {
+      "file": "kstg-current.pdf",
+      "url": "https://www.gesetze-im-internet.de/kstg_1977/KStG.pdf",
+      "sha256": "84799bc3d379dd311ae2d1878f7a4b21b6f7c0793d9c1ecf15d0b1badb57aef4",
+      "bytes": 263432,
+      "locator": "KStG §§1, 8, 23 and 31"
+    },
+    {
+      "file": "bmf-kst-rate-2025.html",
+      "url": "https://www.bundesfinanzministerium.de/Content/DE/Glossareintraege/K/koerperschaftsteuer.html?view=renderHelp",
+      "sha256": "60759812a143f0c30b328e2855d39f840f7eeeedbfbbb3292278653acddbe57b",
+      "bytes": 3003,
+      "locator": "Official BMF corporation-tax rate and annual assessment entry"
+    },
+    {
+      "file": "elster-kst-instructions-2025.html",
+      "url": "https://www.elster.de/eportal/helpGlobal?themaGlobal=help_kst_2025",
+      "sha256": "96a88c0a6a42d6ab527ee7c9644f3dfa6e0044e12ae14745b61553686333b145",
+      "bytes": 557195,
+      "locator": "Official ELSTER KSt 2025 help and field applicability"
+    },
+    {
+      "file": "elster-gewst-instructions-2025.html",
+      "url": "https://www.elster.de/eportal/helpGlobal?themaGlobal=help_gewst_ufa_20_2025",
+      "sha256": "3d70265aa5256a854444463812d87ad2ad7c129d5a0bfd7ab7f16bbbdff1877e",
+      "bytes": 220533,
+      "locator": "Official ELSTER Gewerbesteuer 2025 help and field applicability"
+    },
+    {
+      "file": "elster-availability.html",
+      "url": "https://www.elster.de/eportal/infoseite/bereitstellungstermine",
+      "sha256": "f32ac0403f82924a1314905d3dbcdfd9a01b657da7f04d0a6f687a9c5bb16005",
+      "bytes": 224696,
+      "locator": "Official ELSTER 2025 form availability dates"
+    },
+    {
+      "file": "bmf-pap-2025.html",
+      "url": "https://www.bundesfinanzministerium.de/Content/DE/Downloads/Steuern/Steuerarten/Lohnsteuer/Programmablaufplan/2024-11-22-PAP-2025.html",
+      "sha256": "c108a6a48e4625043b355ceb19e50cf894890b68b1644a16e824fa24928003e7",
+      "bytes": 188472,
+      "locator": "2025 PAP publication; availability evidence only, not annual return Soli"
+    }
+  ],
+  "derivedInspectionFiles": [
+    "solzg-current.txt",
+    "bmf-pap-2025-annex.txt",
+    "est1a-2025-forms-and-instructions.txt"
+  ]
+}

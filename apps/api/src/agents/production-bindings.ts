@@ -363,7 +363,7 @@ export const createFinanceV1ProductionCapabilityBindings = (
         TrustedGuardedActionProposalMaterializer | undefined,
     );
   if (
-    FINANCE_V1_CAPABILITY_IDS.length !== 10 ||
+    FINANCE_V1_CAPABILITY_IDS.length !== 14 ||
     FINANCE_V1_CAPABILITY_IDS.includes('agent.shopping.delegate' as never)
   ) {
     throw new Error('api-finance-v1-capability-set-invalid');
@@ -417,6 +417,22 @@ export const createFinanceV1ProductionCapabilityBindings = (
       kind: 'read' as const,
       execute: financeExecutors['finance.documents.read'],
     }),
+    'finance.reports.inspect': Object.freeze({
+      kind: 'read',
+      execute: financeExecutors['finance.reports.inspect'],
+    }),
+    'finance.reports.propose-mapping': Object.freeze({
+      kind: 'local-write',
+      execute: financeExecutors['finance.reports.propose-mapping'],
+    }),
+    'finance.tax.read': Object.freeze({
+      kind: 'read',
+      execute: financeExecutors['finance.tax.read'],
+    }),
+    'finance.books.read': Object.freeze({
+      kind: 'read',
+      execute: financeExecutors['finance.books.read'],
+    }),
     'finance.matches.read': Object.freeze({
       kind: 'read' as const,
       execute: financeExecutors['finance.matches.read'],
@@ -446,7 +462,7 @@ export const createFinanceOnlyProductionCapabilityBindings = (
         TrustedGuardedActionProposalMaterializer | undefined,
     );
   if (
-    FINANCE_ONLY_CAPABILITY_IDS.length !== 8 ||
+    FINANCE_ONLY_CAPABILITY_IDS.length !== 12 ||
     FINANCE_ONLY_CAPABILITY_IDS.includes('agent.scheduler.delegate' as never) ||
     FINANCE_ONLY_CAPABILITY_IDS.includes('agent.shopping.delegate' as never)
   ) {
@@ -482,6 +498,22 @@ export const createFinanceOnlyProductionCapabilityBindings = (
     'finance.documents.read': Object.freeze({
       kind: 'read' as const,
       execute: financeExecutors['finance.documents.read'],
+    }),
+    'finance.reports.inspect': Object.freeze({
+      kind: 'read',
+      execute: financeExecutors['finance.reports.inspect'],
+    }),
+    'finance.reports.propose-mapping': Object.freeze({
+      kind: 'local-write',
+      execute: financeExecutors['finance.reports.propose-mapping'],
+    }),
+    'finance.tax.read': Object.freeze({
+      kind: 'read',
+      execute: financeExecutors['finance.tax.read'],
+    }),
+    'finance.books.read': Object.freeze({
+      kind: 'read',
+      execute: financeExecutors['finance.books.read'],
     }),
     'finance.matches.read': Object.freeze({
       kind: 'read' as const,

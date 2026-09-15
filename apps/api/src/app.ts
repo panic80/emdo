@@ -1,3 +1,19 @@
+import { registerFinanceJournalDraftRoutes } from './routes/finance-journal-drafts.js';
+import { registerFinanceInvestmentReconciliationRoutes } from './routes/finance-investment-reconciliation.js';
+import { registerFinancePdfOcrInspectionRoutes } from './routes/finance-pdf-ocr-inspection.js';
+import { registerFinanceOpeningRoutes } from './routes/finance-openings.js';
+import { registerFinanceLegacyMigrationRoutes } from './routes/finance-legacy-migrations.js';
+import { registerFinanceFecRoutes } from './routes/finance-fec.js';
+import { registerFinancePlanningRoutes } from './routes/finance-planning.js';
+import { registerFinanceStandardizationRoutes } from './routes/finance-standardization.js';
+import { registerFinanceStructuredInvoiceRoutes } from './routes/finance-structured-invoices.js';
+import { registerFinanceScheduleRoutes } from './routes/finance-schedules.js';
+import { registerFinanceTaxRoutes } from './routes/finance-tax.js';
+import { registerFinanceImageInspectionRoutes } from './routes/finance-image-inspection.js';
+import { registerFinancePdfInspectionRoutes } from './routes/finance-pdf-inspection.js';
+import { registerFinanceV2Routes } from './routes/finance-v2.js';
+import { registerFinanceAutomationRoutes } from './routes/finance-automations.js';
+import { registerFinanceGeneratedReportRoutes } from './routes/finance-generated-reports.js';
 import { randomUUID } from 'node:crypto';
 
 import Fastify, { LogController, type FastifyInstance } from 'fastify';
@@ -171,6 +187,58 @@ export const createApp = async (
     limits.maximumJsonBodyBytes,
   );
   registerFinanceDocumentRoutes(app, options.services);
+  registerFinanceV2Routes(app, options.services, limits.maximumJsonBodyBytes);
+  registerFinanceFecRoutes(app, options.services, limits.maximumJsonBodyBytes);
+  registerFinanceOpeningRoutes(
+    app,
+    options.services,
+    limits.maximumJsonBodyBytes,
+  );
+  registerFinanceLegacyMigrationRoutes(
+    app,
+    options.services,
+    limits.maximumJsonBodyBytes,
+  );
+  registerFinanceJournalDraftRoutes(
+    app,
+    options.services,
+    limits.maximumJsonBodyBytes,
+  );
+  registerFinanceInvestmentReconciliationRoutes(
+    app,
+    options.services,
+    limits.maximumJsonBodyBytes,
+  );
+  registerFinancePlanningRoutes(
+    app,
+    options.services,
+    limits.maximumJsonBodyBytes,
+  );
+  registerFinanceStandardizationRoutes(
+    app,
+    options.services,
+    limits.maximumJsonBodyBytes,
+  );
+  registerFinanceScheduleRoutes(
+    app,
+    options.services,
+    limits.maximumJsonBodyBytes,
+  );
+  registerFinanceStructuredInvoiceRoutes(
+    app,
+    options.services,
+    limits.maximumJsonBodyBytes,
+  );
+  registerFinanceTaxRoutes(app, options.services, limits.maximumJsonBodyBytes);
+  registerFinanceGeneratedReportRoutes(app, options.services);
+  registerFinancePdfInspectionRoutes(app, options.services);
+  registerFinanceImageInspectionRoutes(app, options.services);
+  registerFinancePdfOcrInspectionRoutes(app, options.services);
+  registerFinanceAutomationRoutes(
+    app,
+    options.services,
+    limits.maximumJsonBodyBytes,
+  );
   registerHealthRoutes(
     app,
     options.services,

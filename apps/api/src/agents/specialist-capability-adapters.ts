@@ -101,6 +101,24 @@ export type CanonicalShoppingMutation =
   | Readonly<{ kind: 'tombstone'; itemId: string }>;
 
 export interface TrustedStandardSpecialistServices {
+  readonly inspectFinanceReport?: TrustedCapabilityService<
+    z.output<
+      (typeof specialistCapabilitySchemas)['finance.reports.inspect']['input']
+    >
+  >;
+  readonly proposeFinanceReportMapping?: TrustedCapabilityService<
+    z.output<
+      (typeof specialistCapabilitySchemas)['finance.reports.propose-mapping']['input']
+    >
+  >;
+  readonly readFinanceTax?: TrustedCapabilityService<
+    z.output<(typeof specialistCapabilitySchemas)['finance.tax.read']['input']>
+  >;
+  readonly readFinanceBooks?: TrustedCapabilityService<
+    z.output<
+      (typeof specialistCapabilitySchemas)['finance.books.read']['input']
+    >
+  >;
   readonly readCalendarFreeBusy: TrustedCapabilityService<
     Readonly<Pick<CalendarFreeBusyInput, 'windowStart' | 'windowEnd'>>
   >;
@@ -154,6 +172,10 @@ export interface TrustedStandardSpecialistServices {
 
 export type TrustedFinanceSpecialistServices = Pick<
   TrustedStandardSpecialistServices,
+  | 'inspectFinanceReport'
+  | 'proposeFinanceReportMapping'
+  | 'readFinanceTax'
+  | 'readFinanceBooks'
   | 'readFinanceRecords'
   | 'writeFinanceRecord'
   | 'executeStatementImport'
@@ -403,6 +425,10 @@ export const createFinanceSpecialistCapabilityExecutors = (
   services: TrustedFinanceSpecialistServices,
 ): Readonly<
   Record<
+    | 'finance.reports.inspect'
+    | 'finance.reports.propose-mapping'
+    | 'finance.tax.read'
+    | 'finance.books.read'
     | 'finance.records.read'
     | 'finance.records.write'
     | 'finance.statement.import'
@@ -415,6 +441,60 @@ export const createFinanceSpecialistCapabilityExecutors = (
 > => {
   assertFinanceServiceMap(services);
   return Object.freeze({
+    'finance.reports.inspect': async (raw, context) => {
+      if (!services.inspectFinanceReport)
+        throw new Error('api-finance-report-inspection-unavailable');
+      return wrapOutput(
+        'finance.reports.inspect',
+        asPlainRecord(
+          await services.inspectFinanceReport(
+            deepFreeze(parseInput('finance.reports.inspect', raw)),
+            context,
+          ),
+          'api-finance-report-result-invalid',
+        ),
+      );
+    },
+    'finance.reports.propose-mapping': async (raw, context) => {
+      if (!services.proposeFinanceReportMapping)
+        throw new Error('api-finance-report-proposal-unavailable');
+      return wrapOutput(
+        'finance.reports.propose-mapping',
+        asPlainRecord(
+          await services.proposeFinanceReportMapping(
+            deepFreeze(parseInput('finance.reports.propose-mapping', raw)),
+            context,
+          ),
+          'api-finance-report-result-invalid',
+        ),
+      );
+    },
+    'finance.tax.read': async (raw, context) => {
+      if (!services.readFinanceTax)
+        throw new Error('api-finance-tax-unavailable');
+      return wrapOutput(
+        'finance.tax.read',
+        asPlainRecord(
+          await services.readFinanceTax(
+            deepFreeze(parseInput('finance.tax.read', raw)),
+            context,
+          ),
+          'api-finance-tax-result-invalid',
+        ),
+      );
+    },
+    'finance.books.read': async (raw, context) => {
+      const input = parseInput('finance.books.read', raw);
+      if (!services.readFinanceBooks)
+        throw new Error('api-finance-books-unavailable');
+      return wrapOutput(
+        'finance.books.read',
+        asPlainRecord(
+          await services.readFinanceBooks(deepFreeze(input), context),
+          'api-finance-books-result-invalid',
+        ),
+      );
+    },
     'finance.records.read': async (raw, context) => {
       const input = parseInput('finance.records.read', raw);
       return wrapOutput(
@@ -575,6 +655,60 @@ export const createStandardSpecialistCapabilityExecutors = (
         asPlainRecord(
           await services.resolveTravelTime(deepFreeze(request), context),
           'api-travel-service-result-invalid',
+        ),
+      );
+    },
+    'finance.reports.inspect': async (raw, context) => {
+      if (!services.inspectFinanceReport)
+        throw new Error('api-finance-report-inspection-unavailable');
+      return wrapOutput(
+        'finance.reports.inspect',
+        asPlainRecord(
+          await services.inspectFinanceReport(
+            deepFreeze(parseInput('finance.reports.inspect', raw)),
+            context,
+          ),
+          'api-finance-report-result-invalid',
+        ),
+      );
+    },
+    'finance.reports.propose-mapping': async (raw, context) => {
+      if (!services.proposeFinanceReportMapping)
+        throw new Error('api-finance-report-proposal-unavailable');
+      return wrapOutput(
+        'finance.reports.propose-mapping',
+        asPlainRecord(
+          await services.proposeFinanceReportMapping(
+            deepFreeze(parseInput('finance.reports.propose-mapping', raw)),
+            context,
+          ),
+          'api-finance-report-result-invalid',
+        ),
+      );
+    },
+    'finance.tax.read': async (raw, context) => {
+      if (!services.readFinanceTax)
+        throw new Error('api-finance-tax-unavailable');
+      return wrapOutput(
+        'finance.tax.read',
+        asPlainRecord(
+          await services.readFinanceTax(
+            deepFreeze(parseInput('finance.tax.read', raw)),
+            context,
+          ),
+          'api-finance-tax-result-invalid',
+        ),
+      );
+    },
+    'finance.books.read': async (raw, context) => {
+      const input = parseInput('finance.books.read', raw);
+      if (!services.readFinanceBooks)
+        throw new Error('api-finance-books-unavailable');
+      return wrapOutput(
+        'finance.books.read',
+        asPlainRecord(
+          await services.readFinanceBooks(deepFreeze(input), context),
+          'api-finance-books-result-invalid',
         ),
       );
     },

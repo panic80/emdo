@@ -137,7 +137,7 @@
 
 **Step 2:** Implement manifest validation, versioned skill loading, and a capability-only agent factory.
 
-**Step 3:** Add failing model tests for `gpt-5.6-luna` default, `gpt-5.6-terra` complexity/validation/reconciliation/unavailability escalation, resolved-model reason recording, and clear dual-unavailable failure.
+**Step 3:** Add model tests for `gpt-6-astra` with explicit `medium` reasoning, Responses API tool use, resolved-model provenance, and clear provider-unavailable failure without legacy-model fallback.
 
 **Step 4:** Implement configuration-driven model routing and the CAD 50 warning/CAD 75 model-audio block while allowing deterministic actions/local work.
 

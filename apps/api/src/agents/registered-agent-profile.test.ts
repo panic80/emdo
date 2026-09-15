@@ -65,6 +65,10 @@ describe('Finance v1 registered-agent profile', () => {
       'google-calendar.event.create',
     ]);
     expect(profile.registrations[1].capabilities).toEqual([
+      'finance.reports.inspect',
+      'finance.reports.propose-mapping',
+      'finance.tax.read',
+      'finance.books.read',
       'finance.records.read',
       'finance.records.write',
       'finance.statement.import',
@@ -132,4 +136,62 @@ describe('Finance v1 registered-agent profile', () => {
       );
     },
   );
+});
+
+it('adds a section through registration and gates it by entitlement', async () => {
+  const { financeV1FinanceDefinition } =
+    await import('./registered-agent-profile.js');
+  const definition = {
+    ...financeV1FinanceDefinition,
+    manifest: { ...financeV1FinanceDefinition.manifest, id: 'inventory' },
+  };
+  const registration = {
+    section: 'inventory',
+    definition,
+    readiness: async () => ({ status: 'ready' as const }),
+    entitlementRequirements: ['inventory.read'],
+  };
+  expect(
+    createAvailableRegisteredAgentProfile({ sections: [registration] })
+      .specialists,
+  ).toHaveLength(0);
+  const profile = createAvailableRegisteredAgentProfile({
+    sections: [registration],
+    enabledEntitlements: ['inventory.read'],
+  });
+  expect(profile.manager.manifest.capabilityAllowlist).toEqual([
+    'agent.inventory.delegate',
+  ]);
+  expect(profile.manager.capabilityReferences).toEqual([
+    { id: 'agent.inventory.delegate', version: '1.0.0', kind: 'delegation' },
+  ]);
+  expect(profile.registrations[0]).toMatchObject({
+    id: 'inventory',
+    section: 'inventory',
+    allowedParents: ['manager'],
+    allowedChildren: [],
+  });
+  expect(() =>
+    createAvailableRegisteredAgentProfile({
+      sections: [registration, registration],
+      enabledEntitlements: ['inventory.read'],
+    }),
+  ).toThrow('registration-invalid');
+  expect(() =>
+    createAvailableRegisteredAgentProfile({
+      sections: [
+        {
+          ...registration,
+          definition: {
+            ...definition,
+            manifest: {
+              ...definition.manifest,
+              capabilityAllowlist: ['agent.finance.delegate'],
+            },
+          },
+        },
+      ],
+      enabledEntitlements: ['inventory.read'],
+    }),
+  ).toThrow('registration-invalid');
 });

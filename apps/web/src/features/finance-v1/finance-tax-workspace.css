@@ -1,0 +1,742 @@
+.finance-tax-workspace {
+  color: #243c34;
+  min-width: 0;
+}
+.finance-tax-workspace > .button:first-child {
+  margin: -4px 0 18px -10px;
+}
+.finance-tax-heading {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+.finance-tax-heading > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.finance-tax-workspace .finance-tax-heading h2 {
+  margin: 5px 0 7px;
+  font-size: clamp(23px, 2.3vw, 31px);
+  font-weight: 640;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.finance-tax-workspace h3 {
+  font-size: 17px;
+  margin: 0 0 9px;
+  letter-spacing: -0.015em;
+}
+.finance-tax-workspace h4 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+.finance-tax-workspace p {
+  color: #53675f;
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 5px 0 13px;
+}
+.finance-tax-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #536e60;
+  font-size: 10px;
+  line-height: 1.5;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+}
+.finance-tax-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.finance-tax-actions .button {
+  min-height: 38px;
+}
+.finance-tax-availability {
+  background: #f3f7f5;
+  border: 1px solid #dce8e0;
+  border-radius: 12px;
+  display: flex;
+  gap: 13px;
+  padding: 19px 20px;
+  margin: 20px 0;
+}
+.finance-tax-availability > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #537660;
+}
+.finance-tax-availability > div {
+  min-width: 0;
+}
+.finance-tax-availability strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+.finance-tax-availability p:last-child {
+  margin-bottom: 0;
+}
+.finance-tax-workspace summary {
+  cursor: pointer;
+  color: #355646;
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 5px 0;
+}
+.finance-tax-countries {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+  margin-top: 10px;
+}
+.finance-tax-countries > div {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  padding: 9px 0;
+  border-top: 1px solid #dde6df;
+}
+.finance-tax-countries > div > span:last-child {
+  color: #647166;
+}
+.finance-tax-workspace .finance-tax-hint {
+  font-size: 12px;
+  color: #63736a;
+}
+.finance-tax-case-list {
+  list-style: none;
+  margin: 25px 0 5px;
+  padding: 0;
+  border-top: 1px solid #e5eae5;
+}
+.finance-tax-case-list li {
+  border-bottom: 1px solid #e5eae5;
+}
+.finance-tax-case-list button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 21px 10px;
+  gap: 17px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 9px;
+  transition: background 150ms ease;
+}
+.finance-tax-case-list button:hover {
+  background: #f4f8f5;
+}
+.finance-tax-case-list button > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.finance-tax-case-list strong {
+  font-size: 15px;
+  font-weight: 620;
+  overflow-wrap: anywhere;
+}
+.finance-tax-workspace small {
+  display: block;
+  color: #64726a;
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 4px;
+  font-weight: 400;
+}
+.finance-tax-case-symbol,
+.finance-tax-source-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  background: #eef5ef;
+  color: #456a50;
+}
+.finance-tax-case-role,
+.finance-tax-badge {
+  display: inline-flex;
+  padding: 4px 9px;
+  border: 1px solid #dce6de;
+  border-radius: 20px;
+  background: #f7faf7;
+  font-size: 10px;
+  line-height: 1.6;
+  font-weight: 550;
+  color: #4d6556;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.finance-tax-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 15px;
+  color: #67766c;
+  font-size: 11px;
+}
+.finance-tax-empty {
+  text-align: center;
+  padding: 43px 25px;
+  border: 1px dashed #dbe5dc;
+  border-radius: 12px;
+  margin: 22px 0;
+}
+.finance-tax-empty > svg {
+  color: #718b75;
+  margin-bottom: 14px;
+}
+.finance-tax-empty p {
+  max-width: 460px;
+  margin: 8px auto 0;
+}
+.finance-tax-empty--compact {
+  padding: 26px 22px;
+}
+.finance-tax-role {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 0 18px;
+  border-bottom: 1px solid #e6ece6;
+}
+.finance-tax-role > span {
+  font-size: 11px;
+  text-transform: capitalize;
+  color: #3d6450;
+  border-radius: 5px;
+  background: #edf5ee;
+  padding: 5px 8px;
+}
+.finance-tax-role p {
+  margin: 0;
+  flex: 1;
+  font-size: 12px;
+}
+.finance-tax-role small {
+  margin: 0;
+}
+.finance-tax-nav {
+  display: flex;
+  gap: 5px;
+  padding: 4px;
+  background: #f2f5f2;
+  border: 1px solid #e2e9e3;
+  border-radius: 10px;
+  width: fit-content;
+  margin: 23px 0 25px;
+  max-width: 100%;
+}
+.finance-tax-nav button {
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  padding: 10px 16px;
+  color: #586b5d;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.4;
+}
+.finance-tax-nav button[aria-current] {
+  color: #254b34;
+  background: white;
+  border-color: #dce6dd;
+  box-shadow: 0 1px 3px #253e2910;
+}
+.finance-tax-summary,
+.finance-tax-inputs,
+.finance-tax-access {
+  animation: tax-reveal 170ms ease-out;
+}
+.finance-tax-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid #e2e9e2;
+  border-radius: 11px;
+  margin: 23px 0 29px;
+  overflow: hidden;
+}
+.finance-tax-metrics > div {
+  padding: 18px 23px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.finance-tax-metrics > div + div {
+  border-left: 1px solid #e2e9e2;
+}
+.finance-tax-metrics span {
+  font-size: 11px;
+  color: #68786b;
+}
+.finance-tax-metrics strong {
+  font-size: 27px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+.finance-tax-summary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 35px;
+  margin: 20px 0 24px;
+}
+.finance-tax-facts {
+  margin: 12px 0;
+}
+.finance-tax-facts > div {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.8fr) minmax(0, 1.2fr);
+  gap: 18px;
+  border-bottom: 1px solid #edf0eb;
+  padding: 11px 0;
+}
+.finance-tax-facts dt {
+  color: #68766a;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.finance-tax-facts dd {
+  margin: 0;
+  color: #294537;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.finance-tax-findings {
+  padding: 0;
+  margin: 15px 0;
+  list-style: none;
+}
+.finance-tax-findings li {
+  display: flex;
+  gap: 10px;
+  padding: 13px 0;
+  border-bottom: 1px solid #e7ece5;
+  color: #566853;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.finance-tax-findings svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+.finance-tax-create {
+  margin-top: 30px;
+  padding-top: 24px;
+  border-top: 1px solid #dde7dc;
+}
+.finance-tax-workspace fieldset {
+  margin: 0 0 22px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.finance-tax-workspace legend {
+  margin-bottom: 15px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.finance-tax-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 19px 22px;
+}
+.finance-tax-workspace label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 550;
+  color: #38503e;
+  min-width: 0;
+}
+.finance-tax-workspace input:not([type='checkbox']),
+.finance-tax-workspace select,
+.finance-tax-workspace textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid #d3dfd3;
+  border-radius: 7px;
+  color: #263d2c;
+  padding: 10px 11px;
+  font: inherit;
+  font-size: 13px;
+  background: #fff;
+}
+.finance-tax-workspace input::placeholder {
+  color: #768479;
+}
+.finance-tax-workspace input[readonly] {
+  background: #f2f5f1;
+  color: #566952;
+}
+.finance-tax-workspace textarea {
+  resize: vertical;
+}
+.finance-tax-workspace label small {
+  margin-top: 0;
+}
+.finance-tax-form-wide {
+  grid-column: 1/-1;
+}
+.finance-tax-party {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 13px;
+  margin: 16px 0;
+}
+.finance-tax-note {
+  padding: 14px 17px;
+  border-left: 3px solid #9db9a0;
+  border-radius: 0 7px 7px 0;
+  background: #f6f8f4;
+  color: #596b55;
+  font-size: 12px;
+  line-height: 1.65;
+  margin: 18px 0;
+}
+.finance-tax-review,
+.finance-tax-confirm,
+.finance-tax-editor {
+  border: 1px solid #dbe6d9;
+  background: #f9fbf7;
+  border-radius: 10px;
+  padding: 22px;
+  margin: 23px 0;
+}
+.finance-tax-review {
+  background: #fff;
+  border-color: #c7dbc5;
+}
+.finance-tax-confirm {
+  background: #fcf8f2;
+  border-color: #e8d9c6;
+}
+.finance-tax-check {
+  flex-direction: row !important;
+  align-items: flex-start;
+  gap: 11px !important;
+  margin: 16px 0 21px;
+  line-height: 1.65;
+  font-weight: 450 !important;
+}
+.finance-tax-check input {
+  flex: 0 0 17px;
+  width: 17px;
+  height: 17px;
+  margin-top: 2px;
+  accent-color: #46734b;
+}
+.finance-tax-exact {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.finance-tax-table-scroll {
+  overflow: auto;
+  border: 1px solid #e1e8de;
+  border-radius: 9px;
+  margin: 22px 0;
+}
+.finance-tax-workspace table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.finance-tax-workspace thead {
+  background: #f4f7f1;
+}
+.finance-tax-workspace th,
+.finance-tax-workspace td {
+  text-align: left;
+  padding: 15px 17px;
+  border-bottom: 1px solid #e8ede3;
+  vertical-align: top;
+}
+.finance-tax-workspace thead th {
+  font-size: 10px;
+  font-weight: 600;
+  color: #5d735a;
+  letter-spacing: 0.04em;
+}
+.finance-tax-workspace tbody th {
+  font-weight: 500;
+  min-width: 140px;
+}
+.finance-tax-workspace tbody td {
+  min-width: 100px;
+}
+.finance-tax-workspace tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.finance-tax-workspace code {
+  display: block;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  max-width: 240px;
+  color: #596f51;
+  line-height: 1.6;
+}
+.finance-tax-history {
+  padding: 15px 0;
+  border-top: 1px solid #e3ebdf;
+  border-bottom: 1px solid #e3ebdf;
+  margin: 27px 0;
+}
+.finance-tax-questions {
+  margin: 26px 0 5px;
+}
+.finance-tax-source-list {
+  list-style: none;
+  margin: 18px 0;
+  padding: 0;
+}
+.finance-tax-source-list > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 19px 0;
+  border-bottom: 1px solid #e5ece1;
+}
+.finance-tax-source-list > li > div:first-of-type {
+  flex: 1;
+  min-width: 0;
+}
+.finance-tax-source-list strong {
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.finance-tax-source-list p {
+  margin: 5px 0;
+  font-size: 12px;
+}
+.finance-tax-people {
+  border-top: 1px solid #e0e8da;
+  margin-top: 30px;
+  padding-top: 29px;
+}
+.finance-tax-recovery {
+  padding: 23px;
+  border: 1px solid #e7d9c6;
+  border-radius: 12px;
+  background: #fffcf5;
+  margin: 20px 0;
+}
+.finance-tax-workspace
+  :is(button, summary, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #467244;
+  outline-offset: 3px;
+}
+.finance-tax-workspace [role='alert'] {
+  color: #963d33;
+  border: 1px solid #efdbd7;
+  border-radius: 8px;
+  padding: 12px 15px;
+  background: #fff8f6;
+}
+@keyframes tax-reveal {
+  from {
+    transform: translateY(3px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@media (max-width: 760px) {
+  .finance-tax-heading {
+    flex-direction: column;
+    gap: 14px;
+  }
+  .finance-tax-heading > div:first-child {
+    flex: none;
+    width: 100%;
+  }
+  .finance-tax-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 22px;
+  }
+  .finance-tax-countries {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .finance-tax-source-list > li {
+    flex-wrap: wrap;
+  }
+  .finance-tax-source-list > li > .button,
+  .finance-tax-source-list > li > .finance-tax-actions {
+    margin-left: 0;
+  }
+  .finance-tax-party {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 480px) {
+  .finance-tax-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 17px;
+  }
+  .finance-tax-nav {
+    width: 100%;
+    box-sizing: border-box;
+    gap: 2px;
+  }
+  .finance-tax-nav button {
+    padding: 9px 8px;
+    flex: 1;
+    font-size: 11px;
+  }
+  .finance-tax-metrics > div {
+    padding: 15px 10px;
+  }
+  .finance-tax-metrics span {
+    font-size: 10px;
+  }
+  .finance-tax-metrics strong {
+    font-size: 24px;
+  }
+  .finance-tax-role p {
+    flex-basis: calc(100% - 75px);
+  }
+  .finance-tax-case-list button {
+    gap: 12px;
+    padding: 18px 0;
+    flex-wrap: wrap;
+  }
+  .finance-tax-case-list button > svg {
+    display: none;
+  }
+  .finance-tax-case-symbol {
+    flex-basis: 34px;
+    width: 34px;
+    height: 36px;
+  }
+  .finance-tax-case-list strong {
+    font-size: 13px;
+  }
+  .finance-tax-case-role {
+    font-size: 9px;
+    padding: 3px 6px;
+  }
+  .finance-tax-review,
+  .finance-tax-confirm,
+  .finance-tax-editor,
+  .finance-tax-recovery {
+    padding: 17px;
+  }
+  .finance-tax-availability {
+    padding: 16px;
+    gap: 10px;
+  }
+  .finance-tax-facts > div {
+    gap: 12px;
+    grid-template-columns: minmax(80px, 0.8fr) minmax(0, 1.2fr);
+  }
+  .finance-tax-workspace .button {
+    white-space: normal;
+    text-align: center;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .finance-tax-summary,
+  .finance-tax-inputs,
+  .finance-tax-access {
+    animation: none;
+  }
+  .finance-tax-case-list button {
+    transition: none;
+  }
+}
+
+.finance-book-context[hidden],
+.finance-create-book[hidden] {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .finance-tax-workspace > .button:first-child {
+    margin-bottom: 10px;
+  }
+  .finance-tax-workspace > .finance-tax-heading {
+    gap: 9px;
+    margin-bottom: 12px;
+  }
+  .finance-tax-workspace > .finance-tax-heading > .finance-tax-actions {
+    gap: 4px;
+  }
+  .finance-tax-workspace > .finance-tax-heading .button {
+    min-height: 38px;
+    padding: 9px 10px;
+    font-size: 12px;
+  }
+  .finance-tax-role {
+    padding: 8px 0 13px;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 600px) {
+  .finance-tax-inputs table,
+  .finance-tax-inputs tbody {
+    display: block;
+  }
+  .finance-tax-inputs thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .finance-tax-inputs tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    border-bottom: 1px solid #e1e8de;
+  }
+  .finance-tax-inputs tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .finance-tax-inputs tbody tr > * {
+    display: block;
+    min-width: 0;
+    padding: 13px 16px;
+    border-bottom: 0;
+  }
+  .finance-tax-inputs tbody tr > th,
+  .finance-tax-inputs tbody tr > td:nth-child(2),
+  .finance-tax-inputs tbody tr > td:last-child {
+    grid-column: 1 / -1;
+  }
+  .finance-tax-inputs tbody tr > th {
+    background: #f4f7f1;
+  }
+  .finance-tax-inputs tbody tr > td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: #61745d;
+    font-size: 10px;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+}

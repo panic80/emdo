@@ -1,0 +1,282 @@
+{
+  "schemaVersion": 1,
+  "country": "JP",
+  "subdivision": "JP-NATIONAL",
+  "returnYear": 2025,
+  "era": "令和7年分",
+  "latestFullyPublishedReturnYearVerifiedAt": "2026-09-14T06:13:05Z",
+  "authority": "National Tax Agency of Japan (国税庁)",
+  "capturePolicy": "Official HTTPS NTA response bytes captured locally; SHA-256 is over each local file.",
+  "sources": [
+    {
+      "id": "nta-jp-r07-forms",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/syotoku/r07.htm",
+      "file": "nta-r07-forms.html",
+      "title": "令和7年分の所得税及び復興特別所得税の確定申告書等の様式・手引き等",
+      "retrievedAt": "2026-09-14T05:18:52Z",
+      "sha256": "87c03170361b157ae382ff2ca7462dc98d7b0802934b295477bdf2abb22cdacc",
+      "locator": "2025 (令和7年分) return forms index; Form 1/2 listing"
+    },
+    {
+      "id": "nta-jp-r07-form-1-2",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/yoshiki/01/shinkokusho/pdf/r07/01.pdf",
+      "file": "nta-r07-form-1-2.pdf",
+      "title": "申告書第一表・第二表（令和7年分以降用）",
+      "retrievedAt": "2026-09-14T05:18:52Z",
+      "sha256": "833e641919fbc1eb22605a1989c6514eabb742334528d04dd90736ae90afce46",
+      "locator": "Official two-page Form 1 and Form 2 layout"
+    },
+    {
+      "id": "nta-jp-r07-identification",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/03/order1/3-1_01.htm",
+      "file": "nta-r07-identification.html",
+      "title": "手順1 住所、氏名などを記入する（令和7年分）",
+      "retrievedAt": "2026-09-14T05:52:52Z",
+      "sha256": "e0ac6c9a1dfdc126d9159e452d2b55a0243a6f32a9fbbbbfbdc090f790ad9563",
+      "locator": "2025 NTA First/Second Form identity fields and return-type checkboxes"
+    },
+    {
+      "id": "nta-jp-r07-salary-income",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/03/order2/3-2_06.htm",
+      "file": "nta-r07-salary-income.html",
+      "title": "手順2 給与所得の計算（令和7年分）",
+      "retrievedAt": "2026-09-14T05:18:52Z",
+      "sha256": "d693641fc03301440ac9f3cdc9f0b12c73bfd9484ea5ab293713a79998f5f38c",
+      "locator": "Salary-income table, 1,000-yen intermediate truncation and 1-yen fraction rule"
+    },
+    {
+      "id": "nta-jp-r07-social-insurance",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/03/order3/3-3_10.htm",
+      "file": "nta-r07-social-insurance.html",
+      "title": "手順3 社会保険料控除（令和7年分）",
+      "retrievedAt": "2026-09-14T05:18:52Z",
+      "sha256": "29971a01041a3bbc5fca9d81805c0e4aba926a44dd29a0ffb9377fb946d19dcd",
+      "locator": "Eligible premiums and First/Second Form line 10"
+    },
+    {
+      "id": "nta-jp-r07-basic-deduction",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/03/order3/3-3_21.htm",
+      "file": "nta-r07-basic-deduction.html",
+      "title": "手順3 基礎控除（令和7年分）",
+      "retrievedAt": "2026-09-14T05:18:52Z",
+      "sha256": "1460dc8a95889697b03f904aa7c6f4c3d20f1d49c3fcd9c61ed3ab7af2abd56e",
+      "locator": "Resident basic-deduction bands from 950,000 yen through no deduction"
+    },
+    {
+      "id": "nta-jp-r07-national-tax",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/03/order4/3-4_26.htm",
+      "file": "nta-r07-tax-brackets.html",
+      "title": "手順4 課税所得金額に対する税額の速算表（令和7年分）",
+      "retrievedAt": "2026-09-14T05:18:52Z",
+      "sha256": "6a712e5523ac705acb475278626dbd82d7734707138cc1dd8aa02a2b9c451319",
+      "locator": "Taxable-income 1,000-yen truncation and seven national brackets"
+    },
+    {
+      "id": "nta-jp-r07-reconstruction-surtax",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/03/order4/3-4_45.htm",
+      "file": "nta-r07-reconstruction-surtax.html",
+      "title": "手順4 復興特別所得税額（令和7年分）",
+      "retrievedAt": "2026-09-14T05:18:52Z",
+      "sha256": "96323f99c658f083a8cb9cf37eb4327b7e13cbf1e96d6dce369d8a11944586e8",
+      "locator": "2.1% of base income tax and truncation below one yen"
+    },
+    {
+      "id": "nta-jp-r07-total-tax",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/03/order4/3-4_41_1.htm",
+      "file": "nta-r07-total-tax.html",
+      "title": "手順4 所得税及び復興特別所得税の額（令和7年分）",
+      "retrievedAt": "2026-09-14T05:18:52Z",
+      "sha256": "734c709937d6c9b80d63fe8e469e79f5af285c3d011255247c073743ce0634f8",
+      "locator": "Combined base income tax and reconstruction surtax"
+    },
+    {
+      "id": "nta-jp-r07-withholding",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/03/order4/3-4_38.htm",
+      "file": "nta-r07-withholding.html",
+      "title": "手順4 源泉徴収税額（令和7年分）",
+      "retrievedAt": "2026-09-14T05:18:52Z",
+      "sha256": "4dbccb03bdceffd16d15cc94dbdfa776fd423ba8838ebce978ea442e3684f724",
+      "locator": "Withheld income-tax-and-reconstruction amount on First Form line 49 and Second Form income details"
+    },
+    {
+      "id": "nta-jp-r07-assessment",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/03/order4/3-4_39.htm",
+      "file": "nta-r07-assessment.html",
+      "title": "手順4 申告納税額（令和7年分）",
+      "retrievedAt": "2026-09-14T05:18:52Z",
+      "sha256": "8584f6d0de995958d38d2ba816036d7b9b374df705e3bfc2406980f192779073",
+      "locator": "Positive assessment truncation below 100 yen and signed negative refund amount"
+    },
+    {
+      "id": "nta-jp-r07-third-period",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/03/order4/3-4_41.htm",
+      "file": "nta-r07-balance.html",
+      "title": "手順4 第3期分の税額（令和7年分）",
+      "retrievedAt": "2026-09-14T05:18:52Z",
+      "sha256": "9403c59e427f717239f99460a4f4c4cd24e4152d805aee14981b24b5a4f39f0c",
+      "locator": "Third-period amount after estimated payments"
+    },
+    {
+      "id": "nta-jp-r07-high-income",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/2270.htm",
+      "file": "nta-r07-high-income.html",
+      "title": "No.2270 特定の基準所得金額の課税の特例",
+      "retrievedAt": "2026-09-14T05:35:32Z",
+      "sha256": "09a5a71f37ed185407e31a7d30d0835adc91ee20870972b6ec0ff6b1d8bb8fef",
+      "locator": "330-million-yen threshold, 22.5% comparison, and application from 2025 (令和7年分)"
+    },
+    {
+      "id": "nta-jp-2025-tax-reform",
+      "url": "https://www.nta.go.jp/users/gensen/2025kiso/index.htm",
+      "file": "nta-2025-tax-reform.html",
+      "title": "令和7年度税制改正による基礎控除・給与所得控除の見直し",
+      "retrievedAt": "2026-09-14T05:18:52Z",
+      "sha256": "5b1c39edc19e060ef7357b47e9e33873feece4cff13d74b709118c6628f950f1",
+      "locator": "2025 resident basic-deduction amounts and 650,000-yen minimum salary deduction"
+    },
+    {
+      "id": "nta-jp-r07-white-business-general",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/yoshiki/01/shinkokusho/pdf/r07/05.pdf",
+      "file": "nta-r07-white-business-general.pdf",
+      "title": "収支内訳書（一般用）（令和5年分以降用）",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "686ecbd849ebe07b11a90d10421561669188e1cfd48b18962bf1be06965a0f24",
+      "locator": "Official general white-return business-income statement"
+    },
+    {
+      "id": "nta-jp-r07-white-business-general-guide",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/pdf/034.pdf",
+      "file": "nta-r07-white-business-general-guide.pdf",
+      "title": "令和7年分収支内訳書（一般用）の書き方",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "5ac5dabb0eff09479009347c825edffbed28ec5d9a746afd8fc14fcc65a15aba",
+      "locator": "2025 general white-return statement instructions"
+    },
+    {
+      "id": "nta-jp-r07-white-business-general-handbook",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/kojin_jigyo/kichou09.pdf",
+      "file": "nta-r07-white-business-general-handbook.pdf",
+      "title": "令和7年分白色申告者の決算の手引き（一般用）",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "5e6fde36f22beb1414314fd71cce5929eb24dfc0fa1330abfe6e423d068cca30",
+      "locator": "2025 white-return general business closing handbook"
+    },
+    {
+      "id": "nta-jp-r07-blue-business-general",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/yoshiki/01/shinkokusho/pdf/r07/10.pdf",
+      "file": "nta-r07-blue-business-general.pdf",
+      "title": "所得税青色申告決算書（一般用）（令和5年分以降用）",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "c3cd9d17c0174972a19c5b8174ad01ac685f4ed2dda9d3e903e6fd315bf5f4c3",
+      "locator": "Official general blue-return business-income statement and balance-sheet pages"
+    },
+    {
+      "id": "nta-jp-r07-blue-business-general-guide",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/pdf/037.pdf",
+      "file": "nta-r07-blue-business-general-guide.pdf",
+      "title": "令和7年分青色申告決算書（一般用）の書き方",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "77c8ad203bbd04efcacf42c4c8c95a6a098b80784e51df66347812948b578900",
+      "locator": "2025 general blue-return statement and balance-sheet instructions"
+    },
+    {
+      "id": "nta-jp-r07-blue-business-general-handbook",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/pdf/025.pdf",
+      "file": "nta-r07-blue-business-general-handbook.pdf",
+      "title": "令和7年分青色申告の決算の手引き（一般用）",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "d688dd73e82a13b5b8f4d8d559f16cc82da948f5a249d9a2ac75361dc855f82c",
+      "locator": "2025 blue-return general business closing handbook"
+    },
+    {
+      "id": "nta-jp-r07-business-bookkeeping",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/kojin_jigyo/kichou03.pdf",
+      "file": "nta-r07-business-bookkeeping.pdf",
+      "title": "帳簿の記帳のしかた（事業所得者用）",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "050d458b38be96f3256d984bd75c0673d0aa7b2a1d3e92333295a649544254e1",
+      "locator": "NTA bookkeeping guidance for individual business-income source records"
+    },
+    {
+      "id": "nta-jp-r07-corporation-forms",
+      "url": "https://www.nta.go.jp/taxes/tetsuzuki/shinsei/annai/hojin/shinkoku/itiran2025/01.htm",
+      "file": "nta-r07-corporation-forms.html",
+      "title": "法人税等各種別表関係（令和7年4月1日以後終了事業年度等分）",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "4920e32cb5a4467b9e9b4085067a10e9cb3db66aab0020c7b60c619ee1af13f3",
+      "locator": "2025 corporate return form index"
+    },
+    {
+      "id": "nta-jp-r07-corporation-form-1-blue",
+      "url": "https://www.nta.go.jp/taxes/tetsuzuki/shinsei/annai/hojin/shinkoku/itiran2025/pdf/01-01-a.pdf",
+      "file": "nta-r07-corporation-form-1-blue.pdf",
+      "title": "別表一 各事業年度の所得に係る申告書（内国法人・青色申告）",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "792192289d9b4848f2b0aa5886a93840858d88090b138cad014fc3b11a9fc2f2",
+      "locator": "Official domestic corporation blue-return Form 1"
+    },
+    {
+      "id": "nta-jp-r07-corporation-form-1-white",
+      "url": "https://www.nta.go.jp/taxes/tetsuzuki/shinsei/annai/hojin/shinkoku/itiran2025/pdf/01-01-s.pdf",
+      "file": "nta-r07-corporation-form-1-white.pdf",
+      "title": "別表一 各事業年度の所得に係る申告書（内国法人・白色申告）",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "dcd39af5c697b406f031a6216459f6a4bd5343550780eacc9d938f5b9e2402b1",
+      "locator": "Official domestic corporation white-return Form 1"
+    },
+    {
+      "id": "nta-jp-r07-corporation-form-1-instructions",
+      "url": "https://www.nta.go.jp/taxes/tetsuzuki/shinsei/annai/hojin/shinkoku/itiran2025/pdf/01-01-ki.pdf",
+      "file": "nta-r07-corporation-form-1-instructions.pdf",
+      "title": "法人税申告書別表一の記載要領（令和7年4月1日以後終了事業年度分）",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "5aaad8c5bd06d4ba82e02fbca7d5330611b95e837a96bbe00ed3661f7285506a",
+      "locator": "Official Form 1 completion instructions"
+    },
+    {
+      "id": "nta-jp-r07-corporation-guide",
+      "url": "https://www.nta.go.jp/publication/pamph/hojin/aramashi2025/pdf/01.pdf",
+      "file": "nta-r07-corporation-guide.pdf",
+      "title": "令和7年版 法人税のあらましと申告の手引",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "f24ae20d01dbb726c428281adce7b839c4cfbdc92a9e6e75c2bbaf83de397f2e",
+      "locator": "2025 corporate tax return process and schedule overview"
+    },
+    {
+      "id": "nta-jp-r07-corporation-small-company-criteria",
+      "url": "https://www.nta.go.jp/taxes/tetsuzuki/shinsei/annai/hojin/shinkoku/itiran2025/pdf/f02-01.pdf",
+      "file": "nta-r07-corporation-small-company-criteria.pdf",
+      "title": "中小法人の判定について（令和7年4月1日以後終了事業年度分）",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "8ca978e6d7feb448c4b49bffc471f6f956e21746412be4bc9fe03058ee8c3535",
+      "locator": "Official NTA small-company classification dependency"
+    },
+    {
+      "id": "nta-jp-r07-corporation-return-overview",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/tokushu/hojin.htm",
+      "file": "nta-corporation-return-overview.html",
+      "title": "法人税・地方法人税及び防衛特別法人税の申告",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "700138cae1f347c2be03b380ba74007e704ceb81fe2a62d547e3559d4b851d55",
+      "locator": "NTA corporate filing overview and tax categories"
+    },
+    {
+      "id": "nta-jp-r07-local-tax-guidance",
+      "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/tebiki/2025/03/order6/3-6_01.htm",
+      "file": "nta-r07-local-tax-guidance.html",
+      "title": "手順6 住民税、事業税に関する事項を記入する（令和7年分）",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "7dde644943c1b544005df11c9f2bee27f5fc506b204a9bc019643f6de63b5e29",
+      "locator": "NTA local-tax handoff and municipality/prefecture calculation notice"
+    },
+    {
+      "id": "nta-jp-r07-local-tax-input",
+      "url": "https://www.keisan.nta.go.jp/r7yokuaru_sp/socat1/scid1345.html",
+      "file": "nta-r07-local-tax-input.html",
+      "title": "住民税に関する事項の入力（令和7年分）",
+      "retrievedAt": "2026-09-14T06:13:05Z",
+      "sha256": "0f05488731cd112c809e296715200d67fc9803ba6b7ca7e7c1fafa7f439a14c5",
+      "locator": "NTA local-tax input items"
+    }
+  ]
+}

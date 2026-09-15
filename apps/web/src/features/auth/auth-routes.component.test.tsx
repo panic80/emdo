@@ -138,7 +138,7 @@ describe('invite-only authentication routes', () => {
     await renderPath(path, client);
 
     expect(
-      await screen.findByRole('heading', { name: 'Join your household' }),
+      await screen.findByRole('heading', { name: 'Join your workspace' }),
     ).toBeVisible();
     expect(screen.getByText('member@example.ca')).toBeVisible();
     await userEvent.type(

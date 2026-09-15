@@ -289,6 +289,44 @@ function sensitiveRuntime(
 }
 
 describe('DomainDataProvider', () => {
+  it('explains retired Finance edits as unsaved changes needing book review', async () => {
+    const runtime: DomainDataRuntime = {
+      ...sensitiveRuntime(),
+      inspect: vi.fn(async () =>
+        createDomainRuntimeSnapshot({
+          spaces: [space],
+          replication: startingReplication,
+          conflicts: [
+            {
+              operationId: '44444444-4444-4444-8444-444444444443',
+              status: 'conflict',
+              code: 'repository-rejected',
+              conflicts: [
+                { field: 'legacy-finance-writer-retired', material: true },
+              ],
+            },
+          ],
+        }),
+      ),
+    } as DomainDataRuntime;
+    render(
+      <AuthProvider client={authClient('online')}>
+        <DomainDataProvider runtimeFactory={vi.fn(async () => runtime)}>
+          <DomainSyncStatus />
+        </DomainDataProvider>
+      </AuthProvider>,
+    );
+    expect(
+      await screen.findByText(/This Finance change was not saved/),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/Review and re-enter it in the book/),
+    ).toBeVisible();
+    expect(
+      screen.queryByText('legacy-finance-writer-retired (material)'),
+    ).not.toBeInTheDocument();
+  });
+
   it('hydrates encrypted terminal conflicts and dismisses only the reviewed notice', async () => {
     const firstOperationId = '44444444-4444-4444-8444-444444444441';
     const secondOperationId = '44444444-4444-4444-8444-444444444442';

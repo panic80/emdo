@@ -1,5 +1,11 @@
-import { Link, Navigate, Outlet, useRouterState } from '@tanstack/react-router';
-import { useEffect, useId, useState } from 'react';
+import {
+  Link,
+  Navigate,
+  Outlet,
+  useNavigate,
+  useRouterState,
+} from '@tanstack/react-router';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import {
   DESKTOP_NAV_ITEMS,
@@ -102,6 +108,40 @@ function MoreMenu({
   readonly close: () => void;
 }) {
   const titleId = useId();
+  const panelRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    const controls = () =>
+      Array.from(
+        panel?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled])',
+        ) ?? [],
+      );
+    controls()[0]?.focus();
+    const containFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const items = controls();
+      const first = items[0];
+      const last = items.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    panel?.addEventListener('keydown', containFocus);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      panel?.removeEventListener('keydown', containFocus);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
+    };
+  }, [open]);
   if (!open) return null;
 
   return (
@@ -111,6 +151,7 @@ function MoreMenu({
       onMouseDown={close}
     >
       <section
+        ref={panelRef}
         aria-labelledby={titleId}
         aria-modal="true"
         className="more-menu"
@@ -199,25 +240,51 @@ function MobileNavigation({ openMore }: { readonly openMore: () => void }) {
 }
 
 function TopBar({ openMore }: { readonly openMore: () => void }) {
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+  const current = DESKTOP_NAV_ITEMS.find(
+    (item) => item.id === resolveNavigationState(pathname).activeDesktopId,
+  );
+  const name = auth.session?.user.name?.trim() || 'Account';
+  const initials = name
+    .split(/\s+/u)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toLocaleUpperCase();
   return (
     <header className="top-bar">
       <Link className="top-bar__wordmark" to="/today" aria-label="EMDO home">
         EMDO
       </Link>
+      <div className="top-bar__location" aria-label="Current section">
+        <span>Workspace</span>
+        <Icon name="chevron-right" size={15} />
+        <strong>{current?.label}</strong>
+      </div>
       <div className="top-bar__desktop-actions">
         <button
           className="icon-button"
           type="button"
           aria-label="Notifications"
+          title="View activity and notifications"
+          onClick={() => void navigate({ to: '/activity' })}
         >
           <Icon name="bell" />
         </button>
         <button
           className="profile-button"
           type="button"
-          aria-label="Open account menu"
+          aria-label="Open account settings"
+          onClick={() => void navigate({ to: '/settings' })}
         >
-          <span aria-hidden="true">JS</span>
+          <span className="profile-button__avatar" aria-hidden="true">
+            {initials}
+          </span>
+          <span className="profile-button__name">{name}</span>
           <Icon name="chevron-down" size={19} />
         </button>
       </div>

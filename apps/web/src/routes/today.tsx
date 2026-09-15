@@ -68,7 +68,7 @@ function TodayTimeline({ view }: { readonly view: TodayView }) {
 
 function DomainSummaries({ view }: { readonly view: TodayView }) {
   return (
-    <section className="domain-summaries" aria-label="Household overview">
+    <section className="domain-summaries" aria-label="Workspace overview">
       <article className="domain-summary">
         <h2>
           <Icon name="check" /> Reminders

@@ -1,6 +1,7 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open } from 'node:fs/promises';
+import { lstat, open, realpath } from 'node:fs/promises';
+import { isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
@@ -12,7 +13,12 @@ import {
   FinanceExperienceV1Schema,
 } from '@emdo/domains/finance';
 import { z } from 'zod';
+import {
+  FinanceStandardizationRunSchema,
+  FinanceReportMappingDefinitionSchema,
+} from '@emdo/contracts';
 
+import { specialistCapabilitySchemas } from '../agents/capability-runtime.js';
 import { formatFinanceSyntheticStagingCommand } from '../production/finance-synthetic-staging-agent.js';
 import { ApiSyntheticHttpSubsetReadinessSuccessSchema } from '../readiness-contract.js';
 import {
@@ -693,6 +699,9 @@ type StagingAcceptanceCommandInput = {
   readonly now?: () => Date;
   readonly sleep?: (milliseconds: number) => Promise<void>;
   readonly financeExtractionMaxPolls?: number;
+  readonly normalizedReviewReporter?: NonNullable<
+    Parameters<typeof waitForNormalizedAuthoredReview>[0]['onPending']
+  >;
   /** CLI-only content-safe progress observer; it never receives user data. */
   readonly financeStageReporter?: (
     progress: FinanceStagingAcceptanceProgress,
@@ -3194,18 +3203,823 @@ const runFinanceStagingFinalize = async (
   });
 };
 
+const NORMALIZED_ACCEPTANCE_ARGS = [
+  '--all-mvp-gates',
+  '--require-synthetic',
+  '--finance-normalized-synthetic-gates',
+];
+const NORMALIZED_SOURCE =
+  'Booked on,Details,Net cash,CCY\n2026-09-15,Synthetic service receipt,123.45,CAD\n2026-09-16,Synthetic purchase,-67.89,CAD\n';
+const NORMALIZED_SOURCE_DIGEST = createHash('sha256')
+  .update(NORMALIZED_SOURCE)
+  .digest('hex');
+const normalizedKnownQuestions = new Set([
+  'CSV headings, field meanings, date locale and number separators require explicit review.',
+  'Confirm the source columns and date format.',
+  'Source extraction is incomplete; review the original before approval.',
+  'Confirm that Booked on is the intended transaction date and Net cash is the signed transaction amount, including its treatment of any fees or taxes.',
+  'Confirm the heading meanings, date format and number separators across the source; the proposal is based only on the two supplied rows.',
+  'Extraction is marked incomplete. What rows or regions remain unextracted, and could they contain additional columns or different formats? Full-source coverage is unknown.',
+  'Confirm or replace the proposed providerKey, reportName and layoutVersion labels.',
+]);
+
+/** Exact fixture validation. Unknown questions require the explicitly selected authored-file gate. */
+export function validateNormalizedSyntheticSourceReview(
+  raw: unknown,
+  evidenceId: string,
+  options?: { authoredReviewSelected: true },
+) {
+  const mapping = z
+    .object({
+      id: z.uuid(),
+      revision: z.number().int().positive(),
+      version: z.number().int().positive(),
+      provider_key: z.string().min(1),
+      status: z.literal('candidate'),
+      definition: FinanceReportMappingDefinitionSchema,
+      unresolved_questions: z.array(z.string().min(1).max(500)).max(30),
+      example: z.object({
+        documentId: z.literal(evidenceId),
+        headers: z.array(z.string()),
+        context: z.object({ asOf: z.null(), currency: z.null() }),
+        rows: z.array(
+          z.object({ sourceRow: z.number(), cells: z.array(z.string()) }),
+        ),
+      }),
+      validation: z.object({
+        status: z.literal('normalized'),
+        rows: z.array(z.object({ fields: z.record(z.string(), z.unknown()) })),
+      }),
+    })
+    .parse(raw);
+  const definition = mapping.definition;
+  const columns = ['Booked on', 'Details', 'Net cash', 'CCY'];
+  const fields = ['transactionDate', 'description', 'amount', 'currency'];
+  if (
+    definition.reportType !== 'bank-transactions' ||
+    definition.dateFormat !== 'yyyy-mm-dd' ||
+    definition.decimalSeparator !== '.' ||
+    definition.groupingSeparator !== '' ||
+    JSON.stringify(definition.headers) !== JSON.stringify(columns) ||
+    definition.bindings.length !== 4 ||
+    fields.some(
+      (field, index) =>
+        !definition.bindings.some(
+          (binding) =>
+            binding.field === field &&
+            binding.column === columns[index] &&
+            binding.context === null,
+        ),
+    )
+  )
+    throw new Error('normalized-synthetic-definition-mismatch');
+  const expectedRows = [
+    ['2026-09-15', 'Synthetic service receipt', '123.45', 'CAD'],
+    ['2026-09-16', 'Synthetic purchase', '-67.89', 'CAD'],
+  ];
+  if (
+    JSON.stringify(mapping.example.headers) !==
+      JSON.stringify(['Booked on', 'Details', 'Net cash', 'CCY']) ||
+    JSON.stringify(mapping.example.rows) !==
+      JSON.stringify(
+        expectedRows.map((cells, index) => ({ sourceRow: index + 2, cells })),
+      ) ||
+    mapping.validation.rows.length !== 2 ||
+    mapping.validation.rows.some((row, index) => {
+      const cells = expectedRows[index]!;
+      return (
+        row.fields.transactionDate !== cells[0] ||
+        row.fields.description !== cells[1] ||
+        row.fields.amount !== cells[2] ||
+        row.fields.currency !== cells[3] ||
+        Object.keys(row.fields).length !== 4
+      );
+    })
+  )
+    throw new Error('normalized-synthetic-source-review-mismatch');
+  if (
+    !options?.authoredReviewSelected &&
+    mapping.unresolved_questions.some(
+      (question) => !normalizedKnownQuestions.has(question),
+    )
+  )
+    throw new Error('normalized-synthetic-source-review-unknown-question');
+  return mapping;
+}
+
+const NORMALIZED_REVIEW_MAX_BYTES = 32_768;
+const NORMALIZED_REVIEW_WAIT_MS = 180_000;
+const NormalizedAuthoredReviewBindingSchema = z.strictObject({
+  runId: z.uuid(),
+  bookId: z.uuid(),
+  evidenceId: z.uuid(),
+  sourceDigest: z.string().regex(/^[0-9a-f]{64}$/u),
+  mappingId: z.uuid(),
+  mappingRevision: z.number().int().positive(),
+  mappingVersion: z.number().int().positive(),
+  mappingDefinitionDigest: z.string().regex(/^[0-9a-f]{64}$/u),
+  challenge: z.uuid(),
+  expiresAt: z.iso.datetime(),
+  questions: z.array(z.string().min(1).max(500)).max(30),
+});
+type NormalizedAuthoredReviewBinding = z.output<
+  typeof NormalizedAuthoredReviewBindingSchema
+>;
+const NormalizedAuthoredReviewSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  decision: z.literal('approve-authored-synthetic-mapping'),
+  binding: NormalizedAuthoredReviewBindingSchema,
+  answers: z
+    .array(
+      z.strictObject({
+        question: z.string().min(1).max(500),
+        answer: z.string().trim().min(1).max(1000),
+      }),
+    )
+    .max(30),
+  rationale: z.string().trim().min(1).max(2000),
+});
+
+/** Exact persisted challenge binding; no inference from an author's arbitrary answer text. */
+export function validateNormalizedAuthoredReview(
+  raw: unknown,
+  expected: NormalizedAuthoredReviewBinding,
+  now = Date.now(),
+) {
+  const binding = NormalizedAuthoredReviewBindingSchema.parse(expected);
+  const review = NormalizedAuthoredReviewSchema.parse(raw);
+  if (now >= Date.parse(binding.expiresAt))
+    throw new Error('normalized-authored-review-expired');
+  if (JSON.stringify(review.binding) !== JSON.stringify(binding))
+    throw new Error('normalized-authored-review-binding-mismatch');
+  if (
+    JSON.stringify(review.answers.map(({ question }) => question)) !==
+    JSON.stringify(binding.questions)
+  )
+    throw new Error('normalized-authored-review-question-binding-mismatch');
+  return review;
+}
+
+async function assertNormalizedReviewDirectory(directory: string) {
+  if (
+    !isAbsolute(directory) ||
+    directory !== resolve(directory) ||
+    (await realpath(directory)) !== directory
+  )
+    throw new Error('normalized-authored-review-canonical-directory-required');
+  const info = await lstat(directory);
+  if (
+    !info.isDirectory() ||
+    info.isSymbolicLink() ||
+    info.uid !== process.getuid?.() ||
+    (info.mode & 0o777) !== 0o700
+  )
+    throw new Error('normalized-authored-review-private-directory-required');
+  return info;
+}
+
+/** Waits in the same process/run, without touching the provider or any finance write. */
+export async function waitForNormalizedAuthoredReview(input: {
+  directory: string;
+  runId: string;
+  bookId: string;
+  evidenceId: string;
+  mapping: unknown;
+  sleep?: (milliseconds: number) => Promise<void>;
+  onPending?: (progress: {
+    event: 'normalized-synthetic-awaiting-authored-review';
+    runId: string;
+    requestPath: string;
+    reviewPath: string;
+    expiresAt: string;
+  }) => void;
+}) {
+  const directory = await assertNormalizedReviewDirectory(input.directory);
+  const assertSameDirectory = async () => {
+    const current = await assertNormalizedReviewDirectory(input.directory);
+    if (directory.dev !== current.dev || directory.ino !== current.ino)
+      throw new Error('normalized-authored-review-directory-changed');
+  };
+  // This helper cannot be used to waive source or definition validation.
+  const mapping = validateNormalizedSyntheticSourceReview(
+    input.mapping,
+    input.evidenceId,
+    { authoredReviewSelected: true },
+  );
+  const binding = NormalizedAuthoredReviewBindingSchema.parse({
+    runId: input.runId,
+    bookId: input.bookId,
+    evidenceId: input.evidenceId,
+    sourceDigest: NORMALIZED_SOURCE_DIGEST,
+    mappingId: mapping.id,
+    mappingRevision: mapping.revision,
+    mappingVersion: mapping.version,
+    mappingDefinitionDigest: createHash('sha256')
+      .update(JSON.stringify(mapping.definition))
+      .digest('hex'),
+    challenge: randomUUID(),
+    expiresAt: new Date(Date.now() + NORMALIZED_REVIEW_WAIT_MS).toISOString(),
+    questions: mapping.unresolved_questions,
+  });
+  const requestPath = join(input.directory, `${binding.runId}.request.json`),
+    reviewPath = join(input.directory, `${binding.runId}.review.json`),
+    acceptedPath = join(input.directory, `${binding.runId}.accepted.json`);
+  const writePrivateExclusive = async (path: string, value: unknown) => {
+    await assertSameDirectory();
+    const payload = JSON.stringify(value, null, 2) + '\n';
+    if (Buffer.byteLength(payload) > 65_536)
+      throw new Error('normalized-authored-review-artifact-too-large');
+    const handle = await open(
+      path,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      await handle.writeFile(payload);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await assertSameDirectory();
+  };
+  await writePrivateExclusive(requestPath, {
+    schemaVersion: 1,
+    binding,
+    sourceText: NORMALIZED_SOURCE,
+    mappingDefinition: mapping.definition,
+    reviewInstructions:
+      'Review every question against the complete authored synthetic original. Supply your own answers and rationale; the CLI does not generate them.',
+  });
+  input.onPending?.({
+    event: 'normalized-synthetic-awaiting-authored-review',
+    runId: binding.runId,
+    requestPath,
+    reviewPath,
+    expiresAt: binding.expiresAt,
+  });
+  for (
+    let poll = 0;
+    poll < 360 && Date.now() < Date.parse(binding.expiresAt);
+    poll++
+  ) {
+    await assertSameDirectory();
+    let handle;
+    try {
+      handle = await open(
+        reviewPath,
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      );
+    } catch (error) {
+      if (!(
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'ENOENT'
+      ))
+        throw error;
+      await (
+        input.sleep ??
+        ((ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)))
+      )(500);
+      continue;
+    }
+    let raw: unknown;
+    try {
+      const before = await handle.stat();
+      if (
+        !before.isFile() ||
+        before.uid !== process.getuid?.() ||
+        (before.mode & 0o777) !== 0o600 ||
+        before.nlink !== 1 ||
+        before.size < 1 ||
+        before.size > NORMALIZED_REVIEW_MAX_BYTES
+      )
+        throw new Error('normalized-authored-review-private-file-required');
+      const buffer = Buffer.alloc(NORMALIZED_REVIEW_MAX_BYTES + 1);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      const after = await handle.stat();
+      if (
+        bytesRead !== before.size ||
+        after.size !== before.size ||
+        after.mtimeMs !== before.mtimeMs ||
+        after.ctimeMs !== before.ctimeMs ||
+        after.nlink !== 1
+      )
+        throw new Error('normalized-authored-review-file-changed');
+      raw = JSON.parse(buffer.subarray(0, bytesRead).toString('utf8'));
+    } finally {
+      await handle.close();
+    }
+    await assertSameDirectory();
+    const review = validateNormalizedAuthoredReview(raw, binding);
+    const reviewSha256 = createHash('sha256')
+      .update(JSON.stringify(review))
+      .digest('hex');
+    await writePrivateExclusive(acceptedPath, {
+      schemaVersion: 1,
+      reviewSha256,
+      review,
+    });
+    return {
+      rationale: `${review.rationale}\nAuthored source review SHA256: ${reviewSha256}`,
+      reviewSha256,
+      acceptedPath,
+    };
+  }
+  throw new Error('normalized-authored-review-timeout');
+}
+
+export function validateNormalizedSyntheticEmdoReadback(
+  raw: unknown,
+  bookId: string,
+  evidenceId: string,
+  batchId: string,
+  rows: readonly {
+    id: string;
+    amount: string;
+    posting: {
+      journalId: string;
+      economicTransactionId: string;
+      lines: readonly { accountId: string; side: string; amount: string }[];
+    };
+  }[],
+) {
+  const readback = z
+    .object({
+      bookId: z.literal(bookId),
+      view: z.literal('import-review'),
+      amountEncoding: z.literal('decimal-string'),
+      nextOffset: z.null(),
+      records: z
+        .array(
+          z.object({
+            id: z.string().min(1),
+            fields: z.array(
+              z.object({ name: z.string(), value: z.string().nullable() }),
+            ),
+          }),
+        )
+        .length(8),
+      sourceReferences: z.array(z.string()).length(8),
+    })
+    .parse(specialistCapabilitySchemas['finance.books.read'].output.parse(raw));
+  for (const [index, row] of rows.entries()) {
+    const posting = rows[index]!.posting;
+    const fieldValue = (recordId: string, name: string) =>
+      readback.records
+        .find((record) => record.id === recordId)
+        ?.fields.find((field) => field.name === name)?.value;
+    const journalRecordId = `${row.id}:journal:${posting.journalId}`;
+    if (
+      fieldValue(row.id, 'amount') !== row.amount ||
+      fieldValue(row.id, 'evidenceId') !== evidenceId ||
+      fieldValue(row.id, 'batchId') !== batchId ||
+      fieldValue(row.id, 'economicTransactionId') !==
+        posting.economicTransactionId ||
+      fieldValue(journalRecordId, 'journalId') !== posting.journalId ||
+      fieldValue(journalRecordId, 'economicTransactionId') !==
+        posting.economicTransactionId
+    )
+      throw new Error('normalized-synthetic-emdo-readback-mismatch');
+    for (const line of posting.lines) {
+      if (
+        !readback.records.some(
+          (record) =>
+            record.id.startsWith(`${journalRecordId}:line:`) &&
+            fieldValue(record.id, 'accountId') === line.accountId &&
+            fieldValue(record.id, 'side') === line.side &&
+            fieldValue(record.id, 'amount') === line.amount &&
+            fieldValue(record.id, 'journalId') === posting.journalId,
+        )
+      )
+        throw new Error('normalized-synthetic-emdo-lineage-mismatch');
+    }
+  }
+  if (
+    readback.records.some(
+      (record) =>
+        !readback.sourceReferences.includes(
+          `/api/v2/finance/books/${bookId}/imports/${batchId}#${record.id}`,
+        ),
+    )
+  )
+    throw new Error('normalized-synthetic-emdo-source-reference-mismatch');
+}
+
+async function runNormalizedSyntheticStagingAcceptance(
+  input: StagingAcceptanceCommandInput,
+) {
+  const env = input.environment;
+  const config = FinanceAcceptanceConfigurationSchema.extend({
+    normalized: z.literal('true'),
+    reviewDirectory: z.string().min(1).optional(),
+    bookId: z.uuid(),
+    financialAccountId: z.uuid(),
+    cashAccountId: z.uuid(),
+    counterAccountId: z.uuid(),
+  }).parse({
+    apiOrigin: env.EMDO_STAGING_API_ORIGIN,
+    environment: env.EMDO_ENVIRONMENT,
+    workerProvidersEnabled: env.EMDO_EXTERNAL_PROVIDERS_ENABLED,
+    ownerEmail: env.EMDO_SYNTHETIC_OWNER_EMAIL,
+    ownerPassword: env.EMDO_SYNTHETIC_OWNER_PASSWORD,
+    publicOrigin: env.EMDO_PUBLIC_ORIGIN,
+    syntheticDataOnly: env.EMDO_SYNTHETIC_DATA_ONLY,
+    sourceSha: env.EMDO_STAGING_SOURCE_SHA,
+    workflowRunId: env.EMDO_STAGING_WORKFLOW_RUN_ID,
+    financeSyntheticStaging: env.EMDO_FINANCE_SYNTHETIC_STAGING,
+    normalized: env.EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING,
+    reviewDirectory: env.EMDO_FINANCE_NORMALIZED_SYNTHETIC_REVIEW_DIRECTORY,
+    bookId: env.EMDO_FINANCE_NORMALIZED_SYNTHETIC_BOOK_ID,
+    financialAccountId:
+      env.EMDO_FINANCE_NORMALIZED_SYNTHETIC_FINANCIAL_ACCOUNT_ID,
+    cashAccountId: env.EMDO_FINANCE_NORMALIZED_SYNTHETIC_CASH_ACCOUNT_ID,
+    counterAccountId: env.EMDO_FINANCE_NORMALIZED_SYNTHETIC_COUNTER_ACCOUNT_ID,
+  });
+  if (config.reviewDirectory !== undefined)
+    await assertNormalizedReviewDirectory(config.reviewDirectory);
+  if (config.cashAccountId === config.counterAccountId)
+    throw new Error('normalized-synthetic-accounts-not-distinct');
+  const send: SameOriginSend = (path, init) =>
+    (input.fetch ?? fetch)(
+      new Request(`${config.apiOrigin}${path}`, {
+        ...init,
+        redirect: 'error',
+        signal: AbortSignal.timeout(30_000),
+      }),
+    );
+  const signIn = await send('/api/auth/sign-in/email', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      origin: config.publicOrigin,
+      'idempotency-key': randomUUID(),
+    },
+    body: JSON.stringify({
+      email: config.ownerEmail,
+      password: config.ownerPassword,
+    }),
+  });
+  await requireOkJson(signIn);
+  const cookies = [...cookiesFrom(signIn)];
+  if (
+    !cookies.some((cookie) => cookie.startsWith('__Secure-emdo.session_token='))
+  )
+    throw new Error('normalized-synthetic-session-missing');
+  const csrfResponse = await send('/api/v1/auth/csrf', {
+    headers: { cookie: cookies.join('; ') },
+  });
+  const csrf = z
+    .object({ token: z.string().min(24) })
+    .parse(await requireOkJson(csrfResponse));
+  cookies.push(...cookiesFrom(csrfResponse));
+  const cookie = cookies.join('; '),
+    mutationHeaders = {
+      cookie,
+      origin: config.publicOrigin,
+      'x-csrf-token': csrf.token,
+    };
+  const base = `/api/v2/finance/books/${config.bookId}`;
+  const call = async (
+    path: string,
+    body?: unknown,
+    key = randomUUID(),
+  ): Promise<unknown> => {
+    const response = await send(
+      `${base}${path}`,
+      body === undefined
+        ? { headers: { cookie } }
+        : {
+            method: 'POST',
+            headers: {
+              ...mutationHeaders,
+              'content-type': 'application/json',
+              'idempotency-key': key,
+            },
+            body: JSON.stringify(body),
+          },
+    );
+    requireResponseRequestId(response);
+    return requireOkJson(response);
+  };
+  const overviewSchema = z.object({
+    journals: z.array(z.object({ id: z.uuid() })),
+  });
+  const before = overviewSchema.parse(await call(''));
+  if (before.journals.length)
+    throw new Error('normalized-synthetic-book-must-be-unposted');
+  const options = z
+    .object({ ready: z.literal(true) })
+    .parse(await call('/standardizations/options'));
+  void options;
+  const evidence = z
+    .object({ id: z.uuid(), sourceDigest: z.literal(NORMALIZED_SOURCE_DIGEST) })
+    .parse(
+      await call('/evidence', {
+        filename: 'synthetic-normalized-acceptance.csv',
+        format: 'csv',
+        sourceText: NORMALIZED_SOURCE,
+      }),
+    );
+  const original = z
+    .object({ sourceText: z.literal(NORMALIZED_SOURCE) })
+    .parse(await call(`/evidence/${evidence.id}`));
+  void original;
+  let run = FinanceStandardizationRunSchema.parse(
+    await call('/standardizations', {
+      evidenceId: evidence.id,
+      expectedSourceDigest: NORMALIZED_SOURCE_DIGEST,
+    }),
+  );
+  const runId = run.id;
+  // Production permits a 90-second provider request, plus extraction and queue delivery.
+  const proposalDeadline = Date.now() + 180_000;
+  for (
+    let poll = 0;
+    ['queued', 'extracting', 'proposing'].includes(run.status) &&
+    poll < 180 &&
+    Date.now() < proposalDeadline;
+    poll++
+  ) {
+    await (
+      input.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
+    )(1000);
+    run = FinanceStandardizationRunSchema.parse(
+      await call(`/standardizations/${runId}`),
+    );
+  }
+  if (
+    run.id !== runId ||
+    run.bookId !== config.bookId ||
+    run.evidenceId !== evidence.id ||
+    run.sourceDigest !== NORMALIZED_SOURCE_DIGEST ||
+    run.status !== 'needs-review' ||
+    !run.proposal?.mappingId ||
+    !run.modelProvenance ||
+    run.modelProvenance.reasoningEffort !== 'medium'
+  )
+    throw new Error('normalized-synthetic-live-proposal-not-ready');
+  const candidate = z
+    .object({ mapping: z.unknown() })
+    .parse(await call(`/report-mappings/${run.proposal.mappingId}`));
+  const mapping = validateNormalizedSyntheticSourceReview(
+    candidate.mapping,
+    evidence.id,
+    config.reviewDirectory === undefined
+      ? undefined
+      : { authoredReviewSelected: true },
+  );
+  if (mapping.id !== run.proposal.mappingId)
+    throw new Error('normalized-synthetic-mapping-binding-invalid');
+  let authoredReviewReceipt:
+    { reviewSha256: string; acceptedPath: string } | undefined;
+  let reviewedRationale =
+    'The acceptance author verified the complete synthetic two-row CSV and all four columns. Booked on is the transaction date in yyyy-mm-dd format. Net cash is the signed CAD amount with period decimals; this authored fixture contains no separate fees or taxes. Both rows and every cell are preserved. There are no omitted rows or regions. Provider, report and layout labels identify this synthetic mapping only and do not identify a real bank.';
+  if (config.reviewDirectory !== undefined) {
+    const authored = await waitForNormalizedAuthoredReview({
+      directory: config.reviewDirectory,
+      runId,
+      bookId: config.bookId,
+      evidenceId: evidence.id,
+      mapping,
+      ...(input.sleep === undefined ? {} : { sleep: input.sleep }),
+      ...(input.normalizedReviewReporter === undefined
+        ? {}
+        : { onPending: input.normalizedReviewReporter }),
+    });
+    // A reviewer cannot approve an old snapshot after another client edits the saved run/mapping.
+    const currentRun = FinanceStandardizationRunSchema.parse(
+      await call(`/standardizations/${runId}`),
+    );
+    const currentCandidate = z
+      .object({ mapping: z.unknown() })
+      .parse(await call(`/report-mappings/${mapping.id}`));
+    const currentMapping = validateNormalizedSyntheticSourceReview(
+      currentCandidate.mapping,
+      evidence.id,
+      { authoredReviewSelected: true },
+    );
+    if (
+      currentRun.id !== runId ||
+      currentRun.bookId !== config.bookId ||
+      currentRun.evidenceId !== evidence.id ||
+      currentRun.revision !== run.revision ||
+      currentRun.status !== 'needs-review' ||
+      currentRun.sourceDigest !== NORMALIZED_SOURCE_DIGEST ||
+      currentRun.proposal?.mappingId !== mapping.id ||
+      JSON.stringify(currentMapping) !== JSON.stringify(mapping)
+    )
+      throw new Error('normalized-authored-review-saved-state-changed');
+    reviewedRationale = authored.rationale;
+    authoredReviewReceipt = {
+      reviewSha256: authored.reviewSha256,
+      acceptedPath: authored.acceptedPath,
+    };
+  }
+  const reviewed = z.object({ id: z.uuid() }).parse(
+    await call('/report-mappings/from-source', {
+      evidenceId: evidence.id,
+      expectedSourceDigest: NORMALIZED_SOURCE_DIGEST,
+      proposal: {
+        definition: mapping.definition,
+        unresolvedQuestions: [],
+        rationale: reviewedRationale,
+      },
+    }),
+  );
+  await call(`/standardizations/${runId}/reviewed-mapping`, {
+    expectedRevision: run.revision,
+    mappingId: reviewed.id,
+  });
+  const reviewedRead = z
+    .object({ mapping: z.unknown() })
+    .parse(await call(`/report-mappings/${reviewed.id}`));
+  const reviewedMapping = validateNormalizedSyntheticSourceReview(
+    reviewedRead.mapping,
+    evidence.id,
+  );
+  if (reviewedMapping.unresolved_questions.length)
+    throw new Error('normalized-synthetic-review-unresolved');
+  await call(`/report-mappings/${reviewed.id}/review`, {
+    expectedRevision: reviewedMapping.revision,
+    decision: 'approve',
+    reason:
+      'Acceptance author verified the complete authored synthetic source and all mapped cells.',
+  });
+  const batch = z.object({ id: z.uuid() }).parse(
+    await call(`/report-mappings/${reviewed.id}/import`, {
+      evidenceId: evidence.id,
+      financialAccountId: config.financialAccountId,
+      expectedMappingVersion: reviewedMapping.version,
+      providerKey: reviewedMapping.provider_key,
+    }),
+  );
+  const rowSchema = z.object({
+    id: z.uuid(),
+    revision: z.number().int().positive(),
+    amount: z.string(),
+    posting: z.unknown(),
+  });
+  const importSchema = z.object({
+    batch: z.object({ revision: z.number().int().positive() }),
+    rows: z.array(rowSchema),
+  });
+  const imported = importSchema.parse(await call(`/imports/${batch.id}`));
+  if (
+    imported.rows.length !== 2 ||
+    imported.rows[0]?.amount !== '123.450000000000' ||
+    imported.rows[1]?.amount !== '-67.890000000000' ||
+    imported.rows.some((row) => row.posting !== null)
+  )
+    throw new Error('normalized-synthetic-import-mismatch');
+  for (const row of imported.rows)
+    await call(`/import-rows/${row.id}/review`, {
+      expectedRevision: row.revision,
+      action: 'post',
+      counterAccountId: config.counterAccountId,
+      fxRate: '1',
+      fxSource: 'identity',
+      reason:
+        'Verified authored synthetic source cells and identity CAD conversion.',
+    });
+  const reviewedImport = importSchema.parse(await call(`/imports/${batch.id}`));
+  if (overviewSchema.parse(await call('')).journals.length)
+    throw new Error('normalized-synthetic-premature-posting');
+  const commitKey = randomUUID(),
+    commit = { expectedRevision: reviewedImport.batch.revision };
+  await call(`/imports/${batch.id}/commit`, commit, commitKey);
+  await call(`/imports/${batch.id}/commit`, commit, commitKey);
+  const posted = importSchema.parse(await call(`/imports/${batch.id}`));
+  const postingSchema = z.object({
+    journalId: z.uuid(),
+    economicTransactionId: z.uuid(),
+    functionalCurrency: z.literal('CAD'),
+    lines: z
+      .array(
+        z.object({
+          accountId: z.uuid(),
+          side: z.enum(['debit', 'credit']),
+          amount: z.string(),
+        }),
+      )
+      .length(2),
+  });
+  if (posted.rows.length !== 2)
+    throw new Error('normalized-synthetic-posted-row-count-invalid');
+  const postings = posted.rows.map((row, index) => {
+    const posting = postingSchema.parse(row.posting),
+      amount = index === 0 ? '123.450000000000' : '67.890000000000';
+    if (
+      row.id !== imported.rows[index]?.id ||
+      row.amount !== imported.rows[index]?.amount ||
+      !posting.lines.some(
+        (line) =>
+          line.accountId === config.cashAccountId &&
+          line.side === (index === 0 ? 'debit' : 'credit') &&
+          line.amount === amount,
+      ) ||
+      !posting.lines.some(
+        (line) =>
+          line.accountId === config.counterAccountId &&
+          line.side === (index === 0 ? 'credit' : 'debit') &&
+          line.amount === amount,
+      )
+    )
+      throw new Error('normalized-synthetic-posting-mismatch');
+    return posting;
+  });
+  const journals = overviewSchema.parse(await call('')).journals;
+  if (
+    new Set(postings.map((posting) => posting.journalId)).size !== 2 ||
+    journals.length !== 2 ||
+    journals.some(
+      (journal) =>
+        !postings.some((posting) => posting.journalId === journal.id),
+    )
+  )
+    throw new Error('normalized-synthetic-idempotency-mismatch');
+  const readTurn = await acceptFinanceTurn({
+    send,
+    mutationHeaders,
+    idempotencyKey: randomUUID(),
+    message: formatFinanceSyntheticStagingCommand({
+      schemaVersion: 1,
+      action: 'read-normalized-import',
+      bookId: config.bookId,
+      importId: batch.id,
+      offset: 0,
+      limit: 20,
+    }),
+  });
+  const readEvents = await readFinanceTurnEvents({
+    send,
+    cookie,
+    turn: readTurn,
+    afterSequence: 0,
+    expectedTerminalType: 'run.completed',
+  });
+  const readOutput = financeOutputFromCompletedTerminal({
+    event: readEvents.at(-1),
+    runId: readTurn.runId,
+  });
+  const prefix = 'Normalized import page: ';
+  if (!readOutput.summary.startsWith(prefix))
+    throw new Error('normalized-synthetic-emdo-readback-missing');
+  validateNormalizedSyntheticEmdoReadback(
+    JSON.parse(readOutput.summary.slice(prefix.length)),
+    config.bookId,
+    evidence.id,
+    batch.id,
+    posted.rows.map((row, index) => ({
+      id: row.id,
+      amount: row.amount,
+      posting: postings[index]!,
+    })),
+  );
+  return Object.freeze({
+    schemaVersion: 1,
+    evidenceClass: 'finance-normalized-synthetic-staging-probe',
+    ...(authoredReviewReceipt === undefined ? {} : { authoredReviewReceipt }),
+    releaseEligible: false,
+    outcome: 'passed',
+    environment: 'staging',
+    sourceSha: config.sourceSha,
+    observedAt: (input.now?.() ?? new Date()).toISOString(),
+    bookId: config.bookId,
+    importId: batch.id,
+    sourceDigest: NORMALIZED_SOURCE_DIGEST,
+    proof: {
+      originalReadback: 'passed',
+      liveProposal: 'passed',
+      authoredSourceReview: 'passed',
+      explicitMappingApproval: 'passed',
+      normalizedImport: 'passed',
+      explicitRowReview: 'passed',
+      exactPostingReadback: 'passed',
+      emdoReadback: 'passed',
+      idempotentCommit: 'passed',
+    },
+  });
+}
+
 export const runStagingAcceptanceCommand = async (
   input: StagingAcceptanceCommandInput,
 ): Promise<
   | Awaited<ReturnType<typeof runProviderFreeStagingAcceptance>>
   | FinanceStagingAcceptanceResult
   | FinanceStagingFinalizeResult
+  | Awaited<ReturnType<typeof runNormalizedSyntheticStagingAcceptance>>
 > =>
-  exactArguments(input.argv, FINANCE_FINALIZE_ACCEPTANCE_ARGS)
-    ? runFinanceStagingFinalize(input)
-    : exactArguments(input.argv, FINANCE_ACCEPTANCE_ARGS)
-      ? runFinanceStagingAcceptance(input)
-      : runProviderFreeStagingAcceptance(input);
+  exactArguments(input.argv, NORMALIZED_ACCEPTANCE_ARGS)
+    ? runNormalizedSyntheticStagingAcceptance(input)
+    : exactArguments(input.argv, FINANCE_FINALIZE_ACCEPTANCE_ARGS)
+      ? runFinanceStagingFinalize(input)
+      : exactArguments(input.argv, FINANCE_ACCEPTANCE_ARGS)
+        ? runFinanceStagingAcceptance(input)
+        : runProviderFreeStagingAcceptance(input);
 
 const invokedPath = process.argv[1];
 if (
@@ -3216,6 +4030,9 @@ if (
   void runStagingAcceptanceCommand({
     argv: process.argv.slice(2),
     environment: process.env,
+    normalizedReviewReporter: (progress) => {
+      process.stderr.write(`${JSON.stringify(progress)}\n`);
+    },
     financeStageReporter: (progress) => {
       financeProgress = progress;
     },

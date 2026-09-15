@@ -415,7 +415,7 @@ describe('truthful experience routes', () => {
     await renderPath('/settings', client);
 
     expect(
-      await screen.findByText('Household settings are unavailable.'),
+      await screen.findByText('Workspace settings are unavailable.'),
     ).toBeVisible();
     expect(
       screen.getByText('Notification preferences are unavailable.'),
@@ -468,6 +468,7 @@ describe('truthful experience routes', () => {
   it('renders bounded Finance and Shopping projections without demo/provider fields', async () => {
     const client = createClient();
     await renderPath('/finance', client);
+    await userEvent.click(await screen.findByRole('tab', { name: 'Activity' }));
     expect(
       await screen.findByText('API groceries', undefined, { timeout: 5_000 }),
     ).toBeVisible();

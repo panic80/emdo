@@ -1,0 +1,118 @@
+                                                                                                                                                                                   IT-2105.9
+                                                       Department of Taxation and Finance
+
+                                                       Underpayment of Estimated Tax
+                                                       By Individuals and Fiduciaries
+                                                       New York State • New York City • Yonkers • MCTMT
+ Name(s) as shown on return                                                                                                                                        Identification number (SSN or EIN)
+
+
+Part 1 – All filers must complete this part (see instructions, Form IT-2105.9-I, for assistance)
+ 1 Total tax from your 2025 return before withholding and estimated tax payments (caution: see instructions) . ....................                                                  1                   .00
+ 2    Empire State child credit (from Form IT-201, line 63) ...........................................................                 2                                     .00
+ 3    NYS/NYC child and dependent care credit (from Form IT-201, line 64) .................................                             3                                     .00
+ 4    NY State earned income credit (EIC) (from Form IT-201, line 65) ........................................                          4                                     .00
+ 5    NY State noncustodial parent EIC (from Form IT-201, line 66) . ...........................................                        5                                     .00
+ 6    Real property tax credit (from Form IT-201, line 67) .............................................................                6                                     .00
+ 7    College tuition credit (from Form IT-201, line 68) . ................................................................             7                                     .00
+7a    Enter the total amount of STAR credit (see instructions) .................................................... 7a                                                        .00
+ 8    NY City school tax credit (from Form IT-201, lines 69 and 69a, or Form IT-203, lines 60 and 60a) ...                              8                                     .00
+ 9    NY City earned income credit (from Form IT-201, line 70) . ..................................................                     9                                     .00
+9a    NY City income tax elimination credit (from Form IT-201, line 70a, or Form IT-203, line 60b) ... 9a                                                                     .00
+10    Other refundable credits (from Form IT-201, line 71; Form IT-203, line 61; or Form IT-205, line 33). 10                                                                 .00
+11    Add lines 2 through 10 . .................................................................................................................................................... 11                   .00
+12    Current year tax (subtract line 11 from line 1) ........................................................................................................................ 12                        .00
+13    Multiply line 12 by 90% (.90) . .......................................................................................... 13                                           .00
+14    Income taxes withheld (from Form IT-201, lines 72, 73, and 74; Form IT-203, lines 62, 63, and 64; or Form IT-205, lines 34, 35, and 36) 14                                                         .00
+15    Subtract line 14 from line 12. If the result is less than $300, do not complete the rest of this form (see instructions) . ............... 15                                                      .00
+16    Enter your 2024 tax (caution: see instructions) .................................................................................................................... 16                            .00
+17    Enter the smaller of line 13 or line 16 .............................................................................................................................. 17                          .00
+Part 2 – Short method for computing the penalty – Complete lines 18 through 24 if you paid withholding tax and/or paid four equal
+estimated tax installments (on the due dates), or if you made no payments of estimated tax. Otherwise, you must complete Part 3 – Regular method.
+18Enter the amount from line 14 above . ............................................................................. 18                                                   .00
+19Enter the total amount of estimated tax payments you made (see instructions) . ............... 19                                                                        .00
+20Add lines 18 and 19 ..........................................................................................................................................................   20                    .00
+21Total underpayment for year. Subtract line 20 from line 17 (if zero or less, you do not owe the penalty) . ............................                                          21                    .00
+22Multiply line 21 by .06313 and enter the result .................................................................................................................                22                    .00
+23If the amount on line 21 was paid on or after April 15, 2026, enter 0. If the amount on line 21 was paid before
+     April 15, 2026, make the following computation to find the amount to enter on this line:
+		   Amount on line 21  ×  number of days paid before April 15, 2026  ×  .00026  = . ....................................................                                          23                    .00
+24 Penalty. Subtract line 23 from line 22 .............................................................................................................. 24                                              .00
+     Enter here and on Form IT-201, line 81; Form IT-203, line 71; or Form IT-205, line 42.
+Part 3 – Regular method – Schedule A – Computing your underpayment (Schedule B is on the back)
+                  Payment due dates                                            A      4/15/25                        B      6/15/25                        C      9/15/25                 D    1/15/26
+25 Required installments. Enter ¼ of line 17
+     in each column. (If you used the annualized
+		  income installment method, see instructions.). .                25                                  .00                                  .00                                   .00                   .00
+26 Estimated tax paid and tax withheld
+		  (see instructions) ....................................         26                                  .00                                  .00                                   .00                   .00
+Complete lines 27 through 29, one column
+	  at a time, starting in column A.
+27 Overpayment or underpayment from
+        prior period .......................................... 27		   .00                                                                                                         .00                   .00
+28 If line 27 is an overpayment, add lines 26
+       and 27; if line 27 is an underpayment,
+       subtract line 27 from line 26 (see instr.) . 28             .00 .00                                                                                                         .00                   .00
+29 Underpayment (subtract line 28 from
+		  line 25) or overpayment (subtract line 25
+		  from line 28; see instructions) . .................. 29        .00 .00                                                                                                         .00                   .00
+
+
+
+             059001250094
+IT-2105.9 (2025) (back)
+
+Part 3 – Regular method – Schedule B – Computing the penalty
+                    Payment due dates                                            A      4/15/25                        B      6/15/25                   C      9/15/25            D   1/15/26
+  30 Amount of underpayment (from line 29) ...........                   30                               .00                              .00                              .00                 .00
+First installment penalty period
+   (April 15 - June 15, 2025)
+  31 April 15 - June 15  =
+       (61 ÷ 365) × 9.5% = .01587
+                          - or -
+
+		
+ April 15 -                             =
+   (         ÷ 365) × 9.5% = .
+									                                                                31
+32 Multiply line 30, column A by line 31 ..............                  32                               .00
+
+Second installment penalty period (June 15 - September 15, 2025)
+  33 June 15 - September 15 = (92 ÷ 365) × 9.5% = .02394
+
+                                              - or -
+
+ June 15 -	  = (
+		                                                      ÷ 365) × 9.5% = .
+                                                                                                          33
+  34 Multiply line 30, column B by line 33 ...................................................            34                               .00
+Third installment penalty period (September 15, 2025 - January 15, 2026)
+  35 September 15 - December 31                        = (107 ÷ 365) × 9.5% = .02784
+		 January 1 - January 15                              = ( 15 ÷ 365) × 9.5% = 	
+                                                                              .00389
+                                                                                               .03173 Total
+
+
+                                     - or -
+
+		
+ September 15 -                                        = (          ÷ 365) × 9.5% =                .
+		 January 1 -                                         = (          ÷ 365) × 9.5% =                .
+                                                                                          .                      Total                     35
+  36 Multiply line 30, column C by line 35 ........................................................................................        36                               .00
+Fourth installment penalty period (January 15 - April 15, 2026)
+  37 January 15 - April 15             = (90 ÷ 365) × 9.5% = .02341
+                                     - or -
+
+		
+ January 15 -	                                = (               ÷ 365) × 9.5% = .                                                                                           37
+
+  38 Multiply line 30, column D by line 37 ..............................................................................................................................   38                  .00
+  39 Penalty. Add lines 32, 34, 36, and 38. Enter here and on Form IT-201, line 81;
+       Form IT-203, line 71; or Form IT-205, line 42 .......................................................................................... 39                                              .00
+
+
+
+
+          059002250094                                        Submit this form with your New York State return.
+

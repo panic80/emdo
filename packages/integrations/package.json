@@ -21,6 +21,8 @@
   },
   "dependencies": {
     "@emdo/contracts": "workspace:*",
+    "pdfjs-dist": "5.4.296",
+    "saxes": "6.0.0",
     "zod": "4.4.3"
   }
 }

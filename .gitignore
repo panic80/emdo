@@ -11,6 +11,16 @@ coverage/
 playwright-report/
 test-results/
 /output/
+# Local browser downloads/snapshots and scratch extraction artifacts.
+/.playwright-cli/
+/tmp/
 /.superpowers/
 *.log
 /apps/web/public/@powersync/
+
+# Python tooling caches are not release sources.
+__pycache__/
+*.py[cod]
+
+# Unwired local PDF.js dependency copies; runtime uses packaged assets.
+/apps/web/public/pdfjs/

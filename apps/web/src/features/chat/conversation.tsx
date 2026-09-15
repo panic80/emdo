@@ -372,25 +372,35 @@ export function ConversationPanel({
 
   return (
     <section className="conversation-panel" aria-label="EMDO conversation">
-      <div className="conversation-messages" aria-live="polite">
-        {conversation.messages.map((message) => (
-          <article
-            className={`message message--${message.role}`}
-            key={message.id}
-          >
-            <span className="message__sender">
-              {message.role === 'assistant' ? 'EMDO' : 'You'}
-            </span>
-            <p>{message.text || (message.pending ? 'Thinking…' : '')}</p>
-            {message.evidenceReferences?.length ? (
-              <FinanceEvidenceReferences
-                api={financeDocumentApi}
-                evidenceReferences={message.evidenceReferences}
-                locale={locale}
-              />
-            ) : null}
-          </article>
-        ))}
+      <div
+        className="conversation-messages"
+        role="log"
+        aria-label="Conversation messages"
+        aria-live="polite"
+        tabIndex={0}
+      >
+        {conversation.messages
+          .filter(
+            (message) => specialist !== 'finance' || message.id !== 'welcome',
+          )
+          .map((message) => (
+            <article
+              className={`message message--${message.role}`}
+              key={message.id}
+            >
+              <span className="message__sender">
+                {message.role === 'assistant' ? 'EMDO' : 'You'}
+              </span>
+              <p>{message.text || (message.pending ? 'Thinking…' : '')}</p>
+              {message.evidenceReferences?.length ? (
+                <FinanceEvidenceReferences
+                  api={financeDocumentApi}
+                  evidenceReferences={message.evidenceReferences}
+                  locale={locale}
+                />
+              ) : null}
+            </article>
+          ))}
       </div>
       {conversation.error ? (
         <p className="conversation-error" role="alert">
@@ -399,6 +409,9 @@ export function ConversationPanel({
       ) : null}
       <AskComposer
         compact
+        {...(specialist === 'finance'
+          ? { placeholder: 'Ask about your finances…' }
+          : {})}
         onSubmit={async (message) => {
           return (await conversation.submit(message, specialist)) !== undefined;
         }}

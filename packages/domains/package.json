@@ -7,14 +7,20 @@
     ".": "./src/index.ts",
     "./conflicts": "./src/shared/conflicts-public.ts",
     "./finance": "./src/finance/public.ts",
+    "./finance/corporate-actions": "./src/finance/corporate-actions.ts",
     "./scheduler": "./src/scheduler/public.ts",
     "./server/provider-proposals": "./src/server/provider-proposals.ts",
     "./testing/provider-proposals": "./src/testing/provider-proposals.ts",
-    "./shopping": "./src/shopping/index.ts"
+    "./shopping": "./src/shopping/index.ts",
+    "./finance/decimal": "./src/finance/decimal.ts"
   },
   "dependencies": {
     "@emdo/contracts": "workspace:*",
     "@emdo/toolbox": "workspace:*",
+    "luxon": "3.7.2",
     "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/luxon": "3.7.1"
   }
 }

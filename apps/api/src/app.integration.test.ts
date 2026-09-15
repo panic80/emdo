@@ -1,3 +1,5 @@
+import { request as httpRequest } from 'node:http';
+
 import { EffectiveAuthorizationScopeFingerprintSchema } from '@emdo/contracts';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -2392,6 +2394,127 @@ describe('Fastify API boundary', () => {
 
     await app.close();
   });
+
+  it('accepts zero-length sign-out framing while preserving authentication and mutation guards', async () => {
+    const services = buildServices();
+    const app = await createApp({
+      services,
+      publicOrigin: 'https://emdo.example',
+    });
+    const headers = {
+      ...authenticatedHeaders,
+      'content-length': '0',
+      'idempotency-key': 'request:018f1f5e:empty-sign-out',
+    };
+    try {
+      for (const [header, value, status] of [
+        ['origin', 'https://other.example', 403],
+        ['x-csrf-token', 'invalid', 403],
+        ['cookie', '', 401],
+        ['idempotency-key', undefined, 400],
+      ] as const) {
+        const invalidHeaders: Record<string, string> = { ...headers };
+        if (value === undefined) delete invalidHeaders[header];
+        else invalidHeaders[header] = value;
+        const rejected = await app.inject({
+          method: 'POST',
+          url: '/api/auth/sign-out',
+          headers: invalidHeaders,
+        });
+        expect(rejected.statusCode, header).toBe(status);
+        expect(services.auth.handleBrowserRequest).not.toHaveBeenCalled();
+      }
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/sign-out',
+        headers,
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ success: true });
+      const upstream = vi.mocked(services.auth.handleBrowserRequest).mock
+        .calls[0]?.[0].request;
+      expect(upstream?.body).toBeNull();
+      expect(services.auth.verifyMutation).toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('accepts a real Node HTTP POST with an absent body framed as zero bytes', async () => {
+    const services = buildServices();
+    const app = await createApp({
+      services,
+      publicOrigin: 'https://emdo.example',
+    });
+    try {
+      const address = await app.listen({ host: '127.0.0.1', port: 0 });
+      const response = await new Promise<{ status: number; body: string }>(
+        (resolve, reject) => {
+          const request = httpRequest(
+            `${address}/api/auth/sign-out`,
+            {
+              method: 'POST',
+              headers: {
+                ...authenticatedHeaders,
+                'content-length': '0',
+                'idempotency-key': 'request:018f1f5e:wire-sign-out',
+              },
+            },
+            (incoming) => {
+              let body = '';
+              incoming.setEncoding('utf8');
+              incoming.on('data', (chunk: string) => {
+                body += chunk;
+              });
+              incoming.on('end', () =>
+                resolve({ status: incoming.statusCode ?? 0, body }),
+              );
+              incoming.on('error', reject);
+            },
+          );
+          request.on('error', reject);
+          request.end();
+        },
+      );
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({ success: true });
+      expect(services.auth.handleBrowserRequest).toHaveBeenCalledOnce();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it.each([
+    { 'content-length': '1' },
+    { 'content-length': '0', 'content-type': 'application/json' },
+    { 'transfer-encoding': 'chunked' },
+  ])(
+    'rejects sign-out body signals %j before invoking Better Auth',
+    async (bodyHeaders) => {
+      const services = buildServices();
+      const app = await createApp({
+        services,
+        publicOrigin: 'https://emdo.example',
+      });
+      try {
+        const response = await app.inject({
+          method: 'POST',
+          url: '/api/auth/sign-out',
+          headers: {
+            ...authenticatedHeaders,
+            'idempotency-key': 'request:018f1f5e:sign-out-body-rejected',
+            ...bodyHeaders,
+          },
+          ...(bodyHeaders['content-length'] === '1' ? { payload: 'x' } : {}),
+        });
+        expect(response.statusCode).toBe(400);
+        expect(response.json().code).toBe('auth-request-body-invalid');
+        expect(services.auth.handleBrowserRequest).not.toHaveBeenCalled();
+      } finally {
+        await app.close();
+      }
+    },
+  );
 
   it('rejects bodies and ambiguous callback fields before invoking Better Auth', async () => {
     const services = buildServices();

@@ -1,8 +1,34 @@
+import {
+  FinanceBookEvidenceCrypto,
+  extractReviewedFinanceXlsxTable,
+  extractReviewedFinancePdfTable,
+  extractReviewedFinanceImageTable,
+  verifyFinancePdfOcrEvidence,
+  extractReviewedFinancePdfOcrTable,
+  createFinancePdfIsolatedRenderer,
+  extractStructuredFinanceInvoice,
+  extractFinanceOfxStatement,
+  EncryptedFinanceBookEvidenceSchema,
+} from '@emdo/integrations/finance-documents';
+import { createProductionFinanceDocumentKeyProvider } from './finance-document-keyring.js';
 import { webcrypto } from 'node:crypto';
 
 import {
   ExperienceQueryCursorCodec,
   PostgresFinanceImportRepository,
+  PostgresFinanceV2Repository,
+  PostgresFinanceLegacyMigrationRepository,
+  PostgresFinanceOpeningRepository,
+  PostgresFranceFecRepository,
+  PostgresFranceFecMappingRepository,
+  PostgresFinancePlanningRepository,
+  FinanceInvestmentReconciliationRepository,
+  FinanceJournalDraftRepository,
+  PostgresFinanceStandardizationRepository,
+  PostgresFinanceScheduleRepository,
+  PostgresFinanceTaxRepository,
+  PostgresFinanceGeneratedReportRepository,
+  PostgresFinanceAutomationRepository,
   PostgresFinanceSpecialistRecordRepository,
   PostgresAudioRequestCoordinator,
   PostgresHouseholdAdministrationService,
@@ -399,8 +425,138 @@ export const createProductionDurableServiceBindings = async (
   }
 
   const bindings: ProductionApiServiceBindings = {};
-  const databases: DatabaseRuntime[] = [database];
   const additionalCloses: Array<() => Promise<void>> = [];
+  if (environment.EMDO_FINANCE_V2_ENABLED === 'true') {
+    let evidenceCipher: NonNullable<
+      ConstructorParameters<typeof PostgresFinanceV2Repository>[1]
+    >['evidenceCipher'];
+    const encodedKeyring = environment.EMDO_FINANCE_DOCUMENT_KEYRING_B64URL;
+    if (encodedKeyring) {
+      try {
+        const keys = createProductionFinanceDocumentKeyProvider(encodedKeyring);
+        const crypto = new FinanceBookEvidenceCrypto(keys);
+        evidenceCipher = {
+          encrypt: crypto.encrypt.bind(crypto),
+          decrypt: (
+            value: unknown,
+            scope: Parameters<typeof crypto.decrypt>[1],
+          ) =>
+            crypto.decrypt(
+              EncryptedFinanceBookEvidenceSchema.parse(value),
+              scope,
+            ),
+        };
+        additionalCloses.push(async () => {
+          keys.dispose();
+        });
+      } catch {
+        /* Book accounting remains available; imports fail closed without a valid keyring. */
+      }
+    }
+    const financeV2 = new PostgresFinanceV2Repository(database.scopedPool, {
+      evidenceCipher,
+      reviewedXlsxExtractor: extractReviewedFinanceXlsxTable,
+      reviewedPdfExtractor: extractReviewedFinancePdfTable,
+      reviewedImageExtractor: extractReviewedFinanceImageTable,
+      pdfOcrEvidenceVerifier: verifyFinancePdfOcrEvidence,
+      reviewedPdfOcrExtractor: extractReviewedFinancePdfOcrTable,
+      pdfOcrPageRenderer: createFinancePdfIsolatedRenderer({
+        transport: 'unix-socket',
+      }).render,
+      structuredInvoiceExtractor: extractStructuredFinanceInvoice,
+      ofxStatementExtractor: extractFinanceOfxStatement,
+    });
+    if (environment.EMDO_FINANCE_STANDARDIZATION_ENABLED === 'true') {
+      const standardization = new PostgresFinanceStandardizationRepository(
+        database.scopedPool,
+      );
+      bindings.financeStandardization = {
+        service: standardization,
+        check: () => standardization.checkReady(),
+      };
+    }
+    const financeTax = new PostgresFinanceTaxRepository(database.scopedPool, {
+      evidenceCipher,
+    });
+    bindings.financeTax = {
+      service: financeTax,
+      check: () => financeTax.checkReady(),
+    };
+    const financeOpenings = new PostgresFinanceOpeningRepository(
+      database.scopedPool,
+    );
+    bindings.financeOpenings = {
+      service: financeOpenings,
+      check: () => financeOpenings.checkReady(),
+    };
+    const legacyMigration = new PostgresFinanceLegacyMigrationRepository(
+      database.scopedPool,
+    );
+    bindings.financeLegacyMigration = {
+      service: legacyMigration,
+      check: () => legacyMigration.checkReady(),
+    };
+    const fecExports = new PostgresFranceFecRepository(database.scopedPool);
+    const fecMappings = new PostgresFranceFecMappingRepository(
+      database.scopedPool,
+    );
+    bindings.financeFec = {
+      service: {
+        checkReady: () => fecExports.checkReady(),
+        create: fecMappings.create.bind(fecMappings),
+        getLatest: fecMappings.getLatest.bind(fecMappings),
+        export: fecExports.export.bind(fecExports),
+        getSavedExport: fecExports.getSavedExport.bind(fecExports),
+      },
+      check: () => fecExports.checkReady(),
+    };
+    const financePlanning = new PostgresFinancePlanningRepository(
+      database.scopedPool,
+    );
+    const financeJournalDrafts = new FinanceJournalDraftRepository(
+      database.scopedPool,
+      financeV2,
+    );
+    bindings.financeJournalDrafts = {
+      service: financeJournalDrafts,
+      check: () => financeJournalDrafts.checkReady(),
+    };
+    const financeInvestmentReconciliation =
+      new FinanceInvestmentReconciliationRepository(database.scopedPool);
+    bindings.financeInvestmentReconciliation = {
+      service: financeInvestmentReconciliation,
+      check: () => financeInvestmentReconciliation.checkReady(),
+    };
+    bindings.financePlanning = {
+      service: financePlanning,
+      check: () => financePlanning.checkReady(),
+    };
+    bindings.financeV2 = {
+      service: financeV2,
+      check: () => financeV2.checkReady(),
+    };
+    const financeGeneratedReports =
+      new PostgresFinanceGeneratedReportRepository(database.scopedPool);
+    bindings.financeGeneratedReports = {
+      service: financeGeneratedReports,
+      check: () => financeGeneratedReports.checkReady(),
+    };
+    const financeSchedules = new PostgresFinanceScheduleRepository(
+      database.scopedPool,
+    );
+    bindings.financeSchedules = {
+      service: financeSchedules,
+      check: () => financeSchedules.checkReady(),
+    };
+    const financeAutomations = new PostgresFinanceAutomationRepository(
+      database.scopedPool,
+    );
+    bindings.financeAutomations = {
+      service: financeAutomations,
+      check: () => financeAutomations.checkReady(),
+    };
+  }
+  const databases: DatabaseRuntime[] = [database];
   const agentResourceCloses: Array<() => Promise<void>> = [];
 
   const providerFreeSyntheticStaging =
@@ -543,6 +699,139 @@ export const createProductionDurableServiceBindings = async (
           defaultDependencies.createFinanceSpecialistComposition!;
         financeSpecialist = createFinanceSpecialist({
           pool: database.scopedPool,
+          ...(bindings.financeStandardization?.service
+            ? {
+                standardizationRuns: {
+                  list: bindings.financeStandardization.service.list.bind(
+                    bindings.financeStandardization.service,
+                  ),
+                  get: bindings.financeStandardization.service.get.bind(
+                    bindings.financeStandardization.service,
+                  ),
+                  reconciliation:
+                    bindings.financeStandardization.service.reconciliation.bind(
+                      bindings.financeStandardization.service,
+                    ),
+                },
+              }
+            : {}),
+          ...(bindings.financeTax
+            ? {
+                taxCases: bindings.financeTax.service,
+                taxCalculationRuns: {
+                  listCalculationRuns:
+                    bindings.financeTax.service.listCalculationRuns.bind(
+                      bindings.financeTax.service,
+                    ),
+                  getCalculationRun:
+                    bindings.financeTax.service.getCalculationRun.bind(
+                      bindings.financeTax.service,
+                    ),
+                },
+              }
+            : {}),
+          ...(bindings.financeFec
+            ? {
+                fec: {
+                  getLatest: bindings.financeFec.service.getLatest.bind(
+                    bindings.financeFec.service,
+                  ),
+                  checkReady: bindings.financeFec.service.checkReady.bind(
+                    bindings.financeFec.service,
+                  ),
+                },
+              }
+            : {}),
+          ...(bindings.financePlanning
+            ? {
+                planning: {
+                  listBudgets:
+                    bindings.financePlanning.service.listBudgets.bind(
+                      bindings.financePlanning.service,
+                    ),
+                  getBudget: bindings.financePlanning.service.getBudget.bind(
+                    bindings.financePlanning.service,
+                  ),
+                  budgetVsActuals:
+                    bindings.financePlanning.service.budgetVsActuals.bind(
+                      bindings.financePlanning.service,
+                    ),
+                  getAutomationResult:
+                    bindings.financePlanning.service.getAutomationResult.bind(
+                      bindings.financePlanning.service,
+                    ),
+                  listForecasts:
+                    bindings.financePlanning.service.listForecasts.bind(
+                      bindings.financePlanning.service,
+                    ),
+                  getForecast:
+                    bindings.financePlanning.service.getForecast.bind(
+                      bindings.financePlanning.service,
+                    ),
+                },
+              }
+            : {}),
+          ...(bindings.financeV2
+            ? {
+                normalizedBooks: bindings.financeV2.service,
+                pdfOcrInspection: {
+                  readPdfOcrInspection:
+                    bindings.financeV2.service.readPdfOcrInspection.bind(
+                      bindings.financeV2.service,
+                    ),
+                },
+                imageInspection: {
+                  readImageInspection:
+                    bindings.financeV2.service.readImageInspection.bind(
+                      bindings.financeV2.service,
+                    ),
+                },
+                cashDividends: {
+                  listInvestmentCashDividends:
+                    bindings.financeV2.service.listInvestmentCashDividends.bind(
+                      bindings.financeV2.service,
+                    ),
+                  getInvestmentCashDividend:
+                    bindings.financeV2.service.getInvestmentCashDividend.bind(
+                      bindings.financeV2.service,
+                    ),
+                },
+              }
+            : {}),
+          ...(bindings.financeSchedules
+            ? {
+                automationSchedules: {
+                  listSchedules:
+                    bindings.financeSchedules.service.listSchedules.bind(
+                      bindings.financeSchedules.service,
+                    ),
+                },
+              }
+            : {}),
+          ...(bindings.financeJournalDrafts
+            ? { journalDrafts: bindings.financeJournalDrafts.service }
+            : {}),
+          ...(bindings.financeInvestmentReconciliation
+            ? {
+                investmentReconciliation:
+                  bindings.financeInvestmentReconciliation.service,
+              }
+            : {}),
+          ...(bindings.financeAutomations
+            ? {
+                automationRuns: {
+                  listRuns: bindings.financeAutomations.service.listRuns.bind(
+                    bindings.financeAutomations.service,
+                  ),
+                  getRun: bindings.financeAutomations.service.getRun.bind(
+                    bindings.financeAutomations.service,
+                  ),
+                },
+              }
+            : {}),
+          ...(bindings.financeGeneratedReports
+            ? { generatedReports: bindings.financeGeneratedReports.service }
+            : {}),
           imports: financeImports,
           documentGateway: financeDocuments.gateway,
           embeddingQuery: financeDocuments.embeddingQuery,

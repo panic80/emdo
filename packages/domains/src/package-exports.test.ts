@@ -49,6 +49,30 @@ describe('domain package subpath exports', () => {
     );
   });
 
+  it('exposes decimal operations without the server Finance barrel', async () => {
+    const decimal = await import('@emdo/domains/finance/decimal');
+    expect(Object.keys(decimal).sort()).toEqual(
+      [
+        'DECIMAL_SCALE',
+        'convertBookAmount',
+        'currencyPrecision',
+        'formatFinanceDecimal',
+        'moneyValue',
+        'parseFinanceDecimal',
+        'roundBookAmount',
+      ].sort(),
+    );
+    const { readFile } = await import('node:fs/promises');
+    const source = await readFile(
+      new URL('./finance/decimal.ts', import.meta.url),
+      'utf8',
+    );
+    expect(source).toContain("from '@emdo/contracts/browser'");
+    expect(source).not.toMatch(
+      /from ['"](?:node:|@emdo\/domains\/finance['"])/u,
+    );
+  });
+
   it('keeps browser-transitive conflict reducers on the browser contracts facade', async () => {
     const sourceRoot = new URL('./shared/', import.meta.url);
     const { readFile } = await import('node:fs/promises');

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import type {
+  FinancePage,
   JsonValue,
   SchedulePage,
   SyncOperation,
@@ -64,6 +65,15 @@ const unavailableExperienceClient: ExperienceApiClient = {
   updateNotificationPreferences: async () =>
     Promise.reject(new Error('unavailable')),
 };
+
+// Legacy queue integration is valid only after the server confirms its authority.
+const financeExperienceClient = (
+  ledgerAuthority: 'legacy' | 'normalized',
+  items: FinancePage['items'] = [],
+): ExperienceApiClient => ({
+  ...unavailableExperienceClient,
+  listFinance: async () => ({ schemaVersion: 1, ledgerAuthority, items }),
+});
 
 const scheduleExperienceClient = (
   item: SchedulePage['items']['items'][number],
@@ -186,6 +196,8 @@ async function renderPath(
     capturingRuntimeFactory(operations, initialRecords),
     experienceClient,
   );
+  if (path === '/finance')
+    await userEvent.click(await screen.findByRole('tab', { name: 'Activity' }));
   await screen.findByText('Encrypted offline data is up to date', undefined, {
     timeout: 15_000,
   });
@@ -340,7 +352,12 @@ describe(
 
     it('stores manual CAD money as exact integer minor units', async () => {
       const operations: SyncOperation[] = [];
-      await renderPath('/finance', operations);
+      await renderPath(
+        '/finance',
+        operations,
+        [],
+        financeExperienceClient('legacy'),
+      );
 
       await userEvent.click(
         screen.getByRole('button', { name: 'Add transaction' }),
@@ -366,7 +383,12 @@ describe(
 
     it('creates an exact monthly CAD category budget through the safe offline record path', async () => {
       const operations: SyncOperation[] = [];
-      await renderPath('/finance', operations);
+      await renderPath(
+        '/finance',
+        operations,
+        [],
+        financeExperienceClient('legacy'),
+      );
 
       await userEvent.click(screen.getByRole('tab', { name: 'Planning' }));
       await userEvent.clear(screen.getByLabelText('Month'));
@@ -395,7 +417,12 @@ describe(
 
     it('shows accessible localized validation errors before queueing a budget change', async () => {
       const operations: SyncOperation[] = [];
-      await renderPath('/finance', operations);
+      await renderPath(
+        '/finance',
+        operations,
+        [],
+        financeExperienceClient('legacy'),
+      );
 
       await userEvent.click(screen.getByRole('tab', { name: 'Planning' }));
       await userEvent.type(screen.getByLabelText('Category ID'), 'Groceries');
@@ -422,18 +449,23 @@ describe(
         currency: 'CAD' as const,
         allocationsCadMinor: { groceries: 40_000, transit: 10_000 },
       };
-      await renderPath('/finance', operations, [
-        {
-          domain: 'finance',
-          entityType: 'finance.budget',
-          id: base.id,
-          value: base,
-          revision: 3,
-          tombstoned: false,
-          updatedAt: '2026-08-10T12:00:00.000Z',
-          spaceId: '11111111-1111-4111-8111-111111111111',
-        },
-      ]);
+      await renderPath(
+        '/finance',
+        operations,
+        [
+          {
+            domain: 'finance',
+            entityType: 'finance.budget',
+            id: base.id,
+            value: base,
+            revision: 3,
+            tombstoned: false,
+            updatedAt: '2026-08-10T12:00:00.000Z',
+            spaceId: '11111111-1111-4111-8111-111111111111',
+          },
+        ],
+        financeExperienceClient('legacy'),
+      );
 
       await userEvent.click(screen.getByRole('tab', { name: 'Planning' }));
       await userEvent.clear(screen.getByLabelText('Month'));
@@ -463,7 +495,7 @@ describe(
       });
     });
 
-    it('renders finance records from DomainData without seeded production fallbacks', async () => {
+    it('renders legacy DomainData records only after the server confirms legacy authority', async () => {
       const records: DomainRecord[] = [
         {
           domain: 'finance',
@@ -512,39 +544,140 @@ describe(
         },
       ];
 
-      await renderPath('/finance', [], records);
+      await renderPath(
+        '/finance',
+        [],
+        records,
+        financeExperienceClient('legacy'),
+      );
 
       expect(screen.getByText('Farm Boy')).toBeVisible();
       expect(screen.getByText('$12.34')).toBeVisible();
       expect(screen.getByText('Toronto Hydro')).toBeVisible();
       expect(screen.getByText('$25.00')).toBeVisible();
+      await userEvent.click(screen.getByRole('tab', { name: 'Planning' }));
       expect(screen.getByText('$650.00 allocated')).toBeVisible();
       expect(screen.queryByText('No Frills')).not.toBeInTheDocument();
       expect(screen.queryByText('$482')).not.toBeInTheDocument();
     });
 
-    it('shows truthful empty finance states when DomainData has no records', async () => {
-      await renderPath('/finance', []);
+    it('shows truthful empty finance states after an authoritative empty response', async () => {
+      await renderPath(
+        '/finance',
+        [],
+        [],
+        financeExperienceClient('normalized'),
+      );
 
-      expect(screen.getByText('No budgets have been saved yet.')).toBeVisible();
       expect(
         screen.getByText('No transactions have been saved yet.'),
       ).toBeVisible();
+      await userEvent.click(screen.getByRole('tab', { name: 'Documents' }));
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Statement imports' }),
+      );
       expect(
         screen.getByRole('button', { name: 'Import statement' }),
       ).toBeVisible();
       expect(screen.queryByText('No Frills')).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('tab', { name: 'Planning' }));
+      expect(screen.getByText('No budgets have been saved yet.')).toBeVisible();
     });
 
-    it('reports finance records as loading while encrypted DomainData is opening', async () => {
+    it('reports finance records as loading while server authority is unresolved', async () => {
       await renderPathWithRuntimeFactory(
         '/finance',
-        () => new Promise<DomainDataRuntime>(() => undefined),
+        capturingRuntimeFactory([]),
+        {
+          ...unavailableExperienceClient,
+          listFinance: () => new Promise<FinancePage>(() => undefined),
+        },
       );
 
+      await userEvent.click(
+        await screen.findByRole('tab', { name: 'Activity' }),
+      );
+      expect(
+        await screen.findByText('Transaction data is loading…'),
+      ).toBeVisible();
+      await userEvent.click(screen.getByRole('tab', { name: 'Planning' }));
       expect(await screen.findByText('Budget data is loading…')).toBeVisible();
-      expect(screen.getByText('Transaction data is loading…')).toBeVisible();
     });
+
+    it.each(['normalized', 'unavailable'] as const)(
+      'blocks legacy cache and queued writes with %s Finance authority',
+      async (authority) => {
+        const operations: SyncOperation[] = [];
+        const records: DomainRecord[] = [
+          {
+            domain: 'finance',
+            entityType: 'finance.transaction',
+            id: 'cached-transaction',
+            value: {
+              description: 'Stale legacy transaction',
+              category: 'Groceries',
+              amountCadMinor: 99999,
+              postedOn: '2026-08-10',
+            },
+            revision: 1,
+            tombstoned: false,
+            updatedAt: '2026-08-10T12:00:00.000Z',
+          },
+        ];
+        await renderPath(
+          '/finance',
+          operations,
+          records,
+          authority === 'unavailable'
+            ? unavailableExperienceClient
+            : financeExperienceClient('normalized', [
+                {
+                  recordType: 'transaction',
+                  id: 'cached-transaction',
+                  description: 'Posted normalized transaction',
+                  category: 'Groceries',
+                  postedOn: '2026-08-10',
+                  currency: 'CAD',
+                  amountCadMinor: 1234,
+                  state: 'active',
+                },
+              ]),
+        );
+        expect(
+          screen.queryByText('Stale legacy transaction'),
+        ).not.toBeInTheDocument();
+        const add = screen.getByRole('button', { name: 'Add transaction' });
+        expect(add).toBeDisabled();
+        await userEvent.click(add);
+        expect(
+          screen.queryByRole('button', { name: 'Save transaction' }),
+        ).not.toBeInTheDocument();
+        if (authority === 'normalized') {
+          expect(
+            screen.getByText('Posted normalized transaction'),
+          ).toBeVisible();
+          expect(screen.getByText('$12.34')).toBeVisible();
+          expect(
+            screen.getByRole('button', { name: 'Categorize or annotate' }),
+          ).toBeDisabled();
+        } else {
+          expect(
+            screen.getByText('Finance data is unavailable.'),
+          ).toBeVisible();
+          expect(
+            screen.queryByText('No transactions have been saved yet.'),
+          ).not.toBeInTheDocument();
+        }
+        await userEvent.click(screen.getByRole('tab', { name: 'Planning' }));
+        expect(
+          screen.queryByRole('button', { name: 'Save budget allocation' }),
+        ).not.toBeInTheDocument();
+        expect(
+          screen.queryByLabelText('Allocation (CAD)'),
+        ).not.toBeInTheDocument();
+        expect(operations).toHaveLength(0);
+      },
+    );
 
     it('queues an idempotent shopping delta for a persisted item before changing its quantity', async () => {
       const operations: SyncOperation[] = [];

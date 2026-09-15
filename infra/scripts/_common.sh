@@ -1169,12 +1169,14 @@ disable_finance_synthetic_staging() {
   unset FINANCE_STAGING_DOCUMENT_STORE_DIR
   unset FINANCE_STAGING_RESTORE_VERIFIER_INPUT_FILE
   export EMDO_FINANCE_SYNTHETIC_STAGING=false
+  export EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING=false
 }
 
 load_finance_synthetic_staging_state() {
   local state_dir="$1"
   if [[ -e "$state_dir/$FINANCE_STAGING_MARKER_FILE" ]]; then
     assert_finance_synthetic_staging_state "$state_dir"
+    load_finance_normalized_staging_state "$state_dir"
   else
     disable_finance_synthetic_staging
   fi
@@ -1201,7 +1203,7 @@ prepare_finance_synthetic_staging_state() {
     die 'Finance synthetic staging state already exists for this run'
   require_command openssl
   mapfile -t secret_lines
-  if [[ "$live_chat" == true ]]; then
+  if [[ "$live_chat" == true || "${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:-false}" == true ]]; then
     [[ "${#secret_lines[@]}" == 5 ]] ||
       die 'Finance live chat requires exactly five protected stdin lines'
   else
@@ -1211,7 +1213,7 @@ prepare_finance_synthetic_staging_state() {
   [[ "${#secret_lines[0]}" -ge 16 && "${#secret_lines[0]}" -le 512 &&
     "${secret_lines[0]}" =~ ^[A-Za-z0-9_-]+$ ]] ||
     die 'Finance staging key has an invalid format'
-  if [[ "$live_chat" == true ]]; then
+  if [[ "$live_chat" == true || "${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:-false}" == true ]]; then
     agent_api_key="${secret_lines[1]}"
     pricing_version="${secret_lines[2]}"
     astra_input="${secret_lines[3]}"
@@ -1290,6 +1292,9 @@ prepare_finance_synthetic_staging_state() {
   chmod 0600 "$pending_marker"
   chown 0:0 "$pending_marker"
   mv -- "$pending_marker" "$marker"
+  if [[ "${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:-false}" == true ]]; then
+    prepare_finance_normalized_staging_state "$state_dir" "$keyring" "$agent_api_key" "$pricing_version" "$astra_input" "$astra_output"
+  fi
   secret_lines[0]=''
   agent_api_key=''
   pricing_version=''
@@ -1335,7 +1340,7 @@ assert_isolated_project_absent() {
     [[ -z "$existing_resources" ]] ||
       die "isolated project $project_name already has volume $resource_name"
   done
-  for resource in edge egress auth-egress backend loopback-ingress finance-extraction-egress; do
+  for resource in edge egress auth-egress backend loopback-ingress finance-extraction-egress finance-normalized-egress; do
     resource_name="emdo-$namespace-$resource"
     existing_resources="$(docker network ls --quiet --filter "name=^${resource_name}$")" ||
       die 'could not inspect Docker networks while proving project absence'
@@ -1360,6 +1365,13 @@ staging_compose() {
     true) compose_files+=(--file "$COMPOSE_DIR/compose.finance-staging.yml") ;;
     false) ;;
     *) die 'EMDO_FINANCE_SYNTHETIC_STAGING must be true or false' ;;
+  esac
+  case "${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:-false}" in
+    true)
+      [[ "${EMDO_FINANCE_SYNTHETIC_STAGING:-false}" == true ]] || die 'Normalized staging requires Finance staging'
+      compose_files+=(--file "$COMPOSE_DIR/compose.finance-normalized-staging.yml") ;;
+    false) ;;
+    *) die 'Normalized staging flag must be true or false' ;;
   esac
   docker compose \
     --project-name "$COMPOSE_PROJECT_NAME" \
@@ -1526,4 +1538,59 @@ assert_staging_attestation_matches() {
       die "staging attestation does not match $key"
     index=$((index + 1))
   done
+}
+
+# Normalized state is private and selected by durable run state on every lifecycle action.
+load_finance_normalized_staging_state() {
+  local secret_dir="$1/$FINANCE_STAGING_SECRET_DIR"
+  export EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING=false
+  [[ -e "$secret_dir/normalized-api.env" || -L "$secret_dir/normalized-api.env" ]] || return 0
+  assert_root_owned_bounded_file "$secret_dir/normalized-api.env" 600 16384
+  assert_root_owned_bounded_file "$secret_dir/normalized-worker.env" 600 65536
+  export FINANCE_NORMALIZED_STAGING_API_ENV_FILE="$secret_dir/normalized-api.env"
+  export FINANCE_NORMALIZED_STAGING_WORKER_ENV_FILE="$secret_dir/normalized-worker.env"
+  export FINANCE_NORMALIZED_STAGING_FIXTURE_ENV_FILE="$secret_dir/normalized-fixture.env"
+  if [[ ! -e "$FINANCE_NORMALIZED_STAGING_FIXTURE_ENV_FILE" && ! -L "$FINANCE_NORMALIZED_STAGING_FIXTURE_ENV_FILE" ]]; then
+    export FINANCE_NORMALIZED_STAGING_FIXTURE_ENV_FILE="$secret_dir/normalized-fixture-placeholder.env"
+  fi
+  assert_root_owned_bounded_file "$FINANCE_NORMALIZED_STAGING_FIXTURE_ENV_FILE" 600 4096
+  export EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING=true
+}
+
+prepare_finance_normalized_staging_state() {
+  local state_dir="$1" secret_dir="$1/$FINANCE_STAGING_SECRET_DIR"
+  local keyring="$2" provider_key="$3" pricing_version="$4" input_rate="$5" output_rate="$6"
+  local pending
+  pending="$(mktemp -d "$state_dir/.normalized-secrets.XXXXXX")"
+  chmod 0700 "$pending"
+  printf '%s\n' "EMDO_FINANCE_DOCUMENT_KEYRING_B64URL=$keyring" > "$pending/normalized-api.env"
+  cp -- "$SECRETS_DIR/worker.env" "$pending/normalized-worker.env"
+  printf '\n%s\n' \
+    "EMDO_FINANCE_DOCUMENT_KEYRING_B64URL=$keyring" \
+    "EMDO_OPENAI_AGENT_API_KEY=$provider_key" \
+    "EMDO_OPENAI_AGENT_PRICING_VERSION=$pricing_version" \
+    "EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS=$input_rate" \
+    "EMDO_OPENAI_AGENT_GPT_6_ASTRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS=$output_rate" >> "$pending/normalized-worker.env"
+  : > "$pending/normalized-fixture-placeholder.env"
+  chmod 0600 "$pending/"*.env
+  chown 0:0 "$pending/"*.env
+  mv -- "$pending/normalized-worker.env" "$pending/normalized-fixture-placeholder.env" "$secret_dir/"
+  # API file is the completion marker, written last.
+  mv -- "$pending/normalized-api.env" "$secret_dir/"
+  rmdir "$pending"
+  load_finance_normalized_staging_state "$state_dir"
+}
+
+assert_finance_normalized_effective_environment() {
+  local state_dir="$1" config
+  config="$(mktemp "$state_dir/.normalized-compose.XXXXXX")"
+  chmod 0600 "$config"
+  if ! staging_compose --profile operations config --format json > "$config"; then
+    rm -f -- "$config"
+    die 'Normalized Compose configuration failed'
+  fi
+  local status=0
+  node "$SCRIPT_DIR/finance-normalized-staging-effective-preflight.mjs" "$config" || status=$?
+  rm -f -- "$config"
+  return "$status"
 }

@@ -593,6 +593,7 @@ export const FinanceDocumentEvidenceListSchema = z
   .transform(deepFreeze);
 
 const FinanceExperienceSnapshotFields = {
+  ledgerAuthority: z.enum(['legacy', 'normalized']).optional(),
   reviewedCadTotals: z
     .array(
       z.strictObject({

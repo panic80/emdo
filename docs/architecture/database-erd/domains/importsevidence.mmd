@@ -1,0 +1,476 @@
+%% EMDO ImportsEvidence domain view; implementation revision 0076
+%% External context nodes contain only FK endpoint columns; consult the full ERD for every column.
+erDiagram
+  %% external context stub: emdo.auth_users
+  EMDO_AUTH_USERS {
+    uuid id PK
+  }
+  %% external context stub: emdo.finance_automation_journal_draft_results
+  EMDO_FINANCE_AUTOMATION_JOURNAL_DRAFT_RESULTS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid automation_run_id FK
+    uuid source_batch_id FK
+    uuid source_evidence_id FK
+  }
+  EMDO_FINANCE_BOOK_EVIDENCE {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    text filename
+    text format
+    text plaintext_sha256
+    integer byte_size
+    jsonb encrypted_original
+    uuid uploaded_by FK
+  }
+  %% external context stub: emdo.finance_books
+  EMDO_FINANCE_BOOKS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid entity_id FK
+    uuid created_by FK
+  }
+  EMDO_FINANCE_DOCUMENT_CHUNKS {
+    uuid id PK
+    uuid document_id FK
+    integer extraction_revision
+    uuid household_id FK
+    uuid space_id FK
+    uuid original_owner_user_id FK
+    integer ordinal
+    integer page_start
+    integer page_end
+    text content
+    text content_hash
+    tsvector search_vector
+    vector_1536 embedding
+    timestamptz committed_at
+    timestamptz deleted_at
+  }
+  EMDO_FINANCE_DOCUMENT_EVIDENCE {
+    uuid id PK
+    uuid document_id FK
+    integer extraction_revision
+    uuid chunk_id FK
+    uuid household_id FK
+    uuid space_id FK
+    uuid original_owner_user_id FK
+    integer page
+    text excerpt
+    text excerpt_hash
+    jsonb locator
+    text source_locale
+    timestamptz created_at
+    timestamptz deleted_at
+  }
+  EMDO_FINANCE_DOCUMENT_EXTRACTIONS {
+    uuid id PK
+    uuid document_id FK
+    uuid household_id FK
+    uuid space_id FK
+    uuid original_owner_user_id FK
+    integer revision
+    smallint attempt
+    text state
+    text model
+    smallint schema_version
+    jsonb encrypted_payload
+    jsonb redacted_summary
+    text response_hash
+    text safe_error_code
+    integer input_tokens
+    integer output_tokens
+    timestamptz created_at
+    timestamptz completed_at
+  }
+  EMDO_FINANCE_DOCUMENT_MATCHES {
+    uuid id PK
+    uuid document_id FK
+    integer extraction_revision FK
+    uuid household_id FK
+    uuid space_id FK
+    uuid original_owner_user_id FK
+    text record_type
+    text record_id
+    integer score_basis_points
+    jsonb reasons
+    text state
+    uuid decision_review_batch_id FK
+    timestamptz created_at
+    timestamptz decided_at
+  }
+  EMDO_FINANCE_DOCUMENT_REVIEW_BATCHES {
+    uuid id PK
+    uuid document_id FK
+    integer extraction_revision
+    uuid household_id FK
+    uuid space_id FK
+    uuid original_owner_user_id FK
+    uuid authenticated_session_id
+    uuid space_access_grant_id
+    text scope_fingerprint
+    text payload_hash
+    text review_token_hash
+    jsonb selected_facts
+    text state
+    text idempotency_key
+    timestamptz created_at
+    timestamptz expires_at
+    timestamptz decided_at
+  }
+  EMDO_FINANCE_DOCUMENTS {
+    uuid id PK
+    uuid household_id FK
+    uuid space_id FK
+    uuid original_owner_user_id FK
+    text storage_object_id
+    text display_name
+    text mime_type
+    bigint byte_size
+    integer page_count
+    integer image_width
+    integer image_height
+    text plaintext_sha256
+    text ciphertext_sha256
+    jsonb wrapped_data_key
+    text key_version
+    text state
+    text document_type
+    text source_locale
+    text currency
+    integer extraction_revision
+    timestamptz created_at
+    timestamptz updated_at
+    timestamptz deleted_at
+    uuid deletion_proposal_id
+    uuid deletion_decision_id
+    text deletion_target_binding_hash
+    text deletion_execution_binding_hash
+  }
+  %% external context stub: emdo.finance_economic_transactions
+  EMDO_FINANCE_ECONOMIC_TRANSACTIONS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid financial_account_id FK
+    uuid journal_id FK
+  }
+  %% external context stub: emdo.finance_financial_accounts
+  EMDO_FINANCE_FINANCIAL_ACCOUNTS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid ledger_account_id FK
+  }
+  EMDO_FINANCE_IMPORT_FINGERPRINTS {
+    uuid household_id PK
+    uuid space_id PK
+    uuid owner_user_id
+    text account_id PK
+    text fingerprint PK
+    uuid transaction_entity_id
+    timestamptz recorded_at
+  }
+  EMDO_FINANCE_IMPORT_PLANS {
+    uuid plan_id PK
+    uuid household_id FK
+    uuid space_id FK
+    uuid owner_user_id FK
+    text account_id
+    text source_hash
+    text plan_hash
+    jsonb canonical_plan
+    jsonb diagnostics
+    jsonb mapping_metadata
+    text scope_fingerprint
+    uuid origin_session_id
+    uuid origin_request_id
+    uuid origin_space_access_grant_id
+    timestamptz created_at
+    timestamptz expires_at
+    timestamptz redacted_at
+  }
+  EMDO_FINANCE_IMPORT_RECEIPTS {
+    uuid receipt_id PK
+    uuid household_id
+    uuid space_id
+    uuid owner_user_id
+    text account_id
+    uuid plan_id
+    text plan_hash
+    text idempotency_key
+    text scope_fingerprint
+    uuid origin_space_access_grant_id
+    integer transaction_count
+    timestamptz committed_at
+  }
+  EMDO_FINANCE_IMPORT_ROW_REVIEWS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    uuid row_id FK
+    integer revision
+    jsonb decision
+    jsonb previous_facts
+    uuid reviewed_by FK
+  }
+  %% external context stub: emdo.finance_investment_cash_dividends
+  EMDO_FINANCE_INVESTMENT_CASH_DIVIDENDS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid financial_account_id FK
+    uuid instrument_id FK
+    uuid evidence_id FK
+    uuid source_row_id FK
+    uuid cash_ledger_account_id FK
+    uuid dividend_income_ledger_account_id FK
+    uuid withholding_ledger_account_id FK
+    uuid economic_transaction_id FK
+    uuid journal_id FK
+    uuid created_by FK
+  }
+  %% external context stub: emdo.finance_investment_corporate_action_settlement_evidence
+  EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_SETTLEMENT_EVIDENCE {
+    uuid workspace_id PK FK
+    uuid book_id PK FK
+    uuid settlement_id PK FK
+    uuid evidence_id PK FK
+  }
+  %% external context stub: emdo.finance_investment_corporate_action_settlements
+  EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_SETTLEMENTS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid action_id FK
+    uuid source_row_id FK
+    uuid economic_transaction_id FK
+    uuid action_journal_id FK
+    uuid receipt_journal_id FK
+    uuid created_by FK
+  }
+  %% external context stub: emdo.finance_investment_corporate_actions
+  EMDO_FINANCE_INVESTMENT_CORPORATE_ACTIONS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid financial_account_id FK
+    uuid instrument_id FK
+    uuid evidence_id FK
+    uuid created_by FK
+  }
+  %% external context stub: emdo.finance_investment_openings
+  EMDO_FINANCE_INVESTMENT_OPENINGS {
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid financial_account_id FK
+    uuid instrument_id FK
+    uuid evidence_id FK
+  }
+  %% external context stub: emdo.finance_invoice_review_drafts
+  EMDO_FINANCE_INVOICE_REVIEW_DRAFTS {
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid evidence_id FK
+    uuid user_id FK
+  }
+  %% external context stub: emdo.finance_journals
+  EMDO_FINANCE_JOURNALS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid period_id FK
+    uuid created_by FK
+  }
+  %% external context stub: emdo.finance_ledger_accounts
+  EMDO_FINANCE_LEDGER_ACCOUNTS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+  }
+  %% external context stub: emdo.finance_legacy_migration_records
+  EMDO_FINANCE_LEGACY_MIGRATION_RECORDS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid migration_id FK
+    uuid source_household_id FK
+    uuid source_space_id FK
+    uuid source_owner_user_id FK
+    uuid target_financial_account_id FK
+    uuid target_ledger_account_id FK
+    uuid target_evidence_id FK
+  }
+  %% external context stub: emdo.finance_normalized_import_amount_components
+  EMDO_FINANCE_NORMALIZED_IMPORT_AMOUNT_COMPONENTS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid row_id FK
+    uuid ledger_account_id FK
+  }
+  EMDO_FINANCE_NORMALIZED_IMPORT_ROWS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    uuid batch_id FK
+    integer source_row
+    jsonb source_facts
+    date effective_on
+    text description
+    numeric_38__12 native_amount
+    text external_id
+    jsonb issues
+    text status
+    integer revision
+    uuid counter_account_id FK
+    uuid match_journal_id FK
+    numeric_38__12 fx_rate
+    text fx_source
+    uuid economic_transaction_id FK
+  }
+  EMDO_FINANCE_NORMALIZED_IMPORTS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    uuid financial_account_id FK
+    uuid evidence_id FK
+    jsonb mapping
+    text parser_version
+    text status
+    integer revision
+  }
+  %% external context stub: emdo.finance_observed_positions
+  EMDO_FINANCE_OBSERVED_POSITIONS {
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid financial_account_id FK
+    uuid instrument_id FK
+    uuid mapping_id FK
+    uuid evidence_id FK
+  }
+  %% external context stub: emdo.finance_opening_proofs
+  EMDO_FINANCE_OPENING_PROOFS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid financial_account_id FK
+    uuid migration_id FK
+    uuid source_record_id FK
+    uuid review_id FK
+    uuid evidence_id FK
+    uuid journal_id FK
+    uuid posted_by FK
+    uuid supersedes_proof_id FK
+  }
+  EMDO_FINANCE_REPORT_MAPPING_REVIEWS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    uuid mapping_id FK
+    integer revision
+    text decision
+    text reason
+    uuid reviewed_by FK
+  }
+  EMDO_FINANCE_REPORT_MAPPING_VERSIONS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    text provider_key
+    text report_name
+    text report_type
+    text layout_version
+    integer version
+    integer revision
+    text status
+    jsonb definition
+    text rationale
+    jsonb unresolved_questions
+    jsonb example
+    uuid evidence_id FK
+    jsonb validation
+    text proposed_by_model
+    uuid created_by FK
+  }
+  %% external context stub: emdo.finance_standardization_runs
+  EMDO_FINANCE_STANDARDIZATION_RUNS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid evidence_id FK
+    uuid authorized_by FK
+    uuid reviewed_mapping_id FK
+  }
+  %% external context stub: emdo.household_memberships
+  EMDO_HOUSEHOLD_MEMBERSHIPS {
+    uuid id
+    uuid household_id PK FK
+    uuid user_id PK FK
+  }
+  %% external context stub: emdo.spaces
+  EMDO_SPACES {
+    uuid id PK
+    uuid household_id FK
+    uuid original_owner_user_id FK
+  }
+  %% external context stub: emdo.workspaces
+  EMDO_WORKSPACES {
+    uuid id PK FK
+  }
+  EMDO_FINANCE_NORMALIZED_IMPORTS ||--o{ EMDO_FINANCE_AUTOMATION_JOURNAL_DRAFT_RESULTS : "workspace_id, book_id, source_batch_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOK_EVIDENCE ||--o{ EMDO_FINANCE_AUTOMATION_JOURNAL_DRAFT_RESULTS : "workspace_id, book_id, source_evidence_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOKS ||--o{ EMDO_FINANCE_BOOK_EVIDENCE : "workspace_id, book_id -> workspace_id, id; required; 1:N; delete no action; update no action"
+  EMDO_AUTH_USERS ||--o{ EMDO_FINANCE_BOOK_EVIDENCE : "uploaded_by -> id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_BOOK_EVIDENCE : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_DOCUMENTS ||--o{ EMDO_FINANCE_DOCUMENT_CHUNKS : "household_id, space_id, original_owner_user_id, document_id -> household_id, space_id, original_owner_user_id, id; required; 1:N; delete restrict; update restrict"
+  EMDO_FINANCE_DOCUMENT_CHUNKS o|--o{ EMDO_FINANCE_DOCUMENT_EVIDENCE : "chunk_id -> id; nullable; 1:N; delete restrict; update restrict"
+  EMDO_FINANCE_DOCUMENTS ||--o{ EMDO_FINANCE_DOCUMENT_EVIDENCE : "household_id, space_id, original_owner_user_id, document_id -> household_id, space_id, original_owner_user_id, id; required; 1:N; delete restrict; update restrict"
+  EMDO_FINANCE_DOCUMENTS ||--o{ EMDO_FINANCE_DOCUMENT_EXTRACTIONS : "household_id, space_id, original_owner_user_id, document_id -> household_id, space_id, original_owner_user_id, id; required; 1:N; delete restrict; update restrict"
+  EMDO_FINANCE_DOCUMENTS ||--o{ EMDO_FINANCE_DOCUMENT_MATCHES : "household_id, space_id, original_owner_user_id, document_id -> household_id, space_id, original_owner_user_id, id; required; 1:N; delete restrict; update restrict"
+  EMDO_FINANCE_DOCUMENT_REVIEW_BATCHES o|--o{ EMDO_FINANCE_DOCUMENT_MATCHES : "household_id, space_id, original_owner_user_id, document_id, extraction_revision, decision_review_batch_id -> household_id, space_id, original_owner_user_id, document_id, extraction_revision, id; nullable; 1:N; delete restrict; update restrict"
+  EMDO_FINANCE_DOCUMENTS ||--o{ EMDO_FINANCE_DOCUMENT_REVIEW_BATCHES : "household_id, space_id, original_owner_user_id, document_id -> household_id, space_id, original_owner_user_id, id; required; 1:N; delete restrict; update restrict"
+  EMDO_SPACES ||--o{ EMDO_FINANCE_DOCUMENTS : "household_id, space_id -> household_id, id; required; 1:N; delete restrict; update restrict"
+  EMDO_HOUSEHOLD_MEMBERSHIPS ||--o{ EMDO_FINANCE_DOCUMENTS : "household_id, original_owner_user_id -> household_id, user_id; required; 1:N; delete restrict; update restrict"
+  EMDO_SPACES ||--o{ EMDO_FINANCE_IMPORT_PLANS : "household_id, space_id -> household_id, id; required; 1:N; delete restrict; update restrict"
+  EMDO_HOUSEHOLD_MEMBERSHIPS ||--o{ EMDO_FINANCE_IMPORT_PLANS : "household_id, owner_user_id -> household_id, user_id; required; 1:N; delete restrict; update restrict"
+  EMDO_AUTH_USERS ||--o{ EMDO_FINANCE_IMPORT_ROW_REVIEWS : "reviewed_by -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_NORMALIZED_IMPORT_ROWS ||--o{ EMDO_FINANCE_IMPORT_ROW_REVIEWS : "workspace_id, book_id, row_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_IMPORT_ROW_REVIEWS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOK_EVIDENCE ||--o{ EMDO_FINANCE_INVESTMENT_CASH_DIVIDENDS : "workspace_id, book_id, evidence_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_NORMALIZED_IMPORT_ROWS ||--o| EMDO_FINANCE_INVESTMENT_CASH_DIVIDENDS : "workspace_id, book_id, source_row_id -> workspace_id, book_id, id; required; 1:1; delete no action; update no action"
+  EMDO_FINANCE_BOOK_EVIDENCE ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_SETTLEMENT_EVIDENCE : "workspace_id, book_id, evidence_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_NORMALIZED_IMPORT_ROWS ||--o| EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_SETTLEMENTS : "workspace_id, book_id, source_row_id -> workspace_id, book_id, id; required; 1:1; delete no action; update no action"
+  EMDO_FINANCE_BOOK_EVIDENCE ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTIONS : "workspace_id, book_id, evidence_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOK_EVIDENCE ||--o{ EMDO_FINANCE_INVESTMENT_OPENINGS : "workspace_id, book_id, evidence_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOK_EVIDENCE ||--o{ EMDO_FINANCE_INVOICE_REVIEW_DRAFTS : "workspace_id, book_id, evidence_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOK_EVIDENCE o|--o{ EMDO_FINANCE_LEGACY_MIGRATION_RECORDS : "workspace_id, book_id, target_evidence_id -> workspace_id, book_id, id; nullable; 1:N; delete restrict; update restrict"
+  EMDO_FINANCE_NORMALIZED_IMPORT_ROWS ||--o{ EMDO_FINANCE_NORMALIZED_IMPORT_AMOUNT_COMPONENTS : "workspace_id, book_id, row_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_NORMALIZED_IMPORTS ||--o{ EMDO_FINANCE_NORMALIZED_IMPORT_ROWS : "workspace_id, book_id, batch_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_LEDGER_ACCOUNTS o|--o{ EMDO_FINANCE_NORMALIZED_IMPORT_ROWS : "workspace_id, book_id, counter_account_id -> workspace_id, book_id, id; nullable; 1:N; delete no action; update no action"
+  EMDO_FINANCE_JOURNALS o|--o{ EMDO_FINANCE_NORMALIZED_IMPORT_ROWS : "workspace_id, book_id, match_journal_id -> workspace_id, book_id, id; nullable; 1:N; delete no action; update no action"
+  EMDO_FINANCE_ECONOMIC_TRANSACTIONS o|--o{ EMDO_FINANCE_NORMALIZED_IMPORT_ROWS : "workspace_id, book_id, economic_transaction_id -> workspace_id, book_id, id; nullable; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_NORMALIZED_IMPORT_ROWS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_FINANCIAL_ACCOUNTS ||--o{ EMDO_FINANCE_NORMALIZED_IMPORTS : "workspace_id, book_id, financial_account_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOK_EVIDENCE ||--o{ EMDO_FINANCE_NORMALIZED_IMPORTS : "workspace_id, book_id, evidence_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_NORMALIZED_IMPORTS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOK_EVIDENCE ||--o{ EMDO_FINANCE_OBSERVED_POSITIONS : "workspace_id, book_id, evidence_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_REPORT_MAPPING_VERSIONS o|--o{ EMDO_FINANCE_OBSERVED_POSITIONS : "workspace_id, book_id, mapping_id -> workspace_id, book_id, id; nullable; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOK_EVIDENCE ||--o{ EMDO_FINANCE_OPENING_PROOFS : "workspace_id, book_id, evidence_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_REPORT_MAPPING_VERSIONS ||--o{ EMDO_FINANCE_REPORT_MAPPING_REVIEWS : "workspace_id, book_id, mapping_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_AUTH_USERS ||--o{ EMDO_FINANCE_REPORT_MAPPING_REVIEWS : "reviewed_by -> id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_REPORT_MAPPING_REVIEWS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOKS ||--o{ EMDO_FINANCE_REPORT_MAPPING_VERSIONS : "workspace_id, book_id -> workspace_id, id; required; 1:N; delete no action; update no action"
+  EMDO_AUTH_USERS ||--o{ EMDO_FINANCE_REPORT_MAPPING_VERSIONS : "created_by -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOK_EVIDENCE ||--o{ EMDO_FINANCE_REPORT_MAPPING_VERSIONS : "workspace_id, book_id, evidence_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_REPORT_MAPPING_VERSIONS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_REPORT_MAPPING_VERSIONS o|--o{ EMDO_FINANCE_STANDARDIZATION_RUNS : "reviewed_mapping_id -> id; nullable; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOK_EVIDENCE ||--o{ EMDO_FINANCE_STANDARDIZATION_RUNS : "workspace_id, book_id, evidence_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"

@@ -57,7 +57,7 @@ export function ActivityRoute() {
     <Page>
       <PageHeader
         title="Activity"
-        description="Bounded household receipts and outcomes. Sensitive payloads are not shown."
+        description="Review your workspace activity and saved outcomes."
       />
       <section className="activity-list" aria-label="Recent activity">
         {items.map((item) => (

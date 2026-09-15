@@ -1,0 +1,232 @@
+[
+  {
+    "id": "mx2025-annual-tariff-13200",
+    "kind": "table",
+    "source": "Anexo 8 RMF 2025 section C(II)",
+    "taxableBase": "13200",
+    "expected": {
+      "exactNumerator": "11093",
+      "exactDenominator": "25",
+      "displayedIsr": "444"
+    },
+    "calculation": "171.88 + (13200 - 8952.50) * 6.40% = 443.72"
+  },
+  {
+    "id": "mx2025-salary-basic-withholding",
+    "kind": "salary-chain",
+    "source": "SAT GuiaLlenado SueldosSalarios 2025 plus Anexo 8 RMF 2025",
+    "inputs": {
+      "annualIncome": "100000",
+      "exemptIncome": "0",
+      "personalDeductions": "0",
+      "localIncomeTax": "0",
+      "employmentSubsidy": "0",
+      "isrWithheld": "10000"
+    },
+    "expected": {
+      "accumulatedIncome": "100000",
+      "taxableBase": "100000",
+      "isrAnnualDisplayed": "7075",
+      "creditsDisplayed": "10000",
+      "taxDueDisplayed": "0",
+      "balanceFavorDisplayed": "2925"
+    },
+    "calculation": "4461.94 + (100000 - 75984.56) * 10.88% = 7074.819872; half-up display 7075"
+  },
+  {
+    "id": "mx2025-professional-utility-withholding",
+    "kind": "professional-chain",
+    "source": "LISR articles 100, 102, 103, 105, 106, 109 and 152",
+    "inputs": {
+      "grossReceipts": "100000",
+      "refundsDiscounts": "5000",
+      "authorizedDeductionsExcludingLocalTax": "20000",
+      "localIncomeTax": "0",
+      "ptuPaid": "0",
+      "priorLossesApplied": "0",
+      "provisionalPayments": "5000",
+      "professionalPaymentsFromLegalEntities": "50000",
+      "legalEntityWithholding": "5000"
+    },
+    "expected": {
+      "netReceipts": "95000",
+      "fiscalUtility": "75000",
+      "taxableBase": "75000",
+      "isrAnnualDisplayed": "4399",
+      "creditsDisplayed": "10000",
+      "balanceFavorDisplayed": "5601"
+    },
+    "calculation": "100000 - 5000 - 20000 = 75000; 171.88 + (75000 - 8952.50) * 6.40% = 4398.92; credits 5000 + 5000"
+  },
+  {
+    "id": "mx2025-personal-cap-five-uma",
+    "kind": "personal-deduction-cap",
+    "source": "DOF/INEGI 2025 UMA and LISR article 151",
+    "totalIncome": "2000000",
+    "claimedDeductions": "300000",
+    "expected": {
+      "fiveAnnualUmaExactNumerator": "1031838",
+      "fiveAnnualUmaExactDenominator": "5",
+      "capDisplayed": "206368"
+    },
+    "calculation": "min(5 * 41273.52, 15% * 2000000) = 206367.60"
+  },
+  {
+    "id": "mx2025-monthly-salary-withholding-10000",
+    "kind": "monthly-withholding-table",
+    "source": "Anexo 8 RMF 2025 section V",
+    "monthlyTaxableBase": "10000",
+    "expected": {
+      "lowerLimit": "6332.06",
+      "exactIsr": "770.901872",
+      "displayedIsr": "771"
+    },
+    "calculation": "371.83 + (10000 - 6332.06) * 10.88% = 770.901872"
+  },
+  {
+    "id": "mx2025-salaried-independent-supported-slice",
+    "kind": "independent-complete-supported-slice",
+    "candidate": "mx-federal-2025-salaried-individual-working-papers",
+    "source": "SAT GuiaLlenado SueldosSalarios 2025 and Anexo 8 RMF 2025",
+    "inputs": {
+      "filingStatus": "individual",
+      "residency": "full-year-domestic",
+      "taxPeriod": "2025",
+      "currency": "MXN",
+      "salary.annualIncome": "100000",
+      "salary.exemptIncome": "0",
+      "salary.localIncomeTax": "0",
+      "salary.employmentSubsidy": "0",
+      "salary.isrWithheld": "10000",
+      "salary.provisionalPayments": "0",
+      "personalDeductions.amount": "0",
+      "otherChapterIncome": "0",
+      "foreignTaxCredit": "0",
+      "annualOtherCredits": "0"
+    },
+    "expected": {
+      "accumulatedIncome": "100000",
+      "personalDeductionsAllowed": "0",
+      "taxableBase": "100000",
+      "isrAnnualDisplayed": "7075",
+      "creditsDisplayed": "10000",
+      "taxDueDisplayed": "0",
+      "balanceFavorDisplayed": "2925"
+    },
+    "allBoundedFactsReviewed": true,
+    "fullReturn": false
+  },
+  {
+    "id": "mx2025-professional-independent-supported-slice",
+    "kind": "independent-complete-supported-slice",
+    "candidate": "mx-federal-2025-professional-sole-proprietor-working-papers",
+    "source": "SAT GuiaLlenado Actividades Empresariales y Profesionales 2025 and LISR articles 100, 102, 103, 105, 106, 109 and 152",
+    "inputs": {
+      "filingStatus": "individual",
+      "residency": "full-year-domestic",
+      "taxPeriod": "2025",
+      "currency": "MXN",
+      "business.incomeRecognition": "cash",
+      "business.grossReceipts": "100000",
+      "business.refundsDiscounts": "5000",
+      "business.authorizedDeductions": "20000",
+      "business.localIncomeTax": "0",
+      "business.ptuPaid": "0",
+      "business.priorLossesApplied": "0",
+      "business.otherAccruedIncome": "0",
+      "business.taxStimuli": "0",
+      "business.provisionalPayments": "5000",
+      "business.professionalPaymentsFromLegalEntities": "50000",
+      "business.legalEntityWithholding": "5000",
+      "personalDeductions.amount": "0",
+      "otherChapterIncome": "0",
+      "foreignTaxCredit": "0",
+      "annualOtherCredits": "0"
+    },
+    "expected": {
+      "netReceipts": "95000",
+      "fiscalUtility": "75000",
+      "taxableBase": "75000",
+      "isrAnnualDisplayed": "4399",
+      "creditsDisplayed": "10000",
+      "taxDueDisplayed": "0",
+      "balanceFavorDisplayed": "5601"
+    },
+    "allBoundedFactsReviewed": true,
+    "fullReturn": false
+  },
+  {
+    "id": "mx2025-corporation-independent-supported-slice",
+    "kind": "independent-complete-supported-slice",
+    "candidate": "mx-federal-2025-ordinary-standalone-corporation-working-papers",
+    "source": "SAT Declaraci\u00f3n Anual Empresas 2025, R\u00e9gimen General guide and LISR articles 9, 14, 25, 27, 76 and 77",
+    "inputs": {
+      "filingStatus": "corporation",
+      "residency": "full-year-domestic",
+      "taxPeriod": "2025",
+      "currency": "MXN",
+      "corporation.regime": "ordinary",
+      "corporation.accountingMethod": "accrual",
+      "corporation.accruedIncome": "200000",
+      "corporation.refundsDiscounts": "10000",
+      "corporation.authorizedDeductions": "50000",
+      "corporation.ptuPaid": "10000",
+      "corporation.priorLossesApplied": "0",
+      "corporation.otherFacilidadesAndStimuli": "0",
+      "corporation.dividendTaxCredit": "0",
+      "corporation.foreignTaxCredit": "0",
+      "corporation.provisionalPayments": "20000",
+      "corporation.isrWithheld": "0",
+      "corporation.subsidyForEmployment": "0",
+      "corporation.compensations": "0",
+      "corporation.otherPaymentApplications": "0"
+    },
+    "expected": {
+      "totalAccumulatedIncome": "190000",
+      "utilityBeforePtu": "140000",
+      "fiscalUtility": "130000",
+      "fiscalResult": "130000",
+      "isrCaused": "39000",
+      "isrExercise": "39000",
+      "creditsDisplayed": "20000",
+      "taxDueDisplayed": "19000",
+      "balanceFavorDisplayed": "0"
+    },
+    "allBoundedFactsReviewed": true,
+    "fullReturn": false
+  },
+  {
+    "id": "mx2025-computer-full-year-investment",
+    "kind": "investment-schedule",
+    "inputs": {
+      "originalInvestment": "100000",
+      "acquisitionDate": "2025-01-01",
+      "firstUseDate": "2025-01-01",
+      "assetClass": "computer-equipment"
+    },
+    "expected": {
+      "fullMonths": "12",
+      "factor": "1.0149",
+      "deduction": "30447"
+    },
+    "calculation": "100000 * 30/100 * 12/12 * 1.0149 = 30447; June140.405/January138.343 at four decimal places",
+    "fullReturn": false
+  },
+  {
+    "id": "mx2025-office-delayed-use-investment",
+    "kind": "investment-schedule",
+    "inputs": {
+      "originalInvestment": "120000",
+      "acquisitionDate": "2025-06-15",
+      "firstUseDate": "2025-07-01",
+      "assetClass": "office-furniture-equipment"
+    },
+    "expected": {
+      "fullMonths": "6",
+      "factor": "1.0056",
+      "deduction": "6033.60"
+    },
+    "calculation": "120000 * 10/100 * 6/12 * 1.0056 = 6033.60; September141.197/June140.405 at four decimal places",
+    "fullReturn": false
+  }
+]

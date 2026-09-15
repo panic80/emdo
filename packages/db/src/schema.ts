@@ -1,4 +1,7 @@
 import { sql } from 'drizzle-orm';
+export * from './finance-v2-schema.js';
+export * from './finance-normalized-components-schema.js';
+export * from './finance-cash-dividend-schema.js';
 import {
   type AnyPgColumn,
   bigint,
@@ -5139,3 +5142,33 @@ export const betterAuthSchema = Object.freeze({
   member: activeHouseholdMemberships,
   invitation: betterAuthInvitations,
 });
+export * from './finance-automation-schema.js';
+export * from './finance-generated-report-schema.js';
+
+export * from './finance-delivery-schema.js';
+export * from './finance-tax-schema.js';
+
+export * from './finance-schedule-schema.js';
+export * from './finance-tax-run-schema.js';
+export * from './finance-invoice-review-schema.js';
+
+export * from './finance-standardization-schema.js';
+
+export * from './finance-tax-wage-schema.js';
+export * from './finance-planning-schema.js';
+
+export * from './finance-legacy-migration-schema.js';
+
+export * from './finance-planning-result-schema.js';
+
+export * from './finance-fec-schema.js';
+
+export * from './finance-legacy-activation-schema.js';
+
+export * from './finance-account-source-assignment-schema.js';
+
+export * from './finance-opening-schema.js';
+
+export * from './finance-corporate-action-settlement-schema.js';
+
+export * from "./finance-investment-reconciliation-schema.js";

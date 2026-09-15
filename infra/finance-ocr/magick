@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+
+# Debian Bookworm ships ImageMagick 6, whose public entry points are
+# identify-im6.q16 and convert-im6.q16 rather than the ImageMagick 7 `magick`
+# multiplexer. Keep the adapter's fixed argv contract while dispatching to the
+# packaged binaries. No caller value is interpreted as a shell fragment.
+export MAGICK_CONFIGURE_PATH=/etc/ImageMagick-6
+
+if [ "$#" -lt 1 ]; then
+  exit 64
+fi
+
+case "$1" in
+  identify)
+    shift
+    exec /usr/bin/identify-im6.q16 "$@"
+    ;;
+  --version)
+    exec /usr/bin/convert-im6.q16 --version
+    ;;
+  *)
+    exec /usr/bin/convert-im6.q16 "$@"
+    ;;
+esac

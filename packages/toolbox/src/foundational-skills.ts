@@ -31,12 +31,12 @@ export const FOUNDATIONAL_SKILLS: readonly FoundationalSkill[] = Object.freeze([
   skill(
     'toronto-time.v1',
     'Toronto time',
-    'Interpret household dates in America/Toronto and leave timezone arithmetic to deterministic services.',
+    'Use the explicit workspace or source timezone when provided; use America/Toronto only for legacy household defaults. Preserve statement business dates and leave timezone arithmetic to deterministic services.',
   ),
   skill(
     'cad-normalization.v1',
     'CAD normalization',
-    'Represent Canadian money as integer CAD minor units and never perform arithmetic in model text.',
+    'Legacy CAD contracts use integer minor units. Normalized Finance books use exact decimal strings with explicit currency, including CAD. Preserve the encoding declared by each service; never infer conversions or perform arithmetic in model text.',
   ),
   skill(
     'safe-errors.v1',

@@ -180,3 +180,18 @@ database restore plus the accepted provider-backup recovery limits.
 - [Schemas and connections](https://docs.powersync.com/sync/advanced/schemas-and-connections)
 - [Client ID and UUID mapping](https://docs.powersync.com/sync/advanced/client-id)
 - [Published PowerSync Service image tags](https://hub.docker.com/r/journeyapps/powersync-service/tags)
+
+### Normalized Finance cutover acceptance
+
+Before activating a migrated Finance scope, verify an offline device with a queued
+legacy Finance edit reconnects through the API: the retired edit must receive a
+durable terminal conflict, replay must preserve that result, and unrelated
+scheduler/shopping changes must continue. The browser must remove the rejected
+optimistic edit and display an explicit unsaved-change notice. Current terminal
+conflict storage retains the notice, not the original edit payload.
+
+The normalized authority route gate and database writer guard do not remove
+historical Finance rows from this replication template. Retirement of those rows
+from device replication requires separate validated stream/publication changes and
+an actual device convergence test. Do not claim that server write retirement
+proves local cache removal, and do not delete the legacy archive as a shortcut.

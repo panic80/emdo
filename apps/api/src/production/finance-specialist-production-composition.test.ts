@@ -62,7 +62,7 @@ describe('Finance specialist production composition', () => {
     await expect(unavailable.checkReady()).resolves.toBe(false);
   });
 
-  it('creates the exact seven Finance services for an uploader-bound member', () => {
+  it('creates the exact eleven Finance services for an uploader-bound member', () => {
     const composition = createProductionFinanceSpecialistComposition({
       pool: poolFor({ recordsReady: true, documentsReady: true }),
       imports: importsFor(true),
@@ -74,10 +74,14 @@ describe('Finance specialist production composition', () => {
       Object.keys(composition.createForPrincipal(principal)).sort(),
     ).toEqual([
       'executeStatementImport',
+      'inspectFinanceReport',
       'loadFinanceBudgetInputs',
+      'proposeFinanceReportMapping',
+      'readFinanceBooks',
       'readFinanceDocument',
       'readFinanceMatches',
       'readFinanceRecords',
+      'readFinanceTax',
       'searchFinanceDocuments',
       'writeFinanceRecord',
     ]);

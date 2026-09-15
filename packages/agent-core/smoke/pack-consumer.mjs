@@ -20,7 +20,10 @@ const temporaryRoot = mkdtempSync(join(tmpdir(), 'emdo-agent-core-pack-'));
 const modules = [
   'approval-state',
   'budget',
+  'durable-finance-proposal-provider',
+  'durable-finance-standardization',
   'factory',
+  'finance-image-prompt-projection',
   'index',
   'memory',
   'model-router',

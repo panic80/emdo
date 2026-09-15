@@ -1,0 +1,289 @@
+%% EMDO Automation domain view; implementation revision 0076
+%% External context nodes contain only FK endpoint columns; consult the full ERD for every column.
+erDiagram
+  %% external context stub: emdo.agent_runs
+  EMDO_AGENT_RUNS {
+    uuid id PK
+    uuid household_id FK
+    uuid space_id FK
+    uuid original_owner_user_id FK
+  }
+  %% external context stub: emdo.auth_users
+  EMDO_AUTH_USERS {
+    uuid id PK
+  }
+  EMDO_FINANCE_AUTOMATION_AUTHORITY_EPOCHS {
+    uuid workspace_id PK FK
+    integer revision
+  }
+  EMDO_FINANCE_AUTOMATION_CAPABILITIES {
+    text capability PK
+    boolean ready
+  }
+  %% external context stub: emdo.finance_automation_extraction_results
+  EMDO_FINANCE_AUTOMATION_EXTRACTION_RESULTS {
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid operation_id FK
+  }
+  EMDO_FINANCE_AUTOMATION_GRANTS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid granted_by_user_id FK
+    integer revision
+    integer authority_epoch
+    text status
+    jsonb capabilities
+    jsonb limits
+    timestamptz valid_from
+    timestamptz expires_at
+    timestamptz created_at
+  }
+  %% external context stub: emdo.finance_automation_journal_draft_results
+  EMDO_FINANCE_AUTOMATION_JOURNAL_DRAFT_RESULTS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid automation_run_id FK
+    uuid source_batch_id FK
+    uuid source_evidence_id FK
+  }
+  EMDO_FINANCE_AUTOMATION_RUNS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid grant_id FK
+    integer grant_revision
+    text capability
+    jsonb intent
+    text request_hash
+    integer item_count
+    text currency
+    numeric_38__12 amount
+    integer revision
+    integer attempts
+    text status
+    boolean reserved
+    uuid lease_token
+    timestamptz lease_expires_at
+    uuid outcome_reference
+    text blocked_reason
+    timestamptz created_at
+  }
+  %% external context stub: emdo.finance_books
+  EMDO_FINANCE_BOOKS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid entity_id FK
+    uuid created_by FK
+  }
+  EMDO_FINANCE_DELIVERIES {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid operation_id FK
+    integer delivery_revision
+    text payload_hash
+    text state
+    integer attempts
+    uuid lease_token
+    timestamptz lease_expires_at
+    timestamptz available_at
+    timestamptz created_at
+  }
+  %% external context stub: emdo.finance_generated_reports
+  EMDO_FINANCE_GENERATED_REPORTS {
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid automation_run_id FK
+    uuid period_id FK
+  }
+  %% external context stub: emdo.finance_planning_results
+  EMDO_FINANCE_PLANNING_RESULTS {
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid automation_run_id FK
+    uuid budget_id FK
+    integer budget_revision FK
+  }
+  EMDO_FINANCE_SCHEDULE_PLANS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid schedule_id FK
+    integer definition_revision
+    bigint last_ordinal
+    uuid lease_token
+    uuid operation_id FK
+    text occurrence_key
+    jsonb plan
+    jsonb lineage
+    timestamptz created_at
+  }
+  EMDO_FINANCE_SCHEDULES {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid grant_id FK
+    integer grant_revision
+    uuid created_by_user_id FK
+    jsonb definition
+    integer definition_revision
+    integer state_revision
+    text status
+    bigint next_ordinal
+    timestamptz next_due_at
+    timestamptz next_poll_at
+    uuid lease_token
+    timestamptz lease_expires_at
+    timestamptz planned_at
+    text blocked_reason
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  %% external context stub: emdo.household_memberships
+  EMDO_HOUSEHOLD_MEMBERSHIPS {
+    uuid id
+    uuid household_id PK FK
+    uuid user_id PK FK
+  }
+  EMDO_NOTIFICATION_DELIVERIES {
+    text delivery_id PK
+    uuid household_id FK
+    uuid space_id FK
+    uuid original_owner_user_id FK
+    uuid notification_id FK
+    text operation_id
+    integer revision
+    text channel
+    text status
+    text sensitivity
+    text title
+    text body
+    timestamptz attempted_at
+    timestamptz updated_at
+    timestamptz retain_until
+  }
+  %% external context stub: emdo.notifications
+  EMDO_NOTIFICATIONS {
+    uuid notification_id PK
+    uuid household_id FK
+    uuid space_id FK
+    uuid original_owner_user_id FK
+  }
+  EMDO_SCHEDULER_EXECUTION_RECEIPTS {
+    text receipt_key PK
+    uuid household_id FK
+    uuid space_id FK
+    uuid original_owner_user_id FK
+    uuid run_id FK
+    text provider_id
+    text command_hash
+    text state
+    jsonb result
+    boolean reconciliation_required
+    timestamptz created_at
+    timestamptz lease_expires_at
+    timestamptz completed_at
+    timestamptz updated_at
+    timestamptz retain_until
+  }
+  EMDO_SCHEDULER_REMINDERS {
+    text reminder_id PK
+    uuid household_id FK
+    uuid space_id FK
+    uuid original_owner_user_id FK
+    integer due_revision
+    timestamptz due_at
+    text state
+    text sensitivity
+    text title
+    text body
+    boolean in_app
+    text email_recipient
+    text push_subscription_reference
+    integer delivered_revision
+    timestamptz delivered_at
+    timestamptz created_at
+    timestamptz updated_at
+    timestamptz tombstoned_at
+  }
+  %% external context stub: emdo.spaces
+  EMDO_SPACES {
+    uuid id PK
+    uuid household_id FK
+    uuid original_owner_user_id FK
+  }
+  EMDO_WORKER_JOB_EXECUTIONS {
+    uuid execution_id PK
+    uuid outbox_id FK
+    uuid household_id FK
+    uuid space_id FK
+    uuid original_owner_user_id FK
+    uuid job_id
+    text job_name FK
+    text operation_id FK
+    text payload_hash FK
+    text state
+    integer attempt_count
+    uuid lease_token
+    timestamptz lease_expires_at
+    timestamptz started_at
+    timestamptz completed_at
+    timestamptz updated_at
+    timestamptz retain_until
+  }
+  EMDO_WORKER_OPERATION_OUTBOX {
+    uuid outbox_id PK
+    uuid household_id FK
+    uuid space_id FK
+    uuid original_owner_user_id FK
+    uuid request_id
+    text job_name
+    text operation_id
+    text target_type
+    text target_id
+    integer target_revision
+    text related_operation_id
+    integer retry_sequence
+    jsonb payload
+    text payload_hash
+    text state
+    timestamptz available_at
+    uuid lease_token
+    text lease_owner
+    timestamptz lease_expires_at
+    uuid queue_job_id
+    text safe_code
+    integer dispatch_attempts
+    timestamptz created_at
+    timestamptz updated_at
+    timestamptz enqueued_at
+    timestamptz completed_at
+    timestamptz retain_until
+  }
+  %% external context stub: emdo.workspaces
+  EMDO_WORKSPACES {
+    uuid id PK FK
+  }
+  EMDO_WORKSPACES ||--o| EMDO_FINANCE_AUTOMATION_AUTHORITY_EPOCHS : "workspace_id -> id; required; 1:1; delete no action; update no action"
+  EMDO_FINANCE_AUTOMATION_RUNS ||--o| EMDO_FINANCE_AUTOMATION_EXTRACTION_RESULTS : "operation_id -> id; required; 1:1; delete no action; update no action"
+  EMDO_AUTH_USERS ||--o{ EMDO_FINANCE_AUTOMATION_GRANTS : "granted_by_user_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOKS ||--o{ EMDO_FINANCE_AUTOMATION_GRANTS : "workspace_id, book_id -> workspace_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_AUTOMATION_RUNS ||--o| EMDO_FINANCE_AUTOMATION_JOURNAL_DRAFT_RESULTS : "workspace_id, book_id, automation_run_id -> workspace_id, book_id, id; required; 1:1; delete no action; update no action"
+  EMDO_FINANCE_AUTOMATION_GRANTS ||--o{ EMDO_FINANCE_AUTOMATION_RUNS : "workspace_id, book_id, grant_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_AUTOMATION_RUNS ||--o{ EMDO_FINANCE_DELIVERIES : "workspace_id, book_id, operation_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_AUTOMATION_RUNS ||--o| EMDO_FINANCE_GENERATED_REPORTS : "workspace_id, book_id, automation_run_id -> workspace_id, book_id, id; required; 1:1; delete no action; update no action"
+  EMDO_FINANCE_AUTOMATION_RUNS ||--o| EMDO_FINANCE_PLANNING_RESULTS : "workspace_id, book_id, automation_run_id -> workspace_id, book_id, id; required; 1:1; delete no action; update no action"
+  EMDO_FINANCE_SCHEDULES ||--o{ EMDO_FINANCE_SCHEDULE_PLANS : "workspace_id, book_id, schedule_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_AUTOMATION_RUNS o|--o| EMDO_FINANCE_SCHEDULE_PLANS : "workspace_id, book_id, operation_id -> workspace_id, book_id, id; nullable; 1:1; delete no action; update no action"
+  EMDO_FINANCE_AUTOMATION_GRANTS ||--o{ EMDO_FINANCE_SCHEDULES : "workspace_id, book_id, grant_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_AUTH_USERS ||--o{ EMDO_FINANCE_SCHEDULES : "created_by_user_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_NOTIFICATIONS ||--o{ EMDO_NOTIFICATION_DELIVERIES : "household_id, space_id, original_owner_user_id, notification_id -> household_id, space_id, original_owner_user_id, notification_id; required; 1:N; delete restrict; update restrict"
+  EMDO_AGENT_RUNS ||--o{ EMDO_SCHEDULER_EXECUTION_RECEIPTS : "household_id, space_id, original_owner_user_id, run_id -> household_id, space_id, original_owner_user_id, id; required; 1:N; delete restrict; update restrict"
+  EMDO_SPACES ||--o{ EMDO_SCHEDULER_REMINDERS : "household_id, space_id -> household_id, id; required; 1:N; delete restrict; update restrict"
+  EMDO_HOUSEHOLD_MEMBERSHIPS ||--o{ EMDO_SCHEDULER_REMINDERS : "household_id, original_owner_user_id -> household_id, user_id; required; 1:N; delete restrict; update restrict"
+  EMDO_WORKER_OPERATION_OUTBOX ||--o| EMDO_WORKER_JOB_EXECUTIONS : "household_id, space_id, original_owner_user_id, outbox_id, job_name, operation_id, payload_hash -> household_id, space_id, original_owner_user_id, outbox_id, job_name, operation_id, payload_hash; required; 1:1; delete restrict; update restrict"
+  EMDO_SPACES ||--o{ EMDO_WORKER_OPERATION_OUTBOX : "household_id, space_id -> household_id, id; required; 1:N; delete restrict; update restrict"
+  EMDO_HOUSEHOLD_MEMBERSHIPS ||--o{ EMDO_WORKER_OPERATION_OUTBOX : "household_id, original_owner_user_id -> household_id, user_id; required; 1:N; delete restrict; update restrict"

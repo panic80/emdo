@@ -19,6 +19,7 @@ export function AskComposer({
   onVoiceRequest,
   compact = false,
   initialValue = '',
+  placeholder = 'What can I help with?',
 }: {
   readonly onSubmit: (
     message: string,
@@ -26,6 +27,7 @@ export function AskComposer({
   readonly onVoiceRequest?: () => void;
   readonly compact?: boolean;
   readonly initialValue?: string;
+  readonly placeholder?: string;
 }) {
   const {
     register,
@@ -56,7 +58,7 @@ export function AskComposer({
           aria-invalid={errors.message ? 'true' : undefined}
           id="ask-emdo-message"
           maxLength={12_000}
-          placeholder="What can I help with?"
+          placeholder={placeholder}
           rows={compact ? 1 : 2}
         />
         <button

@@ -1,0 +1,111 @@
+                                                                                                                                                                                                                Schedule 500
+                                                                                                                                                                                                                 Protected B
+                                                                                                                                                                                                               when completed
+                                                                         Ontario Corporation Tax Calculation
+                                                                              (2022 and later tax years)
+ Corporation's name                                                                                                                                 Business number                                        Tax year-end
+                                                                                                                                                                                                    Year        Month     Day
+
+
+
+  • Use this schedule if your corporation had a permanent establishment (as defined in section 400 of the federal Income Tax Regulations)
+    in Ontario at any time in the tax year and had Ontario taxable income in the tax year.
+  • Legislative references are to the federal Income Tax Act and Income Tax Regulations.
+  • This schedule is a worksheet only and is not required to be filed with your T2 Corporation Income Tax Return.
+       Part 1 – Ontario basic income tax
+ Ontario taxable income (Note 1) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                            1A
+ Ontario basic rate of tax for the year . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                11.5 % 1B
+ Ontario basic income tax (amount 1A multiplied by amount 1B) (Note 2) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                                                        1C
+
+    Note 1: If your corporation had a permanent establishment only in Ontario, enter the amount from line 360, from page 3 of the T2 return.
+            Otherwise, enter the taxable income allocated to Ontario from column F in Part 1 of Schedule 5.
+    Note 2: If your corporation had a permanent establishment in more than one jurisdiction or is claiming an Ontario tax credit in addition to
+            Ontario basic income tax, Ontario corporate minimum tax, or Ontario special additional tax on life insurance corporations payable,
+            enter amount 1C on line 270 of Schedule 5, Tax Calculation Supplementary – Corporations. Otherwise, enter it on line 760 of the T2 return.
+
+
+       Part 2 – Ontario small business deduction (OSBD)
+ Complete this part if your corporation claimed the federal small business deduction under subsection 125(1).
+
+   Line 400 of the T2 return . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                                 2A
+   Line 405 of the T2 return . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                                 2B
+   Line 410 of the T2 return . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                                     2C
+   Line 415 of the T2 return . . . . . . . . . . . . . . . . . . . . . .                                        2D
+
+   Business limit reduction for tax years starting before April 7, 2022
+   Amount 2C                                            ×    Amount 2D                                           =                                     2E
+                                                                                           11,250
+   Business limit reduction for tax years starting after April 6, 2022
+
+   Amount 2C                                            ×    Amount 2D                                           =                                     2F
+                                                                                           90,000
+                                                      Amount 2E or amount 2F, whichever applies                                                        2G
+   Line 515 of the T2 return . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                                     2H
+
+                                 Subtotal (amount 2C minus amount 2G minus amount 2H)                                                                  Ź                                    2I
+
+   Amount 2A, 2B or 2I whichever is the least . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                                            Ź                              2J
+
+ Ontario domestic factor (ODF):                   Taxable income for Ontario (Note 3)                                                         =     .........................                                             2K
+                                                Taxable income for all provinces (Note 4)
+
+     Amount 2J multiplied by amount 2K . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                                             2L
+
+     Ontario taxable income (amount 1A) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                                            2M
+
+ Ontario small business income (amount 2L or 2M, whichever is less) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                                                            Ź                              2N
+
+ Ontario small business deduction for the year
+
+ Amount 2N                                        ×    8.3%       =    ...................................................................                                                                                2O
+
+ Enter Ontario small business deduction for the year (amount 2O) on line 402 of Schedule 5.
+  Note 3: Enter amount 1A.
+  Note 4: Includes the territories and the offshore jurisdictions of Nova Scotia and Newfoundland and Labrador.
+
+
+
+T2 SCH 500 E (23)                                                                        (Ce formulaire est disponible en français.)                                 Page 1 of 2
+                                                                                                                                                                                      Protected B when completed
+
+
+      Part 3 – Ontario adjusted small business income
+
+ Complete this part if your corporation was a Canadian-controlled private corporation throughout the tax year and is claiming the Ontario tax credit for
+ manufacturing and processing or the Ontario credit union tax reduction.
+
+ Ontario adjusted small business income (amount 1A or 2J, whichever is the least) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                                                3A
+
+ Enter amount 3A at amount 4B in Part 4 of this schedule or at amount 2E in Part 2 of Schedule 502, Ontario Tax Credit for Manufacturing
+ and Processing, whichever applies.
+
+
+
+
+      Part 4 – Credit union tax reduction
+
+
+ Complete this part and Schedule 17, Credit Union Deductions, if the corporation was a credit union throughout the tax year.
+
+
+ Amount 2C of Schedule 17 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                                 4A
+
+ Ontario adjusted small business income (amount 3A) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                                               4B
+
+
+                                                               Subtotal (amount 4A minus amount 4B) (if negative, enter "0")                                                          Ź                      4C
+
+
+ Amount 4C                                        ×    8.3%      =     ..................................................................                                                                    4D
+
+ Ontario domestic factor (amount 2K) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                 4E
+
+ Ontario credit union tax reduction (amount 4D multiplied by amount 4E) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                                            4F
+
+ Enter amount 4F on line 410 of Schedule 5.
+
+
+
+
+T2 SCH 500 E (23)                                                                                                                                                                                     Page 2 of 2
+

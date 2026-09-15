@@ -1,0 +1,55 @@
+                                                          Department of Taxation and Finance
+
+                                                          New York City Income Tax                                                                                 IT-270
+                                                          Elimination Credit
+                                                          Tax Law – Section 1310(h)
+
+Submit this form with Form IT-201 or IT-203.
+ Names as shown on return                                                                                                                    Your Social Security number
+
+
+
+
+Part 1: Eligibility
+
+ A Are you claiming at least one dependent on Form IT-201, item H or Form IT-203, item I? .......................                                          A   Yes         No
+		  If No, stop; you do not qualify for this credit.
+
+ B Is the amount on your Form IT-201, line 54 or Form IT-203, line 52(a) zero? ...........................................                                 B   Yes         No
+		  If Yes, stop; you do not qualify for this credit.
+
+ C Does your federal adjusted gross income (Form IT-201, line 19 or Form IT-203, line 19, Federal amount
+		  column) exceed your applicable income threshold by more than $5,000? (see instructions for part 2, line 2) . C                                             Yes         No
+		  If Yes, stop; you do not qualify for this credit.
+
+ D Is your investment income greater than $10,000? (see instructions) . ..........................................................                         D   Yes         No
+		  If Yes, stop; you do not qualify for this credit.
+
+ E Are you claiming New York City or New York State pass-through entity tax credit
+		  (NYC or NYS PTET)? .............................................................................................................................       E   Yes         No
+		  If Yes, stop; you do not qualify for this credit.
+
+
+Part 2: Credit calculation
+
+ 1 Federal adjusted gross income (from Form IT-201, line 19 or Form IT-203, line 19, Federal amount column). .... 1                                                             .00
+ 2 Enter your applicable income threshold amount based on your filing status and number of
+		  dependents (see instructions) . ................................................................................................................ 2                          .00
+ 3 Is the amount on line 1 less than or equal to line 2? . .............................................................................. 3                                     .00
+		  If yes, enter 0
+		  If no, subtract line 2 from line 1 and enter the result
+		  If the result is more than $5,000, stop; you do not qualify for this credit.
+ 4 Subtract line 3 from $5,000 and enter the result ...................................................................................... 4                                    .00
+ 5 Divide line 4 by 5,000 and enter the percentage (as a decimal rounded to the fourth decimal place) . ............ 5
+ 6 Enter the amount from Form IT-201, line 54 or Form IT-203, line 52(a) .................................................. 6                                                   .00
+ 7 Refundable NYC child and dependent care credit (from Form IT-216, line 24 or 28) .................................... 7                                                      .00
+ 8 NYC earned income credit (from Form IT-215, line 27 or Form IT-209, line 45) ............................................... 8                                               .00
+ 9 Add lines 7 and 8 ..................................................................................................................................... 9                    .00
+10 Subtract line 9 from line 6 (see instructions) ............................................................................................... 10                            .00
+11 NYC Income Tax Elimination credit (multiply line 10 by line 5; see instructions) . ........................................... 11                                            .00
+
+
+
+
+           270001250094
+

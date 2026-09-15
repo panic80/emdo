@@ -55,9 +55,11 @@ export function SignInRoute() {
           EMDO
         </a>
         <header>
-          <p className="auth-eyebrow">Invite-only household assistant</p>
+          <p className="auth-eyebrow">
+            Your personal and organization workspace
+          </p>
           <h1 id="sign-in-heading">Welcome back</h1>
-          <p>Sign in to your private household space.</p>
+          <p>Sign in to your private workspace.</p>
         </header>
 
         {auth.state === 'expired' ? (
@@ -200,7 +202,7 @@ export function SignInRoute() {
         </p>
         <p className="auth-invite-note">
           New members join only from a seven-day, single-use link emailed by the
-          household owner.
+          workspace owner.
         </p>
       </section>
     </main>

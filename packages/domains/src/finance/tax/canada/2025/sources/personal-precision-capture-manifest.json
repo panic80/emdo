@@ -1,0 +1,65 @@
+[
+  {
+    "id": "cra-5006-r-2025-fillable",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5006-r/5006-r-fill-25e.pdf",
+    "localFile": "5006-r-fill-25e.pdf",
+    "documentHash": "d307c87b2e53d98653d45065ca1b5d7b0ded5b6220e59fe6fef67c6c06717539",
+    "retrievedAt": "2026-09-14T02:49:18.481571+00:00"
+  },
+  {
+    "id": "cra-5006-c-2025-fillable",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5006-c/5006-c-fill-25e.pdf",
+    "localFile": "5006-c-fill-25e.pdf",
+    "documentHash": "13902084cf55966ca3cccb103190e49991d1f44d50991e29613f82b06dbd551e",
+    "retrievedAt": "2026-09-14T02:49:19.681801+00:00"
+  },
+  {
+    "id": "cra-5000-s8-2025-fillable",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s8/5000-s8-fill-25e.pdf",
+    "localFile": "5000-s8-fill-25e.pdf",
+    "documentHash": "32827b2773fce2d4caab493809e2874949c5d5d2c800b7a7b2b2177c91534656",
+    "retrievedAt": "2026-09-14T02:49:21.837360+00:00"
+  },
+  {
+    "id": "cra-5000-s6-2025-fillable",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s6/5000-s6-fill-25e.pdf",
+    "localFile": "5000-s6-fill-25e.pdf",
+    "documentHash": "a31ecaf0c664485b616c6726ba14b0194891ae81e6297abfd28adcee3da78574",
+    "retrievedAt": "2026-09-14T02:49:23.141834+00:00"
+  },
+  {
+    "id": "cra-5006-a-2025-fillable",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5006-a/5006-a-fill-25e.pdf",
+    "localFile": "5006-a-fill-25e.pdf",
+    "documentHash": "5364f60648f8a8c4d77a10655bc46731579060d775c2151268b894a012409e19",
+    "retrievedAt": "2026-09-14T02:49:24.530937+00:00"
+  },
+  {
+    "id": "cra-t2125-2025-fillable",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2125/t2125-fill-25e.pdf",
+    "localFile": "t2125-fill-25e.pdf",
+    "documentHash": "4645a511daf9f543a8560d053101e53d79d60d8443688ea7d39d71333b308584",
+    "retrievedAt": "2026-09-14T02:49:27.740198+00:00"
+  },
+  {
+    "id": "cra-t2204-2025-fillable",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2204/t2204-fill-25e.pdf",
+    "localFile": "t2204-fill-25e.pdf",
+    "documentHash": "8e868a81cb15764fb4e6cbdd402e088d375396d83e7ef557dd524db002d69308",
+    "retrievedAt": "2026-09-14T02:49:29.097019+00:00"
+  },
+  {
+    "id": "cra-5000-d1-2025-fillable",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-d1/5000-d1-fill-25e.pdf",
+    "localFile": "5000-d1-fill-25e.pdf",
+    "documentHash": "70bc4b41f3e6eea1cf559d6b2e4c0f09b46405c0bb43f2e93c14dc33f5b343f7",
+    "retrievedAt": "2026-09-14T23:59:27.058466+00:00"
+  },
+  {
+    "id": "cra-5000-s9-2025-fillable",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s9/5000-s9-fill-25e.pdf",
+    "localFile": "5000-s9-fill-25e.pdf",
+    "documentHash": "aac16785c69833801b8b4c4d0203b6cfc49f48cd7638dc6e61b69a294ddc5542",
+    "retrievedAt": "2026-09-15T05:00:00+00:00"
+  }
+]

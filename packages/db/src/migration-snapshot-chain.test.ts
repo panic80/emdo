@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { readdir, readFile } from 'node:fs/promises';
 
 import { getTableConfig } from 'drizzle-orm/pg-core';
@@ -39,8 +40,7 @@ const tableDelta = (previous: Snapshot, current: Snapshot) => {
       .filter(
         (name) =>
           previousNames.has(name) &&
-          JSON.stringify(previous.tables[name]) !==
-            JSON.stringify(current.tables[name]),
+          !isDeepStrictEqual(previous.tables[name], current.tables[name]),
       )
       .sort(),
     removed: [...previousNames]
@@ -59,6 +59,70 @@ const snapshotColumns = (
   );
 
 describe('ordered migration snapshot chain', () => {
+  it('keeps tables unchanged for PDF OCR mapping binding migration 0069', async () => {
+    expect(tableDelta(await readSnapshot(68), await readSnapshot(69))).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
+  });
+
+  it('keeps tables unchanged for PDF OCR reader migration 0068', async () => {
+    expect(tableDelta(await readSnapshot(67), await readSnapshot(68))).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
+  });
+  it('adds only normalized corporate-action settlement records in 0067', async () => {
+    expect(tableDelta(await readSnapshot(66), await readSnapshot(67))).toEqual({
+      added: [
+        'emdo.finance_investment_corporate_action_settlement_allocations',
+        'emdo.finance_investment_corporate_action_settlement_evidence',
+        'emdo.finance_investment_corporate_action_settlements',
+      ],
+      changed: [],
+      removed: [],
+    });
+  });
+  it('keeps tables unchanged for FEC evidence policy 0063', async () => {
+    expect(tableDelta(await readSnapshot(62), await readSnapshot(63))).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
+  });
+  it('keeps tables unchanged for NY private policy migration 0062', async () => {
+    expect(tableDelta(await readSnapshot(61), await readSnapshot(62))).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
+  });
+  it('adds only the four reviewed FEC persistence tables in 0061', async () => {
+    expect(tableDelta(await readSnapshot(60), await readSnapshot(61))).toEqual({
+      added: [
+        'emdo.finance_fec_account_mappings',
+        'emdo.finance_fec_book_mapping_revisions',
+        'emdo.finance_fec_export_receipts',
+        'emdo.finance_fec_journal_mappings',
+      ],
+      changed: [],
+      removed: [],
+    });
+  });
+
+  it('adds planning results, construction markers and automation capability metadata in 0060', async () => {
+    expect(tableDelta(await readSnapshot(59), await readSnapshot(60))).toEqual({
+      added: ['emdo.finance_planning_results'],
+      changed: [
+        'emdo.finance_automation_capabilities',
+        'emdo.finance_budget_revisions',
+        'emdo.finance_forecast_snapshots',
+      ],
+      removed: [],
+    });
+  });
   it('has one continuous snapshot for every exact journal entry', async () => {
     const [journal, files] = await Promise.all([
       readJson<{
@@ -71,7 +135,10 @@ describe('ordered migration snapshot chain', () => {
     ]);
     expect(journal.entries.map(({ idx }) => idx)).toEqual([
       0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-      21, 22, 23,
+      21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
+      39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56,
+      57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74,
+      75, 76,
     ]);
     expect(journal.entries.map(({ tag }) => tag)).toEqual([
       '0000_household_foundation',
@@ -98,23 +165,210 @@ describe('ordered migration snapshot chain', () => {
       '0021_blocked_visual_decision_claim',
       '0022_registered_agent_invocation_lineage',
       '0023_astra_model_migration',
+      '0024_workspace_finance_foundation',
+      '0025_finance_commercial_documents',
+      '0026_normalized_finance_imports',
+      '0027_investment_observations',
+      '0028_report_mapping_registry',
+      '0029_investment_valuation_runs',
+      '0030_mapped_portfolio_observations',
+      '0031_investment_lot_accounting',
+      '0032_xlsx_book_evidence',
+      '0033_finance_automation_authority',
+      '0034_finance_generated_reports',
+      '0035_finance_worker_report_permissions',
+      '0036_pdf_book_evidence',
+      '0037_finance_delivery_outbox',
+      '0038_finance_automation_run_reads',
+      '0039_finance_stalled_run_recovery',
+      '0040_private_tax_cases',
+      '0041_finance_corporate_actions',
+      '0042_tax_book_source_rebind',
+      '0043_finance_recurring_schedules',
+      '0044_private_tax_calculation_runs',
+      '0045_finance_structured_invoice_evidence',
+      '0046_finance_accounting_statements',
+      '0047_finance_invoice_review_drafts',
+      '0048_finance_normalized_amount_components',
+      '0049_finance_standardization',
+      '0050_normalized_finance_disclosure_capabilities',
+      '0051_finance_cash_dividends',
+      '0052_finance_standardization_reconciliation',
+      '0053_private_corporate_tax_runs',
+      '0054_finance_image_evidence',
+      '0055_finance_standardization_reconciliation_hardening',
+      '0056_private_us_tax_wage_reviews',
+      '0057_normalized_finance_planning',
+      '0058_finance_legacy_migration',
+      '0059_private_us_wage_corrections',
+      '0060_finance_planning_automation',
+      '0061_finance_fec_persistence',
+      '0062_private_new_york_working_papers',
+      '0063_finance_fec_evidence_binding',
+      '0064_finance_legacy_activation',
+      '0065_finance_account_source_assignments',
+      '0066_finance_opening_proofs',
+      '0067_finance_corporate_action_settlements',
+      '0068_finance_pdf_ocr_evidence',
+      '0069_finance_pdf_ocr_mapping_binding',
+      '0070_finance_automation_extraction',
+      '0071_finance_investment_reconciliation',
+      '0072_finance_journal_draft_automation',
+      '0073_finance_recurring_source_schedules',
+      '0074_private_mexico_working_papers',
+      '0075_finance_standardization_prompt_v3',
+      '0076_finance_standardization_prompt_v4',
     ]);
     expect(
       files.filter((file) => /^\d{4}_snapshot\.json$/u.test(file)).sort(),
     ).toEqual(
       Array.from(
-        { length: 24 },
+        { length: 77 },
         (_, index) => `${index.toString().padStart(4, '0')}_snapshot.json`,
       ),
     );
 
     const snapshots = await Promise.all(
-      Array.from({ length: 24 }, (_, index) => readSnapshot(index)),
+      Array.from({ length: 77 }, (_, index) => readSnapshot(index)),
     );
     expect(snapshots[0]?.prevId).toBe('00000000-0000-0000-0000-000000000000');
     for (let index = 1; index < snapshots.length; index += 1) {
       expect(snapshots[index]?.prevId).toBe(snapshots[index - 1]?.id);
     }
+    expect(tableDelta(snapshots[58]!, snapshots[59]!)).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[57]!, snapshots[58]!)).toEqual({
+      added: [
+        'emdo.finance_legacy_migration_comparisons',
+        'emdo.finance_legacy_migration_cutovers',
+        'emdo.finance_legacy_migration_records',
+        'emdo.finance_legacy_migration_reviews',
+        'emdo.finance_legacy_migration_runs',
+      ],
+      changed: [
+        'emdo.action_proposals',
+        'emdo.finance_investment_cash_dividends',
+      ],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[54]!, snapshots[55]!)).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[55]!, snapshots[56]!)).toEqual({
+      added: ['emdo.finance_tax_wage_reviews'],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[56]!, snapshots[57]!)).toEqual({
+      added: [
+        'emdo.finance_budget_lines',
+        'emdo.finance_budget_revisions',
+        'emdo.finance_forecast_assumptions',
+        'emdo.finance_forecast_lines',
+        'emdo.finance_forecast_snapshots',
+      ],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[53]!, snapshots[54]!)).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[52]!, snapshots[53]!)).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[42]!, snapshots[43]!)).toEqual({
+      added: ['emdo.finance_schedule_plans', 'emdo.finance_schedules'],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[43]!, snapshots[44]!)).toEqual({
+      added: [
+        'emdo.finance_tax_calculation_runs',
+        'emdo.finance_tax_run_reviews',
+        'emdo.finance_tax_run_schedules',
+        'emdo.finance_tax_working_input_reviews',
+      ],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[44]!, snapshots[45]!)).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[45]!, snapshots[46]!)).toEqual({
+      added: ['emdo.finance_ledger_account_classifications'],
+      changed: ['emdo.finance_generated_reports'],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[48]!, snapshots[49]!)).toEqual({
+      added: [
+        'emdo.finance_standardization_configuration',
+        'emdo.finance_standardization_extractions',
+        'emdo.finance_standardization_runs',
+        'emdo.finance_standardization_spend',
+      ],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[51]!, snapshots[52]!)).toEqual({
+      added: ['emdo.finance_standardization_reconciliations'],
+      changed: ['emdo.finance_standardization_spend'],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[50]!, snapshots[51]!)).toEqual({
+      added: [
+        'emdo.finance_investment_cash_dividend_amounts',
+        'emdo.finance_investment_cash_dividends',
+      ],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[47]!, snapshots[48]!)).toEqual({
+      added: [
+        'emdo.finance_economic_transaction_amount_components',
+        'emdo.finance_normalized_import_amount_components',
+      ],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[40]!, snapshots[41]!)).toEqual({
+      added: [
+        'emdo.finance_investment_corporate_action_effects',
+        'emdo.finance_investment_corporate_action_lots',
+        'emdo.finance_investment_corporate_actions',
+        'emdo.finance_investment_lot_revisions',
+      ],
+      changed: [],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[41]!, snapshots[42]!)).toEqual({
+      added: [],
+      changed: ['emdo.finance_tax_book_sources'],
+      removed: [],
+    });
+    expect(tableDelta(snapshots[39]!, snapshots[40]!)).toEqual({
+      added: [
+        'emdo.finance_tax_book_sources',
+        'emdo.finance_tax_case_grants',
+        'emdo.finance_tax_case_snapshots',
+        'emdo.finance_tax_cases',
+        'emdo.finance_tax_fact_sources',
+        'emdo.finance_tax_receipts',
+        'emdo.finance_tax_subjects',
+      ],
+      changed: [],
+      removed: [],
+    });
     expect(tableDelta(snapshots[16]!, snapshots[17]!)).toEqual({
       added: [],
       changed: [],
@@ -161,6 +415,30 @@ describe('ordered migration snapshot chain', () => {
         snapshotColumns(snapshot, 'emdo.finance_document_evidence'),
       ).not.toEqual(expect.arrayContaining(['deletion_proposal_id']));
     }
+  });
+
+  it('adds Mexico working paper scopes without table changes', async () => {
+    expect(tableDelta(await readSnapshot(73), await readSnapshot(74))).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
+  });
+
+  it('keeps recurring source schedules additive without table changes', async () => {
+    expect(tableDelta(await readSnapshot(72), await readSnapshot(73))).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
+  });
+
+  it('adds only durable invoice review drafts in 0047', async () => {
+    expect(tableDelta(await readSnapshot(46), await readSnapshot(47))).toEqual({
+      added: ['emdo.finance_invoice_review_drafts'],
+      changed: [],
+      removed: [],
+    });
   });
 
   it('keeps audio, household, sync, and preference structures in their owned boundary', async () => {

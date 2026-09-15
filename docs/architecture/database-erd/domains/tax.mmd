@@ -1,0 +1,144 @@
+%% EMDO Tax domain view; implementation revision 0076
+%% External context nodes contain only FK endpoint columns; consult the full ERD for every column.
+erDiagram
+  %% external context stub: emdo.auth_users
+  EMDO_AUTH_USERS {
+    uuid id PK
+  }
+  %% external context stub: emdo.finance_books
+  EMDO_FINANCE_BOOKS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid entity_id FK
+    uuid created_by FK
+  }
+  EMDO_FINANCE_TAX_BOOK_SOURCES {
+    uuid id PK
+    uuid workspace_id FK
+    uuid case_id FK
+    uuid tax_subject_id FK
+    uuid book_id FK
+    integer authorization_revision
+    uuid authorized_by FK
+    integer book_grant_revision
+    integer snapshot_revision
+    text snapshot_hash
+    jsonb snapshot
+    timestamptz revoked_at
+    timestamptz created_at
+  }
+  %% external context stub: emdo.finance_tax_calculation_runs
+  EMDO_FINANCE_TAX_CALCULATION_RUNS {
+    uuid workspace_id FK
+    uuid case_id FK
+    integer snapshot_revision FK
+    uuid id PK
+    uuid created_by FK
+  }
+  EMDO_FINANCE_TAX_CASE_GRANTS {
+    uuid workspace_id PK FK
+    uuid case_id PK FK
+    uuid tax_subject_id FK
+    uuid user_id PK FK
+    text role
+    integer revision
+    timestamptz revoked_at
+  }
+  EMDO_FINANCE_TAX_CASE_SNAPSHOTS {
+    uuid workspace_id PK FK
+    uuid case_id PK FK
+    uuid tax_subject_id FK
+    integer revision PK
+    jsonb questionnaire
+    text snapshot_hash
+    text previous_snapshot_hash
+    uuid created_by FK
+    timestamptz created_at
+  }
+  EMDO_FINANCE_TAX_CASES {
+    uuid id PK
+    uuid workspace_id FK
+    uuid tax_subject_id FK
+    text title
+    integer current_revision
+    text status
+    uuid created_by FK
+    timestamptz created_at
+  }
+  EMDO_FINANCE_TAX_FACT_SOURCES {
+    uuid id PK
+    uuid workspace_id PK FK
+    uuid case_id PK FK
+    uuid tax_subject_id FK
+    integer revision PK
+    text fact_key
+    text category
+    jsonb value
+    text content_hash
+    uuid created_by FK
+    timestamptz created_at
+  }
+  EMDO_FINANCE_TAX_RECEIPTS {
+    uuid workspace_id PK FK
+    uuid user_id PK FK
+    text idempotency_key PK
+    uuid case_id
+    text command_hash
+    jsonb response
+    timestamptz created_at
+  }
+  EMDO_FINANCE_TAX_SUBJECTS {
+    uuid id PK
+    uuid workspace_id FK
+    text display_name
+    text taxpayer_type
+    uuid created_by FK
+    timestamptz created_at
+  }
+  %% external context stub: emdo.finance_tax_wage_reviews
+  EMDO_FINANCE_TAX_WAGE_REVIEWS {
+    uuid workspace_id FK
+    uuid case_id FK
+    integer snapshot_revision FK
+    uuid source_id FK
+    integer source_revision FK
+    uuid created_by FK
+  }
+  %% external context stub: emdo.finance_tax_working_input_reviews
+  EMDO_FINANCE_TAX_WORKING_INPUT_REVIEWS {
+    uuid workspace_id PK FK
+    uuid case_id PK FK
+    integer snapshot_revision PK FK
+    uuid source_id PK FK
+    integer source_revision PK FK
+    uuid created_by FK
+  }
+  %% external context stub: emdo.workspaces
+  EMDO_WORKSPACES {
+    uuid id PK FK
+  }
+  EMDO_AUTH_USERS ||--o{ EMDO_FINANCE_TAX_BOOK_SOURCES : "authorized_by -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOKS ||--o{ EMDO_FINANCE_TAX_BOOK_SOURCES : "workspace_id, book_id -> workspace_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_TAX_CASES ||--o{ EMDO_FINANCE_TAX_BOOK_SOURCES : "workspace_id, case_id, tax_subject_id -> workspace_id, id, tax_subject_id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_TAX_BOOK_SOURCES : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_TAX_CASE_SNAPSHOTS ||--o{ EMDO_FINANCE_TAX_CALCULATION_RUNS : "workspace_id, case_id, snapshot_revision -> workspace_id, case_id, revision; required; 1:N; delete no action; update no action"
+  EMDO_AUTH_USERS ||--o{ EMDO_FINANCE_TAX_CASE_GRANTS : "user_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_TAX_CASES ||--o{ EMDO_FINANCE_TAX_CASE_GRANTS : "workspace_id, case_id, tax_subject_id -> workspace_id, id, tax_subject_id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_TAX_CASE_GRANTS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_AUTH_USERS ||--o{ EMDO_FINANCE_TAX_CASE_SNAPSHOTS : "created_by -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_TAX_CASES ||--o{ EMDO_FINANCE_TAX_CASE_SNAPSHOTS : "workspace_id, case_id, tax_subject_id -> workspace_id, id, tax_subject_id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_TAX_CASE_SNAPSHOTS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_AUTH_USERS ||--o{ EMDO_FINANCE_TAX_CASES : "created_by -> id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_TAX_CASES : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_TAX_SUBJECTS ||--o{ EMDO_FINANCE_TAX_CASES : "workspace_id, tax_subject_id -> workspace_id, id; required; 1:N; delete no action; update no action"
+  EMDO_AUTH_USERS ||--o{ EMDO_FINANCE_TAX_FACT_SOURCES : "created_by -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_TAX_CASES ||--o{ EMDO_FINANCE_TAX_FACT_SOURCES : "workspace_id, case_id, tax_subject_id -> workspace_id, id, tax_subject_id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_TAX_FACT_SOURCES : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_AUTH_USERS ||--o{ EMDO_FINANCE_TAX_RECEIPTS : "user_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_TAX_RECEIPTS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_AUTH_USERS ||--o{ EMDO_FINANCE_TAX_SUBJECTS : "created_by -> id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_TAX_SUBJECTS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_TAX_CASE_SNAPSHOTS ||--o{ EMDO_FINANCE_TAX_WAGE_REVIEWS : "workspace_id, case_id, snapshot_revision -> workspace_id, case_id, revision; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_TAX_FACT_SOURCES ||--o{ EMDO_FINANCE_TAX_WAGE_REVIEWS : "workspace_id, case_id, source_id, source_revision -> workspace_id, case_id, id, revision; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_TAX_CASE_SNAPSHOTS ||--o{ EMDO_FINANCE_TAX_WORKING_INPUT_REVIEWS : "workspace_id, case_id, snapshot_revision -> workspace_id, case_id, revision; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_TAX_FACT_SOURCES ||--o{ EMDO_FINANCE_TAX_WORKING_INPUT_REVIEWS : "workspace_id, case_id, source_id, source_revision -> workspace_id, case_id, id, revision; required; 1:N; delete no action; update no action"

@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import * as projection from '../finance-legacy-activation-projection.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { DatabaseClient, DatabasePool } from '../scoped-repository.js';
 import {
@@ -30,6 +31,153 @@ const poolFor = (
 };
 
 describe('PostgresScopedDomainEntityRepository', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it('reads normalized transactions with lexical pagination and the original space owner', async () => {
+    const owner = '90000000-0000-4000-8000-000000000006';
+    const { pool, query } = poolFor((sql) =>
+      sql.includes('lock_active_request_scope')
+        ? [{ authorized: true }]
+        : sql.includes('select original_owner_user_id')
+          ? [{ original_owner_user_id: owner }]
+          : [],
+    );
+    const route = {
+      kind: 'normalized' as const,
+      migrationId: principal.requestId,
+      bookId: principal.sessionId,
+      activatedAt: '2026-09-14T00:00:00.000Z',
+    };
+    const resolve = vi
+      .spyOn(projection, 'resolveLegacyFinanceRoute')
+      .mockResolvedValue(route);
+    const transaction = {
+      id: 'tx-z',
+      legacyEntityId: 'tx-z',
+      economicTransactionId: principal.userId,
+      journalId: principal.sessionId,
+      financialAccountId: principal.requestId,
+      legacyAccountId: 'bank',
+      effectiveOn: '2026-09-14',
+      description: 'Ledger posted',
+      createdAt: '2026-09-14T01:00:00.000Z',
+      updatedAt: '2026-09-14T01:00:00.000Z',
+      nativeAmount: '12.34',
+      categoryId: null,
+      currency: 'CAD' as const,
+      amountCadMinor: 1234,
+      originalFingerprint: null,
+      originalSourceHash: null,
+      originalSourceRow: null,
+      externalId: null,
+    };
+    const read = vi
+      .spyOn(projection, 'readLegacyFinanceCompatibility')
+      .mockResolvedValue({
+        kind: 'ready',
+        accounts: [],
+        archives: [],
+        transactions: [transaction],
+        nextCursor: null,
+        nextEntityId: null,
+      });
+    const repository = new PostgresScopedDomainEntityRepository(
+      pool,
+      principal,
+      { spaceId, entityType: 'finance.transaction' },
+    );
+    expect(
+      await repository.list({ afterEntityId: 'tx-y', limit: 1 }),
+    ).toMatchObject([
+      {
+        entityId: 'tx-z',
+        updatedAt: transaction.updatedAt,
+        payload: {
+          ownerUserId: owner,
+          source: { kind: 'normalized-ledger', bookId: route.bookId },
+          originalAmountCadMinor: 1234,
+        },
+      },
+    ]);
+    expect(resolve).toHaveBeenCalledWith(expect.anything(), {
+      workspaceId: principal.householdId,
+      sourceSpaceId: spaceId,
+      sourceOwnerUserId: owner,
+    });
+    expect(read).toHaveBeenLastCalledWith(
+      expect.anything(),
+      route,
+      expect.anything(),
+      { order: 'entity-id', afterEntityId: 'tx-y', limit: 1 },
+    );
+    await repository.get('tx-z');
+    expect(read).toHaveBeenLastCalledWith(
+      expect.anything(),
+      route,
+      expect.anything(),
+      { order: 'entity-id', entityId: 'tx-z', limit: 1 },
+    );
+    read.mockResolvedValueOnce({
+      kind: 'unsupported-currency',
+      currency: 'EUR',
+    });
+    await expect(repository.list()).rejects.toMatchObject({
+      code: 'invalid-result',
+    });
+    expect(
+      query.mock.calls.some(([sql]) => sql.includes('from emdo.sync_entities')),
+    ).toBe(false);
+  });
+  it('preserves the legacy path before activation and keeps configuration records on their scoped path', async () => {
+    const { pool, query } = poolFor((sql) =>
+      sql.includes('lock_active_request_scope')
+        ? [{ authorized: true }]
+        : sql.includes('select original_owner_user_id')
+          ? [{ original_owner_user_id: principal.userId }]
+          : [],
+    );
+    const resolve = vi
+      .spyOn(projection, 'resolveLegacyFinanceRoute')
+      .mockResolvedValue({ kind: 'legacy' });
+    const repository = new PostgresScopedDomainEntityRepository(
+      pool,
+      principal,
+      { spaceId, entityType: 'finance.transaction' },
+    );
+    expect(await repository.get('missing')).toBeUndefined();
+    expect(
+      query.mock.calls.some(([sql]) => sql.includes('from emdo.sync_entities')),
+    ).toBe(true);
+    resolve.mockClear();
+    const config = new PostgresScopedDomainEntityRepository(pool, principal, {
+      spaceId,
+      entityType: 'finance.budget',
+    });
+    await config.list();
+    expect(resolve).not.toHaveBeenCalled();
+  });
+  it('preserves the database freeze for normalized legacy mutation attempts', async () => {
+    const { pool } = poolFor((sql) => {
+      if (sql.includes('lock_active_request_scope'))
+        return [{ authorized: true }];
+      if (sql.includes('update emdo.sync_entities'))
+        throw new Error('legacy-finance-activated-write-forbidden');
+      return [];
+    });
+    const resolve = vi.spyOn(projection, 'resolveLegacyFinanceRoute');
+    const repository = new PostgresScopedDomainEntityRepository(
+      pool,
+      principal,
+      { spaceId, entityType: 'finance.transaction' },
+    );
+    await expect(
+      repository.tombstone({
+        entityId: 'transaction-1',
+        expectedRevision: 1,
+        actorIntent: 'Remove transaction',
+      }),
+    ).rejects.toThrow('legacy-finance-activated-write-forbidden');
+    expect(resolve).not.toHaveBeenCalled();
+  });
   it('binds entity type and space in the constructor and applies revision CAS with DB time', async () => {
     const { pool, query } = poolFor((sql) => {
       if (sql.includes('lock_active_request_scope'))

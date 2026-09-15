@@ -211,6 +211,61 @@ describe('ApiCanonicalSyncClient', () => {
     await expect(reopenedClient.listTerminalConflicts()).resolves.toEqual([]);
   });
 
+  it('settles a retired Finance edit for review while accepting shopping in the same upload', async () => {
+    const connection = new TestLocalSqliteConnection();
+    const store = new EncryptedSqlitePendingOperationStore(connection);
+    const finance = {
+      ...operation('018f1f5e-6f47-7d61-a6dd-1e86f8b8f121'),
+      entity: { type: 'finance.budget', id: 'retired-budget' },
+    };
+    const shopping = operation('018f1f5e-6f47-7d61-a6dd-1e86f8b8f122');
+    const client = new ApiCanonicalSyncClient(store, {
+      uploadOperations: async () => ({
+        results: [
+          {
+            operationId: finance.operationId,
+            status: 'conflict',
+            code: 'repository-rejected',
+            disposition: 'terminal',
+            conflicts: [
+              { field: 'legacy-finance-writer-retired', material: true },
+            ],
+            replayed: false,
+          },
+          ...appliedResults([shopping]).results,
+        ],
+      }),
+    });
+    await client.applyLocalMutation(finance, async (transaction) => {
+      await transaction.execute('UPSERT EMDO_TEST_PROJECTION', [
+        finance.entity.id,
+        finance.operationId,
+      ]);
+    });
+    await client.queueLocalOperation(shopping);
+    await expect(client.syncNow()).resolves.toMatchObject({
+      acceptedOperationIds: [shopping.operationId],
+      retryableOperations: [],
+      terminalConflicts: [
+        { operationId: finance.operationId, code: 'repository-rejected' },
+      ],
+    });
+    expect(
+      connection.getProjectionOperationId(finance.entity.id),
+    ).toBeUndefined();
+    await expect(client.hasPendingOperations()).resolves.toBe(false);
+    await expect(
+      new EncryptedSqlitePendingOperationStore(
+        connection,
+      ).listTerminalConflicts(),
+    ).resolves.toMatchObject([
+      {
+        operationId: finance.operationId,
+        conflicts: [{ field: 'legacy-finance-writer-retired', material: true }],
+      },
+    ]);
+  });
+
   it('invalidates conflict snapshots after durable settlement and dismissal', async () => {
     const store = new InMemoryPendingOperationStore();
     const operationId = '018f1f5e-6f47-7d61-a6dd-1e86f8b8f117';

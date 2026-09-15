@@ -1,4 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
+import {
+  AgentFactory,
+  createOpenAiAgentsSdkFacade,
+  createConservativeOpenAiInputTokenCounter,
+  type OpenAiSdkAgent,
+  type OpenAiSdkFunctionTool,
+} from '@emdo/agent-core';
+import { financeAgentDefinition } from '@emdo/agent-finance';
 
 import type {
   ApprovalCheckpointGateway,
@@ -11,13 +19,14 @@ import type {
 } from '@emdo/agent-core';
 import {
   AgentInvocationContextSchema,
+  AgentManifestSchema,
   EffectiveAuthorizationScopeFingerprintSchema,
 } from '@emdo/contracts';
 import type {
   ProviderWriteApprovalStore,
   TrustedProviderWriteAuthorityResolver,
 } from '@emdo/toolbox';
-import { hashCanonicalJson } from '@emdo/toolbox';
+import { hashCanonicalJson, FOUNDATIONAL_SKILLS } from '@emdo/toolbox';
 
 import type {
   AuthenticatedPrincipal,
@@ -521,6 +530,10 @@ describe('production agent runtime', () => {
       'agent.scheduler.delegate',
       'agent.finance.delegate',
       'google-calendar.event.create',
+      'finance.reports.inspect',
+      'finance.reports.propose-mapping',
+      'finance.tax.read',
+      'finance.books.read',
       'finance.records.read',
       'finance.records.write',
       'finance.statement.import',
@@ -532,7 +545,7 @@ describe('production agent runtime', () => {
     expect(runtime.capabilityIds).not.toContain('agent.shopping.delegate');
     expect(createGateway).toHaveBeenCalledWith(
       expect.objectContaining({
-        registry: expect.objectContaining({ size: 10 }),
+        registry: expect.objectContaining({ size: 14 }),
         manifests: {
           manager: expect.objectContaining({
             capabilityAllowlist: [
@@ -545,6 +558,10 @@ describe('production agent runtime', () => {
           }),
           finance: expect.objectContaining({
             capabilityAllowlist: expect.arrayContaining([
+              'finance.reports.inspect',
+              'finance.reports.propose-mapping',
+              'finance.tax.read',
+              'finance.books.read',
               'finance.records.read',
               'finance.documents.search',
             ]),
@@ -637,7 +654,9 @@ describe('production agent runtime', () => {
       }),
     );
 
-    const financeGateway = vi.fn(() => proposalGateway);
+    const financeGateway = vi.fn<
+      ProductionProviderProposalComposition['createGateway']
+    >(() => proposalGateway);
     const financeOnly = createFinanceOnlyProductionAgentRuntime({
       ...dependencies,
       capabilityServices: {
@@ -663,18 +682,42 @@ describe('production agent runtime', () => {
       proposals: { approvalStore, createGateway: financeGateway },
     });
     expect(financeOnly.agentIds).toEqual(['manager', 'finance']);
-    expect(financeOnly.capabilityIds).toHaveLength(8);
+    const boundRuntime = financeGateway.mock.calls[0]![0];
+    const compiledFinance = new AgentFactory<
+      OpenAiSdkAgent,
+      OpenAiSdkFunctionTool
+    >({
+      validateManifest: (value) => AgentManifestSchema.parse(value),
+      capabilityRegistry: boundRuntime.registry,
+      schemaResolver: boundRuntime.schemaResolver,
+      sharedSkills: FOUNDATIONAL_SKILLS,
+      sdk: createOpenAiAgentsSdkFacade({ proposalGateway }),
+    }).compile(financeAgentDefinition);
+    // Count the shipped instructions and actual tool schemas, including a
+    // bounded source page. Static tool growth must not disable every request.
+    const bound = createConservativeOpenAiInputTokenCounter().countUpperBound({
+      agent: compiledFinance.materialize('gpt-6-astra'),
+      input: { schemaVersion: 1, records: [{ source: 'x'.repeat(16_384) }] },
+    });
+    expect(bound).toBeLessThanOrEqual(
+      compiledFinance.manifest.executionBudget.maxInputTokens,
+    );
+    expect(financeOnly.capabilityIds).toHaveLength(12);
     expect(financeOnly.capabilityIds).not.toContain('agent.scheduler.delegate');
     expect(financeOnly.capabilityIds).not.toContain('agent.shopping.delegate');
     expect(financeGateway).toHaveBeenCalledWith(
       expect.objectContaining({
-        registry: expect.objectContaining({ size: 8 }),
+        registry: expect.objectContaining({ size: 12 }),
         manifests: {
           manager: expect.objectContaining({
             capabilityAllowlist: ['agent.finance.delegate'],
           }),
           finance: expect.objectContaining({
             capabilityAllowlist: expect.arrayContaining([
+              'finance.reports.inspect',
+              'finance.reports.propose-mapping',
+              'finance.tax.read',
+              'finance.books.read',
               'finance.records.read',
               'finance.documents.search',
             ]),
@@ -684,7 +727,7 @@ describe('production agent runtime', () => {
     );
   });
 
-  it('constructs the canonical four-agent OpenAI SDK graph with all 22 capabilities', () => {
+  it('constructs the canonical four-agent OpenAI SDK graph with all 26 capabilities', () => {
     const createGateway = vi.fn(() => proposalGateway);
     const dependencies = runtimeDependencies();
     const runtime = createProductionAgentRuntime({
@@ -698,8 +741,8 @@ describe('production agent runtime', () => {
       'finance',
       'shopping',
     ]);
-    expect(runtime.capabilityIds).toHaveLength(22);
-    expect(new Set(runtime.capabilityIds).size).toBe(22);
+    expect(runtime.capabilityIds).toHaveLength(26);
+    expect(new Set(runtime.capabilityIds).size).toBe(26);
     expect(runtime.capabilityIds).toEqual(
       expect.arrayContaining([
         'agent.scheduler.delegate',
@@ -718,7 +761,7 @@ describe('production agent runtime', () => {
     expect(createGateway).toHaveBeenCalledOnce();
     expect(createGateway).toHaveBeenCalledWith(
       expect.objectContaining({
-        registry: expect.objectContaining({ size: 22 }),
+        registry: expect.objectContaining({ size: 26 }),
         manifests: expect.objectContaining({
           manager: expect.objectContaining({ id: 'manager' }),
           scheduler: expect.objectContaining({ id: 'scheduler' }),

@@ -1,0 +1,179 @@
+import { deepFreeze } from '@emdo/contracts';
+/** Immutable public CRA captures; byte integrity is tested. */
+export const CANADA_CORPORATE_2025_SOURCES = deepFreeze([
+  {
+    file: 't2-25e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2/t2-25e.pdf',
+    sha256: 'e0faac9d054dbad41b443b54f2c7e23434a3d6a74d29988933808330f81b4291',
+    capturedAt: '2026-09-14T02:23:33.643628+00:00',
+    bytes: 86449,
+    locator:
+      'Pages 1\u20133 identification/attachment decisions; page 4 lines 400\u2013430; page 8 lines 550/608/700; page 9 lines 750\u2013990',
+  },
+  {
+    file: 't4012-25e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pub/t4012/t4012-25e.pdf',
+    sha256: '1b9e8f0b74b5d2670142475ae5e1a4655b03e61d2dcc30a116087cff1893d9a1',
+    capturedAt: '2026-09-14T02:23:36.182048+00:00',
+    bytes: 926991,
+    locator:
+      '2025 guide: chapter 2 GIFI and schedules; chapter 4 SBD; chapter 8 Ontario SBD and summary; balance-due day page 12',
+  },
+  {
+    file: 't2sch500-23e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2sch500/t2sch500-23e.pdf',
+    sha256: 'e731d6e4ee66457b2497ec0dc3441d462ea5dd29892bc8b3f9bc7c44a40fa650',
+    capturedAt: '2026-09-14T02:23:38.292578+00:00',
+    bytes: 50341,
+    locator:
+      'Page 1 Part 1 lines 1A\u20131C and Part 2 lines 2A\u20132O; worksheet only',
+  },
+  {
+    file: 't2sch1-25e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2sch1/t2sch1-25e.pdf',
+    sha256: 'c41b3058aa25a06463723b5c96a4ef5519d2396c1231b7d66f26a5a58f5b0603',
+    capturedAt: '2026-09-14T02:24:52.034253+00:00',
+    bytes: 56522,
+    locator: 'Pages 1\u20132 amounts A/B/C and lines 101/500/510',
+  },
+  {
+    file: 't2sch5-25e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2sch5/t2sch5-25e.pdf',
+    sha256: '0e051bc9dc655540a11d87125854341e04973c14b8fb3bfdbd466458fa5aaf80',
+    capturedAt: '2026-09-14T02:24:56.414200+00:00',
+    bytes: 82074,
+    locator: 'Part 2 Ontario lines 270/402 and net provincial tax line 255',
+  },
+  {
+    file: 't2sch50-19e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2sch50/t2sch50-19e.pdf',
+    sha256: '5dfe177eea7dcb907eae1a1dce58055e608c8ca1b1ca745456caed471ddda7e8',
+    capturedAt: '2026-09-14T02:25:01.654154+00:00',
+    bytes: 29260,
+    locator: 'Page 1 shareholder columns 100/300/400/500',
+  },
+  {
+    file: 't2sch100-20e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2sch100/t2sch100-20e.pdf',
+    sha256: '98fbdf5c5abcb29569059b50b9cb8228058dc369fb6b4b76f16b8e7dddd5115c',
+    capturedAt: '2026-09-14T02:25:05.932993+00:00',
+    bytes: 52856,
+    locator: 'Balance sheet and retained earnings GIFI code/amount columns',
+  },
+  {
+    file: 't2sch125-23e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2sch125/t2sch125-23e.pdf',
+    sha256: '2c9c23c75859ffe4b5d3c51719dafa6980abf265e2126c2e6bb1d67e9b6f7f86',
+    capturedAt: '2026-09-14T02:25:10.093298+00:00',
+    bytes: 43307,
+    locator: 'Income statement codes 8000/8299/9367/9368/9970/9990/9999',
+  },
+  {
+    file: 't2sch141-23e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2sch141/t2sch141-23e.pdf',
+    sha256: 'd58b112200d3d999d527740c1f5640f1bd840c958f475019c9d872c75d32fd10',
+    capturedAt: '2026-09-14T02:25:13.366865+00:00',
+    bytes: 35802,
+    locator:
+      'Parts 1\u20135; questions 095/097/099/101/104\u2013111/200/250\u2013265/300\u2013314',
+  },
+  {
+    file: 'gifi-guide.html',
+    url: 'https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/rc4088/general-index-financial-information-gifi.html',
+    sha256: '59bf27b7b666194ae62596c70f69e67dd09a564c7aac461bed1c755b9c996f17',
+    capturedAt: '2026-09-14T02:25:14.537598+00:00',
+    bytes: 390405,
+    locator:
+      'Reporting in dollars; validity checks; GIFI codes for assets/liabilities/equity/income/expenses',
+  },
+  {
+    file: 'customized-forms.html',
+    url: 'https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/ic97-2/customized-forms.html',
+    sha256: '027b07d766ebf1cd36ec920bc5cfd172c29759ea066fb6be8cb6f4f805fe2a01',
+    capturedAt: '2026-09-14T02:37:39.778524+00:00',
+    bytes: 53676,
+    locator:
+      'Paragraph 13: password-protected Early Access and NDA requirement; public guidance does not establish general T2 rounding',
+  },
+  {
+    file: 'corporation-return-filing.html',
+    url: 'https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/corporations/corporation-income-tax-return.html',
+    sha256: '4936d923adfdd2673e05883f8b677975f21c3fca0c54bcd921b57dde14fdb688',
+    capturedAt: '2026-09-14T02:37:42.893280+00:00',
+    bytes: 27217,
+    locator:
+      'Who has to file; mandatory electronic filing for tax years starting after 2023 and stated exceptions',
+  },
+  {
+    file: 't2-fill-25e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2/t2-fill-25e.pdf',
+    sha256: '37e5e4e2169cba477565bd7c8d605ff927a5cedc8c032d69bdd964c38a5a4d7d',
+    capturedAt: '2026-09-14T02:49:49.958296+00:00',
+    bytes: 756960,
+    locator:
+      'XFA template field assist text, UI/format pictures, and validation scripts; derived inventory in xfa-field-inventory.json',
+  },
+  {
+    file: 't2sch1-fill-25e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2sch1/t2sch1-fill-25e.pdf',
+    sha256: 'd439f64ad3477ed2f6bead8a67f2401942bd881fb3b224222f5a9d93de010514',
+    capturedAt: '2026-09-14T02:49:53.629536+00:00',
+    bytes: 283164,
+    locator:
+      'XFA template field assist text, UI/format pictures, and validation scripts; derived inventory in xfa-field-inventory.json',
+  },
+  {
+    file: 't2sch5-fill-25e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2sch5/t2sch5-fill-25e.pdf',
+    sha256: '5ff8358b34b6da5d0477c13a088bb94759052f198266f70327891853985f746d',
+    capturedAt: '2026-09-14T02:49:56.747996+00:00',
+    bytes: 442354,
+    locator:
+      'XFA template field assist text, UI/format pictures, and validation scripts; derived inventory in xfa-field-inventory.json',
+  },
+  {
+    file: 't2sch50-fill-19e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2sch50/t2sch50-fill-19e.pdf',
+    sha256: 'd4bf0b77a7963f1800406014406bf7ce5c7949b79ea38373f7cfc43fa4eb1d7f',
+    capturedAt: '2026-09-14T02:49:57.854411+00:00',
+    bytes: 221376,
+    locator:
+      'XFA template field assist text, UI/format pictures, and validation scripts; derived inventory in xfa-field-inventory.json',
+  },
+  {
+    file: 't2sch500-fill-23e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2sch500/t2sch500-fill-23e.pdf',
+    sha256: 'b045d8fe72041e529960e6788731dac3ed6bfeccdea93ab2941a980996106828',
+    capturedAt: '2026-09-14T02:49:58.976532+00:00',
+    bytes: 248500,
+    locator:
+      'XFA template field assist text, UI/format pictures, and validation scripts; derived inventory in xfa-field-inventory.json',
+  },
+  {
+    file: 't2sch100-fill-20e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2sch100/t2sch100-fill-20e.pdf',
+    sha256: '95a6d2a2ae7d6db431ecd578444f8277b55a50eec08ebe013b685b21e76488aa',
+    capturedAt: '2026-09-14T02:50:02.064566+00:00',
+    bytes: 245968,
+    locator:
+      'XFA template field assist text, UI/format pictures, and validation scripts; derived inventory in xfa-field-inventory.json',
+  },
+  {
+    file: 't2sch125-fill-23e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2sch125/t2sch125-fill-23e.pdf',
+    sha256: '5006a20a01af51d5eae212ec33a045bc5aab16d724e062e7274ae915ba2efa64',
+    capturedAt: '2026-09-14T02:50:05.441315+00:00',
+    bytes: 354160,
+    locator:
+      'XFA template field assist text, UI/format pictures, and validation scripts; derived inventory in xfa-field-inventory.json',
+  },
+  {
+    file: 't2sch141-fill-23e.pdf',
+    url: 'https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2sch141/t2sch141-fill-23e.pdf',
+    sha256: '0ac113aa49c0c686cb73088085ae389db9036b2fecbca6aeedcc75bf2fae5f17',
+    capturedAt: '2026-09-14T02:50:08.706422+00:00',
+    bytes: 275634,
+    locator:
+      'XFA template field assist text, UI/format pictures, and validation scripts; derived inventory in xfa-field-inventory.json',
+  },
+] as const);
