@@ -117,6 +117,19 @@ another complete acceptance run.
 
 ## Reviewing new model questions in the same run
 
+The protected operator acceptance command supports a host-only opt-in. Create
+`/etc/emdo/staging/normalized-authored-review` as a root-owned, mode-`0600`,
+single-link regular file containing exactly `true` (an optional final newline is
+accepted). Then invoke the normal `staging-operator accept RUN_ID` command.
+The normalized launcher creates a private mode-`0700` directory at
+`STAGING_STATE_ROOT/RUN_ID/normalized-authored-review`, owned by the API image's
+acceptance identity `10001:10001`, and passes its writable bind mount and the
+review environment variable only to the acceptance container. The request path
+is logged; requests, authored reviews and accepted receipts stay in that private
+run directory. Remove the host marker to disable this opt-in for future runs.
+The marker enables the review protocol; it never supplies or approves answers.
+Invalid marker permissions, links or contents fail closed.
+
 Without extra configuration, unfamiliar questions stop the probe. To inspect
 and answer them without restarting or invoking the provider again, explicitly
 set `EMDO_FINANCE_NORMALIZED_SYNTHETIC_REVIEW_DIRECTORY` to a canonical absolute

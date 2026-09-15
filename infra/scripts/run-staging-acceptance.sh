@@ -257,6 +257,28 @@ finance_staging_acceptance_failure_diagnostic() {
   printf '%s\n' "$acceptance_failure_match" >&2
 }
 
+# Operator opt-in is host-owned configuration, never a workflow input or source answer.
+prepare_normalized_authored_review() {
+  local marker="$1" review_directory="$2"
+  normalized_review_options=()
+  [[ -e "$marker" || -L "$marker" ]] || return 0
+  [[ ! -L "$marker" ]] || die 'Normalized authored review marker must not be a symlink'
+  assert_root_owned_bounded_file "$marker" 600 5
+  [[ "$(cat -- "$marker")" == true ]] || die 'Normalized authored review marker must contain true'
+  if [[ ! -e "$review_directory" && ! -L "$review_directory" ]]; then
+    mkdir -m 0700 -- "$review_directory"
+    chown 10001:10001 -- "$review_directory"
+  fi
+  [[ -d "$review_directory" && ! -L "$review_directory" ]] || die 'Normalized authored review directory is unsafe'
+  [[ "$(realpath -e -- "$review_directory")" == "$review_directory" ]] || die 'Normalized authored review directory must be canonical'
+  [[ "$(stat -c '%u:%g:%a' "$review_directory")" == '10001:10001:700' ]] || die 'Normalized authored review directory owner or mode is unsafe'
+  normalized_review_options=(
+    --volume "$review_directory:/run/emdo-normalized-review:rw"
+    --env EMDO_FINANCE_NORMALIZED_SYNTHETIC_REVIEW_DIRECTORY=/run/emdo-normalized-review
+  )
+  log "Normalized authored review requests will be written under $review_directory"
+}
+
 assert_compose_healthy staging_compose
 curl --fail --silent --show-error \
   "http://127.0.0.1:$STAGING_HTTP_PORT/healthz" >/dev/null
@@ -264,9 +286,10 @@ curl --fail --silent --show-error \
 if [[ "${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:-false}" == true ]]; then
   assert_finance_normalized_effective_environment "$state_dir"
   [[ "$FINANCE_NORMALIZED_STAGING_FIXTURE_ENV_FILE" == */normalized-fixture.env ]] || die 'Normalized seed handoff is missing'
+  prepare_normalized_authored_review /etc/emdo/staging/normalized-authored-review "$state_dir/normalized-authored-review"
   normalized_probe="$(mktemp "$state_dir/.normalized-probe.XXXXXX")"
   trap 'rm -f -- "$normalized_probe"' EXIT
-  staging_compose --profile operations run --rm --no-deps staging-acceptance > "$normalized_probe"
+  staging_compose --profile operations run --rm --no-deps "${normalized_review_options[@]}" staging-acceptance > "$normalized_probe"
   normalized_book="$(env_file_value "$FINANCE_NORMALIZED_STAGING_FIXTURE_ENV_FILE" EMDO_FINANCE_NORMALIZED_SYNTHETIC_BOOK_ID)"
   node -e '
     const fs = require("node:fs");
