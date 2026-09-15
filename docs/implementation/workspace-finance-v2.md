@@ -42,16 +42,16 @@ The entries below this summary are chronological implementation records, not a
 current backlog. Earlier statements that a subsequently delivered feature is
 missing must be read in that historical context.
 
-| Area | Current evidence | Remaining acceptance |
-| --- | --- | --- |
-| PostgreSQL foundation | Current combined verifier applies all 77 migrations through `0076`; 237 tests across 32 suites pass (`/tmp/emdo-finance77-integrated.log`). | Private staging and production migration/cutover proof. |
-| Accounting, imports and evidence | Restricted accounting/import/evidence checks pass. Real authenticated browser review/recovery/posting and source download pass. One uninterrupted local live-Astra v4 proposal, explicit authored review and canonical posting run now passes without replay. | Private staging remains; local live-provider and real-authenticated CLI checks are still separate proofs. Arbitrary layouts require validated mappings and explicit missing-input review. |
-| Recurring automation | Database checks cover scoped schedules, revocation, retries, trial-balance delivery, journal proposals and planning. The emitted worker now passes real scheduler → pg-boss → executor acceptance, including expired initiating session, exact nonzero saved report, duplicate rejection and revoked-grant follow-up denial. | Real authenticated browser report-grant creation, reload recovery, scheduling, saved report/download, pause/replacement, revocation denial and retirement now pass against the emitted worker. Private staging/production and other capabilities in that browser workflow remain unproved. |
-| Investments — WIP / paused | Existing corporate-action, settlement, dividend and reconciliation implementations are preserved and regression-tested. | Deferred by user instruction; do not activate or expand as part of current closure. |
-| Canada tax — WIP / paused | Existing private tax implementations are preserved and regression-tested; complete returns remain unavailable. | Deferred by user instruction. Other countries remain deferred; no country package is activated by local test results. |
-| Interface | Real-authentication/restricted-database browser imports and report automation management pass on desktop/mobile, including saved review recovery, posting drilldown, immediate overview refresh and exact downloaded report readback. Server logout yields 200 followed by protected Finance 401. | Full offline purge/PWA, remaining real-backend workflows and private staging; local evidence does not prove deployment. |
-| Recovery | Current age-encrypted restore passes all 77 migrations into a separate cluster; restricted checks preserve accounting, encrypted evidence/key recovery, planning, private tax access and French export mapping/receipts (`/tmp/emdo-finance77-restore.log`). | Production key recovery, external evidence storage and private-staging recovery drill. |
-| ERD | Generated implementation revision `0076`: 168 tables, 418 FKs and 178 triggers in `docs/architecture/database-erd/`. | Keep synchronized with future migrations; generated sources are not production database readback. |
+| Area                             | Current evidence                                                                                                                                                                                                                                                                                                             | Remaining acceptance                                                                                                                                                                                                                                                                       |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PostgreSQL foundation            | Current combined verifier applies all 77 migrations through `0076`; 237 tests across 32 suites pass (`/tmp/emdo-finance77-integrated.log`).                                                                                                                                                                                  | Private staging and production migration/cutover proof.                                                                                                                                                                                                                                    |
+| Accounting, imports and evidence | Restricted accounting/import/evidence checks pass. Real authenticated browser review/recovery/posting and source download pass. One uninterrupted local live-Astra v4 proposal, explicit authored review and canonical posting run now passes without replay.                                                                | Private staging remains; local live-provider and real-authenticated CLI checks are still separate proofs. Arbitrary layouts require validated mappings and explicit missing-input review.                                                                                                  |
+| Recurring automation             | Database checks cover scoped schedules, revocation, retries, trial-balance delivery, journal proposals and planning. The emitted worker now passes real scheduler → pg-boss → executor acceptance, including expired initiating session, exact nonzero saved report, duplicate rejection and revoked-grant follow-up denial. | Real authenticated browser report-grant creation, reload recovery, scheduling, saved report/download, pause/replacement, revocation denial and retirement now pass against the emitted worker. Private staging/production and other capabilities in that browser workflow remain unproved. |
+| Investments — WIP / paused       | Existing corporate-action, settlement, dividend and reconciliation implementations are preserved and regression-tested.                                                                                                                                                                                                      | Deferred by user instruction; do not activate or expand as part of current closure.                                                                                                                                                                                                        |
+| Canada tax — WIP / paused        | Existing private tax implementations are preserved and regression-tested; complete returns remain unavailable.                                                                                                                                                                                                               | Deferred by user instruction. Other countries remain deferred; no country package is activated by local test results.                                                                                                                                                                      |
+| Interface                        | Real-authentication/restricted-database browser imports and report automation management pass on desktop/mobile, including saved review recovery, posting drilldown, immediate overview refresh and exact downloaded report readback. Server logout yields 200 followed by protected Finance 401.                            | Full offline purge/PWA, remaining real-backend workflows and private staging; local evidence does not prove deployment.                                                                                                                                                                    |
+| Recovery                         | Current age-encrypted restore passes all 77 migrations into a separate cluster; restricted checks preserve accounting, encrypted evidence/key recovery, planning, private tax access and French export mapping/receipts (`/tmp/emdo-finance77-restore.log`).                                                                 | Production key recovery, external evidence storage and private-staging recovery drill.                                                                                                                                                                                                     |
+| ERD                              | Generated implementation revision `0076`: 168 tables, 418 FKs and 178 triggers in `docs/architecture/database-erd/`.                                                                                                                                                                                                         | Keep synchronized with future migrations; generated sources are not production database readback.                                                                                                                                                                                          |
 
 No staging deployment, production deployment, database cutover or tax capability
 activation is established by these local results. The full approved scope remains
@@ -104,7 +104,6 @@ commit UI and image/OCR integration remain active work. Administrator outcome re
 and explicit optional CSV mappings pass focused desktop/mobile browser checks;
 raw timestamps remain available in provenance alongside readable display dates.
 
-
 The shared durable standardization hook and SDK provider are exported from
 `@emdo/agent-core`. Sixteen focused tests cover source binding, authority/lease
 races, exact CAD spend, confirmed reservation denials and unknown outcomes.
@@ -121,7 +120,6 @@ spend, and no recovery commands are exposed to Finance. Interactive CSV proposal
 source save path as human CSV review, preserving model invocation provenance.
 Capability and production composition regressions pass 44 additional
 tests. These results do not establish real-backend staging acceptance.
-
 
 The full web unit suite now passes 485 tests across 55 files, superseding the
 earlier broad-run failures. The full API suite passes 675 tests across 69 files;
@@ -1016,7 +1014,6 @@ extraction checks pass. These contracts and helper are not connected to a review
 PDF save endpoint, mapping approval or import; confirmation fields do not grant
 authority or establish document completeness.
 
-
 ### Durable delivery, recovery and inspectable automation outcomes
 
 Migration0037 adds a dedicated Finance delivery outbox. Initial run creation and
@@ -1054,14 +1051,12 @@ retain exact binary download, and request authorized text inspection. OCR and PD
 mapping/import were unavailable at that inspection-only milestone. The reviewed
 whole-span backend connection is described below.
 
-
 Parent verification for this increment: all40 migrations and66 database/queue
 checks pass in a fresh isolated PostgreSQL18 instance;44 API/specialist checks,
 18 PDF extraction/selection checks, root and web TypeScript, scoped ESLint and
 diff checks pass. The frontend agent verified91 units and four browser workflows
 with mocked authenticated APIs. Parent inspected the native mobile PDF screen.
 Disposable database containers were cleaned up. Nothing was deployed or enabled.
-
 
 ### Reviewed PDF mapping backend
 
@@ -1087,7 +1082,6 @@ claims remain outside this implementation.
 Focused genuine-PDF selection/normalization tests and authenticated candidate-route
 tests pass. PostgreSQL candidate/approval/import roundtrip tests are included;
 full database verification is coordinated separately with the parent task.
-
 
 ### Exact PDF source review endpoint and specialist proposal boundary
 
@@ -1130,7 +1124,6 @@ Responses are private and uncached; conflicts expose generic refresh guidance,
 not tax values or internal source details. No route marks a return complete or
 adds country calculations.
 
-
 Migration0040 adds private tax subjects/cases, explicit case grants, immutable
 questionnaire revisions, book-source authorizations, declaration revisions and
 idempotency receipts. Workspace ownership and book administration do not grant
@@ -1150,7 +1143,6 @@ concurrent CAS/idempotency, immutable revisions, source revocation and sanitized
 recovery, alongside PDF mappings/accounting/automation/report regressions. Parent
 independently passed24 tax route checks and root TypeScript. This is local database
 and API evidence; staging, country-return validation and production remain pending.
-
 
 ### Private tax specialist reads and browser contract boundary
 
@@ -1179,7 +1171,6 @@ motion and exact-original candidate/approval/import. Parent visually inspected
 both desktop and native mobile source-review screenshots. Full current-tree
 TypeScript and later migration verification remain necessary while calendar
 scheduling and stock-split persistence are being integrated.
-
 
 ### Saved tax inputs and source-bound explanations
 
@@ -1259,7 +1250,6 @@ scheduler debug database was also removed. Root TypeScript, scoped lint, and the
 50-test planner/API/lifecycle/assembly/snapshot batch passed. These results replace
 the earlier pending combined-verifier note; deployment and capability readiness
 remain separate.
-
 
 ### Coordinated normalized Finance integration check
 
@@ -1656,7 +1646,6 @@ entire requested schema/feature scope or production database is final. Seven ERD
 generator regressions pass. Logs: `/tmp/emdo-legacy-postgres-check.log`,
 `/tmp/emdo-0058-snapshot-tests.log`, `/tmp/emdo-0058-erd-tests.log`.
 
-
 ### Journaled US wage corrections0059
 
 Moved the reviewed draft policy into0059_private_us_wage_corrections.sql and
@@ -1908,7 +1897,6 @@ Finance-agent mapping summaries, saved-export retrieval, and production wiring
 also have focused coverage. Private NY output remains incomplete working papers;
 these tests do not establish full return coverage or enable filing.
 
-
 ### Integrated acceptance and live cutover wiring — revision 0064 (2026-09-14)
 
 The central Finance verifier applied all 65 journaled migrations to fresh isolated
@@ -1931,7 +1919,6 @@ the explicit 100,000-record bound, and sync/offline retirement integration. Priv
 staging, browser acceptance and production cutover remain outstanding. Country
 packages retain their actual incomplete coverage; this checkpoint does not narrow
 the original seven-country return-level goal.
-
 
 ### Migration workflow integration — revision 0066 (2026-09-14)
 
@@ -1958,7 +1945,6 @@ Activation remains disabled pending connected acceptance, offline retirement and
 private staging. The original investments, automation, and seven-country tax
 requirements remain in force; this migration work does not substitute for them.
 
-
 ### Consolidated correction — 2026-09-14
 
 The backfill failure was a cross-workspace normalized ID collision: the old seed
@@ -1971,7 +1957,6 @@ reviewed date; new undated commands reject. The migration review panel is mounte
 under Books; focused UI acceptance and browser verification are still pending.
 This supersedes the earlier failing combined-run checkpoint, not the outstanding
 production/cutover or seven-country return completeness requirements.
-
 
 ### Panel verification and Astra request boundary — 2026-09-14
 
@@ -2295,13 +2280,11 @@ Extraction UI owner reports17 tests, lint, TypeScript and full web release build
 
 Central Finance verifier applied all71 migrations and passed183 tests across26 suites (`/tmp/emdo-finance71-integrated.log`, session92160 exit0). Owner also passed60 focused worker/domain/snapshot tests, TypeScript and lint. Actual extraction automation Chrome acceptance passed2/2 with synthetic scoped responses, explicit preparation/enqueue, identical lost-response retry, immutable outcome reads, mobile layout and revoked-book clearing. These prove local implementation/acceptance, not deployment. Manual CSV/XLSX mapping after extraction-only completion remains under implementation. Saved investment reconciliation cases/resolutions are the next backend lane.
 
-
 ### Investment reconciliation integration checkpoint — 2026-09-15
 
 Migration0071 now has book-scoped immutable reconciliation cases and events, exact saved comparisons, evidence-backed resolution, explicit reopening, source freshness, and a five-kind corrective-record catalog. API routes and Finance-agent reads are wired to the repository. Reconciliation actions have no accounting effect. API persistence failures map to403/400/409/503 with sanitized details, including readiness and mutation failures; agent records retain distinct case status and comparisonStatus.
 
 Root validation:54 API/agent tests pass, repository-wide TypeScript and scoped ESLint pass. The central disposable PostgreSQL verifier applies all72 migrations and passes184 tests across27 suites including reconciliation acceptance (`/tmp/emdo-finance72-integrated.log`, exit0). UI owner reports7 focused tests and full release build passing; real browser reconciliation acceptance is ongoing. Additional positive corporate-action linkage fixtures are assigned separately. ERD regenerated through0071:165 tables,411 foreign keys,176 SQL triggers;8 generator tests pass. These are local checks; no staging/production or full tax coverage claim.
-
 
 ### Reconciliation acceptance completed locally — 2026-09-15
 
@@ -2311,7 +2294,6 @@ Actual Chromium acceptance passes1/1 against synthetic local API fixtures: exact
 
 Next integration gap under assessment: `finance.journals.draft` remains in the automation capability contract without a production leaf. Existing journal insertion always posts within the same transaction; using its draft state requires a complete review/post/discard lifecycle because open drafts block period closing. The next implementation must preserve grant revocation, exact source intent, authoritative limits, immutable saved outcomes, and explicit posting approval. Recurring extraction also lacks a schedule intent and remains a separate unfinished requirement.
 
-
 ### Finance agent history and automation grant parity — 2026-09-15
 
 Finance now has an explicit `investment-reconciliation-history` read instead of an instruction to follow a URL that no tool could read. Exact case scope and contiguous revisions are checked before a stable paginated stream of event, evidence, and corrective-record facts. Child rows retain event/case bindings and current stale status; links point to the existing case endpoint.45 service tests, scoped lint, and full TypeScript pass (`/tmp/finance-history-tests.log`, `/tmp/finance-history-types-final.log`).
@@ -2320,13 +2302,11 @@ Root fixed durable grant validation still limiting capabilities to3 after migrat
 
 Migration0072 ownership is assigned to the journal automation lane. Generated drafts must remain nonposting proposals and reuse the canonical normalized import commit path only after explicit human authorization. No new independent accounting write path is authorized by this work.
 
-
 ### Exact corrective snapshot follow-up — 2026-09-15
 
 Root integration check passes59 tests across Finance-agent, automation API and durable grant boundaries. Reconciliation history tests now parse all three pages through the actual tool output schema (45 service tests pass), rather than using a type assertion.
 
 Review identified an unresolved precision defect after the earlier local reconciliation acceptance: `to_jsonb(r)` corrective snapshots cross pg's JSON parser and JavaScript numbers before persistence/readback. Large or fractional exact numeric values can be rounded, causing snapshot guard rejection or inaccurate evidence projection. Reconciliation owner is reproducing this with actual PostgreSQL and implementing raw SQL JSON capture plus lossless snapshot-subtree reads, without changing0071. Earlier simple-value tests do not prove this invariant; exact snapshot acceptance remains open until the regression passes.
-
 
 ### Corrective snapshot precision regression resolved — 2026-09-15
 
@@ -2334,11 +2314,9 @@ The actual PostgreSQL regression first reproduced the old `investment-reconcilia
 
 Root Finance-agent regression verifies exact large and negative fractional strings through the tool output contract. Monetary/quantity snapshot fields supplied as JavaScript numbers are rejected instead of stringifying rounded values.45 service tests and scoped lint pass (`/tmp/finance-history-exact-projection.log`). Full shared TypeScript verification passes (`/tmp/finance-exact-snapshot-types.log`, exit0).
 
-
 ### Exact snapshot UI follow-through — 2026-09-15
 
 Mounted reconciliation UI regression now opens saved corrective evidence and verifies the exact displayed strings `9007199254740993.123456789012` and `-0.000000000001`.5 UI tests pass (`/tmp/finance-reconciliation-ui-exact.log`). This complements the PostgreSQL and Finance-agent precision regressions without implying deployment.
-
 
 ### Journal automation API and canonical commit integration — 2026-09-15
 
@@ -2346,13 +2324,11 @@ Root added optional journal-draft service routes under `/api/v2/finance/books/:b
 
 The canonical import command now delegates to `commitNormalizedImportInTransaction`, a query-only-client hook retaining current approver checks, canonical book lock, duplicate handling, component evidence and source linking.29 actual PostgreSQL tests pass across commercial, OFX, and normalized components on72 migrations. The journal worker/execution repository has27 focused tests and lint passing; migration readiness remains unimplemented and unactivated. Its canonical claim requires authoritative `journalReview` line count, currency and debit amount. Shared type checks currently report the journal schema owner's missing component-table import; that correction is assigned.
 
-
 ### Journal management adapter and posting transaction — 2026-09-15
 
 Root added `FinanceJournalDraftRepository` and the optional production API binding. Read/prepare/review/discard call the agreed narrow RPCs; readiness requires all lifecycle functions and forced RLS on the three journal-draft tables. Explicit posting uses one authenticated scoped transaction, current approver access, exact retry identity, source/approval lock RPC, the canonical normalized-import hook, final lifecycle RPC, receipt and audit. The adapter reads saved state on identical replay and never calls the canonical posting hook twice. It remains unavailable until0072 functions exist; actual PostgreSQL lifecycle proof is pending.
 
 The enqueue repository now accepts exact journal source intent, calls the journal-specific enqueue RPC, and reads journal intent without fabricating a report selection.28 combined API/adapter/grant tests pass; the expanded posting suite passes5 tests covering replay, changed retry input, revoked book/session access and rollback after final validation failure. Full shared TypeScript passes (`/tmp/finance-journal-shared-types.log`); scoped adapter lint passes. Unit transaction sequencing is not a substitute for the pending real database acceptance.
-
 
 ### Journal database bootstrap and browser acceptance — 2026-09-15
 
@@ -2361,7 +2337,6 @@ Root's first actual0072 apply exposed invalid chained boolean equality in the Dr
 Actual Chromium synthetic journal acceptance passes3/3 in14.4s (`/tmp/journal-drafts-browser-final2.log`). It covers saved preparation/queue/post with lost-ack identical retries, explicit posting confirmation, unreviewed and rejected discard histories,403/book clearing,390px layout and accessibility. A discovered horizontal-scroll keyboard defect was fixed with a named focusable region and actual arrow-key scroll verification. Lint/full TypeScript pass; root inspected posting-confirmation mobile screenshot. Browser fixtures remain separate from database acceptance.
 
 Independent journal lifecycle/line-parity tests are now owned by the canonical-commit agent; Finance-agent read projections are being wired in parallel. Durable composition injects the journalDrafts service. Final ERD regeneration remains pending0072 stabilization.
-
 
 ### Journal agent reads and regression integration — 2026-09-15
 
@@ -2425,7 +2400,6 @@ Canada donation persistence/export acceptance passes 3/3: missing or unreviewed 
 
 Both suites are now registered in the combined Finance verifier. All 75 migrations apply and all 220 tests across 30 suites pass (`/tmp/emdo-finance75-tax-expanded.log`, exit 0). This is local regression and synthetic browser evidence; full returns, private staging and production activation remain outstanding.
 
-
 ### Existing corporate case entity attachment — 2026-09-15
 
 Owner-only `POST /api/v2/finance/tax/cases/:caseId/legal-entity` now binds an initially unbound case to an accessible entity with exact case revision and idempotency identity. Current book grants are locked and rechecked, including on receipt replay. Retargeting is rejected; binding grants no source-book access. The new immutable snapshot invalidates prior working-input reviews and resets generic answer/fact review states while retaining answer hash lineage and historical snapshots. The generic manifest-backed answer branch is not exercised by the current intake-only public integration fixture.
@@ -2434,11 +2408,9 @@ Restricted PostgreSQL acceptance applies all 75 migrations and passes 7/7 cases 
 
 Canada carryforward export owner reports final 405 domain tests passing, with explicit donation/noncapital-loss CSV sections and historical-run compatibility. Full-return country coverage and staging/release acceptance remain incomplete.
 
-
 ### Consolidated acceptance and recovery refresh — 2026-09-15
 
 The combined Finance verifier now passes 227 tests across 31 suites after all 75 migrations (83.70 seconds, `/tmp/emdo-finance75-integrated-current.log`, exit 0). A separate encrypted restore drill passes against the same migration journal (9.31 seconds test time, `/tmp/emdo-finance75-restore-current.log`, exit 0). It reconstructs matching restricted roles and restores evidence encryption keys, accounting, planning, private tax cases, and FEC export mappings/receipts; unauthorized readers remain denied. These results replace the stale foundation/restore counts in the summary above. They do not establish private staging or full-return country readiness.
-
 
 ### Direct-import Finance-agent posting lineage — 2026-09-15
 
@@ -2446,13 +2418,11 @@ Normalized import reads now resolve each persisted economic transaction to its p
 
 Six restricted PostgreSQL cases pass after all 75 migrations (`/tmp/emdo-import-lineage-verify.log`): unposted null, CAD/FX/JPY/large exact amounts, committed-match reuse and wrong-book/revoked-access denial. The suite is registered in the central verifier; the earlier 227-test combined result predates this addition. All 46 Finance-agent service tests pass, including exact large-amount projection and malformed posting rejection (`/tmp/emdo-import-lineage-agent-complete.log`). Full TypeScript passes (`/tmp/emdo-import-lineage-types-complete.log`) and scoped lint passes. No schema migration, readiness activation or provider execution occurred.
 
-
 ### Shared posting contract and human review — 2026-09-15
 
 The shared `FinanceNormalizedImportPostingSchema` now binds saved functional currency independently of each native line currency. Repository results select functional currency from the scoped book, Finance-agent line projections preserve both currencies, and the Documents UI rejects mismatched entity/transaction/line/currency bindings. Expandable posting details show named ledger accounts, exact native/functional amounts, FX sources and original-evidence references. Missing response fields and explicit unlinked postings have distinct messages. Revoked access clears displayed private results.
 
 Actual PostgreSQL schema/amount checks pass 6/6 (`/tmp/emdo-posting-currency-pg.log`), agent service checks pass 46/46, UI checks pass 11/11, and Chromium desktop/mobile acceptance passes 1/1 (`/tmp/import-posting-browser-final.log`). Root inspected the saved mobile screenshot. Full base and web TypeScript now pass (`/tmp/emdo-current-finance-types.log`); one existing deferred Mexico test fixture needed a literal type annotation only. Tax and investments are visibly marked WIP and paused at user direction; 15 relevant UI regression tests pass. Active work is imports, Finance-agent integration and automations.
-
 
 ### Permanent automation failure handling — 2026-09-15
 
@@ -2464,7 +2434,6 @@ All 38 worker/dispatcher checks and 28 UI/helper checks pass (`/tmp/emdo-automat
 
 The combined database refresh passes all 233 tests across 32 suites after all 75 migrations (85.36 seconds; `/tmp/emdo-finance75-automation-blocked.log`, exit 0). This includes current import posting lineage plus the existing worker, accounting, migration and private-data regression suites. Private staging and real provider execution remain unverified.
 
-
 ### Live Astra mapping validation — 2026-09-15
 
 An opt-in synthetic provider check now calls the production `createDurableFinanceProposalProvider` through Responses with `gpt-6-astra`, medium reasoning, no tools/handoffs, store false and a 4000-output-token bound. Normal test runs skip it. The credential is read from environment only; diagnostics omit headers, raw provider errors and source contents. The source table is validated before provider execution.
@@ -2472,7 +2441,6 @@ An opt-in synthetic provider check now calls the production `createDurableFinanc
 Live validation exposed required mapping labels and grouping separator being returned as null. Prompt version `finance-standardization-proposal.v3` distinguishes proposed mapping metadata from financial facts, requires nonempty labels and enumerates grouping-separator values. Historical v1/v2 provenance remains accepted. A subsequent real response passed schema validation and deterministic normalization of two synthetic rows, preserving amounts 123.45 and -67.89 CAD. Receipt: `resp_04eae22f24df9f0b016aa8f3c3eca887d28c8242bea8f46418`; input/output tokens 634/341; synthetic source SHA256 `994f182183802bf9aeaf832e8fb382c6d34c106ebd75afa0fadbd433dbbeb026`. Log: `/tmp/emdo-astra-live-mapping-final.log`. No approval, posting or deployment occurred.
 
 This proves a real provider proposal plus deterministic normalization, not the full persisted scheduled/staged workflow. Official compatibility guidance was checked at https://developers.openai.com/api/docs/guides/reasoning#reasoning-effort. Reproduce only intentionally with `EMDO_FINANCE_LIVE_PROVIDER_CHECK=1 node --env-file=.env.local node_modules/vitest/vitest.mjs run packages/agent-core/src/finance-standardization-live.test.ts`; the opt-in call consumes provider credits.
-
 
 ### Release artifact verification — 2026-09-15
 
@@ -2554,7 +2522,6 @@ The normalized staging command now supports an explicitly selected private autho
 
 Final repository validation passes 4958 tests across 501 suites, with 332 opt-in/environment-gated tests skipped (`/tmp/emdo-v4-full-suite-final.log`). Production build and subsequent repository TypeScript both pass (`/tmp/emdo-v4-release-build.log`, `/tmp/emdo-v4-release-types.log`). The live-provider, emitted-worker, real-authenticated CLI and restore drills are distinct evidence with their stated boundaries. Remaining release gates include real-browser automation management, exact source/image binding, uninterrupted live-provider private staging and production rollout/cutover. No active named EMDO test containers remain.
 
-
 ### Real automation management browser check — 2026-09-15 (in progress)
 
 The local Finance browser fixture now runs real BetterAuth/CSRF, restricted
@@ -2574,7 +2541,6 @@ browser workflow can count as accepted. The initial evidence is under
 Release hygiene: root `.playwright-cli/` downloads/snapshots and root `tmp/`
 extraction scratch files are now ignored by Git. Existing files are preserved;
 these scratch outputs are not release sources. No deployment occurred.
-
 
 ### Report automation browser acceptance completed — 2026-09-15
 
@@ -2622,7 +2588,6 @@ Repository and web TypeScript pass (`/tmp/emdo-grant-management-types.log`),
 scoped ESLint passes (`/tmp/emdo-grant-management-lint.log`), and diff whitespace
 checks pass. These results supersede the earlier 4958-test baseline without
 claiming any skipped staging or production gate has run.
-
 
 ### Governed normalized staging and packaged candidate — 2026-09-15
 

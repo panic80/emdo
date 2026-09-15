@@ -16,8 +16,7 @@ A process transport remains available for tests or an already isolated process
 supervisor. It is not an OS sandbox by itself. The worker-thread renderer alone
 also cannot enforce hard native-code cancellation.
 
-The helper socket directory is mode 0770 owned by 10005:10005; its socket is
-0660. A worker uses supplementary group 10005 and mounts only the named socket
+The helper socket directory is mode 0770 owned by 10005:10005; its socket is 0660. A worker uses supplementary group 10005 and mounts only the named socket
 volume read-only at the same path. The helper mounts that volume read-write.
 The two-container acceptance uses a different client UID, 10006, with the
 shared socket GID 10005, and disables networking on both containers.

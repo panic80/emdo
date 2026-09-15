@@ -63,7 +63,10 @@ const financeMoneyFields = {
 } as const;
 
 const validateMoneyPrecision = (
-  value: { readonly currency: z.infer<typeof FinanceCurrencySchema>; readonly amount: string },
+  value: {
+    readonly currency: z.infer<typeof FinanceCurrencySchema>;
+    readonly amount: string;
+  },
   context: z.RefinementCtx,
 ) => {
   if (
@@ -97,8 +100,7 @@ export const SaveFinanceBudgetSchema = z
   })
   .superRefine((value, context) => {
     const identities = value.lines.map(
-      (line) =>
-        `${line.periodId}:${line.accountId}:${line.currency}`,
+      (line) => `${line.periodId}:${line.accountId}:${line.currency}`,
     );
     if (new Set(identities).size !== identities.length) {
       context.addIssue({
@@ -179,21 +181,24 @@ export const FinanceBudgetVsActualsSchema = z.strictObject({
   rows: z.array(FinanceBudgetActualRowSchema).max(10_000),
 });
 
-export const FinanceForecastOpeningInputSchema = z.discriminatedUnion('status', [
-  z
-    .strictObject({
-      status: z.literal('available'),
-      ...financeMoneyFields,
-      sourceReference: z.string().trim().min(1).max(200),
-      reviewedBy: UuidSchema,
-      reviewedAt: IsoDateTimeSchema,
-    })
-    .superRefine(validateMoneyPrecision),
-  z.strictObject({
-    status: z.literal('unavailable'),
-    label: z.literal('opening-balance-unavailable'),
-  }),
-]);
+export const FinanceForecastOpeningInputSchema = z.discriminatedUnion(
+  'status',
+  [
+    z
+      .strictObject({
+        status: z.literal('available'),
+        ...financeMoneyFields,
+        sourceReference: z.string().trim().min(1).max(200),
+        reviewedBy: UuidSchema,
+        reviewedAt: IsoDateTimeSchema,
+      })
+      .superRefine(validateMoneyPrecision),
+    z.strictObject({
+      status: z.literal('unavailable'),
+      label: z.literal('opening-balance-unavailable'),
+    }),
+  ],
+);
 
 export const FinanceForecastAssumptionInputSchema = z
   .strictObject({
@@ -248,10 +253,11 @@ export const FinanceForecastLineSchema = z.strictObject({
   label: FinancePlanningLabelSchema.nullable(),
 });
 
-export const FinanceForecastAssumptionSchema = FinanceForecastAssumptionInputSchema.extend({
-  forecastId: UuidSchema,
-  revision: FinancePlanningRevisionSchema,
-});
+export const FinanceForecastAssumptionSchema =
+  FinanceForecastAssumptionInputSchema.extend({
+    forecastId: UuidSchema,
+    revision: FinancePlanningRevisionSchema,
+  });
 
 export const FinanceForecastSnapshotSchema = z.strictObject({
   schemaVersion: z.literal(1),

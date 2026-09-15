@@ -422,36 +422,31 @@ describe.skipIf(!url)(
           },
         ],
       });
-      await finance.postJournal(
-        f.context,
-        f.bookId,
-        randomUUID(),
-        {
-          effectiveOn: '2026-09-15',
-          description: 'Operating expense',
-          sourceReference: 'synthetic:expense',
-          lines: [
-            {
-              accountId: expenseId,
-              side: 'debit',
-              amount: '30',
-              currency: 'CAD',
-              nativeAmount: '30',
-              fxRate: '1',
-              fxSource: 'identity',
-            },
-            {
-              accountId: f.cashId,
-              side: 'credit',
-              amount: '30',
-              currency: 'CAD',
-              nativeAmount: '30',
-              fxRate: '1',
-              fxSource: 'identity',
-            },
-          ],
-        },
-      );
+      await finance.postJournal(f.context, f.bookId, randomUUID(), {
+        effectiveOn: '2026-09-15',
+        description: 'Operating expense',
+        sourceReference: 'synthetic:expense',
+        lines: [
+          {
+            accountId: expenseId,
+            side: 'debit',
+            amount: '30',
+            currency: 'CAD',
+            nativeAmount: '30',
+            fxRate: '1',
+            fxSource: 'identity',
+          },
+          {
+            accountId: f.cashId,
+            side: 'credit',
+            amount: '30',
+            currency: 'CAD',
+            nativeAmount: '30',
+            fxRate: '1',
+            fxSource: 'identity',
+          },
+        ],
+      });
       // A reversal exercises source history while keeping a non-income
       // contribution out of current-year earnings.
       await finance.reverseJournal(
@@ -612,9 +607,7 @@ describe.skipIf(!url)(
         blocked_reason: 'report-missing-account-classification',
         outcome_reference: null,
       });
-      expect((await reports.list(f.context, f.bookId)).reports).toHaveLength(
-        0,
-      );
+      expect((await reports.list(f.context, f.bookId)).reports).toHaveLength(0);
     });
     it('preserves exact aggregates beyond the individual source amount range', async () => {
       const f = await fixture();

@@ -5,3 +5,6 @@ output/
 .worktrees/
 .playwright-cli/
 .playwright-mcp/
+
+# Archived authoritative tax evidence must retain original bytes.
+packages/domains/src/finance/tax/**/sources/**

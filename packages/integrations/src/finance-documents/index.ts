@@ -104,7 +104,10 @@ export type {
   FinanceImageOcrWord,
 } from './image-ocr-extraction.js';
 
-export { extractFinanceOfxStatement, parseFinanceOfxTimestamp } from './ofx-statement-extraction.js';
+export {
+  extractFinanceOfxStatement,
+  parseFinanceOfxTimestamp,
+} from './ofx-statement-extraction.js';
 
 export { verifyFinancePdfOcrEvidence } from './pdf-ocr-evidence.js';
 export { extractReviewedFinancePdfOcrTable } from './reviewed-pdf-ocr-table.js';

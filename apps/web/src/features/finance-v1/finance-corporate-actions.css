@@ -106,7 +106,9 @@
   font-size: 13px;
   font-weight: 500;
   outline: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .finance-corporate-action__form input:focus,

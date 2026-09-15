@@ -89,16 +89,14 @@ const Params = z.strictObject({
 });
 
 const RevisionQuery = z.strictObject({
-  revision: z.coerce
-    .number()
-    .int()
-    .positive()
-    .max(2_147_483_646)
-    .optional(),
+  revision: z.coerce.number().int().positive().max(2_147_483_646).optional(),
 });
 
 const planningError = (cause: unknown): ApiProblem | undefined => {
-  if (!(cause instanceof Error) || cause.name !== 'FinancePlanningPersistenceError')
+  if (
+    !(cause instanceof Error) ||
+    cause.name !== 'FinancePlanningPersistenceError'
+  )
     return undefined;
   const code = 'code' in cause ? String(cause.code) : 'unavailable';
   return new ApiProblem({
@@ -208,7 +206,10 @@ export function registerFinancePlanningRoutes(
       scope,
       bookId,
     );
-    if (result.budgetId !== budgetId || (revision !== undefined && result.revision !== revision))
+    if (
+      result.budgetId !== budgetId ||
+      (revision !== undefined && result.revision !== revision)
+    )
       throw serviceContractProblem();
     return reply.header('cache-control', 'no-store, private').send(result);
   });
@@ -255,7 +256,8 @@ export function registerFinancePlanningRoutes(
         status: 404,
         code: 'finance-planning-result-not-found',
         title: 'Planning result not found',
-        detail: 'The requested saved planning result is unavailable in this book.',
+        detail:
+          'The requested saved planning result is unavailable in this book.',
       });
     }
     const result = parseServiceResponse(
@@ -271,28 +273,32 @@ export function registerFinancePlanningRoutes(
     return reply.header('cache-control', 'no-store, private').send(result);
   });
 
-  app.post(`${base}/budgets`, {
-    bodyLimit,
-    onRequest: (request) => prepareAuthenticatedMutation(request, services),
-  }, async (request, reply) => {
-    const { principal, idempotencyKey } = takePreparedMutation(request);
-    const { bookId } = parseRequest(Params, request.params);
-    const input = parseRequest(SaveFinanceBudgetSchema, request.body);
-    const scope = workspaceContextFromLegacyPrincipal(principal, request.id);
-    const result = scoped(
-      parseServiceResponse(
-        FinanceBudgetRevisionSchema,
-        await call(() =>
-          requireReady(services).then((service) =>
-            service.saveBudget(scope, bookId, idempotencyKey, input),
+  app.post(
+    `${base}/budgets`,
+    {
+      bodyLimit,
+      onRequest: (request) => prepareAuthenticatedMutation(request, services),
+    },
+    async (request, reply) => {
+      const { principal, idempotencyKey } = takePreparedMutation(request);
+      const { bookId } = parseRequest(Params, request.params);
+      const input = parseRequest(SaveFinanceBudgetSchema, request.body);
+      const scope = workspaceContextFromLegacyPrincipal(principal, request.id);
+      const result = scoped(
+        parseServiceResponse(
+          FinanceBudgetRevisionSchema,
+          await call(() =>
+            requireReady(services).then((service) =>
+              service.saveBudget(scope, bookId, idempotencyKey, input),
+            ),
           ),
         ),
-      ),
-      scope,
-      bookId,
-    );
-    return reply.header('cache-control', 'no-store, private').send(result);
-  });
+        scope,
+        bookId,
+      );
+      return reply.header('cache-control', 'no-store, private').send(result);
+    },
+  );
 
   app.get(`${base}/forecasts`, async (request, reply) => {
     const principal = await requirePrincipal(request, services);
@@ -310,7 +316,8 @@ export function registerFinancePlanningRoutes(
     if (
       result.forecasts.some(
         (forecast) =>
-          forecast.workspaceId !== scope.workspaceId || forecast.bookId !== bookId,
+          forecast.workspaceId !== scope.workspaceId ||
+          forecast.bookId !== bookId,
       )
     )
       throw serviceContractProblem();
@@ -347,26 +354,30 @@ export function registerFinancePlanningRoutes(
     return reply.header('cache-control', 'no-store, private').send(result);
   });
 
-  app.post(`${base}/forecasts`, {
-    bodyLimit,
-    onRequest: (request) => prepareAuthenticatedMutation(request, services),
-  }, async (request, reply) => {
-    const { principal, idempotencyKey } = takePreparedMutation(request);
-    const { bookId } = parseRequest(Params, request.params);
-    const input = parseRequest(SaveFinanceForecastSchema, request.body);
-    const scope = workspaceContextFromLegacyPrincipal(principal, request.id);
-    const result = scoped(
-      parseServiceResponse(
-        FinanceForecastSnapshotSchema,
-        await call(() =>
-          requireReady(services).then((service) =>
-            service.saveForecast(scope, bookId, idempotencyKey, input),
+  app.post(
+    `${base}/forecasts`,
+    {
+      bodyLimit,
+      onRequest: (request) => prepareAuthenticatedMutation(request, services),
+    },
+    async (request, reply) => {
+      const { principal, idempotencyKey } = takePreparedMutation(request);
+      const { bookId } = parseRequest(Params, request.params);
+      const input = parseRequest(SaveFinanceForecastSchema, request.body);
+      const scope = workspaceContextFromLegacyPrincipal(principal, request.id);
+      const result = scoped(
+        parseServiceResponse(
+          FinanceForecastSnapshotSchema,
+          await call(() =>
+            requireReady(services).then((service) =>
+              service.saveForecast(scope, bookId, idempotencyKey, input),
+            ),
           ),
         ),
-      ),
-      scope,
-      bookId,
-    );
-    return reply.header('cache-control', 'no-store, private').send(result);
-  });
+        scope,
+        bookId,
+      );
+      return reply.header('cache-control', 'no-store, private').send(result);
+    },
+  );
 }

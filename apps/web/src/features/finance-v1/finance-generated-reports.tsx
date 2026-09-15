@@ -478,7 +478,10 @@ function SavedReportLibrary({
                                   <div>
                                     <dt>Liabilities</dt>
                                     <dd>
-                                      {report.reconciliation.balanceSheetLiabilities}{' '}
+                                      {
+                                        report.reconciliation
+                                          .balanceSheetLiabilities
+                                      }{' '}
                                       {report.currency}
                                     </dd>
                                   </div>
@@ -492,7 +495,10 @@ function SavedReportLibrary({
                                   <div>
                                     <dt>Current-year earnings</dt>
                                     <dd>
-                                      {report.reconciliation.currentYearEarnings}{' '}
+                                      {
+                                        report.reconciliation
+                                          .currentYearEarnings
+                                      }{' '}
                                       {report.currency}
                                     </dd>
                                   </div>
@@ -536,12 +542,14 @@ function SavedReportLibrary({
                                 <tr>
                                   <th scope="col">Account</th>
                                   <th scope="col">
-                                    {report.kind === 'posted-ledger-trial-balance'
+                                    {report.kind ===
+                                    'posted-ledger-trial-balance'
                                       ? 'Gross debit'
                                       : 'Debit'}
                                   </th>
                                   <th scope="col">
-                                    {report.kind === 'posted-ledger-trial-balance'
+                                    {report.kind ===
+                                    'posted-ledger-trial-balance'
                                       ? 'Gross credit'
                                       : 'Credit'}
                                   </th>

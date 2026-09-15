@@ -304,9 +304,7 @@ describe.skipIf(!url)('Finance corporate-action PostgreSQL persistence', () => {
         idempotencyKey: 'corporate-action-test:first-commit',
       }),
     ).toMatchObject({ replayed: true, actionId: firstAction.id });
-    expect(
-      (await repository.listInvestmentLots(context, bookId)).lots,
-    ).toEqual(
+    expect((await repository.listInvestmentLots(context, bookId)).lots).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: lotId,
@@ -384,9 +382,7 @@ describe.skipIf(!url)('Finance corporate-action PostgreSQL persistence', () => {
         )
       ).id,
     );
-    expect(
-      (await repository.listInvestmentLots(context, bookId)).lots,
-    ).toEqual(
+    expect((await repository.listInvestmentLots(context, bookId)).lots).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: postSplitLotId,
@@ -472,9 +468,7 @@ describe.skipIf(!url)('Finance corporate-action PostgreSQL persistence', () => {
         functionalCost: '25',
       }),
     ]);
-    expect(
-      (await repository.listInvestmentLots(context, bookId)).lots,
-    ).toEqual(
+    expect((await repository.listInvestmentLots(context, bookId)).lots).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: lotId,
@@ -563,9 +557,7 @@ describe.skipIf(!url)('Finance corporate-action PostgreSQL persistence', () => {
         functionalCost: '45',
       }),
     ]);
-    expect(
-      (await repository.listInvestmentLots(context, bookId)).lots,
-    ).toEqual(
+    expect((await repository.listInvestmentLots(context, bookId)).lots).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: postSplitLotId,
@@ -640,9 +632,7 @@ describe.skipIf(!url)('Finance corporate-action PostgreSQL persistence', () => {
     );
     // These dates are fixed before the test clock, so the current-position
     // view must expose the latest committed successors on every runner.
-    expect(
-      (await repository.listInvestmentLots(context, bookId)).lots,
-    ).toEqual(
+    expect((await repository.listInvestmentLots(context, bookId)).lots).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: lotId,

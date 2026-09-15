@@ -5171,4 +5171,4 @@ export * from './finance-opening-schema.js';
 
 export * from './finance-corporate-action-settlement-schema.js';
 
-export * from "./finance-investment-reconciliation-schema.js";
+export * from './finance-investment-reconciliation-schema.js';

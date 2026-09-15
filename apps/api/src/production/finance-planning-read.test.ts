@@ -199,11 +199,7 @@ describe('normalized planning model reads', () => {
         limit: 1,
       },
     );
-    expect(getAutomationResult).toHaveBeenCalledWith(
-      context,
-      id(5),
-      resultId,
-    );
+    expect(getAutomationResult).toHaveBeenCalledWith(context, id(5), resultId);
     expect(output.currency).toBe('CAD');
     expect(output.records[0]).toMatchObject({
       id: resultId,

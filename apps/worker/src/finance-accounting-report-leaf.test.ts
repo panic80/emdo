@@ -5,7 +5,9 @@ import type { FinanceAutomationLeafInput } from './finance-automation-worker.js'
 import { createFinanceAccountingReportLeaf } from './finance-accounting-report-leaf.js';
 
 const id = () => randomUUID();
-function fixture(report?: FinanceAutomationLeafInput['run']['request']['report']) {
+function fixture(
+  report?: FinanceAutomationLeafInput['run']['request']['report'],
+) {
   const bookId = id();
   const input: FinanceAutomationLeafInput = {
     run: {
@@ -51,17 +53,20 @@ describe('Concrete accounting-report leaf', () => {
   it.each([
     { kind: 'income-statement' as const, periodId: id() },
     { kind: 'balance-sheet' as const, asOf: '2026-09-13' },
-  ])('routes a $kind selection through the statement SQL boundary', async (report) => {
-    const f = fixture(report);
-    const result = await f.leaf.execute(f.input);
-    expect(result.application).toBe('applied');
-    expect(f.reports.generateAccountingReport).toHaveBeenCalledWith({
-      operationId: f.input.run.request.operationId,
-      expectedRevision: f.input.run.revision,
-      leaseToken: f.input.leaseToken,
-    });
-    expect(f.reports.generateTrialBalance).not.toHaveBeenCalled();
-  });
+  ])(
+    'routes a $kind selection through the statement SQL boundary',
+    async (report) => {
+      const f = fixture(report);
+      const result = await f.leaf.execute(f.input);
+      expect(result.application).toBe('applied');
+      expect(f.reports.generateAccountingReport).toHaveBeenCalledWith({
+        operationId: f.input.run.request.operationId,
+        expectedRevision: f.input.run.revision,
+        leaseToken: f.input.leaseToken,
+      });
+      expect(f.reports.generateTrialBalance).not.toHaveBeenCalled();
+    },
+  );
 
   it('turns missing classifications into a durable blocked result', async () => {
     const f = fixture({ kind: 'income-statement', periodId: id() });
@@ -76,9 +81,9 @@ describe('Concrete accounting-report leaf', () => {
 
   it('fails closed before any SQL call for cross-book or monetary intent', async () => {
     const f = fixture({ kind: 'balance-sheet', asOf: '2026-09-13' });
-    expect(
-      await f.leaf.execute({ ...f.input, targets: [id()] }),
-    ).toEqual({ application: 'not-applied' });
+    expect(await f.leaf.execute({ ...f.input, targets: [id()] })).toEqual({
+      application: 'not-applied',
+    });
     expect(
       await f.leaf.execute({
         ...f.input,

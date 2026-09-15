@@ -1535,10 +1535,7 @@ export const financeInvestmentLotRevisions = schema.table(
       columns: [t.workspaceId, t.bookId],
       foreignColumns: [financeBooks.workspaceId, financeBooks.id],
     }),
-    check(
-      'finance_investment_lot_revisions_valid',
-      sql`${t.revision} >= 0`,
-    ),
+    check('finance_investment_lot_revisions_valid', sql`${t.revision} >= 0`),
   ],
 );
 
@@ -1563,7 +1560,9 @@ export const financeInvestmentCorporateActions = schema.table(
     idempotencyKey: text('idempotency_key').notNull(),
     commandHash: text('command_hash').notNull(),
     status: text('status').default('committed').notNull(),
-    createdBy: uuid('created_by').notNull().references(() => authUsers.id),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => authUsers.id),
   },
   (t) => [
     unique('finance_investment_corporate_actions_scope').on(

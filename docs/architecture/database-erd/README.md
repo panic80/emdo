@@ -22,10 +22,10 @@ specific implementation revision and its expected counts.
 
 ## Source provenance
 
-| Source | Path | SHA-256 |
-| --- | --- | --- |
+| Source           | Path                                          | SHA-256                                                            |
+| ---------------- | --------------------------------------------- | ------------------------------------------------------------------ |
 | Drizzle snapshot | `packages/db/drizzle/meta/0076_snapshot.json` | `df59e476ac76650aa9ff09ed9ec6ec5818bbd868f762e7c277558eeb1f27628d` |
-| Drizzle journal | `packages/db/drizzle/meta/_journal.json` | `ed180a41611f6fb3088277461abc53e34fafb3f0679040aa2a3e8ef36a3cac64` |
+| Drizzle journal  | `packages/db/drizzle/meta/_journal.json`      | `ed180a41611f6fb3088277461abc53e34fafb3f0679040aa2a3e8ef36a3cac64` |
 
 The complete per-migration source manifest is in `schema-index.json`. Hashes
 are included so a regenerated artifact can be compared to its exact source

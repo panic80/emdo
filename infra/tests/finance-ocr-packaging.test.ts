@@ -51,7 +51,9 @@ describe('Finance OCR release package', () => {
     expect(webStart).toBeGreaterThan(helperStart);
     const helperTarget = dockerfile.slice(helperStart, webStart);
     expect(helperTarget).not.toContain('COPY --from=build');
-    expect(helperTarget).toContain('COPY --from=finance-ocr-node /usr/local/bin/node /usr/local/bin/node');
+    expect(helperTarget).toContain(
+      'COPY --from=finance-ocr-node /usr/local/bin/node /usr/local/bin/node',
+    );
     expect(helperTarget).not.toMatch(
       /(?:DATABASE_URL|API_KEY|AUTH_SECRET|SESSION_SECRET|OPENAI_API_KEY)/u,
     );

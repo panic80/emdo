@@ -6281,12 +6281,8 @@
     "rls": 86,
     "roles": 50
   },
-  "sqlOnlyViews": [
-    "emdo.finance_investment_lot_positions"
-  ],
-  "sqlOnlyTables": [
-    "emdo.workflow_operation_claims"
-  ],
+  "sqlOnlyViews": ["emdo.finance_investment_lot_positions"],
+  "sqlOnlyTables": ["emdo.workflow_operation_claims"],
   "sqlRlsTables": [
     "emdo.action_decisions",
     "emdo.action_proposals",

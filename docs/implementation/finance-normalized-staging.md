@@ -137,7 +137,10 @@ mode-`0600`, non-symlink, single-link `<runId>.review.json` containing:
   "decision": "approve-authored-synthetic-mapping",
   "binding": "COPY THE COMPLETE binding OBJECT FROM THE REQUEST HERE",
   "answers": [
-    { "question": "EXACT FIRST QUESTION", "answer": "YOUR SOURCE-BACKED ANSWER" }
+    {
+      "question": "EXACT FIRST QUESTION",
+      "answer": "YOUR SOURCE-BACKED ANSWER"
+    }
   ],
   "rationale": "YOUR EXPLICIT REVIEW OF THIS AUTHORED SOURCE AND MAPPING"
 }

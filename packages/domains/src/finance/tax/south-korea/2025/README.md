@@ -125,18 +125,18 @@ locators and SHA-256 byte hashes. The direct download hashes cover the fetched
 NTS PDF, ZIP or HWP bytes. Publication pages can expose a changing read
 counter, so their hashes bind the response observed at the recorded timestamp.
 
-| Source | Official material | SHA-256 |
-| --- | --- | --- |
-| `nts-kr-2025-year-end-settlement-guide` | [NTS 2025 year-end settlement guide](https://d.nts.go.kr/comm/nttFileDownload.do?fileKey=88c482e8d69eb1653515871654a4ab42) | `e25fe22ef388f12a48cdc39bc23ec762b2941f780a4e7ca0d66925a47594902e` |
-| `nts-kr-2025-global-income-guide` | [NTS Individual Income Tax and Benefit Guide for Foreigners 2026](https://www.nts.go.kr/comm/nttFileDownload.do?fileKey=f3672a0a56ff88d41548b4cc5fc41a3b) | `2144b60c037f91cf902b38b0a36035e3a8a52354ad4e4cc30d48c1cbec3fc5f6` |
-| `nts-kr-2025-return-publication-page` | [NTS return publication notice](https://www.nts.go.kr/english/na/ntt/selectNttInfo.do?mi=10788&nttSn=1350804) | `5e925973003d1089475ba24ee709f995406a61d7c91410eee47d334913430516` |
-| `nts-kr-2025-year-end-publication-page` | [NTS year-end settlement landing page](https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=238938&mi=6645) | `0f4579bae22469eb9345590d2709d60a558f2e097028cd94dcc863e10db2b4a9` |
-| `nts-kr-2025-local-income-tax-guide` | [NTS withholding and local income-tax overview](https://g.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7701&mi=2413) | `30be0384766a21a020dd477baf87b54cd45ab42dfbe9fea59dde01ca73a088bf` |
-| `nts-kr-2025-global-income-overview` | [NTS global-income and bookkeeping overview](https://nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7669&mi=2224) | `65691003946457a575d6e553db1b67ceaa2e31f5ab42f4d0a3ae239dccfdb76f` |
-| `nts-kr-2025-corporate-income-overview` | [NTS profit-making corporation income-tax overview](https://b.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7979&mi=6553) | `add895e49ebacad4958336e29ec8664d0b93edf74452afab1a98bfc9944029cf` |
-| `nts-kr-2025-global-form40-1-page` | [NTS Form 40(1) publication page](https://nts.go.kr/nts/na/ntt/selectNttInfo.do?mi=2240&nttSn=1002353) | `3a0af26269719cfbfbffaf0e3c84558eb37d68fa85889f748bcb2a4846781715` |
-| `nts-kr-2025-global-form40-1` | [NTS Form 40(1) HWP attachment](https://www.nts.go.kr/comm/nttFileDownload.do?fileKey=91cc4e65db49d2dd55f4b01214dc744a) | `2fb6f557a510b3db861348cf84af5dbba25a01c07a0a2419965055b55b93ba33` |
-| `nts-kr-2025-corporate-form1` | [NTS Taxlaw historical Form 1 attachment](https://taxlaw.nts.go.kr/downloadFile.do?fleId=701000000001012513&fleSn=1) | `e123f7d44aec869a430bda8a2d2670b690cd93bab231f1d92ec2d60d2faff7b2` |
+| Source                                  | Official material                                                                                                                                         | SHA-256                                                            |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `nts-kr-2025-year-end-settlement-guide` | [NTS 2025 year-end settlement guide](https://d.nts.go.kr/comm/nttFileDownload.do?fileKey=88c482e8d69eb1653515871654a4ab42)                                | `e25fe22ef388f12a48cdc39bc23ec762b2941f780a4e7ca0d66925a47594902e` |
+| `nts-kr-2025-global-income-guide`       | [NTS Individual Income Tax and Benefit Guide for Foreigners 2026](https://www.nts.go.kr/comm/nttFileDownload.do?fileKey=f3672a0a56ff88d41548b4cc5fc41a3b) | `2144b60c037f91cf902b38b0a36035e3a8a52354ad4e4cc30d48c1cbec3fc5f6` |
+| `nts-kr-2025-return-publication-page`   | [NTS return publication notice](https://www.nts.go.kr/english/na/ntt/selectNttInfo.do?mi=10788&nttSn=1350804)                                             | `5e925973003d1089475ba24ee709f995406a61d7c91410eee47d334913430516` |
+| `nts-kr-2025-year-end-publication-page` | [NTS year-end settlement landing page](https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=238938&mi=6645)                                         | `0f4579bae22469eb9345590d2709d60a558f2e097028cd94dcc863e10db2b4a9` |
+| `nts-kr-2025-local-income-tax-guide`    | [NTS withholding and local income-tax overview](https://g.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7701&mi=2413)                                    | `30be0384766a21a020dd477baf87b54cd45ab42dfbe9fea59dde01ca73a088bf` |
+| `nts-kr-2025-global-income-overview`    | [NTS global-income and bookkeeping overview](https://nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7669&mi=2224)                                         | `65691003946457a575d6e553db1b67ceaa2e31f5ab42f4d0a3ae239dccfdb76f` |
+| `nts-kr-2025-corporate-income-overview` | [NTS profit-making corporation income-tax overview](https://b.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7979&mi=6553)                                | `add895e49ebacad4958336e29ec8664d0b93edf74452afab1a98bfc9944029cf` |
+| `nts-kr-2025-global-form40-1-page`      | [NTS Form 40(1) publication page](https://nts.go.kr/nts/na/ntt/selectNttInfo.do?mi=2240&nttSn=1002353)                                                    | `3a0af26269719cfbfbffaf0e3c84558eb37d68fa85889f748bcb2a4846781715` |
+| `nts-kr-2025-global-form40-1`           | [NTS Form 40(1) HWP attachment](https://www.nts.go.kr/comm/nttFileDownload.do?fileKey=91cc4e65db49d2dd55f4b01214dc744a)                                   | `2fb6f557a510b3db861348cf84af5dbba25a01c07a0a2419965055b55b93ba33` |
+| `nts-kr-2025-corporate-form1`           | [NTS Taxlaw historical Form 1 attachment](https://taxlaw.nts.go.kr/downloadFile.do?fleId=701000000001012513&fleSn=1)                                      | `e123f7d44aec869a430bda8a2d2670b690cd93bab231f1d92ec2d60d2faff7b2` |
 
 Salary uses `2025.1-national-employment-working-papers.1`; the sole proprietor
 and corporation branches use their own version strings in `business.ts`; form

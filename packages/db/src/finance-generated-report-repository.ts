@@ -139,10 +139,7 @@ export class PostgresFinanceGeneratedReportRepository {
     });
   }
 
-  async listClassifications(
-    context: WorkspaceContext,
-    bookId: string,
-  ) {
+  async listClassifications(context: WorkspaceContext, bookId: string) {
     UuidSchema.parse(bookId);
     return this.transaction(context, bookId, async (client) => {
       const rows = (
@@ -309,7 +306,10 @@ export class PostgresFinanceGeneratedReportExecutionRepository {
         throw new FinanceGeneratedReportNotAppliedError(
           'source-limit-exceeded',
         );
-      if (code === '23514' && message.includes('missing-account-classification'))
+      if (
+        code === '23514' &&
+        message.includes('missing-account-classification')
+      )
         throw new FinanceGeneratedReportNotAppliedError(
           'missing-classification',
         );

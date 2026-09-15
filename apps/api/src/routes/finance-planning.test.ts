@@ -139,7 +139,9 @@ const planningResult: FinancePlanningAutomationResult = {
   sourceHash: 'b'.repeat(64),
 };
 
-async function fixture(options: { ready?: boolean; authenticated?: boolean; csrf?: boolean } = {}) {
+async function fixture(
+  options: { ready?: boolean; authenticated?: boolean; csrf?: boolean } = {},
+) {
   const auth = {
     authenticate: vi.fn(async () =>
       options.authenticated === false ? undefined : principal,
@@ -148,7 +150,10 @@ async function fixture(options: { ready?: boolean; authenticated?: boolean; csrf
   } as unknown as ApiServices['auth'];
   const api: FinancePlanningRouteService = {
     checkReady: vi.fn(async () => options.ready !== false),
-    listBudgets: vi.fn(async () => ({ budgets: [budgetSummary], nextOffset: null })),
+    listBudgets: vi.fn(async () => ({
+      budgets: [budgetSummary],
+      nextOffset: null,
+    })),
     getBudget: vi.fn(async () => budget),
     saveBudget: vi.fn(async () => budget),
     budgetVsActuals: vi.fn(async () => actuals),
@@ -179,7 +184,10 @@ describe('normalized Finance planning HTTP boundary', () => {
         headers: { cookie: '__Secure-emdo.session_token=current' },
       });
       expect(list.statusCode).toBe(200);
-      expect(list.json()).toEqual({ budgets: [budgetSummary], nextOffset: null });
+      expect(list.json()).toEqual({
+        budgets: [budgetSummary],
+        nextOffset: null,
+      });
       expect(api.listBudgets).toHaveBeenCalledWith(
         expect.objectContaining({ workspaceId, userId }),
         bookId,
@@ -193,9 +201,7 @@ describe('normalized Finance planning HTTP boundary', () => {
         headers: { cookie: '__Secure-emdo.session_token=current' },
       });
       expect(comparison.statusCode).toBe(200);
-      expect(comparison.json().actualSource).toEqual(
-        actuals.actualSource,
-      );
+      expect(comparison.json().actualSource).toEqual(actuals.actualSource);
     } finally {
       await app.close();
     }
@@ -233,7 +239,9 @@ describe('normalized Finance planning HTTP boundary', () => {
         },
         payload: {
           name: budget.name,
-          lines: budget.lines.map(({ budgetId: _budgetId, revision: _revision, ...line }) => line),
+          lines: budget.lines.map(
+            ({ budgetId: _budgetId, revision: _revision, ...line }) => line,
+          ),
         },
       });
       expect(response.statusCode).toBe(200);
@@ -264,7 +272,9 @@ describe('normalized Finance planning HTTP boundary', () => {
         },
         payload: {
           name: budget.name,
-          lines: budget.lines.map(({ budgetId: _budgetId, revision: _revision, ...line }) => line),
+          lines: budget.lines.map(
+            ({ budgetId: _budgetId, revision: _revision, ...line }) => line,
+          ),
         },
       });
       expect(response.statusCode).toBe(options.status);

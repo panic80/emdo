@@ -132,34 +132,31 @@ const SummaryUnion = z.discriminatedUnion('kind', [
 ]);
 /** Compatibility helper retained for existing browser fixtures/readers that
  * strip detail-only fields before validating summary metadata. */
-export const FinanceGeneratedReportSummarySchema = Object.assign(
-  SummaryUnion,
-  {
-    strip: () =>
-      z.preprocess((value) => {
-        if (typeof value !== 'object' || value === null || Array.isArray(value))
-          return value;
-        const known = new Set([
-          'id',
-          'workspaceId',
-          'bookId',
-          'automationRunId',
-          'reportVersion',
-          'kind',
-          'coverage',
-          'currency',
-          'snapshotAt',
-          'periodId',
-          'periodStart',
-          'periodEnd',
-          'asOf',
-        ]);
-        return Object.fromEntries(
-          Object.entries(value).filter(([key]) => known.has(key)),
-        );
-      }, SummaryUnion),
-  },
-);
+export const FinanceGeneratedReportSummarySchema = Object.assign(SummaryUnion, {
+  strip: () =>
+    z.preprocess((value) => {
+      if (typeof value !== 'object' || value === null || Array.isArray(value))
+        return value;
+      const known = new Set([
+        'id',
+        'workspaceId',
+        'bookId',
+        'automationRunId',
+        'reportVersion',
+        'kind',
+        'coverage',
+        'currency',
+        'snapshotAt',
+        'periodId',
+        'periodStart',
+        'periodEnd',
+        'asOf',
+      ]);
+      return Object.fromEntries(
+        Object.entries(value).filter(([key]) => known.has(key)),
+      );
+    }, SummaryUnion),
+});
 
 const ReportRowSchema = z.strictObject({
   accountId: UuidSchema,
@@ -203,14 +200,14 @@ const ReportBody = {
   sourceJournals: z.array(SourceJournalSchema).max(10000),
   totalDebit: unsigned,
   totalCredit: unsigned,
-  reconciliation: FinanceGeneratedReportReconciliationSchema.nullable().optional(),
+  reconciliation:
+    FinanceGeneratedReportReconciliationSchema.nullable().optional(),
 } as const;
 
 const TrialBalanceReportSchema = TrialBalanceSummarySchema.extend(ReportBody);
 const IncomeStatementReportSchema =
   IncomeStatementSummarySchema.extend(ReportBody);
-const BalanceSheetReportSchema =
-  BalanceSheetSummarySchema.extend(ReportBody);
+const BalanceSheetReportSchema = BalanceSheetSummarySchema.extend(ReportBody);
 
 export const FinanceGeneratedReportSchema = z
   .discriminatedUnion('kind', [
@@ -310,10 +307,7 @@ export const FinanceGeneratedReportSchema = z
             : row.kind === 'asset' ||
               row.kind === 'liability' ||
               row.kind === 'equity';
-        if (
-          classification?.statement !== expectedStatement ||
-          !expectedKind
-        )
+        if (classification?.statement !== expectedStatement || !expectedKind)
           issue('Statement row classification does not match its account');
       }
     }
@@ -352,7 +346,9 @@ export const FinanceGeneratedReportSchema = z
         reconciliation.balanceSheetEquity !== null ||
         reconciliation.currentYearEarnings !== null
       )
-        issue('Income statements cannot carry balance-sheet reconciliation fields');
+        issue(
+          'Income statements cannot carry balance-sheet reconciliation fields',
+        );
       if (valueAtScale(reconciliation.difference) !== 0n)
         issue('Income statement reconciliation difference must be zero');
     } else if (
@@ -361,7 +357,9 @@ export const FinanceGeneratedReportSchema = z
       reconciliation.balanceSheetEquity === null ||
       reconciliation.currentYearEarnings === null
     ) {
-      issue('Balance sheets require current-year earnings reconciliation fields');
+      issue(
+        'Balance sheets require current-year earnings reconciliation fields',
+      );
     } else if (
       valueAtScale(reconciliation.difference) !==
       valueAtScale(reconciliation.balanceSheetAssets) -
@@ -380,4 +378,6 @@ export const FinanceGeneratedReportSchema = z
 export type FinanceGeneratedReportSummary = z.infer<
   typeof FinanceGeneratedReportSummarySchema
 >;
-export type FinanceGeneratedReport = z.infer<typeof FinanceGeneratedReportSchema>;
+export type FinanceGeneratedReport = z.infer<
+  typeof FinanceGeneratedReportSchema
+>;

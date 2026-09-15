@@ -12,7 +12,6 @@ The accepted catastrophic-loss objective is an RPO of up to 24 hours with
 provider-dependent recovery time. Record the exact backup and restore evidence;
 configuration files and a successful dump command alone are not a restore test.
 
-
 ## Normalized Finance local restore drill
 
 Run `bash packages/db/scripts/verify-finance-restore.sh` from a checkout with

@@ -91,7 +91,9 @@ export async function readImageReview(
   signal: AbortSignal,
 ) {
   if (source.extraction.sourceDigest !== source.sourceDigest)
-    throw new Error('The saved analysis and extraction do not reference the same original.');
+    throw new Error(
+      'The saved analysis and extraction do not reference the same original.',
+    );
   const [raw, original] = await Promise.all([
     json(
       `/api/v2/finance/books/${source.bookId}/evidence/${source.evidenceId}/image-inspection?standardizationRunId=${source.id}&extractionRevision=${source.extraction.revision}`,

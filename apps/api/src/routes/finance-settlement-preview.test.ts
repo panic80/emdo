@@ -181,7 +181,12 @@ describe('Finance settlement commit HTTP authority', () => {
             ? { ...outcome, workspaceId: principal.sessionId }
             : outcome,
         settlement: planInvestmentStockSplitSettlement(command.settlement),
-        accounting: { actionDateFunctionalConsideration: '42', settlementDateFunctionalConsideration: '45', bookGainLoss: '8.25', fxGainLoss: '3' },
+        accounting: {
+          actionDateFunctionalConsideration: '42',
+          settlementDateFunctionalConsideration: '45',
+          bookGainLoss: '8.25',
+          fxGainLoss: '3',
+        },
         createdAt: '2026-09-14T12:00:00.000Z',
       };
       const read = vi.fn(async () => (scenario === 'missing' ? null : saved));
