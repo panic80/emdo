@@ -1,0 +1,11 @@
+# Opt-in only: existing host Nginx retains TLS and all public listeners.
+services:
+  caddy:
+    ports: !override
+      - '127.0.0.1:18081:8080'
+    environment:
+      EMDO_NGINX_TRUSTED_PEER: ${EMDO_NGINX_TRUSTED_PEER:?An exact trusted host peer is required}
+    volumes: !override
+      - ../caddy/Caddyfile.shared-nginx:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
