@@ -26,6 +26,25 @@ const safeEqual = (a, b) => {
 const secureCookie = (value) =>
   value.replace(/;\s*domain=[^;]*/gi, '').replace(/;\s*secure/gi, '') +
   '; Secure';
+function permittedPath(raw) {
+  try {
+    const path = decodeURIComponent(raw.split('?')[0]);
+    if (
+      !raw.startsWith('/') ||
+      raw.startsWith('//') ||
+      path.includes('..') ||
+      path.includes('\\') ||
+      path.includes('\0') ||
+      /%[0-9a-f]{2}/i.test(path) ||
+      /\/(internal|metrics)(\/|$)|readiness|\/health|synthetic/i.test(path) ||
+      path === '/readyz'
+    )
+      return undefined;
+    return path;
+  } catch {
+    return undefined;
+  }
+}
 export function createGateway(config) {
   const upstream = new URL(config.upstream);
   if (
@@ -96,22 +115,8 @@ export function createGateway(config) {
         code: 'staging-unavailable',
         detail: 'The short-lived staging service is unavailable or expired.',
       });
-    let path;
-    try {
-      path = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
-    } catch {
-      send(400, { code: 'invalid-path' });
-      return;
-    }
-    if (
-      !req.url.startsWith('/') ||
-      req.url.startsWith('//') ||
-      path.includes('..') ||
-      path.includes('\\') ||
-      path.includes('\0') ||
-      req.url.includes('..') ||
-      /\/(internal|metrics)(\/|$)|readiness|\/health|synthetic/i.test(path)
-    ) {
+    const path = permittedPath(req.url);
+    if (path === undefined) {
       send(404, { code: 'route-unavailable' });
       return;
     }
@@ -364,6 +369,7 @@ export function createGateway(config) {
   let sockets = 0;
   server.on('upgrade', (req, socket, head) => {
     if (
+      permittedPath(req.url) === undefined ||
       Date.now() >= config.expiryEpoch ||
       !valid(req.headers.cookie) ||
       req.headers.origin !== publicOrigin ||

@@ -137,6 +137,48 @@ test('real auth transport, gateway isolation and streamed upload transport', asy
     200,
   );
   assert.equal(calls.at(-1).body, 'private');
+  assert.equal((await request('/readyz', { headers: { cookie } })).status, 404);
+  const beforeUpgrade = calls.length;
+  for (const path of [
+    '/powersync/../api/internal/private',
+    '/powersync/%2e%2e/api/internal/private',
+    '/powersync/%252e%252e/api/internal/private',
+    '/powersync/%2e%2e/readyz',
+    '/powersync/metrics',
+  ]) {
+    const status = await new Promise((resolve, reject) => {
+      const req = http.request(
+        base,
+        {
+          path,
+          headers: {
+            cookie,
+            origin: 'https://test.example',
+            connection: 'Upgrade',
+            upgrade: 'websocket',
+            'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==',
+            'sec-websocket-version': '13',
+          },
+        },
+        (response) => {
+          response.resume();
+          resolve(response.statusCode);
+        },
+      );
+      req.on('upgrade', (_response, socket) => {
+        socket.destroy();
+        reject(Error('Traversal upgrade was accepted'));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.equal(status, 403, path);
+  }
+  assert.equal(
+    calls.length,
+    beforeUpgrade,
+    'Rejected upgrades must never reach upstream',
+  );
   const out = await request('/api/auth/sign-out', {
     method: 'POST',
     headers: {
