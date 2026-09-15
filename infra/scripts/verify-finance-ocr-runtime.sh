@@ -14,7 +14,7 @@ chmod 755 "$proof_dir"
 chmod 644 "$proof_dir/client.mjs" "$proof_dir/financial-text.png"
 image_id=$(docker image inspect "${EMDO_OCR_IMAGE:-emdo-finance-ocr:local-integration}" --format '{{.Id}}')
 docker run --platform linux/amd64 -d --rm --name "$helper_name" --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 32 --memory 128m --cpus 1 --tmpfs /tmp:size=64m,noexec,nosuid,nodev,mode=0700,uid=10003,gid=10004 --volume "$socket_volume:/run/emdo/finance-ocr" "$image_id" >/dev/null
-for attempt in $(seq 1 20); do
+for ((attempt = 0; attempt < 20; attempt++)); do
  if docker exec "$helper_name" test -S /run/emdo/finance-ocr/helper.sock; then break; fi
  sleep 0.25
 done
