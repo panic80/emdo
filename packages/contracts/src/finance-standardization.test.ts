@@ -11,7 +11,7 @@ const provenance = {
   completedAt: '2026-09-15T00:00:00Z',
 };
 describe('Finance standardization provenance versions', () => {
-  it.each(['v1', 'v2', 'v3', 'v4'])(
+  it.each(['v1', 'v2', 'v3', 'v4', 'v5'])(
     'reads %s provenance without upgrading historical receipts',
     (version) => {
       const promptVersion = `finance-standardization-proposal.${version}`;
@@ -27,7 +27,7 @@ describe('Finance standardization provenance versions', () => {
     expect(
       FinanceStandardizationModelProvenanceSchema.safeParse({
         ...provenance,
-        promptVersion: 'finance-standardization-proposal.v5',
+        promptVersion: 'finance-standardization-proposal.v6',
       }).success,
     ).toBe(false);
   });
