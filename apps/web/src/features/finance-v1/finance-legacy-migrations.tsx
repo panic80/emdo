@@ -326,7 +326,8 @@ function MigrationPanel({
       );
       if (signal.aborted) return;
       const value = raw as Record<string, unknown>;
-      const { review: _review, ...snapshot } = value;
+      const snapshot = { ...value };
+      delete snapshot.review;
       setInspection(checkInspection(snapshot, bookId, inspection.run.id));
       setComparison(undefined);
       setOpening(undefined);

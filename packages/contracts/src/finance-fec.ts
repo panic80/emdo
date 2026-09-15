@@ -27,6 +27,7 @@ const FecText = (maximum: number) =>
     .trim()
     .min(1)
     .max(maximum)
+    // eslint-disable-next-line no-control-regex -- FEC text must reject control characters.
     .regex(/^[^\u0000-\u001f\u007f]*$/u);
 const FecSource = z.strictObject({
   sourceReference: FecText(500),

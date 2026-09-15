@@ -1367,7 +1367,7 @@ export function buildGermany2025FieldCoverage(
       field.precision === 'euro-cent' &&
       field.actualField &&
       directFact?.value.type === 'decimal' &&
-      directFact.value.value.split('.')[1]?.length! > 2
+      (directFact.value.value.split('.')[1]?.length ?? 0) > 2
     ) {
       status = 'unresolved';
       predicate = `${field.factKey} exceeds captured euro-cent precision`;

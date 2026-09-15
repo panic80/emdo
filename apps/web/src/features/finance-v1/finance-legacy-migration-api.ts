@@ -232,7 +232,8 @@ export function migrationMutation() {
     if (operation === 'inspect') result = checkInspection(raw, bookId);
     else if (operation === 'review') {
       const value = ReviewResult.parse(raw);
-      const { review: _review, ...inspection } = value;
+      const { run, plan, records } = value;
+      const inspection = { run, plan, records };
       checkInspection(inspection, bookId, migrationId);
       if (
         value.review.recordId !== input.recordId ||

@@ -131,6 +131,7 @@ export function extractFinanceOfxStatement(
   }
   if (
     source.includes('\ufffd') ||
+    // eslint-disable-next-line no-control-regex -- Reject unsafe OFX control characters while allowing line breaks and tabs.
     /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(source)
   )
     fail('unsafe-text');
@@ -162,6 +163,7 @@ export function extractFinanceOfxStatement(
     }
     const encoding = headers.find((h) => h.name === 'ENCODING')?.value;
     if (
+      // eslint-disable-next-line no-control-regex -- Detect non-ASCII content before validating its declared encoding.
       /[^\x00-\x7f]/u.test(source) &&
       !['UTF-8', 'UTF8', 'UNICODE'].includes(encoding ?? '')
     )

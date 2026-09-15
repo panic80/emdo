@@ -9,7 +9,6 @@ import {
   FinanceForecastListSchema,
   FinanceForecastSnapshotSchema,
   FinancePlanningPageQuerySchema,
-  FinancePlanningRevisionSchema,
   SaveFinanceBudgetSchema,
   SaveFinanceForecastSchema,
   UuidSchema,

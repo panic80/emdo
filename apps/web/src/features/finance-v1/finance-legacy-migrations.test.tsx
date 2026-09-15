@@ -1,9 +1,10 @@
 import { StrictMode } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { planLegacyFinanceMigration } from '@emdo/domains/finance';
 import {
   FinanceLegacyMigrationInspectionSchema,
+  FinanceLegacyMigrationReviewInputSchema,
   type FinanceLegacyMigrationMapping,
 } from '@emdo/contracts/browser';
 import { FinanceLegacyMigrations } from './finance-legacy-migrations.js';
@@ -128,11 +129,14 @@ function snapshot(
 function fixture(openingAmount = 0) {
   let current = snapshot(emptyMapping, 1, undefined, openingAmount);
   let inspected = false;
-  const posts: { path: string; body: Record<string, any>; headers: Headers }[] =
-    [];
+  const posts: {
+    path: string;
+    body: Record<string, unknown>;
+    headers: Headers;
+  }[] = [];
   const fetcher = vi.fn(async (path: string, init?: RequestInit) => {
     const body = init?.body
-      ? (JSON.parse(String(init.body)) as Record<string, any>)
+      ? (JSON.parse(String(init.body)) as Record<string, unknown>)
       : undefined;
     if (body) posts.push({ path, body, headers: new Headers(init?.headers) });
     let response: unknown;
@@ -161,7 +165,9 @@ function fixture(openingAmount = 0) {
       inspected = true;
       response = current;
     } else if (path.endsWith('/review')) {
-      const decision = body!.decision;
+      const { decision } = FinanceLegacyMigrationReviewInputSchema.parse(body);
+      if (!decision.targetFinancialAccountId)
+        throw new Error('Review fixture requires a target financial account.');
       const mapping = {
         ...emptyMapping,
         financialAccounts: [

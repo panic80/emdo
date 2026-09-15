@@ -15,7 +15,6 @@ import {
 import {
   financeBooks,
   financeEconomicTransactions,
-  financeFinancialAccounts,
   financeJournalLines,
   financeLedgerAccounts,
   financeNormalizedImportRows,

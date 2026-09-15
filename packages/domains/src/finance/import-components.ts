@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import {
   FinanceCurrencySchema,
-  FinanceMoneySchema,
   FinanceNormalizedAmountComponentProvenanceSchema,
   FinanceNormalizedAmountComponentReviewListSchema,
   FinanceNormalizedAmountComponentSourceSchema,

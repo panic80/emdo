@@ -64,7 +64,10 @@ const budget: FinanceBudgetRevision = {
   ],
 };
 const budgetSummary = (() => {
-  const { lines: _lines, ...summary } = budget;
+  const summary: Omit<FinanceBudgetRevision, 'lines'> & {
+    lines?: FinanceBudgetRevision['lines'];
+  } = { ...budget };
+  delete summary.lines;
   return summary;
 })();
 
@@ -240,7 +243,12 @@ describe('normalized Finance planning HTTP boundary', () => {
         payload: {
           name: budget.name,
           lines: budget.lines.map(
-            ({ budgetId: _budgetId, revision: _revision, ...line }) => line,
+            ({ periodId, accountId, currency, amount }) => ({
+              periodId,
+              accountId,
+              currency,
+              amount,
+            }),
           ),
         },
       });
@@ -273,7 +281,12 @@ describe('normalized Finance planning HTTP boundary', () => {
         payload: {
           name: budget.name,
           lines: budget.lines.map(
-            ({ budgetId: _budgetId, revision: _revision, ...line }) => line,
+            ({ periodId, accountId, currency, amount }) => ({
+              periodId,
+              accountId,
+              currency,
+              amount,
+            }),
           ),
         },
       });

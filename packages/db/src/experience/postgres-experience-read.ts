@@ -1658,9 +1658,13 @@ const createFinanceRead = (
           FinancePageCategoryRowSchema,
           [
             ...categoryResult.rows,
-            ...activated.categories.map(
-              ({ revision: _revision, ...row }) => row,
-            ),
+            ...activated.categories.map((category) => {
+              const row: Omit<typeof category, 'revision'> & {
+                revision?: typeof category.revision;
+              } = { ...category };
+              delete row.revision;
+              return row;
+            }),
           ],
           'Database returned malformed Finance category rows',
         ),

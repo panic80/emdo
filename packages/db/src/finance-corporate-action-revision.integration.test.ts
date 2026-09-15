@@ -30,7 +30,6 @@ describe.skipIf(!url)('Finance corporate-action revision guard', () => {
   let bookId: string;
   let brokerageId: string;
   let instrumentId: string;
-  let periodId: string;
   let journalId: string;
 
   async function sql(query: string, values: unknown[] = []) {
@@ -147,14 +146,10 @@ describe.skipIf(!url)('Finance corporate-action revision guard', () => {
         })
       ).id,
     );
-    periodId = String(
-      (
-        await repository.createPeriod(context, bookId, 'revision-period', {
-          startsOn: '2026-01-01',
-          endsOn: '2026-12-31',
-        })
-      ).id,
-    );
+    await repository.createPeriod(context, bookId, 'revision-period', {
+      startsOn: '2026-01-01',
+      endsOn: '2026-12-31',
+    });
     journalId = String(
       (
         await repository.postJournal(context, bookId, 'revision-journal', {

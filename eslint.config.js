@@ -8,6 +8,7 @@ export default tseslint.config(
       '**/.worktrees/**',
       'node_modules/',
       'coverage/',
+      'tmp/',
       '**/dist/',
       'apps/web/public/@powersync/',
     ],
