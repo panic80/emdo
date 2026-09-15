@@ -318,6 +318,66 @@ export function createGateway(config) {
             'location',
             publicOrigin + response.headers.location.slice(authOrigin.length),
           );
+        if (
+          req.method === 'GET' &&
+          path === '/api/v1/sync/token' &&
+          response.statusCode >= 200 &&
+          response.statusCode < 300
+        ) {
+          let size = 0;
+          const chunks = [];
+          const reject = () => unavailable();
+          response.on('error', reject);
+          if (
+            !/^application\/json(?:;|$)/i.test(
+              response.headers['content-type'] || '',
+            ) ||
+            (response.headers['content-encoding'] &&
+              response.headers['content-encoding'] !== 'identity')
+          ) {
+            response.resume();
+            reject();
+            return;
+          }
+          response.on('data', (chunk) => {
+            size += chunk.length;
+            if (size > 128 * 1024) {
+              reject();
+              response.destroy();
+            } else chunks.push(chunk);
+          });
+          response.on('end', () => {
+            if (res.writableEnded) return;
+            try {
+              const payload = JSON.parse(
+                Buffer.concat(chunks).toString('utf8'),
+              );
+              if (
+                payload?.schemaVersion !== 1 ||
+                payload.endpoint !== authOrigin + '/powersync' ||
+                typeof payload.token !== 'string' ||
+                !payload.token ||
+                typeof payload.expiresAt !== 'string' ||
+                !payload.writeScope ||
+                typeof payload.writeScope !== 'object' ||
+                Array.isArray(payload.writeScope)
+              ) {
+                reject();
+                return;
+              }
+              payload.endpoint = publicOrigin + '/powersync';
+              res.removeHeader('etag');
+              res.removeHeader('content-md5');
+              res.writeHead(response.statusCode, {
+                'content-type': 'application/json',
+              });
+              res.end(JSON.stringify(payload));
+            } catch {
+              reject();
+            }
+          });
+          return;
+        }
         if ((response.headers['content-type'] || '').includes('text/html')) {
           let size = 0;
           const chunks = [];

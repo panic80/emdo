@@ -5,7 +5,10 @@ After=network.target
 Type=simple
 DynamicUser=yes
 LoadCredential=preview.json:/etc/emdo/preview.json
-Environment=PREVIEW_SECRET_FILE=%d/preview.json
+RuntimeDirectory=emdo-test-gateway
+RuntimeDirectoryMode=0700
+ExecStartPre=/usr/bin/install -m 0600 %d/preview.json /run/emdo-test-gateway/preview.json
+Environment=PREVIEW_SECRET_FILE=/run/emdo-test-gateway/preview.json
 Environment=PREVIEW_UPSTREAM=http://127.0.0.1:18080
 Environment=PREVIEW_PUBLIC_ORIGIN=https://bot.32cbgg8.com
 Environment=PREVIEW_AUTH_ORIGIN=https://staging.emdo.invalid
