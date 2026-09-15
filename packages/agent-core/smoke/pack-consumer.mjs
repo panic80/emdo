@@ -24,6 +24,7 @@ const modules = [
   'durable-finance-standardization',
   'factory',
   'finance-image-prompt-projection',
+  'finance-pdf-prompt-projection',
   'index',
   'memory',
   'model-router',

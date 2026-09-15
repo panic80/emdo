@@ -175,7 +175,8 @@ export async function extractFinanceStandardizationSource(
     }
   }
   const factsJson = JSON.stringify(facts);
-  if (Buffer.byteLength(factsJson, 'utf8') > 262144)
+  const maxFactsBytes = kind === 'pdf-layout' ? 2097152 : 262144;
+  if (Buffer.byteLength(factsJson, 'utf8') > maxFactsBytes)
     return {
       status: 'blocked' as const,
       reason:

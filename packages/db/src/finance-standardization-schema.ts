@@ -100,7 +100,7 @@ export const financeStandardizationExtractions = schema.table(
     unique('standardization_extraction_revision').on(t.runId, t.revision),
     check(
       'standardization_extraction_bounds',
-      sql`${t.revision}>0 and octet_length(${t.envelope}::text)<=1048576 and ${t.sourceDigest} ~ '^[a-f0-9]{64}$' and ${t.extractionDigest} ~ '^[a-f0-9]{64}$'`,
+      sql`${t.revision}>0 and octet_length(${t.envelope}::text)<=case when ${t.envelope}->>'kind'='pdf-layout' then 4521984 else 1048576 end and coalesce(octet_length(${t.envelope}->>'factsJson'),0)<=case when ${t.envelope}->>'kind'='pdf-layout' then 2097152 else 262144 end and ${t.sourceDigest} ~ '^[a-f0-9]{64}$' and ${t.extractionDigest} ~ '^[a-f0-9]{64}$'`,
     ),
   ],
 );
@@ -141,7 +141,7 @@ export const financeStandardizationSpend = schema.table(
     ),
     check(
       'standardization_spend_bounds',
-      sql`${t.attempt} between 1 and 3 and ${t.inputTokenCeiling} between 1 and 20000 and ${t.outputTokenCeiling} between 1 and 4000 and ${t.reservedCadMinor}>0 and (${t.actualCadMinor} is null or ${t.actualCadMinor}>=0) and ${t.status} in ('reserved','completed','not-sent','indeterminate') and length(${t.requestKey}) between 1 and 200 and length(${t.pricingVersion}) between 1 and 128`,
+      sql`${t.attempt} between 1 and 3 and ${t.inputTokenCeiling} between 1 and (case when ${t.lineage}->>'promptVersion'='finance-standardization-proposal.v5' and ${t.lineage}->'promptProjection'->>'kind'='pdf-text.v1' then 64000 else 20000 end) and ${t.outputTokenCeiling} between 1 and 4000 and ${t.reservedCadMinor}>0 and (${t.actualCadMinor} is null or ${t.actualCadMinor}>=0) and ${t.status} in ('reserved','completed','not-sent','indeterminate') and length(${t.requestKey}) between 1 and 200 and length(${t.pricingVersion}) between 1 and 128`,
     ),
   ],
 );

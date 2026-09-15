@@ -2,7 +2,7 @@ import { z } from 'zod';
 import {
   FinanceStandardizationClaimSchema,
   type FinanceStandardizationClaim,
-  type FinanceImagePromptProjectionReceiptSchema,
+  type FinancePromptProjectionReceiptSchema,
 } from '@emdo/contracts';
 import type { DatabasePool } from './scoped-repository.js';
 export class PostgresFinanceStandardizationExecutionRepository {
@@ -133,10 +133,9 @@ export class PostgresFinanceStandardizationExecutionRepository {
           | 'finance-standardization-proposal.v1'
           | 'finance-standardization-proposal.v2'
           | 'finance-standardization-proposal.v3'
-          | 'finance-standardization-proposal.v4';
-        promptProjection?: z.infer<
-          typeof FinanceImagePromptProjectionReceiptSchema
-        >;
+          | 'finance-standardization-proposal.v4'
+          | 'finance-standardization-proposal.v5';
+        promptProjection?: z.infer<typeof FinancePromptProjectionReceiptSchema>;
       };
     },
   ) {

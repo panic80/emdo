@@ -249,7 +249,7 @@ echo UNEXPECTED_SUCCESS
 
 it.each([
   ['false', 1835008],
-  ['true', 2359296],
+  ['true', 2686976],
 ])('preserves capacity headroom with normalized=%s', (flag, expected) => {
   const source = readFileSync('infra/scripts/preflight-staging.sh', 'utf8');
   const start = source.indexOf('case "${EMDO_FINANCE_NORMALIZED');
@@ -259,6 +259,6 @@ it.each([
   );
   expect(result.status).toBe(0);
   expect(Number(result.stdout)).toBe(expected);
-  const steadyStateMiB = flag === 'true' ? 1760 : 1248;
+  const steadyStateMiB = flag === 'true' ? 2080 : 1248;
   expect(Number(result.stdout) / 1024 - steadyStateMiB - 192).toBe(352);
 });

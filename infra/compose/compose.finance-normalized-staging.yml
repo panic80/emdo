@@ -2,6 +2,10 @@
 # unless explicitly opted in. Provider access requires a separately authorized run.
 services:
   api:
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     env_file:
       - path: '${FINANCE_NORMALIZED_STAGING_API_ENV_FILE:?Run-scoped normalized API keyring env file is required}'
         required: true

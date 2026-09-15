@@ -138,3 +138,5 @@ export type {
 
 export * from './durable-finance-standardization.js';
 export * from './durable-finance-proposal-provider.js';
+
+export * from './finance-pdf-prompt-projection.js';
