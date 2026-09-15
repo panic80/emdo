@@ -4,6 +4,16 @@ import http from 'node:http';
 import { createGateway } from './server.mjs';
 test('real auth transport, gateway isolation and streamed upload transport', async (t) => {
   let calls = [];
+  let syncEndpoint = 'https://staging.example/powersync';
+  const syncPayload = {
+    schemaVersion: 1,
+    token: 'genuine-upstream-jwt',
+    expiresAt: '2026-09-17T12:30:00.000Z',
+    writeScope: {
+      clientId: 'actual-client',
+      spaces: [{ id: 'actual-space', visibility: 'private' }],
+    },
+  };
   const upstream = http.createServer(async (req, res) => {
     let body = '';
     for await (const c of req) body += c;
@@ -14,6 +24,9 @@ test('real auth transport, gateway isolation and streamed upload transport', asy
         '__Secure-emdo.session_token=real-token; Path=/; HttpOnly; Domain=localhost',
       );
       res.end('{}');
+    } else if (req.url.startsWith('/api/v1/sync/token?')) {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ ...syncPayload, endpoint: syncEndpoint }));
     } else if (req.url === '/') {
       res.setHeader('content-type', 'text/html');
       res.end('<body>Actual staging</body>');
@@ -179,6 +192,22 @@ test('real auth transport, gateway isolation and streamed upload transport', asy
     beforeUpgrade,
     'Rejected upgrades must never reach upstream',
   );
+  const translated = await request(
+    '/api/v1/sync/token?clientId=actual-client',
+    { headers: { cookie } },
+  );
+  assert.equal(translated.status, 200);
+  assert.deepEqual(await translated.json(), {
+    ...syncPayload,
+    endpoint: 'https://test.example/powersync',
+  });
+  syncEndpoint = 'https://untrusted.example/powersync';
+  const rejectedSync = await request(
+    '/api/v1/sync/token?clientId=actual-client',
+    { headers: { cookie } },
+  );
+  assert.equal(rejectedSync.status, 503);
+  assert.ok(!(await rejectedSync.text()).includes(syncPayload.token));
   const out = await request('/api/auth/sign-out', {
     method: 'POST',
     headers: {
