@@ -226,3 +226,26 @@ describe('finance operation boundary', () => {
     });
   });
 });
+
+it('accepts explicit normalized provenance for reads but rejects legacy creation', () => {
+  const transaction = examples.find(
+    (record) => record.recordType === 'transaction',
+  )!;
+  const record = {
+    ...transaction,
+    source: {
+      kind: 'normalized-ledger',
+      bookId: '11111111-1111-4111-8111-111111111111',
+      economicTransactionId: '22222222-2222-4222-8222-222222222222',
+      journalId: '33333333-3333-4333-8333-333333333333',
+    },
+  };
+  expect(validateFinanceRecord(record).status).toBe('accepted');
+  expect(validateFinanceRecordCreate(record).status).toBe('rejected');
+  expect(
+    validateFinanceRecord({
+      ...record,
+      source: { ...record.source, journalId: undefined },
+    }).status,
+  ).toBe('rejected');
+});

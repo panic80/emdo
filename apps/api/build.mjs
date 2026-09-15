@@ -80,10 +80,13 @@ const allowedExternal = (specifier) =>
     'file-type',
     'jose',
     'kysely',
+    'luxon',
     'music-metadata',
     'nanostores',
     'pdf-parse',
+    'pdfjs-dist',
     'pg',
+    'saxes',
     'zod',
   ].some(
     (packageName) =>
@@ -93,6 +96,7 @@ const allowedExternal = (specifier) =>
 const validateOutput = async (outputRoot, journal, metafile) => {
   const expected = [
     'audio-inspector-worker.js',
+    'pdf-report-worker.js',
     'index.js',
     'cli/bootstrap-owner.js',
     'cli/migrate.js',
@@ -177,6 +181,8 @@ export const buildApi = async ({ outputRoot = defaultOutputRoot } = {}) => {
     entryNames: '[dir]/[name]',
     entryPoints: {
       'audio-inspector-worker': 'src/production/audio-inspector-worker.ts',
+      'pdf-report-worker':
+        '../../packages/integrations/src/finance-documents/pdf-report-worker.ts',
       index: 'src/index.ts',
       'cli/bootstrap-owner': 'src/cli/bootstrap-owner.ts',
       'cli/migrate': 'src/cli/migrate.ts',

@@ -232,6 +232,48 @@ describeDatabase(
       }
     });
 
+    it('keeps finance helpers out of public runner authority while preserving application lot calculations', async () => {
+      const signatures = [
+        'emdo.check_invoice_review_draft()',
+        'emdo.enforce_finance_legacy_migration_run()',
+        'emdo.enforce_finance_legacy_migration_record()',
+        'emdo.reject_finance_legacy_migration_history_mutation()',
+        'emdo.lot_cost_at_quantity(numeric,numeric,numeric,integer)',
+      ];
+      for (const signature of signatures) {
+        const privileges = await admin.query(
+          `select exists (
+             select 1 from pg_catalog.pg_proc as procedure
+             cross join lateral pg_catalog.aclexplode(
+               coalesce(procedure.proacl, pg_catalog.acldefault('f', procedure.proowner))
+             ) as privilege
+             where procedure.oid = $1::regprocedure
+               and privilege.grantee = 0 and privilege.privilege_type = 'EXECUTE'
+           ) as public_execute,
+           pg_catalog.has_function_privilege($2, $1, 'EXECUTE') as reconciliation_execute,
+           pg_catalog.has_function_privilege($3, $1, 'EXECUTE') as retention_execute`,
+          [signature, reconciliationLogin, retentionLogin],
+        );
+        expect(privileges.rows).toEqual([
+          {
+            public_execute: false,
+            reconciliation_execute: false,
+            retention_execute: false,
+          },
+        ]);
+      }
+      await admin.query('set role emdo_app');
+      try {
+        await expect(
+          admin.query(
+            'select emdo.lot_cost_at_quantity(100, 1, 4, 2)::integer as cost',
+          ),
+        ).resolves.toMatchObject({ rows: [{ cost: 25 }] });
+      } finally {
+        await admin.query('reset role');
+      }
+    });
+
     it('stores and exactly replays one request-bound authorization start', async () => {
       await expect(
         checkPostgresGoogleOAuthRuntimeReadiness(runtime.scopedPool),

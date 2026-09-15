@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import * as projection from '../finance-legacy-activation-projection.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   applyTransactionLedgerOperation,
@@ -264,6 +265,8 @@ const poolFor = (respond: Respond) => {
 const scopedRows = (
   sql: string,
 ): readonly Record<string, unknown>[] | undefined => {
+  if (sql.includes('resolve_legacy_finance_route'))
+    return [{ route: { kind: 'legacy' } }];
   if (sql.includes('lock_active_request_scope')) return [{ authorized: true }];
   if (sql.includes('resolve_space_access_grant')) return [authorityRow];
   if (sql.includes('from emdo.spaces as space'))
@@ -272,6 +275,182 @@ const scopedRows = (
 };
 
 describe('PostgresFinanceSpecialistRecordRepository', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it('routes activated mixed pages, exact reads, and monthly budget inputs through current normalized authority', async () => {
+    const { pool } = poolFor((sql) => scopedRows(sql) ?? []);
+    const repository = new PostgresFinanceSpecialistRecordRepository(pool);
+    const route = {
+      kind: 'normalized' as const,
+      migrationId: ids.run,
+      bookId: ids.session,
+      activatedAt: '2026-09-14T00:00:00.000Z',
+    };
+    vi.spyOn(projection, 'resolveLegacyFinanceRoute').mockResolvedValue(route);
+    const tx = {
+      id: 'transaction-1',
+      legacyEntityId: 'transaction-1',
+      economicTransactionId: ids.rowOne,
+      journalId: ids.rowTwo,
+      financialAccountId: ids.audit,
+      legacyAccountId: 'account-1',
+      effectiveOn: '2026-08-26',
+      description: 'Posted bank movement',
+      createdAt: '2026-08-26T12:00:00.000Z',
+      updatedAt: '2026-08-26T12:00:00.000Z',
+      nativeAmount: '12.34',
+      currency: 'CAD' as const,
+      amountCadMinor: 1234,
+      originalFingerprint: null,
+      originalSourceHash: null,
+      originalSourceRow: null,
+      externalId: null,
+      categoryId: 'category-1',
+    };
+    const ready = {
+      kind: 'ready' as const,
+      accounts: [],
+      archives: [],
+      transactions: [tx],
+      nextCursor: null,
+      nextEntityId: null,
+    };
+    vi.spyOn(projection, 'readLegacyFinanceCompatibility').mockResolvedValue(
+      ready,
+    );
+    const page = vi
+      .spyOn(projection, 'readLegacyFinanceCompatibilityPage')
+      .mockResolvedValue({
+        kind: 'ready',
+        entries: [
+          {
+            rowId: ids.rowOne,
+            entityId: tx.id,
+            entityType: 'finance.transaction',
+          },
+        ],
+        projection: ready,
+        nextCursor: ids.rowOne,
+      });
+    const listed = await repository.list({
+      scope,
+      recordTypes: ['transaction'],
+      cursor: ids.grant,
+      limit: 1,
+    });
+    expect(listed).toMatchObject({
+      nextCursor: ids.rowOne,
+      records: [
+        {
+          source: { kind: 'normalized-ledger', bookId: route.bookId },
+          originalAmountCadMinor: 1234,
+        },
+      ],
+    });
+    expect(page).toHaveBeenCalledWith(
+      expect.anything(),
+      route,
+      {
+        workspaceId: ids.household,
+        sourceSpaceId: ids.privateSpace,
+        sourceOwnerUserId: ids.user,
+      },
+      { limit: 1, cursor: ids.grant, entityTypes: ['finance.transaction'] },
+    );
+    expect(
+      await repository.getOwnedRecord({ scope, recordId: tx.id }),
+    ).toMatchObject({ source: { kind: 'normalized-ledger' } });
+    page.mockResolvedValueOnce({
+      kind: 'ready',
+      entries: [
+        {
+          rowId: ids.rowOne,
+          entityId: tx.id,
+          entityType: 'finance.transaction',
+        },
+      ],
+      projection: ready,
+      nextCursor: null,
+    });
+    expect(
+      await repository.listBudgetTransactions({
+        scope,
+        month: '2026-08',
+        reviewedCommittedEvidenceOnly: true,
+      }),
+    ).toMatchObject([{ categoryId: 'category-1' }]);
+    expect(page).toHaveBeenLastCalledWith(
+      expect.anything(),
+      route,
+      expect.anything(),
+      { limit: 500, entityTypes: ['finance.transaction'], month: '2026-08' },
+    );
+    const normalizedAccount = {
+      id: 'account-1',
+      financialAccountId: ids.audit,
+      name: 'Bank',
+      createdAt: tx.createdAt,
+      updatedAt: tx.updatedAt,
+      accountKind: 'chequing',
+      normalizedAccountKind: 'bank',
+      active: false,
+      currency: 'CAD' as const,
+      openingBalanceCadMinor: 0 as const,
+      balanceCadMinor: null,
+    };
+    const config = budget();
+    page.mockResolvedValueOnce({
+      kind: 'ready',
+      entries: [
+        {
+          rowId: ids.rowOne,
+          entityId: normalizedAccount.id,
+          entityType: 'finance.account',
+        },
+        {
+          rowId: ids.rowTwo,
+          entityId: config.id,
+          entityType: 'finance.budget',
+        },
+      ],
+      projection: {
+        ...ready,
+        transactions: [],
+        accounts: [normalizedAccount],
+        archives: [
+          {
+            entityType: 'finance.budget',
+            entityId: config.id,
+            payload: config,
+            tombstoned: false,
+            authoritative: false,
+          },
+        ],
+      },
+      nextCursor: null,
+    });
+    expect(await repository.list({ scope, limit: 2 })).toMatchObject({
+      records: [
+        {
+          recordType: 'account',
+          active: false,
+          source: { kind: 'normalized-ledger' },
+        },
+        config,
+      ],
+    });
+    await expect(
+      repository.createManualTransaction({
+        ...command('manual-transaction-create'),
+        record: transaction(),
+      }),
+    ).rejects.toThrow(
+      'Normalized Finance records require explicit book operations',
+    );
+    vi.mocked(projection.resolveLegacyFinanceRoute).mockRejectedValueOnce(
+      new Error('legacy-finance-route-forbidden'),
+    );
+    await expect(repository.list({ scope, limit: 1 })).rejects.toThrow();
+  });
   it('rejects missing, malformed, and extra registered-agent invocation lineage before connecting', async () => {
     const { pool } = poolFor(() => []);
     const repository = new PostgresFinanceSpecialistRecordRepository(pool);

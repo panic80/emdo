@@ -215,7 +215,9 @@ const requireExactBrowserOrigin = (
 
 const hasAuthRequestBodySignal = (request: FastifyRequest): boolean =>
   request.body !== undefined ||
-  request.headers['content-length'] !== undefined ||
+  // Browsers and HTTP proxies may explicitly frame an absent body as zero bytes.
+  (request.headers['content-length'] !== undefined &&
+    request.headers['content-length'] !== '0') ||
   request.headers['content-type'] !== undefined ||
   request.headers['transfer-encoding'] !== undefined;
 

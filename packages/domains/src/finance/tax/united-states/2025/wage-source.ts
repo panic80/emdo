@@ -1,0 +1,17 @@
+import {
+  deepFreeze,
+  FinanceTaxAuthorityReferenceSchema,
+} from '@emdo/contracts';
+export const US_WAGE_CORRECTION_SOURCE = deepFreeze(
+  FinanceTaxAuthorityReferenceSchema.parse({
+    id: 'irs-2025-iw2w3',
+    authority: 'Internal Revenue Service',
+    title: '2025 General Instructions for Forms W-2 and W-3',
+    url: 'https://www.irs.gov/pub/irs-prior/iw2w3--2025.pdf',
+    retrievedAt: '2026-09-14T05:33:24.627990Z',
+    documentHash:
+      'bfecbc99720cc8fbedb50f6e698ac1f6fa758dbfa5df775715446b7cc30bae2b',
+    locator:
+      'Specific Instructions for Form W-2c, Boxes1 through20: previous original or prior W-2c values and correct information',
+  }),
+);

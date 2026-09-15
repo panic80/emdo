@@ -183,6 +183,72 @@ describe('PostgresSyncRepository', () => {
     );
   });
 
+  it.each([
+    ['23514', 'legacy-finance-writer-retired', true],
+    ['23514', 'unrelated-constraint', false],
+    ['42501', 'legacy-finance-writer-retired', false],
+  ])(
+    'isolates only the exact retirement constraint (%s, %s)',
+    async (code, message, retired) => {
+      const failure = Object.assign(new Error(message), { code });
+      const { pool, query } = poolFor((sql) => {
+        if (sql.includes('lock_active_request_scope'))
+          return [{ authorized: true }];
+        if (sql.includes('insert into emdo.sync_entities')) throw failure;
+        if (sql.includes('insert into emdo.sync_operation_receipts'))
+          return [{ operation_id: ids.operation }];
+        return [];
+      });
+      const result = new PostgresSyncRepository(pool).executeOnce({
+        operation: {
+          ...operation,
+          entity: { type: 'finance.budget', id: 'august' },
+          mutation: {
+            kind: 'create',
+            payload: {
+              spaceId: ids.space,
+              value: {
+                id: 'august',
+                currency: 'CAD',
+                allocationsCadMinor: { groceries: 50000 },
+              },
+            },
+          },
+        },
+        fingerprint: 'a'.repeat(64),
+        context,
+      });
+      if (retired) {
+        await expect(result).resolves.toMatchObject({
+          kind: 'executed',
+          outcome: {
+            status: 'conflict',
+            code: 'repository-rejected',
+            disposition: 'terminal',
+            conflicts: [
+              { field: 'legacy-finance-writer-retired', material: true },
+            ],
+          },
+        });
+        const statements = query.mock.calls.map(([sql]) => sql);
+        expect(statements).toContain(
+          'rollback to savepoint legacy_finance_write',
+        );
+        expect(statements.at(-2)).toContain(
+          'insert into emdo.sync_operation_receipts',
+        );
+        expect(statements.at(-1)).toBe('commit');
+      } else {
+        await expect(result).rejects.toThrow(message);
+        expect(
+          query.mock.calls.some(([sql]) =>
+            sql.includes('insert into emdo.sync_operation_receipts'),
+          ),
+        ).toBe(false);
+      }
+    },
+  );
+
   it('replays an exact receipt without applying another mutation', async () => {
     const { pool, query } = poolFor((sql) => {
       if (sql.includes('lock_active_request_scope'))

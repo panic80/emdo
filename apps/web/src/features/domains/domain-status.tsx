@@ -56,11 +56,28 @@ export function DomainSyncStatus() {
           <ul>
             {domain.conflicts.map((conflict) => (
               <li key={conflict.operationId}>
-                <code>{conflict.code}</code>
+                {conflict.code === 'repository-rejected' &&
+                conflict.conflicts.some(
+                  ({ field }) => field === 'legacy-finance-writer-retired',
+                ) ? (
+                  <span>
+                    This Finance change was not saved because this space now
+                    uses the normalized ledger. Review and re-enter it in the
+                    book.
+                  </span>
+                ) : (
+                  <code>{conflict.code}</code>
+                )}
                 {conflict.currentRevision !== undefined ? (
                   <span>Canonical revision {conflict.currentRevision}</span>
                 ) : null}
-                {conflict.conflicts.length > 0 ? (
+                {conflict.conflicts.length > 0 &&
+                !(
+                  conflict.code === 'repository-rejected' &&
+                  conflict.conflicts.some(
+                    ({ field }) => field === 'legacy-finance-writer-retired',
+                  )
+                ) ? (
                   <span>
                     {conflict.conflicts
                       .map(

@@ -54,6 +54,7 @@ describe('integration package subpath exports', () => {
     expect(commerce).not.toHaveProperty('resolveApprovedCommerceConnector');
     expect(commerce).not.toHaveProperty('runFixtureConnectorConformance');
     expect(financeDocuments).toHaveProperty('createFinanceDocumentStorage');
+    expect(financeDocuments).toHaveProperty('extractReviewedFinanceImageTable');
     expect(financeDocuments).toHaveProperty('parseFinanceDocumentMetadata');
     expect(financeDocuments).not.toHaveProperty('VaultCrypto');
   });

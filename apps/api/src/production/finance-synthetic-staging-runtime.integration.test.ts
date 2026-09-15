@@ -890,7 +890,29 @@ describeDatabase(
         });
         expect(accepted).toMatchObject({ status: 'accepted', replayed: false });
         expect(observedRunTurnError).toBeUndefined();
-        expect(observedRunTurnFailureCode).toBeUndefined();
+        expect(
+          observedRunTurnFailureCode,
+          JSON.stringify({
+            runnerErrors: observedSyntheticRunnerErrors,
+            outcomes: (
+              observedRunTurnResult as {
+                specialistOutcomes?: {
+                  status: string;
+                  reasonCode?: string;
+                  safeMessage?: string;
+                  safeError?: { code: string };
+                }[];
+              }
+            )?.specialistOutcomes?.map(
+              ({ status, reasonCode, safeMessage, safeError }) => ({
+                status,
+                reasonCode,
+                safeMessage,
+                code: safeError?.code,
+              }),
+            ),
+          }),
+        ).toBeUndefined();
         expect(observedRunTurnResult).toMatchObject({
           status: 'needs-approval',
         });

@@ -29,6 +29,13 @@ const pins = [
       'sha256:27985295bdb22a1ef8f712863210bd5877c0f3006494a593e86b3fe0fa55467e',
     occurrences: 1,
   },
+  {
+    repository: 'library/debian',
+    tag: 'bookworm-slim',
+    digest:
+      'sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171',
+    occurrences: 1,
+  },
 ];
 
 const acceptedIndexes = new Set([
@@ -81,7 +88,10 @@ for (const pin of pins) {
     );
   }
 
-  const reference = `${pin.repository === 'library/node' ? 'node' : pin.repository}:${pin.tag}@${pin.digest}`;
+  const imageName = pin.repository.startsWith('library/')
+    ? pin.repository.slice('library/'.length)
+    : pin.repository;
+  const reference = `${imageName}:${pin.tag}@${pin.digest}`;
   const count = dockerfile.split(reference).length - 1;
   if (count !== pin.occurrences) {
     throw new Error(

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "cra-5006-r-2025-etext",
+    "authority": "Canada Revenue Agency",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5006-r/5006-r-25e.txt",
+    "formVersion": "5006-R E (25)",
+    "retrievedAt": "2026-09-13T23:54:00.557053Z",
+    "documentHash": "1506da18ccf68c528d23b9e43b1d129a922de28784a821976e5c1c32ce63ea71",
+    "bytes": 27144,
+    "localFile": "5006-r-25e.txt"
+  },
+  {
+    "id": "cra-5006-c-2025-etext",
+    "authority": "Canada Revenue Agency",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5006-c/5006-c-25e.txt",
+    "formVersion": "5006-C E (25)",
+    "retrievedAt": "2026-09-13T23:54:03.658936Z",
+    "documentHash": "fde08130c7bba00e02b0c6dd8bbd5cfc73deae942be7b9b9206cf247943845ab",
+    "bytes": 11376,
+    "localFile": "5006-c-25e.txt"
+  },
+  {
+    "id": "cra-5000-d1-2025-etext",
+    "authority": "Canada Revenue Agency",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-d1/5000-d1-25e.txt",
+    "formVersion": "5000-D1 E (25)",
+    "retrievedAt": "2026-09-13T23:54:04.751079Z",
+    "documentHash": "4842910eae22963bcf81cbf5588dbc154277429ce8b9c6f64f0a6f79b1457ad4",
+    "bytes": 25145,
+    "localFile": "5000-d1-25e.txt"
+  },
+  {
+    "id": "cra-5006-pc-2025-html",
+    "authority": "Canada Revenue Agency",
+    "url": "https://www.canada.ca/en/revenue-agency/services/forms-publications/tax-packages-years/general-income-tax-benefit-package/ontario/5006-pc.html",
+    "formVersion": "2025 Ontario tax information",
+    "retrievedAt": "2026-09-14T00:16:59.104296Z",
+    "documentHash": "9674e44418ce85370d19b2df3b0e35997fdaf416ecb8ac7652bebbcbffafd999",
+    "bytes": 127459,
+    "localFile": "5006-pc-2025.html.txt"
+  },
+  {
+    "id": "cra-5000-s9-2025-etext",
+    "authority": "Canada Revenue Agency",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s9/5000-s9-25e.txt",
+    "formVersion": "5000-S9 E (25)",
+    "retrievedAt": "2026-09-15T05:00:00.000Z",
+    "documentHash": "86988baa6d4a6918d202ec7beb167e57c9ae42136bbf2ca19125aada2b26cb06",
+    "bytes": 5405,
+    "localFile": "5000-s9-25e.txt"
+  },
+  {
+    "id": "cra-p113-2025-html",
+    "authority": "Canada Revenue Agency",
+    "url": "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/p113/p113-gifts-income-tax.html",
+    "formVersion": "P113 (E) Rev. 25",
+    "retrievedAt": "2026-09-15T05:18:00.000Z",
+    "documentHash": "b9f89b855080fb4b632adad9b99a5b77649a0d4d025549769667282e7c1b5745",
+    "bytes": 117817,
+    "localFile": "p113-gifts-income-tax-2025.html"
+  }
+]

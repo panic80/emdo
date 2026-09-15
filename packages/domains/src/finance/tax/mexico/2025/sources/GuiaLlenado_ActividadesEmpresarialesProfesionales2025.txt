@@ -1,0 +1,1506 @@
+1 / 97
+Contenido
+
+I.         Objetivo ........................................................................................................................ 3
+II.        Acceso al sistema ....................................................................................................... 3
+      A.         Acceso con Contraseña ...................................................................................... 5
+      B.         Acceso con e.firma .............................................................................................. 5
+III.         Presentación de la declaración ............................................................................ 5
+      A.         Menú principal ..................................................................................................... 5
+      B.         Presentar declaración ........................................................................................ 8
+      C.         Configuración de la declaración ...................................................................... 9
+IV.          Llenado de la declaración ................................................................................... 12
+           1.       Ingresos ........................................................................................................... 12
+           2.       Deducciones personales .............................................................................. 54
+           2.1 Deducciones personales precargadas ......................................................... 56
+           2.2 Deducciones personales eliminadas ............................................................ 63
+           2.3 Deducciones personales “Sin clasificación”: ............................................... 64
+           3.       Determinación ................................................................................................ 67
+           4.       Pago .................................................................................................................. 85
+V.         Vista previa y envío de la declaración ................................................................. 93
+VI.          Acuse de recibo de la declaración ..................................................................... 95
+VII.         Documentos relacionados .................................................................................. 97
+
+
+
+
+                                                                                  2 / 97
+      I.     Objetivo
+Para facilitar el cumplimiento de las obligaciones fiscales, se pone a disposición de las personas físicas que
+tributan en el Régimen de Actividades Empresariales y Servicios Profesionales una guía de llenado para la
+presentación de la declaración anual, a fin de que conozcan las funcionalidades e información precargada que
+ofrece el aplicativo Declaraciones y Pagos.
+
+
+      II.    Acceso al sistema
+
+Ingresa al Portal del SAT en sat.gob.mx y da clic en Trámites y servicios.
+
+
+
+
+                                                               3 / 97
+Dentro del apartado Trámites y servicios, da clic en Declaraciones para personas.
+
+
+
+
+Selecciona la opción Anual y en Pasos a seguir en 1. Ingresa al servicio, da clic en el ícono
+
+
+
+
+                                                               4 / 97
+        A.     Acceso con Contraseña
+
+Captura el Registro Federal de Contribuyentes (RFC), Contraseña, captcha y da clic en Enviar.
+
+
+
+        B.     Acceso con e.firma
+Carga el certificado (.cer), la clave privada (.key), captura la contraseña de la clave privada y da clic en Enviar.
+
+
+
+
+        III.    Presentación de la declaración
+
+        A.     Menú principal
+
+Al ingresar al aplicativo, se visualiza un mensaje relacionado con la importancia de habilitar y tener actualizados
+los mecanismos de comunicación en tu Buzón Tributario. Para continuar, da clic en Aceptar.
+
+
+
+
+Se muestra el menú con las siguientes opciones:
+
+   1.    Presentar declaración
+   2.    Consultar declaración
+   3.    Impresión de acuse
+   4.    Declaraciones pagadas
+
+
+
+
+                                                                5 / 97
+1.   Presentar declaración. Ingresa a la configuración y formulario de la declaración que desees presentar
+     de acuerdo a los ingresos percibidos en el ejercicio.
+
+
+
+
+2.   Consultar declaración. Realiza la consulta de la declaración por ejercicio fiscal, además, descarga e
+     imprime los documentos que se generan en este menú.
+
+
+
+
+                                                          6 / 97
+3.   Impresión de acuse. Realiza la consulta por ejercicio fiscal e imprime el acuse de recibo de la declaración
+     anual correspondiente.
+
+
+
+
+4.   Declaraciones pagadas. Realiza la consulta de las declaraciones pagadas por ejercicio fiscal, además,
+     descarga e imprime los documentos que se generan en este menú.
+
+
+
+
+                                                             7 / 97
+      B.    Presentar declaración
+
+Para iniciar con la captura de información, elige del menú principal la opción Presentar declaración e ingresa al
+Perfil del contribuyente.
+
+
+
+
+                                                               8 / 97
+      C.    Configuración de la declaración
+
+Selecciona Ejercicio, Tipo de declaración y Periodo que presentas. Si es la primera vez que presentas la
+declaración anual, en el campo Tipo de declaración selecciona Normal o, en su caso, el tipo de declaración
+Complementaria.
+
+
+
+
+En el apartado Ingresos a declarar, se muestran preseleccionadas las casillas del tipo de ingreso que percibiste
+durante el ejercicio.
+
+
+
+
+                                                              9 / 97
+Cuando el formulario identifica que se cuenta con información precargada, derivado de lo reportado por
+terceros o por pagos provisionales presentados durante el ejercicio, se impide que se desmarque el tipo de
+ingreso que aparezca señalado y se muestra un mensaje de carácter informativo.
+
+
+
+
+Posteriormente, selecciona alguna de las opciones que muestra la pregunta: ¿Obtuviste ingresos y pagaste
+impuestos en el extranjero o tienes impuesto pendiente de acreditar?, responde Sí o No, según corresponda
+y da clic en Siguiente.
+
+
+
+
+                                                          10 / 97
+Visualiza la pregunta ¿Estás obligado a presentar la información sobre tu situación fiscal (ISSIF) en términos
+del Art. 32-H del CFF?, responde Sí o No y posteriormente, da clic en Siguiente.
+
+
+
+
+Cuando el aplicativo esté cargando la información, muestra un mensaje que señala las fuentes de información
+junto con la fecha de corte, la cual es utilizada para la precarga de tu declaración anual. Para continuar, da clic
+en Aceptar.
+
+
+
+
+                                                               11 / 97
+       IV.    Llenado de la declaración
+
+La declaración se compone de los apartados:
+
+  1.    Ingresos
+  2.    Deducciones personales
+  3.    Determinación
+  4.    Pago
+
+
+
+
+  Importante. No se omite mencionar que, el contribuyente debe completar cada apartado de la declaración
+  antes de avanzar al siguiente.
+
+
+
+
+        1.   Ingresos
+
+
+  Este apartado se encuentra integrado de las secciones:
+
+        1.1 Datos de Nómina
+        1.2 Información sobre situación fiscal
+        1.3 Actividad empresarial y servicios profesionales (Honorarios)
+
+
+
+
+                                                               12 / 97
+    1.1 Datos de Nómina
+
+En esta sección, captura la información solicitada.
+
+      a)   Datos de comprobantes de pago de nómina
+
+Se muestra tanto el Total de nómina como el resumen de facturas emitidas con complemento de nómina,
+así como el ISR retenido, ISR enterado si existe alguna diferencia entre los comprobantes de nómina y el
+ISR enterado.
+
+
+
+
+      b)   Determinación de la nómina a deducir
+
+Esta se encuentra dividida en salarios y asimilados, por lo que debes verificar tu información y registrar lo
+necesario en los campos obligatorios.
+
+       • Nómina por sueldos y salarios. Para visualizar la información del ISR enterado, da clic en Ver
+         detalle.
+
+
+
+
+                                                           13 / 97
+• Nómina por sueldos y salarios no deducible. Da clic en Capturar para registrar la información
+  correspondiente a los importes por otros conceptos no deducibles por sueldos y salarios.
+
+
+
+
+                                                14 / 97
+ • Nómina por sueldos y salarios deducible. Una vez que hayas registrado la parte de la nómina no
+   deducible, se determina la nómina deducible por sueldos y salarios.
+
+
+
+
+c)   Asimilados a salarios
+
+ • Nómina por asimilados a salarios. Da clic en Ver detalle, para visualizar la información del ISR
+   enterado.
+
+
+
+
+                                                  15 / 97
+• Nómina por asimilados a salarios no deducible. Captura la información que corresponde a los
+  conceptos Viáticos, Anticipos de rendimientos de sociedades civiles y Otros conceptos no
+  deducibles.
+
+
+
+
+                                               16 / 97
+       • Nómina por asimilados a salarios deducible. Una vez que hayas registrado la parte de la nómina
+         no deducible, se determina la nómina deducible por asimilados a salarios.
+
+
+
+
+      d)   Sueldos, salarios y asimilados a salarios
+
+Una vez que hayas determinado la nómina deducible y no deducible por salarios y asimilados a salarios, en
+esta sección puedes visualizar dicha información, determinando el total de la nómina deducible y no deducible
+por ambos conceptos.
+
+
+
+
+      e)   Subsidio para el empleo
+
+Visualiza toda tu información desde el pagado en nómina, el acreditado en pagos provisionales y definitivos,
+así como los remanentes pendientes de acreditar de ejercicios anteriores.
+
+
+
+
+                                                           17 / 97
+       1.2 Información sobre situación fiscal
+
+En el caso de haber seleccionado la opción Sí a la pregunta ¿Estás obligado a presentar la información sobre
+tu situación fiscal (ISSIF) en términos del Art. 32-H del CFF? procede a cargar la información correspondiente
+de acuerdo a la guía para el llenado de la ISSIF, la cual puedes consultar en el Portal del SAT, en el apartado
+Declaración para personas, sección Material adicional / Documentos relacionados.
+
+
+
+
+       1.3 Actividad empresarial y servicios profesionales (Honorarios)
+
+   En esta sección se visualizan los módulos:
+
+         a)   Datos iniciales
+         b)   Ingresos
+         c)   Deducciones autorizadas
+         d)   Estímulos fiscales
+         e)   Resultado fiscal
+         f)   Pagos provisionales
+         g)   Retenciones de ISR
+         h)   Estado de posición financiera
+
+
+
+
+                                                             18 / 97
+a)   Datos iniciales
+
+ • ¿Los ingresos fueron obtenidos a través de copropiedad o sociedad conyugal? Selecciona
+   alguna de las opciones que muestra el campo. En caso de encontrarte en el supuesto, elige Sí, en
+   caso contrario, elige No.
+
+
+
+
+     Importante. Al seleccionar No, los campos Ingresos cobrados, Deducciones autorizadas, Pagos
+     provisionales efectuados en el ejercicio e ISR retenido por personas morales muestran
+     información precargada de los pagos provisionales presentados durante el ejercicio. Cuando elijes
+     Sí, los campos antes referidos adicionalmente se habilitan para su modificación, en caso de que lo
+     consideres necesario.
+
+
+
+ • Indica si aplicas o no la facilidad de comprobación establecida en la Resolución de Facilidades
+   Administrativas (RFA). Selecciona alguna de las opciones que muestra el campo. En caso de
+   encontrarte en el supuesto, elige Sí, en caso contrario, elige No.
+
+
+
+
+                                                     19 / 97
+     Nota: Cuando seleccionas la opción Sí, en los módulos Ingresos y Deducciones autorizadas se
+     habilitan los campos y conceptos que corresponden a la aplicación de esta facilidad administrativa.
+
+
+b)   Ingresos
+
+ • Total de ingresos. Da clic en Detalle para capturar la información necesaria.
+
+
+
+
+     Dentro de la ventana emergente, en la pestaña Detalle de Ingresos, en Agregar captura los
+     conceptos a los que corresponden los ingresos obtenidos durante el ejercicio.
+
+
+
+
+                                                     20 / 97
+ Se habilitan los campos Concepto y Monto detallado para que procedas a la selección y captura
+ del Detalle de ingresos.
+
+
+
+
+Cabe mencionar que, específicamente, para que se muestre la opción Servicios profesionales
+(derechos de autor) debes contar con el Régimen de las Personas Físicas con Actividades
+Empresariales y Profesionales (612) y la obligación denominada Declarar mensualmente el ISR
+por Servicios Profesionales (31), o bien, el citado régimen con la obligación Declarar
+mensualmente el ISR por actividades empresariales (33) y una o alguna de las siguientes
+actividades económicas:
+
+• Transmisión temporal de derechos patrimoniales u otorgamiento temporal de licencias de uso a
+  terceros por obras de su autoría.
+• Creación de obras como ideas o frases publicitarias, logotipos, emblemas, sellos distintivos,
+  diseños modelos industriales, manuales operativos u obras de arte aplicado.
+• Artistas y técnicos independientes.
+• Creación de obras artísticas escritas, autorizando a terceros su publicación en periódicos y
+  revistas, que se destines para su enajenación al público.
+• Reproducción en serie de grabaciones de obras musicales, permitiendo a terceros su publicación,
+  siempre que los bienes que contengan las grabaciones, se destinen para su enajenación al
+  público.
+
+
+
+
+                                                21 / 97
+Cuando se cumplen con las características fiscales antes citadas, dentro del Detalle de ingresos se
+habilita, el ingreso por Servicios profesionales (Derechos de autor).
+
+
+
+
+                                                22 / 97
+En caso de obtener ingresos exclusivos por autotransporte de carga federal, puedes visualizar y
+seleccionar el concepto que corresponde a este tipo de ingresos para la aplicación de las facilidades
+administrativas.
+
+
+
+
+Una vez concluido el registro, visualiza la información que capturaste.
+
+
+
+
+Nota: En caso de que requieras realizar más de un registro, repite el procedimiento antes
+señalado.
+
+
+
+
+                                                 23 / 97
+Para editar o eliminar un registro, da clic en loa íconos que se encuentran del lado derecho.
+
+
+
+
+Para visualizar los ingresos manifestados en los pagos provisionales, ve a la pestaña Detalle de
+ingresos de pagos provisionales AEyP, al concluir con la captura y revisión de esta ventana,
+selecciona Cerrar.
+
+
+
+
+Nota: En caso de que requieras modificar los ingresos de tu declaración anual, es necesario que
+presentes declaraciones complementarias de los pagos provisionales.
+
+
+
+
+                                                24 / 97
+• Derechos de autor. Este campo se habilita cuando en el detalle del campo anterior hayas
+  seleccionado el concepto Servicios profesionales (Derechos de autor), de ser el caso, captura el
+  importe que corresponda.
+
+
+
+
+• Otros ingresos. Registra información en el campo cuando hayas obtenido ingresos adicionales a
+  los declarados en pagos provisionales.
+
+
+
+
+• Ingresos acumulables. Es el resultado del Total de ingresos menos, en su caso, Ingresos exentos
+  por Derechos de autor, más Otros ingresos.
+
+
+
+
+                                                 25 / 97
+c)   Deducciones autorizadas
+
+ • Deducciones autorizadas. Da clic en Detalle para capturar la información necesaria.
+
+
+
+
+     Dentro de la ventana emergente, en la pestaña Desglose de deducciones autorizadas, en
+     Agregar captura los conceptos a los que corresponden las deducciones autorizadas y deducción
+     inmediata de inversiones realizadas durante el ejercicio.
+
+
+
+
+                                                  26 / 97
+Se habilitan los campos Tipo de deducción, Concepto y Monto detallado para que procedas a la
+selección y captura del detalle de erogaciones efectuadas durante el ejercicio.
+
+
+
+
+Una vez concluido el registro, visualiza la información que capturaste.
+
+
+
+
+Nota: En caso de que requieras realizar más de un registro, repite el procedimiento antes
+señalado.
+
+
+
+                                                27 / 97
+Para editar o eliminar un registro, da clic en los íconos que se encuentran del lado derecho.
+
+
+
+
+Posteriormente, en Deducción inmediata de inversiones en Agregar se habilitan diversos
+campos para que procedas a la selección y captura del detalle que corresponda. Al concluir, da clic
+en Guardar.
+
+
+
+
+                                                28 / 97
+  Para visualizar las deducciones autorizadas manifestadas en los pagos provisionales, ve a la
+  pestaña Detalle de declaraciones provisionales AEyP, al concluir con la captura y revisión de esta
+  ventana selecciona Cerrar.
+
+
+
+
+  Nota: En caso de que requieras modificar las deducciones autorizadas de tu declaración anual, es
+  necesario que presentes declaraciones complementarias de los pagos provisionales.
+
+• Otras deducciones. Registra información en este campo cuando hayas hecho erogaciones por
+  otras deducciones a las declaradas en pagos provisionales, para ello, da clic en Detalle.
+
+
+
+
+                                                  29 / 97
+  Dentro de la ventana emergente, en Agregar captura los conceptos que se solicitan.
+
+
+
+
+  Se habilitan los campos Concepto y Monto detallado para que procedas a la selección y captura
+  del detalle. Al concluir, da clic en Guardar y después en Cerrar.
+
+
+
+
+• Total de deducciones autorizadas. Es el resultado de Deducciones autorizadas, más Otras
+  deducciones.
+
+
+
+
+                                                30 / 97
+d)   Estímulos fiscales
+
+ • ¿Tienes estímulos fiscales que no hayas deducido en pagos provisionales? Selecciona alguna
+   de las opciones que muestra el campo. En caso de que quieras aplicar estímulos fiscales elige Sí,
+   en caso contrario, elige No.
+
+
+
+
+     Cuando eliges la opción Sí en el campo anterior, el aplicativo habilita los campos Estímulos por
+     contratación de personas con discapacidad, Estímulos por contratación de adultos mayores
+     en este supuesto y Total de estímulos fiscales, captura los importes en los campos que
+     corresponda.
+
+
+
+
+                                                    31 / 97
+• ¿Tienes estímulos que acreditar contra el impuesto causado? Selecciona alguna de las opciones
+  que muestra el campo. En caso de que quieras acreditar estímulos fiscales elige Sí, en caso
+  contrario, elige No.
+
+
+
+
+  Cuando eliges la opción Sí en el campo anterior, el aplicativo muestra el campo Total de estímulos
+  acreditables, en este supuesto, selecciona Detalle para registrar los conceptos que correspondan.
+
+
+
+
+                                                  32 / 97
+Posteriormente, en la ventana emergente da clic en Agregar para iniciar la captura de la
+información.
+
+
+
+
+Se habilitan campos Estímulos y Monto detallado para que procedas a la selección y captura de
+la información que corresponda, da clic en Guardar y al finalizar en Cerrar.
+
+
+
+
+Nota: En caso de que requieras realizar más de un registro, repite el procedimiento antes
+señalado.
+
+
+
+
+                                             33 / 97
+e)   Resultado fiscal
+
+     En caso de que el formulario advierta que no se tienen Ingresos (0) y aplique deducciones
+     autorizadas mayores a cero (0), el aplicativo muestra un mensaje informativo, indicando que la
+     información es susceptible de verificación por parte de la autoridad.
+
+
+
+
+     En caso contrario continua con el llenado como a continuación se indica:
+
+
+
+ • Utilidad fiscal. Es el resultado de los ingresos obtenidos durante el ejercicio, menos deducciones
+   autorizadas, este campo se encuentra inhabilitado para captura, ya que el aplicativo realiza el
+   cálculo y muestra la precarga del monto.
+
+
+
+
+ • Deducción del 8% de ingresos propios sin documentación o sin requisitos fiscales, dedicados
+   exclusivamente al autotransporte. Este campo se habilita siempre que en el Total de ingresos
+   hayas seleccionado el concepto Ingresos exclusivos por autotransporte de carga federal, ya que
+   es el indicador para el monto por acreditar.
+
+
+
+
+                                                     34 / 97
+• Utilidad fiscal del ejercicio. Es el resultado de la Utilidad fiscal, menos la Deducción del 8% de
+  ingresos propios sin documentación o sin requisitos fiscales, dedicados exclusivamente al
+  autotransporte, este campo se encuentra inhabilitado para captura, ya que el aplicativo realiza el
+  cálculo y muestra la precarga del monto.
+
+
+
+
+• PTU pagada en el ejercicio. Este campo se encuentra inhabilitado para captura, ya que el aplicativo
+  realiza el cálculo y muestra la precarga del monto. En este caso, selecciona Detalle para visualizar
+  y registrar los conceptos que correspondan.
+
+
+
+
+                                                   35 / 97
+   Posteriormente, en la ventana emergente captura la información que corresponda, según sea el
+   caso y al finalizar, da clic en Cerrar.
+
+
+
+
+• Pérdidas fiscales de ejercicios anteriores, aplicadas en el ejercicio. Para realizar la captura de
+  la información, selecciona Detalle.
+
+
+
+
+                                                  36 / 97
+Posteriormente, en la ventana emergente visualiza la precarga de los remanentes de las pérdidas
+de ejercicios anteriores, aplicadas en el ejercicio procede a revisar tu información y responde a
+la pregunta: ¿Aceptas y reconoces la información precargada? según corresponde, si no
+reconoces la información precargada procede a eliminar el o los registros y, en su caso, da clic en
+Agregar para añadir las pérdidas que consideres necesarias.
+
+
+
+
+Se habilitan los campos Año en que se generó la pérdida y Pérdida pendiente de aplicar para
+que procedas a la selección y captura de la información que corresponda.
+
+
+
+
+                                                37 / 97
+       En Pérdida Fiscal actualizada selecciona Detalle para realizar la captura de la información
+       necesaria, al concluir, da clic en Cerrar.
+
+
+
+
+       Al capturar la información, da clic en Guardar y al finalizar con la captura de registros, en Cerrar.
+
+
+
+Cuando se agregan pérdidas fiscales de ejercicios anteriores, se visualiza un mensaje informativo para
+el contribuyente en el que se le indica que la modificación puede afectar el cálculo del impuesto sobre la
+renta (ISR) y que estará sujeta a verificación.
+
+
+
+
+                                                         38 / 97
+ • Utilidad gravable. Es el resultado de Utilidad fiscal, menos las aplicaciones de este módulo; este
+   campo se encuentra inhabilitado para captura, ya que el aplicativo realiza el cálculo y muestra la
+   precarga del monto.
+
+
+
+
+f)   Pagos provisionales
+
+     Para visualizar el detalle de la información precargada en la declaración anual, así como el número
+     de operación y fecha de presentación de cada declaración mensual, da clic en Detalle.
+
+
+
+
+                                                     39 / 97
+     Posteriormente, en la ventana emergente valida la información precargada, al finalizar, da clic en
+     Cerrar.
+
+
+
+
+     Nota: En caso de que requieras modificar los pagos provisionales de tu declaración anual, es
+     necesario que presentes declaraciones complementarias de los pagos provisionales.
+
+
+
+
+g)   Retenciones de ISR
+
+     • ISR retenido por personas morales. En este campo da clic en Detalle para capturar la
+       información necesaria.
+
+
+
+
+                                                     40 / 97
+Importante: El aplicativo muestra la precarga sugerida de la información de los retenedores de los
+contribuyentes que declaran en el ejercicio, la cual se consume del Visor de retenciones.
+
+En caso de no contar con precarga o de requerir adicionar un registro, dentro de la ventana emergente,
+en la pestaña ISR Retenido, selecciona Agregar y captura los conceptos a los que corresponden las
+retenciones que te realizaron las personas morales durante el ejercicio.
+
+
+
+
+                                                    41 / 97
+Cuando se agregan retenciones, se visualiza un mensaje informativo en el que se indica al contribuyente
+que se ha detectado que modificó el ISR retenido por personas morales, por lo que será sujeto de
+verificación por parte de la autoridad.
+
+
+
+
+ Se habilitan los campos RFC del retenedor, Monto del ingreso recibido e ISR retenido captura la
+ información necesaria y da clic en Guardar.
+
+
+
+
+                                                     42 / 97
+Una vez concluido el registro, visualiza la información que capturaste.
+
+
+
+
+Para eliminar un registro, da clic en el ícono que se encuentra del lado derecho.
+
+
+
+
+Nota: En caso de que requieras eliminar la totalidad de los registros da clic en el botón Eliminar.
+
+
+
+
+                                                43 / 97
+Para subir el detalle de retenciones mediante un archivo propio, da clic en Agregar desde archivo
+y realiza los pasos que te solicita el aplicativo.
+
+
+
+
+Para visualizar las retenciones manifestadas en los pagos provisionales, ve a la pestaña Detalle de
+declaraciones provisionales, al concluir con la captura y revisión de esta ventana, selecciona
+Cerrar.
+
+
+
+
+                                                44 / 97
+     Nota: En caso de que requieras modificar las retenciones de tu declaración anual, es necesario que
+     presentes declaraciones complementarias de los pagos provisionales.
+
+h)   Estado de posición financiera
+
+ • ¿Debes informar el Estado de posición financiera? Selecciona alguna de las opciones que
+   muestra el campo. En caso de encontrarte en el supuesto elige Sí, en caso contrario, elige No.
+
+
+
+
+                                                     45 / 97
+   Cuando eliges la opción Sí en el campo anterior, el aplicativo habilita los campos Activo, Pasivo y
+   Capital para captura.
+
+• Activo. Da clic en Detalle para capturar la información.
+
+
+
+
+   Dentro de la ventana emergente de Detalle de Activo, en Agregar captura los conceptos que
+   correspondan.
+
+
+
+
+                                                   46 / 97
+Se habilitan los campos Concepto y Monto detallado para que procedas a la selección y captura.
+
+
+
+
+Una vez concluido el registro, visualiza la información que capturaste.
+
+
+
+
+Nota: En caso de que requieras realizar más de un registro, repite el procedimiento antes
+señalado.
+
+
+
+
+                                                47 / 97
+   Para editar o eliminar un registro, da clic en los íconos que se encuentran del lado derecho.
+
+
+
+
+• Pasivo. Da clic en Detalle para capturar la información.
+
+
+
+
+                                                   48 / 97
+Dentro de la ventana emergente Detalle de Pasivo, en Agregar captura los conceptos que
+correspondan.
+
+
+
+
+Se habilitan los campos Concepto y Monto detallado para que procedas a la selección y captura.
+
+
+
+
+                                              49 / 97
+Una vez concluido el registro, visualiza la información que capturaste.
+
+
+
+
+Nota: En caso de que requieras realizar más de un registro, repite el procedimiento antes
+señalado.
+
+Para editar o eliminar un registro, da clic en los íconos que se encuentran del lado derecho.
+
+
+
+
+                                                50 / 97
+• Capital. Da clic en Detalle para capturar la información.
+
+
+
+
+   Dentro de la ventana emergente Detalle de Capital, en Agregar captura los conceptos que
+   correspondan.
+
+
+
+
+                                                   51 / 97
+Se habilitan los campos Concepto y Monto detallado para que procedas a la selección y captura.
+
+
+
+
+Una vez concluido el registro, visualiza la información que capturaste.
+
+
+
+
+Nota: En caso de que requieras realizar más de un registro, repite el procedimiento antes
+señalado.
+
+
+
+
+                                                52 / 97
+Para editar o eliminar un registro, da clic en los íconos que se encuentran del lado derecho.
+
+
+
+
+Una vez concluida la revisión y captura, visualiza la información registrada. Para que el formulario
+considere los cambios realizados, da clic en Guardar.
+
+
+
+
+                                                 53 / 97
+    2.   Deducciones personales
+
+
+  En el apartado Deducciones personales, encuentras información precargada para cada uno de los tipos
+  de deducción que se encuentran en cada recuadro. Asimismo, para el ejercicio 2025 se incluye la opción
+  Sin clasificación para aquellos CFDI que por alguna razón no cumplen con algún requisito fiscal.
+
+
+
+  Puedes visualizar el Monto total deducible, el cual corresponde al monto total de las deducciones
+  personales que puedes efectuar, así como el Monto total por deducir que corresponde al monto límite
+  que resulte menor entre $206,368.00 (doscientos seis mil trescientos sesenta y ocho pesos 80/100 M.N.) o
+  el 15% del total de tus ingresos, incluyendo aquellos por los que no pagas el impuesto sobre la renta.
+
+
+
+
+Además, en los recuadros de las deducciones personales con facturas precargadas, se muestra un contador
+en rojo que indica el número de CFDI que contiene cada tipo de deducción, los cuales puedes validar
+conforme al Visor de deducciones personales. En este caso, da clic en el tipo de deducción personal que
+requieras revisar, capturar o eliminar.
+
+
+
+
+                                                         54 / 97
+El formulario muestra diversas deducciones personales como: honorarios médicos, dentales y gastos
+hospitalarios, gastos funerales y colegiaturas.
+
+A continuación, se muestra uno de estos tipos de deducción de forma detallada.
+
+     Honorarios médicos, dentales y gastos hospitalarios
+
+     Este tipo de deducción personal cuenta con facturas precargadas, por lo que al seleccionar dicho
+     concepto en la parte inferior del formulario muestra los campos Facturado y Deducible con
+     información para revisión. Además, puedes visualizar la pregunta: ¿Aceptas y reconoces la
+     información precargada de tus deducciones personales por Honorarios médicos, dentales y
+     gastos hospitalarios?
+
+
+
+
+                                                         55 / 97
+2.1 Deducciones personales precargadas
+
+En la parte inferior encuentras un listado con CFDI precargados. Para revisar el detalle de cada una de
+las facturas, al pasar el cursor del lado derecho visualiza los íconos Validar, Ver CFDI y Eliminar,
+
+
+
+
+Para el ejemplo, se procede a dar clic en el ícono Validar.
+
+
+
+
+En la ventana emergente visualiza la precarga de información con el detalle de la factura a revisar;
+en este caso, algunos campos se encuentran inhabilitados para captura.
+
+
+
+
+                                                      56 / 97
+El campo Cantidad recuperada de los gastos efectuados se encuentra habilitado para capturar el
+importe según sea el caso. Al finalizar, da clic en Cerrar para concluir con la revisión, o en Guardar, en
+caso de haber realizado alguna modificación.
+
+
+
+
+Si requieres visualizar la factura como una representación impresa, da clic en el icono Ver CFDI.
+
+
+
+
+Dentro de la ventana emergente visualiza la representación impresa de la factura (CFDI), la cual
+puedes descargar o imprimir. Al finalizar da clic en Cerrar para concluir con la revisión.
+
+
+
+
+                                                      57 / 97
+Si deseas eliminar la información precargada, o bien, requieres realizar alguna modificación, da clic en
+el ícono Eliminar, en el registro o los registros que correspondan.
+
+
+
+
+                                                     58 / 97
+Enseguida, se muestra un mensaje, que indica que el registro se eliminará, da clic en Aceptar si deseas
+continuar, en caso contrario, da clic en Cancelar.
+
+
+
+
+En caso de querer agregar una deducción personal que no esté precargada, da clic en Agregar para
+capturar un nuevo registro con la información que consideres correcta. Elige el tipo de deducción y
+proporciona los datos de los CFDI que vas a registrar.
+
+En caso de adicionarlo como deducción personal, debes contar con toda la documentación soporte
+necesaria, toda vez que podría ser objeto de verificación por parte de la autoridad.
+
+
+
+
+                                                     59 / 97
+Selecciona el Tipo de Deducción que vas a agregar de acuerdo a las opciones que se muestran como
+deducciones personales.
+
+
+
+
+Captura la información de los campos RFC del emisor, Nombre, denominación o razón social, Fecha
+de emisión, Forma de pago, Descripción, Importe total, Monto deducible y Cantidad recuperada
+de los gastos efectuados, al finalizar, da clic en Guardar.
+
+
+
+
+                                                 60 / 97
+Al terminar de validar la información, si estás de acuerdo responde Sí a la pregunta: ¿Aceptas y
+reconoces la información precargada de tus deducciones personales por honorarios médicos,
+dentales y gastos hospitalarios? y continúa con la revisión de tu declaración anual.
+
+
+
+
+En caso contrario, elige la opción No y procede a eliminar o agregar registros de facturas que
+correspondan a las deducciones personales, de acuerdo al procedimiento que se describe
+anteriormente. Recuerda que al seleccionar esta opción debes eliminar al menos un registro para que
+el campo deje de mostrarse en rojo.
+
+
+
+
+                                                  61 / 97
+Al concluir, visualiza que el ícono de la deducción personal ya no muestre la alerta en rojo.
+
+
+
+
+Otras deducciones personales
+
+Para continuar con el llenado de tu declaración, realiza el procedimiento señalado en el inciso anterior,
+para cada una de las deducciones personales que se muestran con alerta en rojo, hasta que se cambien
+a gris.
+
+
+
+
+                                                      62 / 97
+2.2 Deducciones personales eliminadas
+
+
+Selecciona el ícono correspondiente para visualizar los registros identificados como deducciones
+personales que fueron eliminadas por cada tipo de deducción y que no se van a considerar en la
+declaración anual.
+
+
+
+
+A continuación, se muestra el detalle de las facturas eliminadas.
+
+
+
+
+                                                     63 / 97
+Importante. Si por error eliminaste algún registro, debes iniciar de nuevo con el llenado de tu
+declaración anual para visualizar nuevamente el registro eliminado. Para ello, debes eliminar el
+formulario no concluido que se hubiera guardado. Una vez realizado lo anterior, inicia de nuevo con el
+llenado de la declaración para visualizar los precargados en el tipo que corresponda.
+
+
+
+
+2.3 Deducciones personales “Sin clasificación”
+
+
+Si no encuentras un CFDI precargado en algún tipo de deducción personal, da clic en el
+recuadro Sin clasificación para ver los CFDI que no cumplen con algún requisito para ser
+considerados como una deducción personal.
+
+
+
+
+Para revisar cada uno de los CFDI, primero da clic en el ícono     “Motivo de no clasificación”,
+para visualizar el motivo por el cual el CFDI no se considera como una deducción personal.
+
+
+
+
+En caso de querer reclasificarlo, da clic en el ícono Validar  revisa la información de los CFDI
+y, en su caso, visualiza el botón Guardar. Esto significa que son susceptibles de
+reclasificación, por lo que al dar clic aparece un mensaje informativo que indica que debe
+cumplir con los requisitos fiscales y contar con la documentación soporte necesaria, ya que
+puede ser sujeta de verificación por parte de la autoridad. Da clic en Aceptar.
+
+
+
+
+                                                     64 / 97
+En el caso de no considerar el CFDI como una deducción personal, da clic en Cerrar.
+
+
+
+
+ Importante Una vez realizada la revisión en cada ícono de alguna deducción personal,
+visualiza el listado de las facturas de acuerdo a la siguiente clasificación:
+
+   •   Deducciones personales de acuerdo al tipo (precargadas por la autoridad de acuerdo
+       al Visor de deducciones personales).
+
+   •   Deducciones reclasificadas (cuando la o el contribuyente guardó alguna deducción del
+       recuadro “Sin clasificación”).
+
+   •   Deducciones agregadas (en caso de haber agregado una deducción personal que no
+       esté precargada).
+
+
+
+
+                                                    65 / 97
+Actualización de información
+
+Para verificar que el campo Monto total deducible considere el total de las deducciones personales a
+efectuar y que el campo Monto total por deducir se actualice, en su caso, de acuerdo a las
+modificaciones que realizaste, da clic en Actualizar.
+
+
+
+
+                                                   66 / 97
+    3.    Determinación
+
+
+En este apartado se muestran las siguientes secciones:
+
+     a)    Determinación del ISR por deducción sin documentación que reúna los requisitos fiscales
+     b)    Determinación del ISR
+     c)    Datos informativos
+
+
+
+
+     a)    Determinación del ISR por deducción sin documentación que reúna los requisitos fiscales
+
+           Esta sección se muestra cuando aplicas facilidades administrativas que te permiten este tipo de
+           deducciones para efectos de la determinación del ISR, en este caso, valida y captura la información
+           conforme lo solicita el aplicativo.
+
+
+
+
+                                                           67 / 97
+b)       Determinación del ISR
+
+En la presente sección visualiza los campos:
+
+     •    Ingresos acumulables
+     •    Deducciones personales
+     •    Base gravable
+     •    ISR conforme a la tarifa anual
+     •    Total de estímulos acreditables
+     •    Pagos provisionales
+     •    ISR retenido
+     •    ISR a favor
+     •    Impuesto a favor del ejercicio
+     •    ¿Qué deseas hacer con tu saldo a favor?
+     •    Impuesto a cargo del ejercicio (En caso de que se determine un impuesto a cargo)
+
+
+
+
+                                                       68 / 97
+  •   Ingresos acumulables
+
+Es el monto total de los ingresos acumulables del ejercicio, ya que proviene de la información del
+apartado 1. Ingresos.
+
+
+
+
+  • Deducciones personales
+
+Es el monto total de las deducciones personales del ejercicio que proviene de la información del
+apartado 2. Deducciones personales. Da clic en Detalle para visualizar los conceptos principales de
+las deducciones personales que se consideran en la declaración.
+
+
+
+
+                                                   69 / 97
+70 / 97
+   • Base gravable
+
+Es el resultado de Ingresos acumulables, menos las Deducciones personales.
+
+
+
+
+   • ISR conforme a la tarifa anual
+
+Es el resultado de aplicar a la base gravable las tablas y tarifas establecidas en el artículo 152 de la Ley
+del Impuesto sobre la Renta.
+
+
+
+
+                                                       71 / 97
+   • Total de estímulos acreditables
+
+    Da clic en Detalle para capturar la información conforme lo solicita el aplicativo.
+
+
+
+
+   • Pagos provisionales
+
+Es el monto total de los pagos provisionales del ejercicio.
+
+
+
+
+                                                      72 / 97
+   • ISR retenido
+
+Es el monto total del ISR retenido del ejercicio.
+
+
+
+
+                                                    73 / 97
+  • ISR a favor
+
+En caso de obtener un impuesto a favor, el aplicativo muestra este campo con el monto determinado,
+así como el campo Impuesto a favor del ejercicio. Para visualizar la información, selecciona Detalle.
+
+
+
+
+                                                    74 / 97
+   • ¿Qué deseas hacer con tu saldo a favor?
+
+Derivado del ISR a favor, el aplicativo muestra este campo. Elige alguna de las opciones de acuerdo a lo
+que deseas realizar, ya sea Devolución o Compensación.
+
+
+
+
+                                                     75 / 97
+Si seleccionas la opción Devolución, se habilita el campo para seleccionar una CLABE interbancaria de
+las que te muestra el sistema, o bien, capturar una nueva, la cual se integra de 18 dígitos. Finalmente,
+en el campo correspondiente, verifica que los datos del banco se muestren de forma correcta.
+
+
+
+
+                                                     76 / 97
+  • Impuesto a cargo del ejercicio
+
+En caso de determinar un impuesto a cargo, el aplicativo muestra este campo con el monto
+determinado.
+
+
+
+
+                                             77 / 97
+c)   Datos informativos
+
+En esta sección se muestra la pregunta: ¿Informas otros ingresos exentos? (Préstamos, donativos y
+o premios, etc. que en lo individual o en su conjunto, excedan de $600,000.00), al seleccionar la
+opción No, continúa con la revisión de tu declaración anual.
+
+
+
+
+Al seleccionar la opción Sí, captura el importe que corresponda en los campos Préstamos, Donativos,
+Premios, Viáticos cobrados, Enajenación de casa habitación o Herencias o legados.
+
+
+
+
+                                                   78 / 97
+Selecciona la respuesta a la pregunta: ¿Tus ingresos se obtuvieron en copropiedad, sociedad
+conyugal o sucesión?, al seleccionar la opción No, continúa con la revisión de tu declaración anual.
+
+
+
+
+Al seleccionar la opción Sí, agrega la información que solicita el aplicativo.
+
+
+
+
+                                                       79 / 97
+En la pregunta: ¿Tienes otros datos informativos que declarar?, al seleccionar la opción No, continúa
+con la revisión de tu declaración anual.
+
+
+
+
+                                                    80 / 97
+Al seleccionar la opción Sí, captura el importe que corresponda en los campos Ingresos obtenidos por
+apoyos gubernamentales, Ingresos obtenidos por apoyos gubernamentales con motivos de los
+sismos del 7 y 19 de septiembre de 2017 y Monto de la condonación o remisión de deuda de
+créditos otorgados para adquisición de casa habitación.
+
+
+
+
+                                                   81 / 97
+En la pregunta: ¿Optas por informar la PTU generada en el ejercicio?, al seleccionar la opción No,
+continúa con la revisión de tu declaración anual.
+
+
+
+
+Al seleccionar la opción Sí, captura el importe que corresponda en el campo PTU generada en el
+ejercicio.
+
+
+
+
+                                                  82 / 97
+En ¿Optas por dictaminar tus estados financieros? elige la opción Sí o No, según corresponda y
+continúa con la revisión de tu declaración anual.
+
+
+
+
+                                                83 / 97
+Para la pregunta: ¿Tiene esquemas fiscales reportables que informar?, al elegir la opción No,
+continúa con la revisión de tu declaración anual.
+
+
+
+
+Al seleccionar la opción Sí, da clic en Agregar para registrar la información que corresponda.
+
+
+
+
+                                                     84 / 97
+     Al mostrarse el campo Tipo de esquema reportable, selecciona la opción de acuerdo al supuesto que
+     corresponda, luego captura el Número de identificación del esquema reportable, al finalizar da clic
+     en Guardar.
+
+
+
+
+    4.    Pago
+
+
+En este apartado se muestra la sección “Determinación pago”, donde puedes visualizar los siguientes campos
+de acuerdo a cada supuesto que se señala a continuación:
+
+     a)    A favor
+
+     Se muestra este campo con el monto que corresponda, en caso de que determines un impuesto a favor
+     del ejercicio.
+
+                      Si tienes impuesto a cargo, se visualizan los siguientes campos:
+
+     a)    A cargo
+     b)    Total de contribuciones
+     c)    ¿Desea aplicar alguna compensación o estímulo fiscal?
+     d)    Cantidad a cargo
+     e)    ¿Opta por pagar en parcialidades?
+     f)    Cantidad a pagar
+
+
+
+
+                                                          85 / 97
+Importante. Si la declaración se presenta fuera del plazo establecido para ello, se habilitan los campos
+Parte actualizada y Recargos, los cuales se calculan desde la fecha en la que debió realizarse el pago y hasta
+que se realice.
+
+      a)   A cargo
+
+      Se muestra este campo con el monto que corresponda, en caso de que determines un impuesto a
+      cargo del ejercicio.
+
+
+
+
+      b)   Total de contribuciones
+
+      Corresponde a la suma que se obtiene del impuesto A cargo, más Parte actualizada, más Recargos,
+      en el caso de que se habiliten dichos campos.
+
+
+
+
+                                                           86 / 97
+c)   ¿Desea aplicar alguna compensación o estímulo fiscal?
+
+Selecciona alguna de las opciones que muestra el campo. En caso de que requieras aplicar la
+compensación de saldos a favor o pagos de lo indebido, elige Sí, en caso contrario, elige No.
+
+
+
+
+                                                 87 / 97
+Cuando seleccionas la opción Sí, el aplicativo muestra los campos Compensaciones y Total de
+aplicaciones, en este supuesto, da clic en Detalle para registrar los conceptos que correspondan.
+
+
+
+
+Cuando se muestra la ventana emergente, captura la información de las declaraciones en donde se
+generaron los saldos a favor o, en su caso, el pago de lo indebido que desees compensar. Da clic en
+Agregar para iniciar.
+
+
+
+
+                                                   88 / 97
+Captura cada uno de los campos que se habilitan con la información correspondiente, da clic en
+Continuar, para capturar más conceptos da clic en Agregar. En caso de que hayas concluido con el
+total de registros de los saldos a favor o pago de lo indebido que deseas compensar, da clic en
+Terminar.
+
+
+
+
+d)   Cantidad a cargo
+
+El aplicativo realiza el cálculo del campo “Cantidad a cargo”.
+
+
+
+
+                                                       89 / 97
+e)   ¿Opta por pagar en parcialidades?
+
+Selecciona alguna de las opciones que muestra el campo. En caso de que optes por pagos en
+parcialidades, elige Sí, en caso contrario, elige No.
+
+
+
+
+Cuando seleccionas la opción Sí, se muestra un mensaje respecto a las condiciones de elegir la opción
+anterior, da clic en Aceptar para continuar.
+
+
+
+
+                                                    90 / 97
+En el campo Número de parcialidades, elige el número de pagos, pueden ser hasta seis, con los que
+cubrirás el monto de la cantidad a cargo.
+
+
+
+
+Una vez seleccionado el número de parcialidades, el aplicativo realiza el cálculo de los campos Importe
+de la primera parcialidad e Importe sin la primera parcialidad.
+
+
+
+
+                                                     91 / 97
+f)   Cantidad a pagar
+
+Es el resultado de disminuir la Cantidad a cargo con el Importe sin la primera parcialidad.
+
+
+
+
+                                                   92 / 97
+     V.    Vista previa y envío de la declaración
+
+Una vez que termines de capturar la información de los apartados Ingresos, Deducciones personales,
+Determinación y Pago, da clic en el botón Revisar que se encuentra al final del formulario.
+
+
+
+
+                                                      93 / 97
+Posteriormente, se muestra la vista previa de tu declaración, misma que puedes imprimir o guardar en formato
+PDF al dar clic en los íconos correspondientes.
+
+
+
+
+Si estás de acuerdo con la información declarada, da clic en Enviar declaración. En caso contrario, da clic en
+Regresar a formulario.
+
+
+
+
+Enseguida, se muestra un mensaje con la cantidad a pagar o el saldo a favor, da clic en Aceptar para continuar.
+
+
+
+
+                                                             94 / 97
+     VI.     Acuse de recibo de la declaración
+
+Enviada la declaración, el aplicativo genera el acuse de recibo en formato PDF. Asimismo, cuando determinas
+una cantidad a pagar en la declaración, se genera la línea de captura para el pago del impuesto; estos
+documentos los puedes descargar e imprimir.
+
+
+
+
+  Realiza el pago de tus impuestos por internet, selecciona la imagen de alguno de los bancos autorizados.
+  Recuerda que estos son los únicos bancos autorizados por la TESOFE para recibir el cobro de impuestos
+  federales. Ahí, puedes hacer la transferencia electrónica de fondos o el pago con tarjeta de crédito o débito.
+
+
+
+
+                                                             95 / 97
+96 / 97
+Conserva el comprobante de pago que emite el banco autorizado, el cual acredita el cumplimiento de tus
+obligaciones fiscales.
+
+
+     VII.    Documentos relacionados
+
+En el Portal del SAT, en el apartado Declaración para personas, sección Material adicional / Documentos
+relacionados, encuentras las distintas guías de llenado y material que puede ser de ayuda en el cumplimiento
+de tus obligaciones fiscales.
+
+
+
+
+                                                           97 / 97
+

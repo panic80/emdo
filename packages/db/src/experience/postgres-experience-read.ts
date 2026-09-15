@@ -35,6 +35,11 @@ import { z } from 'zod';
 
 import type { DatabaseClient, DatabasePool } from '../scoped-repository.js';
 import {
+  resolveLegacyFinanceRoute,
+  readLegacyFinanceCompatibility,
+} from '../finance-legacy-activation-projection.js';
+import { legacyTransactionReadRecord } from '../finance-legacy-record-compatibility.js';
+import {
   DurableRepositoryError,
   parseDurablePrincipal,
   withDurableTransaction,
@@ -797,6 +802,104 @@ const readCalendarState = async (
   };
 };
 
+// The old collection remains readable only for source spaces without an activation.
+// Bound the complete normalized read explicitly: summaries must never silently truncate.
+const readActivatedFinance = async (
+  client: DatabaseClient,
+  principal: ExperienceApiPrincipal & { readonly privateSpaceId?: string },
+) => {
+  const sources = principal.privateSpaceId
+    ? [{ id: principal.privateSpaceId }]
+    : (
+        await client.query(
+          `/* experience_finance_source_spaces */
+      select id from emdo.spaces where household_id=$1 and original_owner_user_id=$2
+      and visibility='private' and tombstoned_at is null order by id`,
+          [principal.householdId, principal.userId],
+        )
+      ).rows;
+  const activatedSpaceIds: string[] = [];
+  const categories: Array<{
+    entity_id: string;
+    payload: unknown;
+    revision: number;
+    updated_at: string;
+    space_id: string;
+  }> = [];
+  const transactions: Array<{
+    entity_id: string;
+    entity_type: 'finance.transaction';
+    payload: FinanceRecord;
+    revision: number;
+    updated_at: string;
+    space_id: string;
+  }> = [];
+  for (const source of sources) {
+    const sourceSpaceId = UuidSchema.parse(source.id);
+    const scope = {
+      workspaceId: principal.householdId,
+      sourceSpaceId,
+      sourceOwnerUserId: principal.userId,
+    };
+    const route = await resolveLegacyFinanceRoute(client, scope);
+    if (route.kind === 'legacy') continue;
+    activatedSpaceIds.push(sourceSpaceId);
+    let firstPage = true;
+    let after: { effectiveOn: string; id: string } | undefined;
+    do {
+      const projection = await readLegacyFinanceCompatibility(
+        client,
+        route,
+        scope,
+        { limit: 500, ...(after ? { after } : {}) },
+      );
+      if (projection.kind !== 'ready')
+        return invalidResult(
+          `Normalized Finance cannot be represented: ${projection.kind}`,
+        );
+      if (firstPage) {
+        for (const archive of projection.archives) {
+          if (
+            archive.entityType === 'finance.category' &&
+            !archive.tombstoned
+          ) {
+            const raw = asRecordObject(archive.payload);
+            categories.push({
+              entity_id: archive.entityId,
+              payload: archive.payload,
+              revision: 1,
+              updated_at: IsoDateTimeSchema.parse(raw?.updatedAt),
+              space_id: sourceSpaceId,
+            });
+          }
+        }
+        firstPage = false;
+      }
+      for (const transaction of projection.transactions) {
+        const payload = legacyTransactionReadRecord(
+          transaction,
+          scope,
+          route.bookId,
+        );
+        transactions.push({
+          entity_id: payload.id,
+          entity_type: 'finance.transaction',
+          payload,
+          revision: 1,
+          updated_at: payload.updatedAt,
+          space_id: sourceSpaceId,
+        });
+      }
+      if (transactions.length > 100_000)
+        return invalidResult(
+          'Normalized Finance exceeded its bounded snapshot limit',
+        );
+      after = projection.nextCursor ?? undefined;
+    } while (after);
+  }
+  return { activatedSpaceIds, transactions, categories };
+};
+
 const createTodayRead = (pool: DatabasePool) => ({
   async read(input: {
     readonly date: string;
@@ -843,6 +946,7 @@ const createTodayRead = (pool: DatabasePool) => ({
         limit: 24,
         marker: 'experience_today_schedule',
       });
+      const activated = await readActivatedFinance(client, parsed.principal);
       const financeCountResult = await client.query(
         `/* experience_today_finance_count */
          select count(*) filter (
@@ -854,9 +958,14 @@ const createTodayRead = (pool: DatabasePool) => ({
            from emdo.sync_entities
           where household_id = $1
             and entity_type in ('finance.budget', 'finance.transaction')
+            and not (space_id = any($2::uuid[]))
             and tombstoned_at is null`,
-        [parsed.principal.householdId],
+        [parsed.principal.householdId, activated.activatedSpaceIds],
       );
+      if (financeCountResult.rows[0])
+        financeCountResult.rows[0].transaction_count =
+          Number(financeCountResult.rows[0].transaction_count) +
+          activated.transactions.length;
       const shoppingCountResult = await client.query(
         `/* experience_today_shopping_count */
          select count(*)::integer as item_count,
@@ -1112,8 +1221,31 @@ const createFinanceRead = (
       'Finance snapshot input is malformed',
     );
     return withPrivateFinanceScope(pool, parsed, async (client) => {
-      const result = await client.query(
-        `/* experience_finance_snapshot */
+      const activated = await readActivatedFinance(client, parsed.principal);
+      const result = activated.activatedSpaceIds.length
+        ? {
+            rows: [
+              {
+                transactions: activated.transactions.map(
+                  ({ entity_id, payload, revision }) => ({
+                    entity_id,
+                    payload,
+                    revision,
+                  }),
+                ),
+                budgets: [],
+                categories: activated.categories.map(
+                  ({ entity_id, payload, revision }) => ({
+                    entity_id,
+                    payload,
+                    revision,
+                  }),
+                ),
+              },
+            ],
+          }
+        : await client.query(
+            `/* experience_finance_snapshot */
          with transaction_rows as materialized (
            select entity.entity_id, entity.payload, entity.revision
              from emdo.sync_entities as entity
@@ -1186,12 +1318,12 @@ const createFinanceRead = (
                   ),
                   '[]'::jsonb
                 ) as categories`,
-        [
-          parsed.principal.householdId,
-          parsed.principal.privateSpaceId,
-          parsed.principal.userId,
-        ],
-      );
+            [
+              parsed.principal.householdId,
+              parsed.principal.privateSpaceId,
+              parsed.principal.userId,
+            ],
+          );
       const rows = parseRows(
         FinanceSnapshotRowSchema,
         result.rows,
@@ -1417,6 +1549,9 @@ const createFinanceRead = (
       }
       budgets.sort((left, right) => compareText(left.id, right.id));
       return FinanceExperienceSnapshotSchema.parse({
+        ...(activated.activatedSpaceIds.length
+          ? { ledgerAuthority: 'normalized' }
+          : {}),
         reviewedCadTotals,
         recentActivity: recentActivity.slice(0, 50),
         budgets,
@@ -1455,6 +1590,7 @@ const createFinanceRead = (
       return invalidInput('finance cursor is malformed');
     }
     return withHouseholdScope(pool, parsed, async (client) => {
+      const activated = await readActivatedFinance(client, parsed.principal);
       const result = await client.query(
         `/* experience_finance_entities */
          select entity_type, entity_id, payload, updated_at, space_id
@@ -1462,6 +1598,7 @@ const createFinanceRead = (
           where household_id = $1
             and entity_type in ('finance.transaction', 'finance.budget')
             and tombstoned_at is null
+            and not (space_id = any($6::uuid[]))
             and (
               $2::timestamptz is null
               or (updated_at, entity_type, entity_id) < ($2, $3, $4)
@@ -1474,12 +1611,30 @@ const createFinanceRead = (
           cursor?.entityType ?? null,
           cursor?.id ?? null,
           parsed.limit + 1,
+          activated.activatedSpaceIds,
         ],
       );
-      const rows = parseRows(
+      const legacyRows = parseRows(
         FinanceEntityRowSchema,
         result.rows,
         'Database returned malformed finance rows',
+      );
+      const rows = [
+        ...legacyRows,
+        ...activated.transactions.filter(
+          (row) =>
+            !cursor ||
+            compareText(row.updated_at, cursor.at) < 0 ||
+            (row.updated_at === cursor.at &&
+              (compareText(row.entity_type, cursor.entityType!) < 0 ||
+                (row.entity_type === cursor.entityType &&
+                  compareText(row.entity_id, cursor.id) < 0))),
+        ),
+      ].sort(
+        (a, b) =>
+          compareText(b.updated_at, a.updated_at) ||
+          compareText(b.entity_type, a.entity_type) ||
+          compareText(b.entity_id, a.entity_id),
       );
       const categoryResult = await client.query(
         `/* experience_finance_page_categories */
@@ -1489,14 +1644,28 @@ const createFinanceRead = (
             and original_owner_user_id = $2
             and entity_type = 'finance.category'
             and tombstoned_at is null
+            and not (space_id = any($3::uuid[]))
           order by id asc
           limit 1001`,
-        [parsed.principal.householdId, parsed.principal.userId],
+        [
+          parsed.principal.householdId,
+          parsed.principal.userId,
+          activated.activatedSpaceIds,
+        ],
       );
       const categoryNames = modernFinancePageCategoryNames({
         rows: parseRows(
           FinancePageCategoryRowSchema,
-          categoryResult.rows,
+          [
+            ...categoryResult.rows,
+            ...activated.categories.map((category) => {
+              const row: Omit<typeof category, 'revision'> & {
+                revision?: typeof category.revision;
+              } = { ...category };
+              delete row.revision;
+              return row;
+            }),
+          ],
           'Database returned malformed Finance category rows',
         ),
         principal: parsed.principal,
@@ -1602,6 +1771,9 @@ const createFinanceRead = (
       const last = page.at(-1);
       return FinancePageSchema.parse({
         schemaVersion: 1,
+        ...(activated.activatedSpaceIds.length
+          ? { ledgerAuthority: 'normalized' }
+          : {}),
         items: page.map(({ item }) => item),
         ...(rows.length > parsed.limit && last !== undefined
           ? {

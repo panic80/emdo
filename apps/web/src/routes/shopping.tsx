@@ -138,7 +138,7 @@ export function ShoppingRoute() {
     <Page>
       <PageHeader
         title="Shopping"
-        description="A bounded household list. Prices, checkout, and provider authority data are not exposed."
+        description="Plan purchases and keep your workspace shopping list up to date."
       />
       <AskComposer
         compact
@@ -158,7 +158,7 @@ export function ShoppingRoute() {
         aria-labelledby="shopping-plan-heading"
       >
         <div className="section-title-row">
-          <h2 id="shopping-plan-heading">Household list</h2>
+          <h2 id="shopping-plan-heading">Shopping list</h2>
           <span>
             {retailerCount > 0
               ? `${retailerCount} ${retailerCount === 1 ? 'retailer' : 'retailers'}`
@@ -228,8 +228,8 @@ export function ShoppingRoute() {
       <section className="cost-summary" aria-labelledby="cost-summary-heading">
         <h2 id="cost-summary-heading">Pricing</h2>
         <p>
-          <Icon name="info" size={20} /> Prices and external retailer links are
-          intentionally omitted from this household projection.
+          <Icon name="info" size={20} /> Prices and retailer links are not
+          available for this list.
         </p>
       </section>
     </Page>

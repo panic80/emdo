@@ -1,0 +1,128 @@
+                                                                                                                                                                                                        Schedule 141
+                                                                                                                                                                                                                  Code 2101
+
+                                 General Index of Financial Information (GIFI) – Additional Information                                                                                                   Protected B
+                                                                                                                                                                                                       when completed
+                                                      (2021 and later tax years)
+Corporation's name                                                                                                                              Business number                                    Tax year-end
+                                                                                                                                                                                                 Year   Month Day
+
+
+• Corporations need to complete all parts of this schedule that apply and include it with their T2 return along with their other GIFI schedules.
+• For more information, see Guide RC4088, General Index of Financial Information (GIFI), and Guide T4012, T2 Corporation – Income Tax Guide.
+
+       Part 1 – Information on the person primarily involved with the financial information
+                                                                                                                                                                                            Yes                 No
+ Can you identify the person* specified in the heading of Part 1? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 111
+ If you answered no, go to Part 2.
+
+ Does that person have a professional designation in accounting? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 095                              Yes                 No
+
+                                                                                                                                                                                            Yes                 No
+ Is that person connected** with the corporation? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 097
+
+  *    A person primarily involved with the financial information is a person who has more than a 50% involvement in preparing the financial information that the
+       T2 return is based on. For example, if three persons prepared the financial information by doing respectively 30%, 30%, and 40% of the work, answer no
+       at line 111. If they did respectively 10%, 20%, and 70% of the work, answer yes at line 111 and complete Part 1 by referring only to the third person.
+  **   A person connected with a corporation can be: (i) a shareholder of the corporation who owns more than 10% of the common shares; (ii) a director, an
+       officer, or an employee of the corporation; or (iii) a person not dealing at arm's length with the corporation.
+
+
+
+       Part 2 – Type of involvement
+ Choose one or more of the following options that represent your involvement and that of the person referred to in Part 1:
+
+  Completed an auditor's report . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 300
+
+  Completed a review engagement report . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 301
+
+  Conducted a compilation engagement . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 302
+
+  Provided accounting services . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 303
+
+  Provided bookkeeping services . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 304
+
+  Other (please specify) . . . . . . . . 305
+
+
+
+       Part 3 – Reservations
+ If you selected option 300 or 301 in Part 2 above, answer the following question:
+
+ Has the person referred to in Part 1 expressed a reservation? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 099                          Yes                 No
+
+
+
+       Part 4 – Other information
+ Were notes to the financial statements prepared? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 101                     Yes                 No
+
+ Did the corporation have any subsequent events? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 104                      Yes                 No
+
+ Did the corporation re-evaluate its assets during the tax year? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 105                        Yes                 No
+
+ Did the corporation have any contingent liabilities during the tax year? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 106                             Yes                 No
+
+ Did the corporation have any commitments during the tax year? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 107                              Yes                 No
+
+ Does the corporation have investments in joint venture(s) or partnership(s)? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 108                                 Yes                 No
+
+
+
+
+T2 SCH 141 E (23)                                                                     (Ce formulaire est disponible en français.)                                   Page 1 of 2
+                                                                                                                                                                                     Protected B when completed
+     Part 4 – Other information (continued)
+ Impairment and fair value changes
+ In any of the following assets, was an amount recognized in net income or other comprehensive income (OCI) as a result
+ of an impairment loss in the tax year, a reversal of an impairment loss recognized in a previous tax year, or a change in fair
+ value during the tax year? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 200     Yes                 No
+
+     If yes, enter the amount recognized:                                                             In net income                                In OCI
+                                                                                                   Increase (decrease)                       Increase (decrease)
+
+
+     Property, plant, and equipment . . . . . . . . . . . . . . . . . . . . . 210                                                    211
+
+     Intangible assets . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 215                                           216
+
+     Investment property . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 220
+     Biological assets . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 225
+     Financial instruments . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 230                                             231
+
+     Other . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 235                                     236
+
+
+ Financial instruments
+ Did the corporation derecognize any financial instrument(s) during the tax year (other than trade receivables)? . . . . . . . . . . 250                                                    Yes                 No
+
+ Did the corporation apply hedge accounting during the tax year? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 255                            Yes                 No
+
+ Did the corporation discontinue hedge accounting during the tax year? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 260                                Yes                 No
+
+ Adjustments to opening equity
+ Was an amount included in the opening balance of retained earnings or equity, in order to correct an error, to recognize a
+ change in accounting policy, or to adopt a new accounting standard in the current tax year? . . . . . . . . . . . . . . . . . . . . . . . . 265                                            Yes                 No
+
+     If yes, you have to maintain a separate reconciliation.
+
+
+
+     Part 5 – Information on the person who prepared the T2 return
+ If the person who prepared the T2 return has a professional designation in accounting but is not the person identified in Part 1, choose all of the following
+ options that apply:
+
+  Prepared the T2 return and the financial information contained therein . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 310
+
+  The client provided the financial statements . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 311
+
+  The client provided a trial balance . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 312
+
+  The client provided a general ledger . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 313
+
+  Other (please specify) . . . . . . . . 314
+
+
+
+
+T2 SCH 141 E (23)                                                                                                                                                                                                Page 2 of 2
+

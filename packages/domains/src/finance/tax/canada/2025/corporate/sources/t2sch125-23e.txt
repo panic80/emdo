@@ -1,0 +1,209 @@
+                                                                                                                                               Schedule 125
+                                                                                                                                                      Code 1005
+                                                             Income Statement Information                                                         Protected B
+                                                                (2010 and later tax years)                                                     when completed
+
+
+Corporation's name                                                                                  Business number                        Tax year-end
+                                                                                                                                    Year         Month    Day
+
+
+
+• Use this schedule to report your income statement information.
+• For more information, see Guide RC4088, General Index of Financial Information (GIFI) and T4012, T2 Corporation – Income Tax Guide.
+• If you need more space, attach additional schedules.
+
+0001    Operating name                                           0002    Description of the operation                               0003   Sequence number *
+
+                                                                                                                                                 01
+
+                                                                Non-farming expenses                                          Non-farming expenses
+           Non-farming revenue
+                                                                    Cost of Sales                                              Operating Expenses
+
+ Field Code              Amount                         Field Code                   Amount                           Field Code            Amount
+
+
+
+
+ ** 8299                                                                                                               ** 9368
+                                                                                                                       ** 9369
+
+  * See page 3 of this schedule for information on field code 0003.
+ ** Complete this field code if you are reporting non-farming revenue or non-farming expenses.
+
+
+
+
+T2 SCH 125 E (23)                                           (Ce formulaire est disponible en français.)               Page 1 of 4
+                                                                                                                               Protected B when completed
+                                                 Income Statement Information – continued
+                                                                                                                            Extraordinary items
+              Farming revenue                              Farming expenses – continued
+                                                                                                                             and income taxes
+
+ Field Code                Amount                      Field Code                  Amount                     Field Code               Amount
+
+
+
+
+                                                                                                               ** 9999
+
+
+  * 9659
+
+
+
+              Farming expenses                                                                                     Other comprehensive income
+
+
+ Field Code                Amount                                                                             Field Code               Amount
+
+                                                                                                                  7000
+                                                                                                                  7002
+                                                                                                                  7004
+                                                         * 9898                                                   7006
+                                                         * 9899                                                   7008
+                                                        ** 9970                                                   7010
+                                                                                                                  7020
+                                                                                                              *** 9998
+
+  * Complete this field code if you are reporting farming revenue or farming expenses.
+ ** Complete this field code for all corporations.
+*** If you used the International Financial Reporting Standards, you may have to report amounts under "Other comprehensive income."
+                                                                                                                                                Page 2 of 4
+
+
+                                                                                                                                          Schedule 140
+                                                           Summary Statement
+                                                         (2010 and later tax years)
+• Use this section of the schedule only to report the summary statement when you are submitting supplementary income statements.
+• For information on supplementary income statements, see Guide RC4088, Appendix B – Reporting multiple lines of business.
+• If you need more space, attach additional schedules.
+
+ Field Code                Amount                                 Extraordinary items
+**** 9970                                                          and income taxes
+                                                       Field Code                  Amount
+
+
+
+
+                                                      **** 9999
+
+**** Complete this field code.
+
+
+
+
+T2 SCH 140 E (23)                                         (Ce formulaire est disponible en français.)         Page 1 of 1
+     Information
+ Field code 0003 is pre-printed on page 1 of this schedule. If you are submitting supplementary income statements, cross out the pre-printed 01 and complete
+ in sequential order. For information on reporting multiple lines of business using supplementary income statements, see Appendix B of Guide RC4088.
+
+
+
+     Commonly used field codes
+ The following list contains commonly used GIFI income statement field codes. For a complete list of the GIFI codes, refer to Appendix A of Guide RC4088.
+
+
+                                                         Non-farming revenue and expenses
+
+                        Non-farming revenue                                                  Non-farming expenses – Operating expenses
+
+  Account description                                       Field Code               Account description                                        Field Code
+
+  Trade sales of goods and services                            8000                  Advertising and promotion                                     8520
+  Investment revenue                                           8090                  Advertising                                                   8521
+  Dividend income                                              8095                  Meals and entertainment                                       8523
+  Commission revenue                                           8120                  Amortization of intangible assets                             8570
+  Rental revenue                                               8140                  Bad debt expense                                              8590
+  Real estate rental revenue                                   8141                  Employee benefits                                             8620
+  Realized gains/losses on disposal of assets                  8210                  Amortization of tangible assets                               8670
+  Realized gains/losses on sale of investments                 8211                  Insurance                                                     8690
+  Other revenue                                                8230                  Interest and bank charges                                     8710
+  Income/loss of subsidiaries/affiliates                       8232                  Interest on long-term debt                                    8714
+  Total revenue                                                8299                  Bank charges                                                  8715
+                                                                                     Business taxes                                                8762
+               Non-farming expenses – Cost of sales                                  Office expenses                                               8810
+                                                                                     Professional fees                                             8860
+  Account description                                       Field Code               Accounting fees                                               8862
+                                                                                     Management and administration fees                            8871
+  Opening inventory                                            8300                  Real estate rental                                            8911
+  Purchases/cost of materials                                  8320                  Equipment rental                                              8914
+  Direct wages                                                 8340                  Repairs and maintenance                                       8960
+  Trades and sub-contracts                                     8360                  Repairs and maintenance – buildings                           8961
+  Other direct costs                                           8450                  Salaries and wages                                            9060
+  Freight-in and duty                                          8457                  Management salaries                                           9065
+  Closing inventory                                            8500                  Supplies                                                      9130
+  Cost of sales                                                8518                  Property taxes                                                9180
+  Gross profit/loss                                            8519                  Travel expenses                                               9200
+                                                                                     Utilities                                                     9220
+                                                                                     Telephone and communications                                  9225
+                                                                                     Other expenses                                                9270
+                                                                                     Vehicle expenses                                              9281
+                                                                                     General and administrative expenses                           9284
+                                                                                     Total operating expenses                                      9367
+                                                                                     Total expenses                                                9368
+                                                                                     Net non-farming income                                        9369
+
+
+
+
+T2 SCH 125 E (23)                                                                                                                                 Page 3 of 4
+     Commonly used field codes (continued)
+ The following list contains commonly used GIFI income statement field codes. For a complete listing of the GIFI codes, see Appendix A of Guide RC4088.
+
+
+                                                           Farming revenue and expenses
+
+                           Farming revenue                                                                  Farming expenses
+
+  Account description                                      Field Code               Account description                                       Field Code
+
+  Grains and oilseeds                                          9370                 Fertilizers and lime                                         9662
+  Wheat                                                        9371                 Seeds and plants                                             9664
+  Barley                                                       9373                 Feed, supplements, straw, and bedding                        9711
+  Corn                                                         9375                 Livestock purchases                                          9712
+  Other crop revenues                                          9420                 Veterinary fees, medicine, and breeding fees                 9713
+  Fruit                                                        9421                 Machinery fuel                                               9764
+  Vegetables                                                   9423                 General farm expenses                                        9790
+  Cattle                                                       9471                 Amortization of tangible assets                              9791
+  Poultry                                                      9473                 Advertising, marketing costs, and promotion                  9792
+  Milk and cream (excluding dairy subsidies)                   9476                 Building repairs and maintenance                             9795
+  Program payment revenues                                     9540                 Custom or contract work                                      9798
+  Other farm revenues/losses                                   9600                 Electricity                                                  9799
+  Rental income                                                9606                 Other insurance premiums                                     9804
+  Interest income                                              9607                 Interest and bank charges                                    9805
+  Total farm revenue                                           9659                 Professional fees                                            9809
+                                                                                    Property taxes                                               9810
+                                                                                    Rent – land and buildings                                    9811
+                                                                                    Salaries and wages                                           9814
+                                                                                    Motor vehicle expenses                                       9819
+                                                                                    Telephone                                                    9824
+                                                                                    Net inventory adjustment                                     9870
+                                                                                    Total farm expenses                                          9898
+                                                                                    Net farm income                                              9899
+
+
+
+
+               Extraordinary items and income taxes                                                  Other comprehensive income
+
+  Account description                                      Field Code               Account description                                       Field Code
+
+  Extraordinary items                                          9975                 Revaluation surplus                                          7000
+  Current income taxes                                         9990                 Defined benefit gains/losses                                 7002
+  Future (deferred) income tax provision                       9995                 Foreign operation translation gains/losses                   7004
+  Net income/loss after taxes and extraordinary items          9999                 Equity instruments gains/losses                              7006
+                                                                                    Cash flow hedge effective portion gains/losses               7008
+                                                                                    Income tax relating to components of other
+                                                                                                                                                 7010
+                                                                                    comprehensive income
+                                                                                    Miscellaneous other comprehensive income                     7020
+                                                                                    Total – other comprehensive income                           9998
+
+
+
+
+T2 SCH 125 E (23)                                                                                                                               Page 4 of 4
+

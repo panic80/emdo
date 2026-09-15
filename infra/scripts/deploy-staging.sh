@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+umask 077
 
 # shellcheck source=infra/scripts/_common.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/_common.sh"
@@ -9,6 +10,19 @@ digest_lock="${2:-}"
 ttl_minutes="${3:-60}"
 finance_synthetic_staging="${4:-false}"
 finance_live_chat="${5:-false}"
+finance_normalized="${6:-false}"
+normalized_max_run="${7:-}"
+normalized_max_day="${8:-}"
+[[ $# -le 8 ]] || die 'Too many deployment arguments'
+[[ "$finance_normalized" == true || "$finance_normalized" == false ]] || die 'Normalized staging flag is invalid'
+if [[ "$finance_normalized" == true ]]; then
+  [[ "$finance_synthetic_staging" == true ]] || die 'Normalized staging requires Finance synthetic staging'
+  [[ "$normalized_max_run" =~ ^[1-9][0-9]{0,2}$ && "$normalized_max_day" =~ ^[1-9][0-9]{0,2}$ ]] || die 'Explicit normalized staging budgets are required'
+  ((normalized_max_run <= 100 && normalized_max_day >= normalized_max_run && normalized_max_day <= 500)) || die 'Normalized staging budgets exceed bounds'
+else
+  [[ -z "$normalized_max_run" && -z "$normalized_max_day" ]] || die 'Normalized budgets require normalized staging'
+fi
+export EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING="$finance_normalized"
 assert_safe_identifier "$run_id" STAGING_RUN_ID
 [[ "$run_id" =~ ^[0-9]{1,20}$ ]] || die 'STAGING_RUN_ID must be numeric'
 [[ "$ttl_minutes" =~ ^[0-9]+$ ]] || die 'staging TTL must be an integer'
@@ -80,6 +94,9 @@ printf '%s\n' "$(( $(date +%s) + 3600 ))" > "$deadline_pending"
 chmod 0600 "$deadline_pending"
 mv -- "$deadline_pending" "$state_dir/expires-at-epoch"
 
+if [[ "$finance_normalized" == true ]]; then
+  assert_finance_normalized_effective_environment "$state_dir"
+fi
 staging_compose config --quiet
 staging_compose pull
 staging_compose up --detach postgres
@@ -89,7 +106,28 @@ staging_compose --profile operations run --rm provision
 staging_compose exec -T postgres psql \
   --username postgres --dbname emdo_app --set ON_ERROR_STOP=1 \
   --command 'ALTER ROLE emdo_owner_bootstrap_login LOGIN NOINHERIT'
-staging_compose --profile operations run --rm synthetic-data
+if [[ "$finance_normalized" == true ]]; then
+  normalized_seed="$state_dir/normalized-seed.json"
+  staging_compose --profile operations run --rm synthetic-data > "$normalized_seed"
+  chmod 0600 "$normalized_seed"
+  EMDO_SYNTHETIC_DATA_ONLY=true node "$SCRIPT_DIR/finance-normalized-staging-handoff.mjs" \
+    --seed-result "$normalized_seed" \
+    --output "$state_dir/$FINANCE_STAGING_SECRET_DIR/normalized-fixture.env"
+  load_finance_normalized_staging_state "$state_dir"
+  normalized_book="$(env_file_value "$FINANCE_NORMALIZED_STAGING_FIXTURE_ENV_FILE" EMDO_FINANCE_NORMALIZED_SYNTHETIC_BOOK_ID)"
+  # The handoff validates this UUID before it is used in the deployment query.
+  normalized_workspace="$(staging_compose exec -T postgres psql --username postgres --dbname emdo_app --set ON_ERROR_STOP=1 --tuples-only --no-align --command "SELECT workspace_id FROM emdo.finance_books WHERE id='$normalized_book'::uuid")"
+  [[ "$normalized_workspace" =~ ^[0-9a-f-]{36}$ ]] || die 'Normalized seed workspace is invalid'
+  staging_compose exec -T postgres psql --username postgres --dbname emdo_app --set ON_ERROR_STOP=1 \
+    --set normalized_staging=true --set environment=staging --set synthetic_only=true \
+    --set "book_id=$normalized_book" --set "workspace_id=$normalized_workspace" \
+    --set "household_slug=$(env_file_value "$SECRETS_DIR/synthetic-bootstrap.env" EMDO_BOOTSTRAP_HOUSEHOLD_SLUG)" \
+    --set "synthetic_owner_email=$(env_file_value "$SECRETS_DIR/synthetic.env" EMDO_SYNTHETIC_OWNER_EMAIL)" \
+    --set "max_run_cad_minor=$normalized_max_run" --set "max_day_cad_minor=$normalized_max_day" \
+    < "$SCRIPT_DIR/finance-normalized-staging-provision.sql" > /dev/null
+else
+  staging_compose --profile operations run --rm synthetic-data
+fi
 # Reassert the complete runtime grant matrix and return the deployment-only
 # bootstrap principal to NOLOGIN immediately after synthetic seeding.
 staging_compose --profile operations run --rm provision

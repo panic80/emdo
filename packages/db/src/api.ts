@@ -263,3 +263,42 @@ export type {
   TrustedProposalApprovalProjection,
   TrustedProposalApprovalSource,
 } from './proposals/trusted-proposal-approval-projector.js';
+export { PostgresFinanceV2Repository } from './finance-v2-repository.js';
+export {
+  FinanceCorporateActionPersistenceError,
+  PostgresFinanceCorporateActionRepository,
+} from './finance-corporate-action-repository.js';
+export { PostgresFinanceGeneratedReportRepository } from './finance-generated-report-repository.js';
+export { PostgresFinanceAutomationRepository } from './finance-automation-repository.js';
+
+export * from './finance-tax-repository.js';
+
+export {
+  PostgresFinanceScheduleRepository,
+  SetFinanceScheduleStateSchema,
+} from './finance-schedule-repository.js';
+export { PostgresFinanceStandardizationRepository } from './finance-standardization-repository.js';
+export { PostgresFinancePlanningRepository } from './finance-planning-repository.js';
+export * from './finance-planning-schema.js';
+export {
+  FinanceLegacyMigrationPersistenceError,
+  PostgresFinanceLegacyMigrationRepository,
+} from './finance-legacy-migration-repository.js';
+
+export { PostgresFranceFecRepository } from './finance-fec-repository.js';
+export { PostgresFranceFecMappingRepository } from './finance-fec-mapping-repository.js';
+
+export {
+  PostgresFinanceOpeningRepository,
+  FinanceOpeningPersistenceError,
+} from './finance-opening-repository.js';
+
+export {
+  FinanceInvestmentReconciliationRepository,
+  FinanceInvestmentReconciliationPersistenceError,
+} from './finance-investment-reconciliation-repository.js';
+
+export {
+  FinanceJournalDraftRepository,
+  FinanceJournalDraftPersistenceError,
+} from './finance-journal-draft-repository.js';

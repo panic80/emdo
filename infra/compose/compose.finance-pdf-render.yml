@@ -1,0 +1,67 @@
+# Opt-in private staging only. Combine with compose.yml, compose.staging.yml,
+# compose.finance-ocr.yml and both helper profiles. No default launcher selects it.
+name: emdo-staging-${STAGING_RUN_ID:?STAGING_RUN_ID must identify this private staging run}
+services:
+  finance-pdf-render:
+    image: '${FINANCE_PDF_RENDER_IMAGE:?FINANCE_PDF_RENDER_IMAGE must be an immutable dedicated PDF renderer image reference}'
+    profiles: [finance-pdf-render]
+    restart: 'no'
+    init: true
+    user: '10005:10005'
+    volumes:
+      - finance-pdf-render-socket:/run/emdo/finance-pdf-render
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    network_mode: none
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev,mode=0700,uid=10005,gid=10005
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "if(!require('node:fs').statSync('/run/emdo/finance-pdf-render/helper.sock').isSocket())process.exit(1)",
+        ]
+      interval: 5s
+      timeout: 2s
+      retries: 6
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '1.0'
+          pids: 32
+    pids_limit: 32
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: '3'
+
+  api:
+    group_add: ['10005']
+    volumes:
+      - finance-pdf-render-socket:/run/emdo/finance-pdf-render:ro
+    depends_on:
+      finance-pdf-render:
+        condition: service_healthy
+
+  worker:
+    environment:
+      EMDO_FINANCE_PDF_RENDER_TRANSPORT: unix-socket
+    group_add: ['10005']
+    volumes:
+      - finance-pdf-render-socket:/run/emdo/finance-pdf-render:ro
+    depends_on:
+      finance-pdf-render:
+        condition: service_healthy
+      finance-ocr:
+        condition: service_started
+
+volumes:
+  finance-pdf-render-socket:

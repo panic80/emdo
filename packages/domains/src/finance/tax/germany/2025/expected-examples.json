@@ -1,0 +1,59 @@
+{
+  "description": "Independent rational expected values for the bounded 2025 candidate; these values are test vectors, not filed returns.",
+  "examples": [
+    {
+      "id": "professional-employment-mixed-income",
+      "facts": {
+        "employment.grossWages": "60000",
+        "employment.workExpensesActual": "1500",
+        "business.kind": "professional",
+        "business.grossReceipts": "40000",
+        "business.expenses": "9000",
+        "insurance.pensionEmployee": "5000",
+        "insurance.healthWithSickPay": "4000",
+        "insurance.healthWithoutSickPay": "1000",
+        "insurance.longTermCare": "1200",
+        "insurance.healthRefunds": "100"
+      },
+      "expected": {
+        "employmentIncome": "58500.00",
+        "businessProfit": "31000.00",
+        "eligibleVorsorge": "10940.00",
+        "specialDeductions": "10976.00",
+        "taxableIncome": "78524.00",
+        "incomeTax": "22068.00",
+        "solidaritySurcharge": "252.04"
+      }
+    },
+    {
+      "id": "trade-400-percent-hebesatz",
+      "facts": {
+        "employment.grossWages": "60000",
+        "business.kind": "trade",
+        "business.grossReceipts": "70000",
+        "business.expenses": "10000",
+        "business.municipalityHebesatz": "400"
+      },
+      "expected": {
+        "businessProfit": "60000.00",
+        "gewerbeertrag": "60000.00",
+        "tradeTaxMeasure": "1242.00",
+        "tradeTax": "4968.00",
+        "incomeTaxReduction35": "4968.00",
+        "incomeTaxAfterCredit": "33988.00",
+        "solidaritySurcharge": "1670.52"
+      }
+    },
+    {
+      "id": "tariff-and-soli-boundaries",
+      "facts": {
+        "taxableIncome": "12096",
+        "singleSoliBase": "20000"
+      },
+      "expected": {
+        "incomeTax": "0.00",
+        "solidaritySurcharge": "5.95"
+      }
+    }
+  ]
+}

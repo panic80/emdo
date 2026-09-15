@@ -21,6 +21,7 @@ const SyntheticSeedConfigurationSchema = z.strictObject({
   environment: z.literal('staging'),
   externalProvidersEnabled: z.literal('false'),
   financeSyntheticStaging: z.enum(['true', 'false']).optional(),
+  financeNormalizedSyntheticStaging: z.enum(['true', 'false']).optional(),
   householdName: z.string().trim().min(1).max(100),
   householdSlug: z
     .string()
@@ -146,6 +147,7 @@ type SyntheticSeedStage =
   | 'sync-token'
   | 'private-space'
   | 'finance-account'
+  | 'finance-normalized'
   | 'sync-upload'
   | 'unexpected';
 
@@ -225,7 +227,16 @@ const executeSyntheticSeedCommand = async (input: {
   readonly environment: Readonly<Record<string, string | undefined>>;
   readonly bootstrapOwner?: BootstrapOwner;
   readonly fetch?: SeedFetch;
-}): Promise<{ readonly status: 'seeded'; readonly operationCount: 3 }> => {
+}): Promise<{
+  readonly status: 'seeded';
+  readonly operationCount: 3;
+  readonly normalizedFinance?: {
+    bookId: string;
+    cashAccountId: string;
+    counterAccountId: string;
+    financialAccountId: string;
+  };
+}> => {
   const config = await withinStage('configuration', async () => {
     const configuration = SyntheticSeedConfigurationSchema.safeParse({
       apiOrigin: input.environment.EMDO_STAGING_API_ORIGIN,
@@ -235,6 +246,8 @@ const executeSyntheticSeedCommand = async (input: {
       externalProvidersEnabled:
         input.environment.EMDO_EXTERNAL_PROVIDERS_ENABLED,
       financeSyntheticStaging: input.environment.EMDO_FINANCE_SYNTHETIC_STAGING,
+      financeNormalizedSyntheticStaging:
+        input.environment.EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING,
       householdName: input.environment.EMDO_BOOTSTRAP_HOUSEHOLD_NAME,
       householdSlug: input.environment.EMDO_BOOTSTRAP_HOUSEHOLD_SLUG,
       ownerEmail: input.environment.EMDO_SYNTHETIC_OWNER_EMAIL,
@@ -244,7 +257,16 @@ const executeSyntheticSeedCommand = async (input: {
       syntheticDataOnly: input.environment.EMDO_SYNTHETIC_DATA_ONLY,
     });
     if (
-      input.argv.length !== 2 ||
+      input.argv.length !==
+        (configuration.success &&
+        configuration.data.financeNormalizedSyntheticStaging === 'true'
+          ? 3
+          : 2) ||
+      (configuration.success &&
+        configuration.data.financeNormalizedSyntheticStaging === 'true' &&
+        (input.argv[2] !== '--finance-normalized-synthetic-gates' ||
+          configuration.data.financeSyntheticStaging !== 'true' ||
+          !configuration.data.ownerEmail.endsWith('.invalid'))) ||
       input.argv[0] !== '--fail-if-nonempty' ||
       input.argv[1] !== '--staging-only' ||
       !configuration.success
@@ -378,6 +400,68 @@ const executeSyntheticSeedCommand = async (input: {
     if (privateSpaces.length !== 1) throw new Error('unavailable');
     return privateSpaces[0]!.id;
   });
+  const normalizedFinance =
+    config.financeNormalizedSyntheticStaging === 'true'
+      ? await withinStage('finance-normalized', async () => {
+          const create = async (path: string, key: string, body: unknown) =>
+            json(
+              await request(
+                new Request(`${config.apiOrigin}/api/v2/finance/${path}`, {
+                  method: 'POST',
+                  headers: {
+                    'content-type': 'application/json',
+                    cookie: cookies.join('; '),
+                    origin: config.publicOrigin,
+                    'x-csrf-token': csrf.token,
+                    'idempotency-key': key,
+                  },
+                  body: JSON.stringify(body),
+                  redirect: 'error',
+                }),
+              ),
+              z.object({ id: z.uuid() }),
+            );
+          const book = await create('books', 'synthetic-normalized-book-v1', {
+            name: 'Synthetic normalized staging',
+            entityName: 'Synthetic staging household',
+            entityKind: 'individual',
+            country: 'CA',
+            functionalCurrency: 'CAD',
+            fiscalYearStartMonth: 1,
+          });
+          const cash = await create(
+            `books/${book.id}/accounts`,
+            'synthetic-normalized-cash-v1',
+            { code: '1000', name: 'Synthetic cash', kind: 'asset' },
+          );
+          const counter = await create(
+            `books/${book.id}/accounts`,
+            'synthetic-normalized-counter-v1',
+            { code: '3000', name: 'Synthetic equity', kind: 'equity' },
+          );
+          await create(
+            `books/${book.id}/periods`,
+            'synthetic-normalized-period-v1',
+            { startsOn: '2026-01-01', endsOn: '2026-12-31' },
+          );
+          const financial = await create(
+            `books/${book.id}/financial-accounts`,
+            'synthetic-normalized-financial-v1',
+            {
+              name: 'Synthetic normalized bank',
+              kind: 'bank',
+              currency: 'CAD',
+              ledgerAccountId: cash.id,
+            },
+          );
+          return {
+            bookId: book.id,
+            cashAccountId: cash.id,
+            counterAccountId: counter.id,
+            financialAccountId: financial.id,
+          };
+        })
+      : undefined;
   const createdAt = SYNTHETIC_CREATED_AT;
   const operations = [
     operation({
@@ -491,6 +575,7 @@ const executeSyntheticSeedCommand = async (input: {
   return Object.freeze({
     status: 'seeded' as const,
     operationCount: 3 as const,
+    ...(normalizedFinance ? { normalizedFinance } : {}),
   });
 };
 

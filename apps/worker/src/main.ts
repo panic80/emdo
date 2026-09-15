@@ -1,6 +1,24 @@
+import {
+  enqueueStandardization,
+  registerStandardizationWorker,
+  type StandardizationEnqueue,
+} from './finance-standardization-delivery.js';
+import {
+  FINANCE_STANDARDIZATION_QUEUE,
+  type createFinanceStandardizationWorker,
+} from './finance-standardization-worker.js';
+import {
+  enqueueFinanceDelivery,
+  type FinanceDeliveryEnqueue,
+} from './finance-delivery.js';
 import { createRequire } from 'node:module';
 
 import { deepFreeze } from '@emdo/contracts';
+import {
+  FINANCE_AUTOMATION_QUEUE,
+  registerFinanceAutomationWorker,
+  type createFinanceAutomationDispatcher,
+} from './finance-automation-worker.js';
 import type { ConstructorOptions } from 'pg-boss';
 
 import {
@@ -35,6 +53,8 @@ export interface PgBossRuntimeModule {
 }
 
 export interface DeterministicWorkerHandle {
+  readonly enqueueFinance?: FinanceDeliveryEnqueue;
+  readonly enqueueStandardization?: StandardizationEnqueue;
   enqueue(
     name: WorkerJobName,
     input: unknown,
@@ -194,6 +214,12 @@ const verifyQueuePrincipal = async (boss: PgBossRuntime): Promise<void> => {
 };
 
 export const startDeterministicWorker = async (input: {
+  readonly standardizationDispatch?: ReturnType<
+    typeof createFinanceStandardizationWorker
+  >;
+  readonly financeAutomationDispatch?: ReturnType<
+    typeof createFinanceAutomationDispatcher
+  >;
   readonly databaseUrl: string;
   readonly dependencies: WorkerJobDependencies;
   readonly onOperationalEvent: (event: WorkerOperationalEvent) => void;
@@ -222,6 +248,8 @@ export const startDeterministicWorker = async (input: {
   }
 
   let workerIds: Readonly<Record<WorkerJobName, string>>;
+  let financeWorkerId: string | undefined;
+  let standardizationWorkerId: string | undefined;
   try {
     boss.on('error', () => {
       try {
@@ -235,6 +263,16 @@ export const startDeterministicWorker = async (input: {
     await boss.start();
     await verifyQueuePrincipal(boss);
     workerIds = await registerWorkerJobs(boss, input.dependencies);
+    if (input.standardizationDispatch)
+      standardizationWorkerId = await registerStandardizationWorker(
+        boss,
+        input.standardizationDispatch,
+      );
+    if (input.financeAutomationDispatch)
+      financeWorkerId = await registerFinanceAutomationWorker({
+        boss,
+        dispatch: input.financeAutomationDispatch,
+      });
   } catch {
     try {
       await boss.stop({ graceful: true });
@@ -246,8 +284,35 @@ export const startDeterministicWorker = async (input: {
 
   let stopPromise: Promise<void> | undefined;
   let acceptingEnqueues = true;
-  const activeEnqueues = new Set<Promise<WorkerJobEnqueueResult>>();
+  const activeEnqueues = new Set<Promise<unknown>>();
   return Object.freeze({
+    ...(input.standardizationDispatch
+      ? {
+          enqueueStandardization: ((delivery, signal) => {
+            if (!acceptingEnqueues) return Promise.resolve(false);
+            const pending = enqueueStandardization(boss, delivery, signal);
+            activeEnqueues.add(pending);
+            void pending
+              .finally(() => activeEnqueues.delete(pending))
+              .catch(() => {});
+            return pending;
+          }) satisfies StandardizationEnqueue,
+        }
+      : {}),
+    ...(input.financeAutomationDispatch
+      ? {
+          enqueueFinance: ((delivery, signal) => {
+            if (!acceptingEnqueues)
+              return Promise.reject(new Error('Worker is stopping'));
+            const pending = enqueueFinanceDelivery(boss, delivery, signal);
+            activeEnqueues.add(pending);
+            void pending
+              .finally(() => activeEnqueues.delete(pending))
+              .catch(() => {});
+            return pending;
+          }) satisfies FinanceDeliveryEnqueue,
+        }
+      : {}),
     enqueue(
       name: WorkerJobName,
       payload: unknown,
@@ -272,6 +337,26 @@ export const startDeterministicWorker = async (input: {
         const enqueueResults = await Promise.allSettled(activeEnqueues);
         if (enqueueResults.some((result) => result.status === 'rejected')) {
           failed = true;
+        }
+        if (standardizationWorkerId !== undefined) {
+          try {
+            await boss.offWork(FINANCE_STANDARDIZATION_QUEUE, {
+              id: standardizationWorkerId,
+              wait: true,
+            });
+          } catch {
+            failed = true;
+          }
+        }
+        if (financeWorkerId !== undefined) {
+          try {
+            await boss.offWork(FINANCE_AUTOMATION_QUEUE, {
+              id: financeWorkerId,
+              wait: true,
+            });
+          } catch {
+            failed = true;
+          }
         }
         for (const name of Object.values(WORKER_JOB_NAMES).reverse()) {
           try {

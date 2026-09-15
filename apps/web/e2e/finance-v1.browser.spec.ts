@@ -294,7 +294,7 @@ test('uses localized, accessible Finance views and routes guarded actions throug
 
   const tablist = page.getByRole('tablist', { name: 'Finance views' });
   await expect(tablist).toBeVisible();
-  await expect(tablist.getByRole('tab')).toHaveCount(4);
+  await expect(tablist.getByRole('tab')).toHaveCount(8);
   await expect(page.getByRole('tab', { name: 'Overview' })).toHaveAttribute(
     'aria-selected',
     'true',
@@ -303,6 +303,7 @@ test('uses localized, accessible Finance views and routes guarded actions throug
   await expect
     .poll(() => observations.financeRequests.length)
     .toBeGreaterThan(1);
+  await page.getByRole('tab', { name: 'Activity' }).click();
   await expect(page.getByText('Groceries').first()).toBeVisible();
   for (const [index, label] of [
     'Overview',
@@ -325,12 +326,18 @@ test('uses localized, accessible Finance views and routes guarded actions throug
   await page.getByRole('tab', { name: 'Activity' }).click();
   await expect(page.getByText('Reviewed receipt')).toBeVisible();
   await page.getByRole('button', { name: 'Categorize or annotate' }).click();
-  await page.getByLabel('Category ID').fill('food');
+  await page
+    .getByRole('tabpanel')
+    .getByLabel('Category ID', { exact: true })
+    .fill('food');
   await page.getByLabel('Annotation').fill('Reviewed in browser');
   await page.getByRole('button', { name: 'Ask EMDO to save' }).click();
   await expect.poll(() => observations.turns.length).toBe(5);
 
   await page.getByRole('tab', { name: 'Documents' }).click();
+  await page
+    .getByRole('button', { name: 'Workspace uploads', exact: true })
+    .click();
   const original = page
     .getByRole('link', { name: 'Download original' })
     .first();
@@ -346,9 +353,11 @@ test('uses localized, accessible Finance views and routes guarded actions throug
   await expect(dataControls).toHaveAttribute('target', '_blank');
   await expect(dataControls).toHaveAttribute('rel', /noreferrer/u);
   await expect(
-    page.getByText(
-      'Items in currencies other than CAD are excluded from CAD totals.',
-    ),
+    page
+      .getByRole('tabpanel')
+      .getByText(
+        'Items in currencies other than CAD are excluded from CAD totals.',
+      ),
   ).toBeVisible();
 
   await page.getByRole('button', { name: 'Review extraction' }).click();
@@ -385,7 +394,9 @@ test('uses localized, accessible Finance views and routes guarded actions throug
   await expect(page.getByText('Reviewed CAD', { exact: true })).toBeVisible();
   await page.getByRole('tab', { name: 'Overview' }).focus();
   await page.keyboard.press('ArrowRight');
-  await expect(page.getByRole('tab', { name: 'Activity' })).toBeFocused();
+  await expect(
+    page.getByRole('tab', { name: 'Books', exact: true }),
+  ).toBeFocused();
   await expectNoSeriousAccessibilityViolations(page);
 
   await page.setViewportSize({ width: 320, height: 700 });

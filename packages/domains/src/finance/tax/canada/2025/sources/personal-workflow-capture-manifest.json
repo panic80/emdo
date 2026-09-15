@@ -1,0 +1,75 @@
+[
+  {
+    "id": "cra-t2125-2025",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2125/t2125-25e.pdf",
+    "formVersion": "T2125 E (25)",
+    "documentHash": "fae75091753cb1810404c00aaa3f2c1a91cfae942b73bace7e6b884f24a08738",
+    "retrievedAt": "2026-09-14T02:21:46.923712+00:00",
+    "bytes": 82536,
+    "localFile": "t2125-25e.pdf",
+    "textExtraction": "pdftotext -layout; authoritative hash covers PDF bytes"
+  },
+  {
+    "id": "cra-5000-s6-25e",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s6/5000-s6-25e.txt",
+    "documentHash": "eea18e6c3593e7289c1eb5f1279597bc6980203f01aeea5711cc9cdd1c07a7e1",
+    "retrievedAt": "2026-09-14T02:22:53.804828+00:00",
+    "localFile": "5000-s6-25e.txt"
+  },
+  {
+    "id": "cra-5006-a-25e",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5006-a/5006-a-25e.txt",
+    "documentHash": "ca7f17ba89f09d6e1ede0cf859e2a1b89199f82c3302d5673277f3011d5ce53f",
+    "retrievedAt": "2026-09-14T02:22:56.886402+00:00",
+    "localFile": "5006-a-25e.txt"
+  },
+  {
+    "id": "cra-t2204-2025",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/t2204/t2204-25e.pdf",
+    "formVersion": "T2204 E (25)",
+    "documentHash": "5b34eff9998812738dc116272db8cd20add88b84a3fde7532f580cd1fd11f987",
+    "retrievedAt": "2026-09-14T02:43:50.377152+00:00",
+    "localFile": "t2204-25e.pdf"
+  },
+  {
+    "id": "cra-line-25200-2025-html",
+    "url": "https://www.canada.ca/en/revenue-agency/services/tax/individuals/topics/about-your-tax-return/tax-return/completing-a-tax-return/deductions-credits-expenses/line-25200-non-capital-losses-other-years.html",
+    "formVersion": "2025 line 25200 guidance",
+    "documentHash": "d05244de980986f5aeae6d09bbd0ced1f4fc75a204840406f4869c782045b4c2",
+    "retrievedAt": "2026-09-14T18:48:30Z",
+    "localFile": "line-25200-2025.html"
+  },
+  {
+    "id": "cra-itam-chapter-29-loss-order-2025-html",
+    "url": "https://www.canada.ca/en/revenue-agency/services/tax/technical-information/income-tax-audit-manual-domestic-compliance-programs-branch-dcpb-29.html",
+    "formVersion": "2025 loss carryover guidance",
+    "documentHash": "190c061be35ea46f293da6797a3db76e7d8d8b9409dd781dd11d25437415e5e4",
+    "retrievedAt": "2026-09-14T18:56:00Z",
+    "localFile": "itam-chapter-29-loss-carryovers-2025.html"
+  },
+  {
+    "id": "cra-5000-s9-2025-etext",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s9/5000-s9-25e.txt",
+    "formVersion": "5000-S9 E (25)",
+    "documentHash": "86988baa6d4a6918d202ec7beb167e57c9ae42136bbf2ca19125aada2b26cb06",
+    "retrievedAt": "2026-09-15T05:00:00.000Z",
+    "localFile": "5000-s9-25e.txt"
+  },
+  {
+    "id": "cra-5000-s9-2025-fillable",
+    "url": "https://www.canada.ca/content/dam/cra-arc/formspubs/pbg/5000-s9/5000-s9-fill-25e.pdf",
+    "formVersion": "5000-S9 fillable PDF (25)",
+    "documentHash": "aac16785c69833801b8b4c4d0203b6cfc49f48cd7638dc6e61b69a294ddc5542",
+    "retrievedAt": "2026-09-15T05:00:00.000Z",
+    "localFile": "5000-s9-fill-25e.pdf"
+  },
+  {
+    "id": "cra-p113-2025-html",
+    "url": "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/p113/p113-gifts-income-tax.html",
+    "formVersion": "P113 (E) Rev. 25",
+    "documentHash": "b9f89b855080fb4b632adad9b99a5b77649a0d4d025549769667282e7c1b5745",
+    "retrievedAt": "2026-09-15T05:18:00.000Z",
+    "bytes": 117817,
+    "localFile": "p113-gifts-income-tax-2025.html"
+  }
+]

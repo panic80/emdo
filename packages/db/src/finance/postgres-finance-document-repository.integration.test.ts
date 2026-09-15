@@ -395,8 +395,8 @@ describeDatabase(
       );
 
       const migrations = await loadOrderedMigrations();
-      expect(migrations).toHaveLength(24);
-      expect(migrations.at(-1)?.id).toBe('0023_astra_model_migration');
+      expect(migrations.length).toBeGreaterThanOrEqual(24);
+      expect(migrations[23]?.id).toBe('0023_astra_model_migration');
       if (preflight.rows[0]?.emdo_schema === null) {
         for (const migration of migrations) await admin.query(migration.sql);
       } else {
@@ -716,7 +716,9 @@ describeDatabase(
           "update emdo.finance_document_extractions set model = 'gpt-5.6-terra' where id = $1",
           [ids.ownerExtraction],
         );
-        const migration = (await loadOrderedMigrations()).at(-1);
+        const migration = (await loadOrderedMigrations()).find(
+          ({ id }) => id === '0023_astra_model_migration',
+        );
         if (migration?.id !== '0023_astra_model_migration')
           throw new Error('missing-astra-migration');
         await client.query(migration.sql);

@@ -1,7 +1,12 @@
 import { Buffer } from 'node:buffer';
 
 import { RunContext, RunState, RunToolApprovalItem } from '@openai/agents';
-import { IdentifierSchema, OpaqueReferenceSchema } from '@emdo/contracts';
+import {
+  IdentifierSchema,
+  OpaqueReferenceSchema,
+  UuidSchema,
+} from '@emdo/contracts';
+import { specialistCapabilitySchemas } from '../agents/capability-runtime.js';
 import type {
   AgentExecutionContext,
   OpenAiAgentsRunnerPort,
@@ -52,6 +57,14 @@ const SearchDocumentCommandSchema = z.strictObject({
   action: z.literal('search-document'),
   query: z.string().trim().min(1).max(1_000),
 });
+const ReadNormalizedImportCommandSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  action: z.literal('read-normalized-import'),
+  bookId: UuidSchema,
+  importId: UuidSchema,
+  offset: z.number().int().min(0).max(1000000),
+  limit: z.number().int().min(1).max(20),
+});
 const CreateManualTransactionCommandSchema = z.strictObject({
   schemaVersion: z.literal(1),
   action: z.literal('create-manual-transaction'),
@@ -71,6 +84,7 @@ const DeleteDocumentCommandSchema = z.strictObject({
 
 const FinanceSyntheticStagingCommandSchema = z.discriminatedUnion('action', [
   SearchDocumentCommandSchema,
+  ReadNormalizedImportCommandSchema,
   CreateManualTransactionCommandSchema,
   CommitDocumentReviewCommandSchema,
   DeleteDocumentCommandSchema,
@@ -414,7 +428,8 @@ const disclosedInputFromRunState = (
 
 const exactFunctionTool = (
   agent: OpenAiSdkAgent,
-  name: 'finance_documents_search' | 'finance_records_write',
+  name:
+    'finance_documents_search' | 'finance_records_write' | 'finance_books_read',
 ): OpenAiSdkFunctionTool => {
   const candidates = agent.tools.filter(
     (tool): tool is OpenAiSdkFunctionTool =>
@@ -585,6 +600,36 @@ const executeFinanceCommand = async (
     return Object.freeze({
       state: completedState(),
       finalOutput: financeSearchOutput(output),
+    });
+  }
+  if (command.action === 'read-normalized-import') {
+    const tool = exactFunctionTool(agent, 'finance_books_read');
+    const output = specialistCapabilitySchemas[
+      'finance.books.read'
+    ].output.parse(
+      await invoke(tool, context, {
+        schemaVersion: 1,
+        view: 'import-review',
+        bookId: command.bookId,
+        importId: command.importId,
+        valuationId: null,
+        offset: command.offset,
+        limit: command.limit,
+      }),
+    );
+    if (output.bookId !== command.bookId || output.view !== 'import-review')
+      throw new Error('finance-synthetic-staging-normalized-scope-invalid');
+    // Preserve exact strings, source references and pagination. Never manufacture
+    // evidence registry IDs from URLs or imply that one page is a complete import.
+    return Object.freeze({
+      state: completedState(),
+      finalOutput: FinanceOutputSchema.parse({
+        summary: `Normalized import page: ${JSON.stringify(output)}`,
+        clarificationQuestion: null,
+        evidenceReferences: [],
+        derivedValueReferences: [],
+        actionProposalReferences: [],
+      }),
     });
   }
   const tool = exactFunctionTool(agent, 'finance_records_write');
@@ -884,8 +929,7 @@ export const createFinanceSyntheticStagingAgentServiceBundle = (
   })();
   const bundle: ProductionOpenAiAgentServiceBundle = {
     modelAvailability: {
-      isAvailable: async (model) =>
-        model === 'gpt-6-astra' || model === 'gpt-6-astra',
+      isAvailable: async (model) => model === 'gpt-6-astra',
     },
     costCalculator: {
       calculateCadMinor: () => 1,

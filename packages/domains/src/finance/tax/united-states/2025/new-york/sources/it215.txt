@@ -1,0 +1,117 @@
+                                                                                                                                                                                     IT-215
+                                                      Department of Taxation and Finance
+
+                                                      Claim for Earned Income Credit
+                                                      New York State • New York City
+                                                      Tax Law - Section 606(d)
+
+Submit this form with Form IT-201 or IT-203.
+ Name(s) as shown on return                                                                                                                                 Your Social Security number
+
+
+
+  1     Did you claim the federal earned income credit? If No, stop; you do not qualify for these credits. ........................                                       1       Yes           No
+  2     Is your investment income (see instructions) greater than $11,950? If Yes, stop; you do not qualify for these credits. .                                          2       Yes           No
+ 3 Is your federal filing status Married filing separate and do you meet the requirements to be considered unmarried
+		  for the purposes of the earned income credit? . .......................................................................................................               3       Yes           No
+ 4 Did you claim qualifying children on your federal Schedule EIC? If No, continue with line 5.
+		 If Yes, in the spaces below, list up to three of the same children you claimed on federal Schedule EIC. . ...............                                              4       Yes           No
+		  If you claimed more than three, see instructions.
+
+                              First name                      MI                                    Last name                                      Suffix                      Relationship
+
+   1st
+  Child       No. of months               Full-time                Person with
+                                                                                              Social Security number             Date of birth (mmddyyyy)
+              lived with you              student*                 disability*
+                              First name                      MI                                    Last name                                      Suffix                      Relationship
+
+  2nd
+  Child       No. of months               Full-time                Person with
+                                                                                              Social Security number             Date of birth (mmddyyyy)
+              lived with you              student*                 disability*
+                              First name                      MI                                    Last name                                      Suffix                      Relationship
+
+   3rd
+  Child       No. of months               Full-time                Person with
+                                                                                              Social Security number             Date of birth (mmddyyyy)
+              lived with you              student*                 disability*
+
+             * Mark an X in these boxes only if you checked Yes in the same box on your federal Schedule EIC (box 4a or 4b).
+ 5 Is the IRS figuring your federal earned income credit (EIC) for you? If Yes, complete lines 6 through 9 (also lines 21,
+			 23, and 24 if you are a part-year New York State resident, and line 28 if you are a part‑year New York City resident).
+			 The Tax Department will calculate your New York State and, if applicable, your New York City earned income credit
+			 for you. If No, complete lines 6 through 17 (and lines 18 through 26 if you are a part-year New York State resident).
+			 New York City residents must complete Worksheet C, New York City earned income credit, in the instructions.
+			 Part‑year New York City residents must also complete line 28 on the back of this claim form. . ............................... 5		
+                                                                                                                                     Yes                                                         No
+                                                                                                                                                                                   Whole dollars only
+
+  6     Wages, salaries, tips, etc., from Worksheet A line 3, in the instructions. . .................................................................... 6                                             .00
+  7     Earned income adjustments (see instructions) . ................................................................................................................ 7                               .00
+  8     Business income or loss (see instructions) ....................................................................................................................... 8                            .00
+          Employer identification number (see instructions). ..
+  9     Enter your federal adjusted gross income (from Form IT-201, line 19, or Form IT-203, line 19, Federal amount column) . .........                                   9                            .00
+ 10     Amount of federal EIC claimed (from federal Form 1040, line 27a) .................................................................................. 10                                          .00
+ 11     New York State earned income credit (NYS EIC) rate 30% (.30) .................................................................................. 11                                              .30
+ 12     Tentative NYS EIC (multiply line 10 by line 11; see instructions) . .......................................................................................... 12                               .00
+Complete Worksheet B on the back page before continuing.
+13 Enter the amount from Worksheet B, line 5, on the back of this form. .................. 13                                                             .00
+14 New York State household credit (from Form IT-201, line 40, or Form IT-203, line 39)... 14                                                             .00
+15 Enter the smaller of line 13 or line 14 ............................................................................................................................ 15                              .00
+16 Allowable New York State earned income credit (subtract line 15 from line 12; see instructions) ..................................... 16                                                             .00
+17 Complete only if you filed your federal return as Married filing joint, but are required to file your New York State
+		  return as Married filing separate return (see instructions). ........................................................................................... 17                                         .00
+     Joint federal adjusted gross income . ..................................................................                                             .00
+
+
+
+
+            215001250094
+IT-215 (2025) (back)
+
+
+
+Part-year New York State resident earned income credit
+
+Lines 18 through 26 apply only to part-year New York State
+   residents claiming the New York State earned income credit.
+18 Enter your New York State earned income credit (from line 16 or line 17) . .......................................................................                                   18   .00
+19 Enter the amount from Form IT-203, line 42 ..................................................................................................................                        19   .00
+		 – If line 19 is equal to or more than line 18, stop.
+20 Subtract line 19 from line 18 ..........................................................................................................................................             20   .00
+21 Enter the amount from Form IT-203-ATT, line 31 (If you do not have to file Form IT-203-ATT, leave blank and continue on line 22 below.)                                              21   .00
+		 – If Form IT-215, line 21, is equal to or more than Form IT-215, line 20, stop. Do not continue
+  	 	 with this calculation. Enter the amount from line 20 above on Form IT-203-ATT, line 32.
+			 – If Form IT-215, line 21, is less than Form IT‑215, line 20, enter the amount from line 20 above on
+		 	 Form IT-203-ATT, line 32, and continue on line 22 below.
+22 Subtract line 21 from line 20...........................................................................................................................................             22   .00
+23 Amount from line 19, Column D, of Part-year resident income allocation worksheet,
+		  in Form IT-203-I (see instructions)................................................................................ 23                                            .00
+
+ 24     Enter the amount from Form IT-203, line 19, Federal amount column..........................                                       24                                    .00
+
+ 25     Divide line 23 by line 24 (round the result to the fourth decimal place). This amount cannot exceed 100% (1.0000) (see instr.) 25
+ 26     Multiply line 22 by line 25. Enter the result here and on Form IT-203-ATT, line 10 .. .................................................  	26                                         .00
+
+New York City earned income credit (full-year and part-year New York City residents)
+
+27 Enter the amount from Worksheet C, here and on Form IT-201, line 70,
+		 or Form IT-203-ATT, line 11. ... .................................................................................................................................. 27                    .00
+		  Part-year New York City residents must also complete line 28 below.
+28 Part-year New York City adjusted gross income
+		  Enter the amounts from Worksheet C, lines 6 and 7 . ....................................... 28A                                                       .00         28B                    .00
+
+Worksheet B
+
+  1     New York State tax (from Form IT-201, line 39, or Form IT-203, line 38) . ...............................................................................                        1   .00
+  2     Resident credit (see instructions) .....................................................................................          2                                     .00
+  3     Accumulation distribution credit (see instructions) ...........................................................                   3                                     .00
+  4     Add lines 2 and 3 ...........................................................................................................................................................    4   .00
+  5     Subtract line 4 from line 1 (if line 4 is more than line 1, enter 0). Enter here and on line 13 on the front of this form . .........                                            5   .00
+
+
+
+
+            215002250094
+

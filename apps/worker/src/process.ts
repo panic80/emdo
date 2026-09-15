@@ -1,4 +1,8 @@
+import type { createFinanceStandardizationWorker } from './finance-standardization-worker.js';
+import type { StandardizationEnqueue } from './finance-standardization-delivery.js';
+import type { FinanceDeliveryEnqueue } from './finance-delivery.js';
 import { z } from 'zod';
+import type { createFinanceAutomationDispatcher } from './finance-automation-worker.js';
 
 import {
   type WorkerJobDependencies,
@@ -24,9 +28,17 @@ export interface WorkerOutboxDispatcherHandle {
 }
 
 export interface WorkerProcessComposition {
+  readonly standardizationDispatch?: ReturnType<
+    typeof createFinanceStandardizationWorker
+  >;
+  readonly financeAutomationDispatch?: ReturnType<
+    typeof createFinanceAutomationDispatcher
+  >;
   readonly providerStatus: WorkerProviderStatus;
   readonly jobDependencies: WorkerJobDependencies;
   startOutboxDispatcher(input: {
+    readonly enqueueFinance?: FinanceDeliveryEnqueue;
+    readonly enqueueStandardization?: StandardizationEnqueue;
     readonly signal: AbortSignal;
     readonly enqueue: (
       name: WorkerJobName,
@@ -106,6 +118,12 @@ type CreateComposition = (input: {
 }) => Promise<WorkerProcessComposition>;
 
 type StartQueue = (input: {
+  readonly standardizationDispatch?: ReturnType<
+    typeof createFinanceStandardizationWorker
+  >;
+  readonly financeAutomationDispatch?: ReturnType<
+    typeof createFinanceAutomationDispatcher
+  >;
   readonly databaseUrl: string;
   readonly dependencies: WorkerJobDependencies;
   readonly onOperationalEvent: (event: WorkerOperationalEvent) => void;
@@ -204,12 +222,22 @@ export const startWorkerProcess = async (input: {
     queue = await (input.startQueue ?? startDeterministicWorker)({
       databaseUrl: config.databaseUrl,
       dependencies: composition.jobDependencies,
+      ...(composition.standardizationDispatch
+        ? { standardizationDispatch: composition.standardizationDispatch }
+        : {}),
+      ...(composition.financeAutomationDispatch
+        ? { financeAutomationDispatch: composition.financeAutomationDispatch }
+        : {}),
       onOperationalEvent(event) {
         requestFatalShutdown(event);
       },
     });
     dispatcher = await composition.startOutboxDispatcher({
       signal: abortController.signal,
+      ...(queue.enqueueStandardization
+        ? { enqueueStandardization: queue.enqueueStandardization }
+        : {}),
+      ...(queue.enqueueFinance ? { enqueueFinance: queue.enqueueFinance } : {}),
       enqueue: (name, payload, options) =>
         queue!.enqueue(name, payload, options),
       onFatalError: () =>

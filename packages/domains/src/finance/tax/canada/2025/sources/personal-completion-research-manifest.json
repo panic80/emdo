@@ -1,0 +1,20 @@
+[
+  {
+    "url": "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/rc4018/chapter-1.html",
+    "localFile": "rc4018-chapter1-2025.html",
+    "documentHash": "3fc065a07d2a2b718305c6c9065315dbad1c17d430656c04df50a1a52dab2c1e",
+    "retrievedAt": "2026-09-14T04:18:55.702252+00:00"
+  },
+  {
+    "url": "https://www.canada.ca/en/revenue-agency/services/tax/individuals/educational-programs/completing-basic-return/exercise-completing-basic-return.html",
+    "localFile": "cra-basic-return-exercise.html",
+    "documentHash": "0d70f69c3720c4dc7cd788011cbf98b54ee240897ae70dc7255a825ccffe279b",
+    "retrievedAt": "2026-09-14T04:18:56.840606+00:00"
+  },
+  {
+    "url": "https://www.canada.ca/en/revenue-agency/services/forms-publications/publications/p113/p113-gifts-income-tax.html",
+    "localFile": "p113-gifts-income-tax-2025.html",
+    "documentHash": "b9f89b855080fb4b632adad9b99a5b77649a0d4d025549769667282e7c1b5745",
+    "retrievedAt": "2026-09-15T05:18:00.000Z"
+  }
+]

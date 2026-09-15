@@ -11,10 +11,37 @@ import {
   financeMatchDecisionRequest,
   financeTransactionPatchRequest,
   formatCadMinor,
+  financeVisibleRecords,
+  financePageAuthorityChanged,
   localDateInputValue,
 } from './finance.js';
 
 describe('FinanceRoute helpers', () => {
+  it('restarts pagination when the ledger authority changes during browsing', () => {
+    const legacy = { schemaVersion: 1, items: [] } as const;
+    const normalized = { ...legacy, ledgerAuthority: 'normalized' } as const;
+    expect(financePageAuthorityChanged(legacy, normalized)).toBe(true);
+    expect(financePageAuthorityChanged(normalized, legacy)).toBe(true);
+    expect(
+      financePageAuthorityChanged(legacy, {
+        ...legacy,
+        ledgerAuthority: 'legacy',
+      }),
+    ).toBe(false);
+    expect(financePageAuthorityChanged(normalized, normalized)).toBe(false);
+  });
+  it('excludes retired offline records and gives server corrections precedence', () => {
+    const stale = { id: 'same', amount: 100 };
+    const corrected = { id: 'same', amount: 200 };
+    const offlineOnly = { id: 'offline', amount: 300 };
+    expect(
+      financeVisibleRecords([corrected], [stale, offlineOnly], true),
+    ).toEqual([corrected]);
+    expect(financeVisibleRecords([], [stale], true)).toEqual([]);
+    expect(
+      financeVisibleRecords([corrected], [stale, offlineOnly], false),
+    ).toEqual([corrected, offlineOnly]);
+  });
   it('keeps CAD as exact integer minor units and formats using the active locale', () => {
     expect(cadInputToMinorUnits('12.34')).toBe(1234);
     for (const locale of ['en-CA', 'fr-CA', 'ja-JP', 'ko-KR'] as const) {

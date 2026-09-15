@@ -26,11 +26,24 @@ export interface ProductionFinanceSpecialistComposition {
 
 /**
  * Finite Finance specialist persistence composition. It owns no model,
- * provider, storage, SQL, or credentials and exposes only the seven registered
+ * provider, storage, SQL, or credentials and exposes only the registered
  * Finance capability services.
  */
 export const createProductionFinanceSpecialistComposition = (input: {
   readonly pool: FinancePool;
+  readonly pdfOcrInspection?: import('./finance-agent-services.js').RequestScopedFinanceSpecialistServiceDependencies['pdfOcrInspection'];
+  readonly imageInspection?: import('./finance-agent-services.js').RequestScopedFinanceSpecialistServiceDependencies['imageInspection'];
+  readonly planning?: import('./finance-agent-services.js').RequestScopedFinanceSpecialistServiceDependencies['planning'];
+  readonly cashDividends?: import('./finance-agent-services.js').RequestScopedFinanceSpecialistServiceDependencies['cashDividends'];
+  readonly standardizationRuns?: import('./finance-agent-services.js').RequestScopedFinanceSpecialistServiceDependencies['standardizationRuns'];
+  readonly taxCalculationRuns?: import('./finance-agent-services.js').RequestScopedFinanceSpecialistServiceDependencies['taxCalculationRuns'];
+  readonly taxCases?: import('./finance-agent-services.js').RequestScopedFinanceSpecialistServiceDependencies['taxCases'];
+  readonly normalizedBooks?: import('./finance-agent-services.js').RequestScopedFinanceSpecialistServiceDependencies['normalizedBooks'];
+  readonly automationSchedules?: import('./finance-agent-services.js').RequestScopedFinanceSpecialistServiceDependencies['automationSchedules'];
+  readonly journalDrafts?: import('./finance-agent-services.js').RequestScopedFinanceSpecialistServiceDependencies['journalDrafts'];
+  readonly investmentReconciliation?: import('./finance-agent-services.js').RequestScopedFinanceSpecialistServiceDependencies['investmentReconciliation'];
+  readonly automationRuns?: import('./finance-agent-services.js').RequestScopedFinanceSpecialistServiceDependencies['automationRuns'];
+  readonly generatedReports?: import('./finance-agent-services.js').RequestScopedFinanceSpecialistServiceDependencies['generatedReports'];
   readonly imports: Pick<FinanceImportGateway, 'commit'> & {
     checkReady(): Promise<boolean>;
   };
@@ -101,6 +114,41 @@ export const createProductionFinanceSpecialistComposition = (input: {
       return createRequestScopedFinanceSpecialistServices({
         principal: fixedPrincipal,
         dependencies: {
+          ...(input.pdfOcrInspection
+            ? { pdfOcrInspection: input.pdfOcrInspection }
+            : {}),
+          ...(input.imageInspection
+            ? { imageInspection: input.imageInspection }
+            : {}),
+          ...(input.planning ? { planning: input.planning } : {}),
+          ...(input.cashDividends
+            ? { cashDividends: input.cashDividends }
+            : {}),
+          ...(input.standardizationRuns
+            ? { standardizationRuns: input.standardizationRuns }
+            : {}),
+          ...(input.taxCalculationRuns
+            ? { taxCalculationRuns: input.taxCalculationRuns }
+            : {}),
+          ...(input.taxCases ? { taxCases: input.taxCases } : {}),
+          ...(input.normalizedBooks
+            ? { normalizedBooks: input.normalizedBooks }
+            : {}),
+          ...(input.automationSchedules
+            ? { automationSchedules: input.automationSchedules }
+            : {}),
+          ...(input.journalDrafts
+            ? { journalDrafts: input.journalDrafts }
+            : {}),
+          ...(input.investmentReconciliation
+            ? { investmentReconciliation: input.investmentReconciliation }
+            : {}),
+          ...(input.automationRuns
+            ? { automationRuns: input.automationRuns }
+            : {}),
+          ...(input.generatedReports
+            ? { generatedReports: input.generatedReports }
+            : {}),
           records,
           documents: documentPort,
           imports: input.imports,

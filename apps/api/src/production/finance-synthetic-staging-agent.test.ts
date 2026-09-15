@@ -498,6 +498,89 @@ describe('Finance synthetic staging agent service bundle', () => {
     });
   });
 
+  it('delegates normalized import readback and preserves exact amounts and pagination without writes', async () => {
+    const command = {
+      schemaVersion: 1 as const,
+      action: 'read-normalized-import' as const,
+      bookId: '71000000-0000-4000-8000-000000000010',
+      importId: '71000000-0000-4000-8000-000000000011',
+      offset: 0,
+      limit: 20,
+    };
+    const page = {
+      schemaVersion: 1,
+      view: 'import-review',
+      bookId: command.bookId,
+      currency: 'CAD',
+      amountEncoding: 'decimal-string',
+      records: [
+        {
+          id: 'saved-line',
+          fields: [
+            { name: 'amount', value: '90071992547409.93' },
+            { name: 'recordType', value: 'import-posted-line' },
+          ],
+        },
+      ],
+      nextOffset: 20,
+      sourceReferences: [
+        `/api/v2/finance/books/${command.bookId}/imports/${command.importId}`,
+      ],
+    };
+    const read = vi.fn(async () => page);
+    const write = vi.fn();
+    const service = bundle();
+    const plan = await service.runner.run(
+      agent('manager'),
+      managerInput(command),
+      options(),
+    );
+    expect(plan.finalOutput).toMatchObject({
+      delegations: [{ specialistId: 'finance' }],
+    });
+    const result = await service.runner.run(
+      agent('finance', [
+        functionTool({ name: 'finance_books_read', invoke: read }),
+        functionTool({ name: 'finance_records_write', invoke: write }),
+      ]),
+      financeInput(command),
+      options(),
+    );
+    expect(read).toHaveBeenCalledWith(
+      expect.any(RunContext),
+      JSON.stringify({
+        schemaVersion: 1,
+        view: 'import-review',
+        bookId: command.bookId,
+        importId: command.importId,
+        valuationId: null,
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    expect(result.finalOutput).toMatchObject({
+      summary: expect.stringContaining('Normalized import page: '),
+      evidenceReferences: [],
+      derivedValueReferences: [],
+      actionProposalReferences: [],
+    });
+    const summary = (result.finalOutput as { summary: string }).summary;
+    expect(
+      JSON.parse(summary.slice('Normalized import page: '.length)),
+    ).toEqual(page);
+    expect(write).not.toHaveBeenCalled();
+    read.mockResolvedValueOnce({ ...page, bookId: command.importId });
+    await expect(
+      service.runner.run(
+        agent('finance', [
+          functionTool({ name: 'finance_books_read', invoke: read }),
+        ]),
+        financeInput(command),
+        options(),
+      ),
+    ).rejects.toThrow('normalized-scope-invalid');
+  });
+
   it('uses only finance_records_write for an exact direct manual transaction and returns a typed Finance outcome', async () => {
     const write = vi.fn(async () => writeResult);
     const approval = vi.fn(async () => {

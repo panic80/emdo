@@ -1,7 +1,7 @@
 {
   "name": "EMDO Household Assistant",
   "short_name": "EMDO",
-  "description": "An invite-only household personal assistant.",
+  "description": "A private workspace for personal, household, and organization use.",
   "id": "/",
   "start_url": "/today",
   "scope": "/",

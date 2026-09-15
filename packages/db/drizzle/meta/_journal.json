@@ -169,6 +169,384 @@
       "when": 1788640146035,
       "tag": "0023_astra_model_migration",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1789327890457,
+      "tag": "0024_workspace_finance_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1789330546154,
+      "tag": "0025_finance_commercial_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1789332731051,
+      "tag": "0026_normalized_finance_imports",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1789337977178,
+      "tag": "0027_investment_observations",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1789339072202,
+      "tag": "0028_report_mapping_registry",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1789340778478,
+      "tag": "0029_investment_valuation_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1789341660343,
+      "tag": "0030_mapped_portfolio_observations",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1789342194358,
+      "tag": "0031_investment_lot_accounting",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1789343119279,
+      "tag": "0032_xlsx_book_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1789344099260,
+      "tag": "0033_finance_automation_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1789345726299,
+      "tag": "0034_finance_generated_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1789346675842,
+      "tag": "0035_finance_worker_report_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1789346841454,
+      "tag": "0036_pdf_book_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1789348069507,
+      "tag": "0037_finance_delivery_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1789348240864,
+      "tag": "0038_finance_automation_run_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1789348795475,
+      "tag": "0039_finance_stalled_run_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1789349407020,
+      "tag": "0040_private_tax_cases",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1789351149743,
+      "tag": "0041_finance_corporate_actions",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1789351310203,
+      "tag": "0042_tax_book_source_rebind",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1789351596540,
+      "tag": "0043_finance_recurring_schedules",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1789354913874,
+      "tag": "0044_private_tax_calculation_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1789355325674,
+      "tag": "0045_finance_structured_invoice_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1789357438322,
+      "tag": "0046_finance_accounting_statements",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1789357964637,
+      "tag": "0047_finance_invoice_review_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1789359482901,
+      "tag": "0048_finance_normalized_amount_components",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1789360811896,
+      "tag": "0049_finance_standardization",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1789360811897,
+      "tag": "0050_normalized_finance_disclosure_capabilities",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1789362246642,
+      "tag": "0051_finance_cash_dividends",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1789363339058,
+      "tag": "0052_finance_standardization_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1789363339059,
+      "tag": "0053_private_corporate_tax_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1789363339060,
+      "tag": "0054_finance_image_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": 7,
+      "when": 1789365252788,
+      "tag": "0055_finance_standardization_reconciliation_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1789365713583,
+      "tag": "0056_private_us_tax_wage_reviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1789366275172,
+      "tag": "0057_normalized_finance_planning",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1789406814453,
+      "tag": "0058_finance_legacy_migration",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1789407217332,
+      "tag": "0059_private_us_wage_corrections",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1789407809086,
+      "tag": "0060_finance_planning_automation",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1789415032820,
+      "tag": "0061_finance_fec_persistence",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1789415032821,
+      "tag": "0062_private_new_york_working_papers",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1789415032822,
+      "tag": "0063_finance_fec_evidence_binding",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1789431205567,
+      "tag": "0064_finance_legacy_activation",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1789432372741,
+      "tag": "0065_finance_account_source_assignments",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1789432742854,
+      "tag": "0066_finance_opening_proofs",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1789432742855,
+      "tag": "0067_finance_corporate_action_settlements",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1789432742856,
+      "tag": "0068_finance_pdf_ocr_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1789432742857,
+      "tag": "0069_finance_pdf_ocr_mapping_binding",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1789446259175,
+      "tag": "0070_finance_automation_extraction",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1789447543493,
+      "tag": "0071_finance_investment_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1789449928264,
+      "tag": "0072_finance_journal_draft_automation",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1789449928265,
+      "tag": "0073_finance_recurring_source_schedules",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1789449928266,
+      "tag": "0074_private_mexico_working_papers",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1789449928267,
+      "tag": "0075_finance_standardization_prompt_v3",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1789449928268,
+      "tag": "0076_finance_standardization_prompt_v4",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1789449928269,
+      "tag": "0077_finance_function_execute_privileges",
+      "breakpoints": true
     }
   ]
 }

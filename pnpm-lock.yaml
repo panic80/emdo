@@ -79,6 +79,9 @@ importers:
       kysely:
         specifier: 0.29.4
         version: 0.29.4
+      luxon:
+        specifier: 3.7.2
+        version: 3.7.2
       music-metadata:
         specifier: 11.14.0
         version: 11.14.0
@@ -88,9 +91,15 @@ importers:
       pdf-parse:
         specifier: 2.4.5
         version: 2.4.5
+      pdfjs-dist:
+        specifier: 5.4.296
+        version: 5.4.296
       pg:
         specifier: 8.23.0
         version: 8.23.0
+      saxes:
+        specifier: 6.0.0
+        version: 6.0.0
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -182,6 +191,9 @@ importers:
       nanostores:
         specifier: 1.4.2
         version: 1.4.2
+      pdfjs-dist:
+        specifier: 5.4.296
+        version: 5.4.296
       react:
         specifier: 19.2.8
         version: 19.2.8
@@ -243,9 +255,15 @@ importers:
 
   apps/worker:
     dependencies:
+      openai:
+        specifier: 6.49.0
+        version: 6.49.0(zod@4.4.3)
       pdf-parse:
         specifier: 2.4.5
         version: 2.4.5
+      pdfjs-dist:
+        specifier: 5.4.296
+        version: 5.4.296
       pg:
         specifier: 8.23.0
         version: 8.23.0
@@ -256,6 +274,12 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
     devDependencies:
+      '@emdo/agent-core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
+      '@emdo/agent-finance':
+        specifier: workspace:*
+        version: link:../../packages/agents/finance
       '@emdo/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -268,6 +292,12 @@ importers:
       '@emdo/integrations':
         specifier: workspace:*
         version: link:../../packages/integrations
+      '@openai/agents':
+        specifier: 0.14.3
+        version: 0.14.3(zod@4.4.3)
+      '@types/pg':
+        specifier: 8.21.0
+        version: 8.21.0
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -435,15 +465,28 @@ importers:
       '@emdo/toolbox':
         specifier: workspace:*
         version: link:../toolbox
+      luxon:
+        specifier: 3.7.2
+        version: 3.7.2
       zod:
         specifier: 4.4.3
         version: 4.4.3
+    devDependencies:
+      '@types/luxon':
+        specifier: 3.7.1
+        version: 3.7.1
 
   packages/integrations:
     dependencies:
       '@emdo/contracts':
         specifier: workspace:*
         version: link:../contracts
+      pdfjs-dist:
+        specifier: 5.4.296
+        version: 5.4.296
+      saxes:
+        specifier: 6.0.0
+        version: 6.0.0
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -3531,6 +3574,12 @@ packages:
     resolution:
       {
         integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==,
+      }
+
+  '@types/luxon@3.7.1':
+    resolution:
+      {
+        integrity: sha512-H3iskjFIAn5SlJU7OuxUmTEpebK6TKB8rxZShDslBMZJ5u9S//KM1sbdAisiSrqwLQncVjnpi2OK2J51h+4lsg==,
       }
 
   '@types/node@24.13.3':
@@ -9479,6 +9528,8 @@ snapshots:
   '@types/estree@1.0.9': {}
 
   '@types/json-schema@7.0.15': {}
+
+  '@types/luxon@3.7.1': {}
 
   '@types/node@24.13.3':
     dependencies:

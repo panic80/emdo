@@ -1,0 +1,14 @@
+{
+  "reviewedAt": "2026-09-14T04:16:14.648927+00:00",
+  "file": "justice-legistics-rounding.html",
+  "url": "https://justice.canada.ca/eng/rp-pr/csj-sjc/legis-redact/legistics/p1p26.html",
+  "sha256": "ff428255dd8f027a37ea19c352f55046e78f0914511a790c3d6b46145e7d5220",
+  "locator": "Introduction: examples of rounding provisions; Monetary Amounts paragraph (X)",
+  "decision": "Not applicable authority. This is legislative drafting guidance with example text, not an enacted corporate return rounding provision. Do not apply its example tie rule to T2 or GIFI.",
+  "remainingRequiredAuthority": [
+    "annual T2 intermediate rounding and tie treatment",
+    "negative GIFI reporting rounding",
+    "cross-form rounded balance reconciliation"
+  ],
+  "existingEvidence": "RC4088 says actual dollars/no cents and gives10500.75\u219210501; captured fillable controls prove integer format. Neither establishes all missing policies."
+}

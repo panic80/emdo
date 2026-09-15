@@ -11,12 +11,18 @@ await rm(fileURLToPath(outputDirectory), { force: true, recursive: true });
 await build({
   absWorkingDir: fileURLToPath(packageRoot),
   bundle: true,
+  banner: {
+    js: "import { createRequire as emdoCreateRequire } from 'node:module'; const require = emdoCreateRequire(import.meta.url);",
+  },
   entryPoints: {
     index: 'src/index.ts',
+    'pdf-report-worker':
+      '../../packages/integrations/src/finance-documents/pdf-report-worker.ts',
     'cli/finance-document-extraction': 'src/cli/finance-document-extraction.ts',
     'cli/migrate-jobs': 'src/cli/migrate-jobs.ts',
   },
-  external: ['pdf-parse', 'pg', 'pg-boss', 'zod'],
+  external: ['pdf-parse', 'pdfjs-dist', 'openai', 'pg', 'pg-boss', 'zod'],
+  conditions: ['source'],
   format: 'esm',
   logLevel: 'info',
   legalComments: 'none',
@@ -47,6 +53,7 @@ const expectedArtifacts = [
   'cli/finance-document-extraction.js',
   'cli/migrate-jobs.js',
   'index.js',
+  'pdf-report-worker.js',
 ];
 if (JSON.stringify(artifacts) !== JSON.stringify(expectedArtifacts)) {
   throw new Error('Worker build produced an unexpected artifact set');

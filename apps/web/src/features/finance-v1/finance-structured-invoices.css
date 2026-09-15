@@ -1,0 +1,136 @@
+.finance-invoices {
+  margin: 24px 0;
+  padding: 22px;
+  border: 1px solid var(--finance-border);
+  border-radius: 8px;
+  background: #fff;
+}
+.finance-invoices__heading,
+.finance-invoices__actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.finance-invoices__upload,
+.finance-invoices__mapping,
+.finance-invoices__parties {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+.finance-invoices label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+}
+.finance-invoices input:not([type='checkbox']),
+.finance-invoices select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--finance-border);
+  border-radius: 5px;
+  padding: 10px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+.finance-invoices__review {
+  margin-top: 24px;
+  border-top: 1px solid var(--finance-border);
+  padding-top: 20px;
+}
+.finance-invoices__library {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.finance-invoices__table {
+  max-width: 100%;
+  overflow: auto;
+}
+.finance-invoices table {
+  border-collapse: collapse;
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+}
+.finance-invoices th,
+.finance-invoices td {
+  padding: 10px;
+  border-bottom: 1px solid var(--finance-border);
+  vertical-align: top;
+}
+.finance-invoices caption {
+  text-align: left;
+  padding: 10px 0;
+  font-weight: 600;
+}
+.finance-invoices__totals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.finance-invoices__totals dt {
+  color: var(--finance-muted);
+  font-size: 11px;
+}
+.finance-invoices__totals dd {
+  margin: 4px 0;
+  font-weight: 600;
+}
+.finance-invoices code,
+.finance-invoices li,
+.finance-invoices p {
+  overflow-wrap: anywhere;
+}
+.finance-invoices fieldset {
+  min-width: 0;
+  border: 0;
+  padding: 18px 0;
+}
+.finance-invoices legend {
+  font-weight: 600;
+}
+.finance-invoices__group {
+  border: 1px solid var(--finance-border);
+  border-radius: 6px;
+  padding: 16px;
+  margin: 12px 0;
+}
+.finance-invoices__acknowledgements {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0;
+}
+.finance-invoices__acknowledgements label {
+  flex-direction: row;
+  align-items: flex-start;
+}
+.finance-invoices__acknowledgements input {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.finance-invoices__posted {
+  margin-top: 20px;
+  padding: 18px;
+  background: #edf8f3;
+  border-radius: 6px;
+}
+@media (max-width: 600px) {
+  .finance-invoices {
+    padding: 14px;
+  }
+  .finance-invoices__upload,
+  .finance-invoices__mapping,
+  .finance-invoices__parties {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .finance-invoices__totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -1,0 +1,927 @@
+{
+  "ubl": {
+    "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Invoice xmlns=\"urn:oasis:names:specification:ubl:schema:xsd:Invoice-2\" xmlns:cbc=\"urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2\" xmlns:cac=\"urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2\">\n<cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</cbc:CustomizationID><cbc:ID>DE-INV-42</cbc:ID><cbc:IssueDate>2026-09-01</cbc:IssueDate><cbc:DueDate>2026-09-30</cbc:DueDate><cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode><cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>\n<cac:AccountingSupplierParty><cac:Party><cac:PartyName><cbc:Name>Example Verkäufer GmbH</cbc:Name></cac:PartyName><cac:PartyTaxScheme><cbc:CompanyID>DE123456789</cbc:CompanyID></cac:PartyTaxScheme></cac:Party></cac:AccountingSupplierParty>\n<cac:AccountingCustomerParty><cac:Party><cac:PartyName><cbc:Name>Example Käufer GmbH</cbc:Name></cac:PartyName></cac:Party></cac:AccountingCustomerParty>\n<cac:AllowanceCharge><cbc:ChargeIndicator>false</cbc:ChargeIndicator><cbc:AllowanceChargeReason>Discount</cbc:AllowanceChargeReason><cbc:Amount currencyID=\"EUR\">10.00</cbc:Amount></cac:AllowanceCharge>\n<cac:AllowanceCharge><cbc:ChargeIndicator>true</cbc:ChargeIndicator><cbc:AllowanceChargeReason>Delivery fee</cbc:AllowanceChargeReason><cbc:Amount currencyID=\"EUR\">5.00</cbc:Amount></cac:AllowanceCharge>\n<cac:TaxTotal><cbc:TaxAmount currencyID=\"EUR\">18.05</cbc:TaxAmount><cac:TaxSubtotal><cbc:TaxableAmount currencyID=\"EUR\">95.00</cbc:TaxableAmount><cbc:TaxAmount currencyID=\"EUR\">18.05</cbc:TaxAmount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>19.00</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal></cac:TaxTotal>\n<cac:LegalMonetaryTotal><cbc:LineExtensionAmount currencyID=\"EUR\">100.00</cbc:LineExtensionAmount><cbc:TaxExclusiveAmount currencyID=\"EUR\">95.00</cbc:TaxExclusiveAmount><cbc:TaxInclusiveAmount currencyID=\"EUR\">113.05</cbc:TaxInclusiveAmount><cbc:AllowanceTotalAmount currencyID=\"EUR\">10.00</cbc:AllowanceTotalAmount><cbc:ChargeTotalAmount currencyID=\"EUR\">5.00</cbc:ChargeTotalAmount><cbc:PayableAmount currencyID=\"EUR\">113.05</cbc:PayableAmount></cac:LegalMonetaryTotal>\n<cac:InvoiceLine><cbc:ID>source-line-A</cbc:ID><cbc:InvoicedQuantity unitCode=\"HUR\">2.000</cbc:InvoicedQuantity><cbc:LineExtensionAmount currencyID=\"EUR\">100.00</cbc:LineExtensionAmount><cac:Item><cbc:Name>Services &amp; support</cbc:Name></cac:Item><cac:Price><cbc:PriceAmount currencyID=\"EUR\">50.0000</cbc:PriceAmount></cac:Price></cac:InvoiceLine></Invoice>",
+    "source": {
+      "schemaVersion": 1,
+      "adapterVersion": "structured-invoice.v1",
+      "format": "ubl",
+      "sourceDigest": "a37c34da1941eb656146c10d2055ec6f677753b98c635de323243622125c935a",
+      "conformance": "not-validated",
+      "documentInstructions": "untrusted-source-data",
+      "invoiceId": {
+        "value": "DE-INV-42",
+        "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ID[1]"
+      },
+      "issueDate": {
+        "value": "2026-09-01",
+        "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}IssueDate[1]"
+      },
+      "dueDate": {
+        "value": "2026-09-30",
+        "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}DueDate[1]"
+      },
+      "currency": {
+        "value": "EUR",
+        "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}DocumentCurrencyCode[1]"
+      },
+      "typeCode": {
+        "value": "380",
+        "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}InvoiceTypeCode[1]"
+      },
+      "profile": {
+        "value": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
+        "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}CustomizationID[1]"
+      },
+      "seller": [
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AccountingSupplierParty[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}Party[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}PartyName[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}Name[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "Name",
+          "text": "Example Verkäufer GmbH",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AccountingSupplierParty[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}Party[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}PartyTaxScheme[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}CompanyID[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "CompanyID",
+          "text": "DE123456789",
+          "attributes": []
+        }
+      ],
+      "buyer": [
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AccountingCustomerParty[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}Party[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}PartyName[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}Name[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "Name",
+          "text": "Example Käufer GmbH",
+          "attributes": []
+        }
+      ],
+      "lines": [
+        {
+          "id": {
+            "value": "source-line-A",
+            "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}InvoiceLine[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ID[1]"
+          },
+          "description": {
+            "value": "Services & support",
+            "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}InvoiceLine[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}Item[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}Name[1]"
+          },
+          "netAmount": {
+            "value": "100.00",
+            "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}InvoiceLine[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}LineExtensionAmount[1]"
+          },
+          "quantity": {
+            "value": "2.000",
+            "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}InvoiceLine[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}InvoicedQuantity[1]"
+          },
+          "facts": [
+            {
+              "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}InvoiceLine[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ID[1]",
+              "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+              "name": "ID",
+              "text": "source-line-A",
+              "attributes": []
+            },
+            {
+              "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}InvoiceLine[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}InvoicedQuantity[1]",
+              "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+              "name": "InvoicedQuantity",
+              "text": "2.000",
+              "attributes": [
+                {
+                  "name": "unitCode",
+                  "value": "HUR"
+                }
+              ]
+            },
+            {
+              "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}InvoiceLine[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}LineExtensionAmount[1]",
+              "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+              "name": "LineExtensionAmount",
+              "text": "100.00",
+              "attributes": [
+                {
+                  "name": "currencyID",
+                  "value": "EUR"
+                }
+              ]
+            },
+            {
+              "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}InvoiceLine[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}Item[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}Name[1]",
+              "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+              "name": "Name",
+              "text": "Services & support",
+              "attributes": []
+            },
+            {
+              "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}InvoiceLine[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}Price[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}PriceAmount[1]",
+              "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+              "name": "PriceAmount",
+              "text": "50.0000",
+              "attributes": [
+                {
+                  "name": "currencyID",
+                  "value": "EUR"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "adjustments": [
+        {
+          "scope": "document",
+          "charge": {
+            "value": "false",
+            "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ChargeIndicator[1]"
+          },
+          "amount": {
+            "value": "10.00",
+            "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}Amount[1]"
+          },
+          "facts": [
+            {
+              "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ChargeIndicator[1]",
+              "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+              "name": "ChargeIndicator",
+              "text": "false",
+              "attributes": []
+            },
+            {
+              "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}AllowanceChargeReason[1]",
+              "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+              "name": "AllowanceChargeReason",
+              "text": "Discount",
+              "attributes": []
+            },
+            {
+              "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}Amount[1]",
+              "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+              "name": "Amount",
+              "text": "10.00",
+              "attributes": [
+                {
+                  "name": "currencyID",
+                  "value": "EUR"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "scope": "document",
+          "charge": {
+            "value": "true",
+            "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[2]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ChargeIndicator[1]"
+          },
+          "amount": {
+            "value": "5.00",
+            "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[2]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}Amount[1]"
+          },
+          "facts": [
+            {
+              "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[2]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ChargeIndicator[1]",
+              "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+              "name": "ChargeIndicator",
+              "text": "true",
+              "attributes": []
+            },
+            {
+              "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[2]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}AllowanceChargeReason[1]",
+              "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+              "name": "AllowanceChargeReason",
+              "text": "Delivery fee",
+              "attributes": []
+            },
+            {
+              "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[2]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}Amount[1]",
+              "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+              "name": "Amount",
+              "text": "5.00",
+              "attributes": [
+                {
+                  "name": "currencyID",
+                  "value": "EUR"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "taxGroups": [
+        {
+          "key": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxSubtotal[1]",
+          "category": {
+            "value": "S",
+            "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxSubtotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxCategory[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ID[1]"
+          },
+          "rate": {
+            "value": "19.00",
+            "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxSubtotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxCategory[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}Percent[1]"
+          },
+          "basis": {
+            "value": "95.00",
+            "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxSubtotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}TaxableAmount[1]"
+          },
+          "tax": {
+            "value": "18.05",
+            "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxSubtotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}TaxAmount[1]"
+          }
+        }
+      ],
+      "totals": {
+        "lineNet": {
+          "value": "100.00",
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}LegalMonetaryTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}LineExtensionAmount[1]"
+        },
+        "net": {
+          "value": "95.00",
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}LegalMonetaryTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}TaxExclusiveAmount[1]"
+        },
+        "tax": {
+          "value": "18.05",
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}TaxAmount[1]"
+        },
+        "gross": {
+          "value": "113.05",
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}LegalMonetaryTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}TaxInclusiveAmount[1]"
+        },
+        "payable": {
+          "value": "113.05",
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}LegalMonetaryTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}PayableAmount[1]"
+        },
+        "allowances": {
+          "value": "10.00",
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}LegalMonetaryTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}AllowanceTotalAmount[1]"
+        },
+        "charges": {
+          "value": "5.00",
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}LegalMonetaryTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ChargeTotalAmount[1]"
+        },
+        "prepaid": null,
+        "rounding": null
+      },
+      "facts": [
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}CustomizationID[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "CustomizationID",
+          "text": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ID[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "ID",
+          "text": "DE-INV-42",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}IssueDate[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "IssueDate",
+          "text": "2026-09-01",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}DueDate[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "DueDate",
+          "text": "2026-09-30",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}InvoiceTypeCode[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "InvoiceTypeCode",
+          "text": "380",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}DocumentCurrencyCode[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "DocumentCurrencyCode",
+          "text": "EUR",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AccountingSupplierParty[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}Party[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}PartyName[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}Name[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "Name",
+          "text": "Example Verkäufer GmbH",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AccountingSupplierParty[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}Party[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}PartyTaxScheme[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}CompanyID[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "CompanyID",
+          "text": "DE123456789",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AccountingCustomerParty[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}Party[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}PartyName[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}Name[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "Name",
+          "text": "Example Käufer GmbH",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ChargeIndicator[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "ChargeIndicator",
+          "text": "false",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}AllowanceChargeReason[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "AllowanceChargeReason",
+          "text": "Discount",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}Amount[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "Amount",
+          "text": "10.00",
+          "attributes": [
+            {
+              "name": "currencyID",
+              "value": "EUR"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[2]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ChargeIndicator[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "ChargeIndicator",
+          "text": "true",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[2]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}AllowanceChargeReason[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "AllowanceChargeReason",
+          "text": "Delivery fee",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}AllowanceCharge[2]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}Amount[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "Amount",
+          "text": "5.00",
+          "attributes": [
+            {
+              "name": "currencyID",
+              "value": "EUR"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}TaxAmount[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "TaxAmount",
+          "text": "18.05",
+          "attributes": [
+            {
+              "name": "currencyID",
+              "value": "EUR"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxSubtotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}TaxableAmount[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "TaxableAmount",
+          "text": "95.00",
+          "attributes": [
+            {
+              "name": "currencyID",
+              "value": "EUR"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxSubtotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}TaxAmount[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "TaxAmount",
+          "text": "18.05",
+          "attributes": [
+            {
+              "name": "currencyID",
+              "value": "EUR"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxSubtotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxCategory[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ID[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "ID",
+          "text": "S",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxSubtotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxCategory[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}Percent[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "Percent",
+          "text": "19.00",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxSubtotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxCategory[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}TaxScheme[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ID[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "ID",
+          "text": "VAT",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}LegalMonetaryTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}LineExtensionAmount[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "LineExtensionAmount",
+          "text": "100.00",
+          "attributes": [
+            {
+              "name": "currencyID",
+              "value": "EUR"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}LegalMonetaryTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}TaxExclusiveAmount[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "TaxExclusiveAmount",
+          "text": "95.00",
+          "attributes": [
+            {
+              "name": "currencyID",
+              "value": "EUR"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}LegalMonetaryTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}TaxInclusiveAmount[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "TaxInclusiveAmount",
+          "text": "113.05",
+          "attributes": [
+            {
+              "name": "currencyID",
+              "value": "EUR"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}LegalMonetaryTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}AllowanceTotalAmount[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "AllowanceTotalAmount",
+          "text": "10.00",
+          "attributes": [
+            {
+              "name": "currencyID",
+              "value": "EUR"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}LegalMonetaryTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ChargeTotalAmount[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "ChargeTotalAmount",
+          "text": "5.00",
+          "attributes": [
+            {
+              "name": "currencyID",
+              "value": "EUR"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}LegalMonetaryTotal[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}PayableAmount[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "PayableAmount",
+          "text": "113.05",
+          "attributes": [
+            {
+              "name": "currencyID",
+              "value": "EUR"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}InvoiceLine[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}ID[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "ID",
+          "text": "source-line-A",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}InvoiceLine[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}InvoicedQuantity[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "InvoicedQuantity",
+          "text": "2.000",
+          "attributes": [
+            {
+              "name": "unitCode",
+              "value": "HUR"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}InvoiceLine[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}LineExtensionAmount[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "LineExtensionAmount",
+          "text": "100.00",
+          "attributes": [
+            {
+              "name": "currencyID",
+              "value": "EUR"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}InvoiceLine[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}Item[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}Name[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "Name",
+          "text": "Services & support",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}InvoiceLine[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2}Price[1]/{urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2}PriceAmount[1]",
+          "namespace": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+          "name": "PriceAmount",
+          "text": "50.0000",
+          "attributes": [
+            {
+              "name": "currencyID",
+              "value": "EUR"
+            }
+          ]
+        }
+      ],
+      "blockingIssues": [],
+      "reviewRequired": true
+    }
+  },
+  "cii": {
+    "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rsm:CrossIndustryInvoice xmlns:rsm=\"urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100\" xmlns:ram=\"urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100\" xmlns:udt=\"urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100\">\n<rsm:ExchangedDocumentContext><ram:GuidelineSpecifiedDocumentContextParameter><ram:ID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</ram:ID></ram:GuidelineSpecifiedDocumentContextParameter></rsm:ExchangedDocumentContext>\n<rsm:ExchangedDocument><ram:ID>DE-CII-42</ram:ID><ram:TypeCode>380</ram:TypeCode><ram:IssueDateTime><udt:DateTimeString format=\"102\">20260901</udt:DateTimeString></ram:IssueDateTime></rsm:ExchangedDocument>\n<rsm:SupplyChainTradeTransaction><ram:IncludedSupplyChainTradeLineItem><ram:AssociatedDocumentLineDocument><ram:LineID>source-line-B</ram:LineID></ram:AssociatedDocumentLineDocument><ram:SpecifiedTradeProduct><ram:Name>Source services</ram:Name></ram:SpecifiedTradeProduct><ram:SpecifiedLineTradeAgreement><ram:NetPriceProductTradePrice><ram:ChargeAmount>50.0000</ram:ChargeAmount></ram:NetPriceProductTradePrice></ram:SpecifiedLineTradeAgreement><ram:SpecifiedLineTradeDelivery><ram:BilledQuantity unitCode=\"HUR\">2.000</ram:BilledQuantity></ram:SpecifiedLineTradeDelivery><ram:SpecifiedLineTradeSettlement><ram:SpecifiedTradeSettlementLineMonetarySummation><ram:LineTotalAmount>100.00</ram:LineTotalAmount></ram:SpecifiedTradeSettlementLineMonetarySummation></ram:SpecifiedLineTradeSettlement></ram:IncludedSupplyChainTradeLineItem>\n<ram:ApplicableHeaderTradeAgreement><ram:SellerTradeParty><ram:ID>seller-id</ram:ID><ram:Name>Example Verkäufer GmbH</ram:Name></ram:SellerTradeParty><ram:BuyerTradeParty><ram:Name>Example Käufer GmbH</ram:Name></ram:BuyerTradeParty></ram:ApplicableHeaderTradeAgreement>\n<ram:ApplicableHeaderTradeSettlement><ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode><ram:ApplicableTradeTax><ram:CalculatedAmount>19.00</ram:CalculatedAmount><ram:TypeCode>VAT</ram:TypeCode><ram:BasisAmount>100.00</ram:BasisAmount><ram:CategoryCode>S</ram:CategoryCode><ram:RateApplicablePercent>19.00</ram:RateApplicablePercent></ram:ApplicableTradeTax><ram:SpecifiedTradePaymentTerms><ram:DueDateDateTime><udt:DateTimeString format=\"102\">20260930</udt:DateTimeString></ram:DueDateDateTime></ram:SpecifiedTradePaymentTerms><ram:SpecifiedTradeSettlementHeaderMonetarySummation><ram:LineTotalAmount>100.00</ram:LineTotalAmount><ram:TaxBasisTotalAmount>100.00</ram:TaxBasisTotalAmount><ram:TaxTotalAmount currencyID=\"EUR\">19.00</ram:TaxTotalAmount><ram:GrandTotalAmount>119.00</ram:GrandTotalAmount><ram:DuePayableAmount>119.00</ram:DuePayableAmount></ram:SpecifiedTradeSettlementHeaderMonetarySummation></ram:ApplicableHeaderTradeSettlement></rsm:SupplyChainTradeTransaction></rsm:CrossIndustryInvoice>",
+    "source": {
+      "schemaVersion": 1,
+      "adapterVersion": "structured-invoice.v1",
+      "format": "cii",
+      "sourceDigest": "9996cabb3576b4118828598ed1d1b012272f8f84733b006c83678606aeacf1b8",
+      "conformance": "not-validated",
+      "documentInstructions": "untrusted-source-data",
+      "invoiceId": {
+        "value": "DE-CII-42",
+        "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}ExchangedDocument[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ID[1]"
+      },
+      "issueDate": {
+        "value": "2026-09-01",
+        "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}ExchangedDocument[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IssueDateTime[1]/{urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100}DateTimeString[1]"
+      },
+      "dueDate": {
+        "value": "2026-09-30",
+        "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradePaymentTerms[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}DueDateDateTime[1]/{urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100}DateTimeString[1]"
+      },
+      "currency": {
+        "value": "EUR",
+        "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}InvoiceCurrencyCode[1]"
+      },
+      "typeCode": {
+        "value": "380",
+        "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}ExchangedDocument[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}TypeCode[1]"
+      },
+      "profile": {
+        "value": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
+        "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}ExchangedDocumentContext[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}GuidelineSpecifiedDocumentContextParameter[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ID[1]"
+      },
+      "seller": [
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeAgreement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SellerTradeParty[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ID[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "ID",
+          "text": "seller-id",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeAgreement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SellerTradeParty[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}Name[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "Name",
+          "text": "Example Verkäufer GmbH",
+          "attributes": []
+        }
+      ],
+      "buyer": [
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeAgreement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}BuyerTradeParty[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}Name[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "Name",
+          "text": "Example Käufer GmbH",
+          "attributes": []
+        }
+      ],
+      "lines": [
+        {
+          "id": {
+            "value": "source-line-B",
+            "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IncludedSupplyChainTradeLineItem[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}AssociatedDocumentLineDocument[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}LineID[1]"
+          },
+          "description": {
+            "value": "Source services",
+            "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IncludedSupplyChainTradeLineItem[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeProduct[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}Name[1]"
+          },
+          "netAmount": {
+            "value": "100.00",
+            "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IncludedSupplyChainTradeLineItem[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedLineTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeSettlementLineMonetarySummation[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}LineTotalAmount[1]"
+          },
+          "quantity": {
+            "value": "2.000",
+            "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IncludedSupplyChainTradeLineItem[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedLineTradeDelivery[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}BilledQuantity[1]"
+          },
+          "facts": [
+            {
+              "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IncludedSupplyChainTradeLineItem[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}AssociatedDocumentLineDocument[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}LineID[1]",
+              "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+              "name": "LineID",
+              "text": "source-line-B",
+              "attributes": []
+            },
+            {
+              "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IncludedSupplyChainTradeLineItem[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeProduct[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}Name[1]",
+              "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+              "name": "Name",
+              "text": "Source services",
+              "attributes": []
+            },
+            {
+              "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IncludedSupplyChainTradeLineItem[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedLineTradeAgreement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}NetPriceProductTradePrice[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ChargeAmount[1]",
+              "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+              "name": "ChargeAmount",
+              "text": "50.0000",
+              "attributes": []
+            },
+            {
+              "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IncludedSupplyChainTradeLineItem[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedLineTradeDelivery[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}BilledQuantity[1]",
+              "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+              "name": "BilledQuantity",
+              "text": "2.000",
+              "attributes": [
+                {
+                  "name": "unitCode",
+                  "value": "HUR"
+                }
+              ]
+            },
+            {
+              "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IncludedSupplyChainTradeLineItem[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedLineTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeSettlementLineMonetarySummation[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}LineTotalAmount[1]",
+              "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+              "name": "LineTotalAmount",
+              "text": "100.00",
+              "attributes": []
+            }
+          ]
+        }
+      ],
+      "adjustments": [],
+      "taxGroups": [
+        {
+          "key": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableTradeTax[1]",
+          "category": {
+            "value": "S",
+            "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableTradeTax[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}CategoryCode[1]"
+          },
+          "rate": {
+            "value": "19.00",
+            "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableTradeTax[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}RateApplicablePercent[1]"
+          },
+          "basis": {
+            "value": "100.00",
+            "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableTradeTax[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}BasisAmount[1]"
+          },
+          "tax": {
+            "value": "19.00",
+            "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableTradeTax[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}CalculatedAmount[1]"
+          }
+        }
+      ],
+      "totals": {
+        "lineNet": {
+          "value": "100.00",
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeSettlementHeaderMonetarySummation[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}LineTotalAmount[1]"
+        },
+        "net": {
+          "value": "100.00",
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeSettlementHeaderMonetarySummation[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}TaxBasisTotalAmount[1]"
+        },
+        "tax": {
+          "value": "19.00",
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeSettlementHeaderMonetarySummation[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}TaxTotalAmount[1]"
+        },
+        "gross": {
+          "value": "119.00",
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeSettlementHeaderMonetarySummation[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}GrandTotalAmount[1]"
+        },
+        "payable": {
+          "value": "119.00",
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeSettlementHeaderMonetarySummation[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}DuePayableAmount[1]"
+        },
+        "allowances": null,
+        "charges": null,
+        "prepaid": null,
+        "rounding": null
+      },
+      "facts": [
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}ExchangedDocumentContext[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}GuidelineSpecifiedDocumentContextParameter[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ID[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "ID",
+          "text": "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}ExchangedDocument[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ID[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "ID",
+          "text": "DE-CII-42",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}ExchangedDocument[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}TypeCode[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "TypeCode",
+          "text": "380",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}ExchangedDocument[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IssueDateTime[1]/{urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100}DateTimeString[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100",
+          "name": "DateTimeString",
+          "text": "20260901",
+          "attributes": [
+            {
+              "name": "format",
+              "value": "102"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IncludedSupplyChainTradeLineItem[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}AssociatedDocumentLineDocument[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}LineID[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "LineID",
+          "text": "source-line-B",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IncludedSupplyChainTradeLineItem[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeProduct[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}Name[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "Name",
+          "text": "Source services",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IncludedSupplyChainTradeLineItem[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedLineTradeAgreement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}NetPriceProductTradePrice[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ChargeAmount[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "ChargeAmount",
+          "text": "50.0000",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IncludedSupplyChainTradeLineItem[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedLineTradeDelivery[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}BilledQuantity[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "BilledQuantity",
+          "text": "2.000",
+          "attributes": [
+            {
+              "name": "unitCode",
+              "value": "HUR"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}IncludedSupplyChainTradeLineItem[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedLineTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeSettlementLineMonetarySummation[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}LineTotalAmount[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "LineTotalAmount",
+          "text": "100.00",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeAgreement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SellerTradeParty[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ID[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "ID",
+          "text": "seller-id",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeAgreement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SellerTradeParty[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}Name[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "Name",
+          "text": "Example Verkäufer GmbH",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeAgreement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}BuyerTradeParty[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}Name[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "Name",
+          "text": "Example Käufer GmbH",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}InvoiceCurrencyCode[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "InvoiceCurrencyCode",
+          "text": "EUR",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableTradeTax[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}CalculatedAmount[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "CalculatedAmount",
+          "text": "19.00",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableTradeTax[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}TypeCode[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "TypeCode",
+          "text": "VAT",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableTradeTax[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}BasisAmount[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "BasisAmount",
+          "text": "100.00",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableTradeTax[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}CategoryCode[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "CategoryCode",
+          "text": "S",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableTradeTax[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}RateApplicablePercent[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "RateApplicablePercent",
+          "text": "19.00",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradePaymentTerms[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}DueDateDateTime[1]/{urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100}DateTimeString[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100",
+          "name": "DateTimeString",
+          "text": "20260930",
+          "attributes": [
+            {
+              "name": "format",
+              "value": "102"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeSettlementHeaderMonetarySummation[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}LineTotalAmount[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "LineTotalAmount",
+          "text": "100.00",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeSettlementHeaderMonetarySummation[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}TaxBasisTotalAmount[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "TaxBasisTotalAmount",
+          "text": "100.00",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeSettlementHeaderMonetarySummation[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}TaxTotalAmount[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "TaxTotalAmount",
+          "text": "19.00",
+          "attributes": [
+            {
+              "name": "currencyID",
+              "value": "EUR"
+            }
+          ]
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeSettlementHeaderMonetarySummation[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}GrandTotalAmount[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "GrandTotalAmount",
+          "text": "119.00",
+          "attributes": []
+        },
+        {
+          "path": "/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice[1]/{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}SupplyChainTradeTransaction[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}ApplicableHeaderTradeSettlement[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}SpecifiedTradeSettlementHeaderMonetarySummation[1]/{urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100}DuePayableAmount[1]",
+          "namespace": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+          "name": "DuePayableAmount",
+          "text": "119.00",
+          "attributes": []
+        }
+      ],
+      "blockingIssues": [],
+      "reviewRequired": true
+    }
+  }
+}

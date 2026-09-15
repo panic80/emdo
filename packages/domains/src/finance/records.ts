@@ -41,7 +41,14 @@ const AccountRecordSchema = z.strictObject({
   currency: z.literal('CAD'),
   openingBalanceCadMinor: CadMinorUnitsSchema,
   active: z.boolean(),
-  source: z.literal('manual'),
+  source: z.union([
+    z.literal('manual'),
+    z.strictObject({
+      kind: z.literal('normalized-ledger'),
+      bookId: UuidSchema,
+      financialAccountId: UuidSchema,
+    }),
+  ]),
 });
 
 const CategoryRecordSchema = z.strictObject({
@@ -64,7 +71,23 @@ const FinanceReversalSchema = z.strictObject({
   reason: z.string().trim().min(3).max(1_000),
 });
 
+export const FinanceNormalizedTransactionSourceSchema = z.strictObject({
+  kind: z.literal('normalized-ledger'),
+  originalImport: z
+    .strictObject({
+      sourceHash: Sha256Schema,
+      sourceRow: z.number().int().positive(),
+      fingerprint: Sha256Schema,
+      externalId: z.string().nullable(),
+    })
+    .optional(),
+  bookId: UuidSchema,
+  economicTransactionId: UuidSchema,
+  journalId: UuidSchema,
+});
+
 export const FinanceTransactionSourceSchema = z.discriminatedUnion('kind', [
+  FinanceNormalizedTransactionSourceSchema,
   z.strictObject({ kind: z.literal('manual') }),
   z.strictObject({
     kind: z.literal('import'),
@@ -279,6 +302,15 @@ export const validateFinanceRecordCreate = (
   if (validated.status === 'rejected') return validated;
 
   const record = validated.record;
+  if (record.recordType === 'account' && record.source !== 'manual') {
+    return deepFreeze({
+      status: 'rejected' as const,
+      safeError: financeSafeError(
+        'invalid-finance-record-create',
+        'Normalized accounts require their dedicated book operation.',
+      ),
+    });
+  }
   if (
     record.recordType === 'transaction' &&
     (record.source.kind !== 'manual' ||

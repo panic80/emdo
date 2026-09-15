@@ -47,6 +47,144 @@ const jwt = () => {
 };
 
 describe('synthetic staging seed CLI', () => {
+  it('requires both normalized opt-ins before bootstrap', async () => {
+    const bootstrapOwner = vi.fn(async () => 0);
+    for (const [flag, argv] of [
+      ['true', ['--fail-if-nonempty', '--staging-only']],
+      [
+        'false',
+        [
+          '--fail-if-nonempty',
+          '--staging-only',
+          '--finance-normalized-synthetic-gates',
+        ],
+      ],
+      ['enabled', ['--fail-if-nonempty', '--staging-only']],
+    ] as const) {
+      await expect(
+        runSyntheticSeedCommand({
+          environment: {
+            ...environment(),
+            EMDO_FINANCE_SYNTHETIC_STAGING: 'true',
+            EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING: flag,
+          },
+          argv,
+          bootstrapOwner,
+          fetch: vi.fn(),
+        }),
+      ).rejects.toThrow('stage=configuration');
+    }
+    expect(bootstrapOwner).not.toHaveBeenCalled();
+  });
+
+  it('provisions normalized fixtures through authenticated v2 commands with replay-stable keys', async () => {
+    const commands: Request[] = [];
+    const ids = [USER_ID, SPACE_ID, CLIENT_ID, USER_ID, SPACE_ID];
+    const fetch = vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === '/api/auth/sign-in/email')
+        return new Response('{}', {
+          headers: {
+            'set-cookie':
+              '__Secure-emdo.session_token=synthetic; Secure; HttpOnly',
+          },
+        });
+      if (path === '/api/v1/auth/csrf')
+        return Response.json({
+          schemaVersion: 1,
+          token: 'csrf-token-01234567890123456789',
+        });
+      if (path === '/api/v1/sync/clients')
+        return Response.json({
+          schemaVersion: 1,
+          clientId: CLIENT_ID,
+          status: 'registered',
+          replayed: false,
+        });
+      if (path === '/api/v1/sync/token')
+        return Response.json({
+          schemaVersion: 1,
+          endpoint: 'https://staging.emdo.invalid/powersync',
+          token: jwt(),
+          expiresAt: '2026-09-15T12:00:00.000Z',
+          writeScope: {
+            clientId: CLIENT_ID,
+            spaces: [
+              {
+                id: SPACE_ID,
+                visibility: 'private',
+                originalOwnerUserId: USER_ID,
+              },
+            ],
+          },
+        });
+      if (path.startsWith('/api/v2/finance/')) {
+        commands.push(request);
+        return Response.json({ id: ids[commands.length - 1] });
+      }
+      if (path === '/api/internal/finance-synthetic/account')
+        return Response.json({
+          schemaVersion: 1,
+          accountId: 'synthetic-finance-account-v1',
+          status: 'applied',
+        });
+      const body = (await request.json()) as {
+        operations: { operationId: string }[];
+      };
+      return Response.json({
+        schemaVersion: 1,
+        clientId: CLIENT_ID,
+        results: body.operations.map((op) => ({
+          operationId: op.operationId,
+          status: 'applied',
+          revision: 1,
+          resolution: 'created',
+          conflicts: [],
+          replayed: false,
+        })),
+      });
+    });
+    const result = await runSyntheticSeedCommand({
+      environment: {
+        ...environment(),
+        EMDO_FINANCE_SYNTHETIC_STAGING: 'true',
+        EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING: 'true',
+      },
+      argv: [
+        '--fail-if-nonempty',
+        '--staging-only',
+        '--finance-normalized-synthetic-gates',
+      ],
+      bootstrapOwner: vi.fn(async () => 0),
+      fetch,
+    });
+    expect(result.normalizedFinance).toEqual({
+      bookId: USER_ID,
+      cashAccountId: SPACE_ID,
+      counterAccountId: CLIENT_ID,
+      financialAccountId: SPACE_ID,
+    });
+    expect(commands).toHaveLength(5);
+    expect(
+      new Set(commands.map((r) => r.headers.get('idempotency-key'))).size,
+    ).toBe(5);
+    for (const request of commands) {
+      expect(request.headers.get('cookie')).toContain(
+        '__Secure-emdo.session_token=',
+      );
+      expect(request.headers.get('x-csrf-token')).toBeTruthy();
+    }
+    expect(await commands[2]!.json()).toEqual({
+      code: '3000',
+      name: 'Synthetic equity',
+      kind: 'equity',
+    });
+    expect(await commands[3]!.json()).toEqual({
+      startsOn: '2026-01-01',
+      endsOn: '2026-12-31',
+    });
+  });
+
   it('bootstraps through the guarded command and seeds only through authenticated API operations', async () => {
     const bootstrapOwner = vi.fn(async () => 0);
     const requests: Request[] = [];

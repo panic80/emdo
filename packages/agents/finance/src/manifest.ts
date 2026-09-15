@@ -21,6 +21,7 @@ export const financeManifest: AgentManifest = AgentManifestSchema.parse({
   version: '1.0.0',
   kind: 'specialist',
   intents: [
+    'finance.tax',
     'finance.account',
     'finance.transaction',
     'finance.import',
@@ -41,6 +42,7 @@ export const financeManifest: AgentManifest = AgentManifestSchema.parse({
   readableDataClasses: [
     'agent.delegations',
     'agent.specialist-outcomes',
+    'finance.tax-cases',
     'finance.accounts',
     'finance.transactions',
     'finance.categories',
@@ -69,7 +71,10 @@ export const financeManifest: AgentManifest = AgentManifestSchema.parse({
     maxCapabilityCalls: 12,
     maxParallelCalls: 3,
     timeoutMs: 90_000,
-    maxInputTokens: 20_000,
+    // The conservative UTF-8 bound includes every registered tool schema.
+    // Current Finance tool schemas plus a 16 KiB source page require ~86k.
+    // Leave headroom while actual spend authorization remains independently enforced.
+    maxInputTokens: 100_000,
     maxOutputTokens: 4_000,
   },
   schemaRefs: {

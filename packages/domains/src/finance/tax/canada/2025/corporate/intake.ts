@@ -1,0 +1,241 @@
+import { z } from 'zod';
+
+const money = z.string().regex(/^(0|[1-9][0-9]{0,25})(\.[0-9]{1,2})?$/);
+const signedMoney = z.string().regex(/^-?(0|[1-9][0-9]{0,25})(\.[0-9]{1,2})?$/);
+const text = z.string().trim().min(1).max(200);
+/** Each question is an explicit declaration. Missing/unknown is never interpreted as No. */
+export const T2_2025_ADDITIONAL_SCHEDULE_TRIGGERS = {
+  '150': 'Related corporations: Schedule 9',
+  '160': 'Associated CCPC: Schedule 23',
+  '161': 'Associated expenditure limit: Schedule 49',
+  '151': 'Non-resident voting shareholder: Schedule 19',
+  '162': 'Non-ordinary shareholder/officer/employee transactions: Schedule 11',
+  '163': 'Non-arm-length corporate asset transfer: Schedule 44',
+  '164': 'Canadian royalties/management fees: Schedule 14',
+  '165': 'Employee benefit plan deduction: Schedule 15',
+  '166': 'Tax shelter: T5004',
+  '167': 'Partnership: T5013',
+  '168': 'Non-resident discretionary trust: Schedule 22',
+  '169': 'Foreign affiliate shares: Schedule 25',
+  '170': 'Payments to non-residents: Schedule 29',
+  '171': 'Reportable non-arm-length cross-border transactions: T106',
+  '172': 'Retirement compensation arrangement',
+  '180': 'Internet business income: Schedule 88',
+  '202': 'Donations and gifts: Schedule 2',
+  '203': 'Dividends received or dividend refund: Schedule 3',
+  '204': 'Loss claims: Schedule 4',
+  '206': 'Capital gains or losses: Schedule 6',
+  '207':
+    'Property/partnership/foreign/personal-services/specified income or assignments: Schedule 7',
+  '208': 'CCA-eligible property: Schedule 8',
+  '212': 'Resource deductions: Schedule 12',
+  '213': 'Reserves: Schedule 13',
+  '216': 'Patronage dividends: Schedule 16',
+  '217': 'Credit union: Schedule 17',
+  '218': 'Investment or mutual fund corporation: Schedule 18',
+  '220': 'Non-resident business: Schedule 20',
+  '221': 'Foreign or logging credits: Schedule 21',
+  '227': 'Manufacturing/processing/zero-emission profits: Schedule 27',
+  '231': 'Investment tax credits: Schedule 31',
+  '232': 'SR&ED: T661',
+  '233': 'Related-group capital above $10 million: Schedules 33/34/35',
+  '234': 'Associated-group capital above $10 million',
+  '238': 'Financial institution capital tax: Schedule 38',
+  '242': 'Part I credit: Schedule 42',
+  '243': 'Part IV.1/VI.1: Schedule 43',
+  '244': 'Transfer of Part VI.1 liability: Schedule 45',
+  '250': 'Related financial institutions: Schedule 39',
+  '253': 'Canadian film/video credit: T1131',
+  '254': 'Film/video services credit: T1177',
+  '272': 'Journalism credit: Schedule 58',
+  '255': 'Part XIII.1: Schedule 92',
+  '271': 'Foreign affiliates: T1134',
+  '259': 'Specified foreign property: T1135',
+  '260': 'Transfer/loan to non-resident trust: T1141',
+  '261': 'Non-resident trust distribution/debt: T1142',
+  '262': 'SR&ED assistance allocation: T1145',
+  '263': 'SR&ED contract transfer: T1146',
+  '264': 'Associated SR&ED employee agreement: T1174',
+  '265': 'Taxable dividends paid: Schedule 55',
+  '266': 'Election not to be CCPC: T2002',
+  '267': 'Revocation of CCPC election: T2002',
+  '268': 'Eligible dividends or GRIP change: Schedule 53',
+  '269': 'Eligible dividends or LRIP change: Schedule 54',
+  '273': 'Farmer fuel-charge credit: Schedule 63',
+  '274': 'Non-qualified securities: Schedule 59',
+  '276': 'Bank/life insurer additional tax: Schedule 68',
+  '277': 'Covered-entity equity repurchase: Schedule 56',
+  '278': 'EIFEL or related election: Schedule 130',
+} as const;
+const triggerCodes = Object.keys(T2_2025_ADDITIONAL_SCHEDULE_TRIGGERS) as [
+  keyof typeof T2_2025_ADDITIONAL_SCHEDULE_TRIGGERS,
+  ...(keyof typeof T2_2025_ADDITIONAL_SCHEDULE_TRIGGERS)[],
+];
+const financialCodes = [
+  '1001',
+  '1060',
+  '1483',
+  '2621',
+  '2680',
+  '3500',
+  '3600',
+] as const;
+export const T2_2025_EXPENSE_CODES = [
+  '8521',
+  '8690',
+  '8760',
+  '8810',
+  '8910',
+  '9060',
+  '9130',
+  '9220',
+] as const;
+const balance = z.record(z.enum(financialCodes), signedMoney);
+const fact = z.boolean().nullable();
+export const CanadaCorporate2025IntakeSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  currency: z.literal('CAD'),
+  binding: z.strictObject({
+    caseId: z.uuid(),
+    snapshotRevision: z.number().int().positive(),
+    snapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
+  }),
+  sourceReferences: z
+    .array(
+      z.strictObject({ id: text, sha256: z.string().regex(/^[a-f0-9]{64}$/) }),
+    )
+    .min(1)
+    .max(100),
+  identity: z.strictObject({
+    legalName: text,
+    legalNameContinuation: text.nullable(),
+    operatingName: text,
+    businessNumber: z.string().regex(/^[0-9]{9}RC[0-9]{4}$/),
+    taxYearStart: z.iso.date(),
+    taxYearEnd: z.iso.date(),
+    province: z.string().length(2),
+    headOffice: z.strictObject({
+      street: text,
+      city: text,
+      postalCode: z.string().regex(/^[A-Z][0-9][A-Z] ?[0-9][A-Z][0-9]$/),
+    }),
+    addressesUnchangedAndSame: fact,
+    naics: z.string().regex(/^[0-9]{6}$/),
+    activity: text,
+    principalActivityRevenuePercentage: money,
+    otherPrincipalActivities: z
+      .array(z.strictObject({ description: text, revenuePercentage: money }))
+      .max(2),
+    shareholder: z.strictObject({
+      name: text,
+      socialInsuranceNumber: z.string().regex(/^[0-9]{9}$/),
+      commonSharePercentage: money,
+      preferredSharePercentage: money,
+    }),
+    signingOfficer: z.strictObject({
+      firstName: text,
+      lastName: text,
+      position: text,
+      telephone: z.string().regex(/^[0-9]{10}$/),
+      contactIsSigningOfficer: fact,
+    }),
+    correspondenceLanguage: z.enum(['en', 'fr']),
+  }),
+  declarations: z.strictObject({
+    residentCanadaThroughout: fact,
+    ccpcThroughout: fact,
+    ontarioOnlyPermanentEstablishment: fact,
+    ordinaryActiveBusinessOnly: fact,
+    eligibleForFederalSmallBusinessDeduction: fact,
+    soleIndividualCanadianResidentShareholder: fact,
+    noPreferredShares: fact,
+    standaloneInCurrentAndPreviousYear: fact,
+    notFirstFinalAmalgamatedOrAcquiredControlYear: fact,
+    noOtherElectionsOrSpecialTaxes: fact,
+    noOtherProvincialCredits: fact,
+    noOtherFederalCredits: fact,
+    noOntarioSpecialtyTypeChange: fact,
+    accountingMethodUnchanged: fact,
+    completeFinancialStatements: fact,
+    expensesFullyDeductibleOtherThanCurrentTax: fact,
+    noOtherTaxAdjustmentsOrLossPools: fact,
+    noOtherEquityMovements: fact,
+    noForeignActivityPropertyOrIncome: fact,
+    noInventoryOrCapitalAssets: fact,
+    noUnreportedLiabilitiesAssetsOrIncome: fact,
+    noTaxPreparerFee: fact,
+  }),
+  additionalInformation: z.strictObject({
+    usesIfrs: fact,
+    taxExemptUnderSection149: fact,
+    quarterlyEligibilityCeasedOn: z.iso.date().nullable(),
+    refundPreference: z
+      .enum(['refund', 'next-year-instalments', 'other-liability'])
+      .nullable(),
+    constructionIsMajorBusinessActivity: fact,
+    constructionSubcontractors: fact,
+    quarterlyInstalmentRemitterRequested: fact,
+  }),
+  attachmentAnswers: z.record(z.enum(triggerCodes), fact),
+  priorYear: z.strictObject({
+    refundableTaxHistory: z.strictObject({
+      eligibleRdToh: money,
+      nonEligibleRdToh: signedMoney,
+      eligibleDividendRefund: money,
+      nonEligibleDividendRefund: money,
+      sourceReferenceId: text,
+    }),
+    taxableCapitalEmployedCanada: money,
+    adjustedAggregateInvestmentIncome: money,
+    taxableIncome: money,
+    businessLimit: money,
+    federalSmallBusinessDeductionClaimed: fact,
+  }),
+  financialStatements: z.strictObject({
+    opening: balance,
+    closing: balance,
+    incomeStatementActivity: z.enum(['non-farming', 'farming', 'mixed']),
+    otherComprehensiveIncome: signedMoney,
+    costOfSales: z.record(z.enum(['8320', '8340', '8360']), money),
+    tradeSales: money,
+    operatingExpenses: z.record(z.enum(T2_2025_EXPENSE_CODES), money),
+    currentIncomeTaxProvision: money,
+    notes: z.array(z.string().trim().min(1).max(5000)).max(20),
+  }),
+  gifi141: z.strictObject({
+    primaryPreparerIdentified: fact,
+    primaryPreparerAccountingDesignation: fact,
+    primaryPreparerConnected: fact,
+    involvement: z
+      .array(z.enum(['300', '301', '302', '303', '304', '305']))
+      .min(1)
+      .max(6),
+    involvementOther: text.nullable(),
+    reservation: fact,
+    subsequentEvents: fact,
+    assetsRevalued: fact,
+    contingentLiabilities: fact,
+    commitments: fact,
+    jointVenturesOrPartnerships: fact,
+    impairmentOrFairValueChanges: fact,
+    financialInstrumentsDerecognized: fact,
+    hedgeAccountingApplied: fact,
+    hedgeAccountingDiscontinued: fact,
+    openingEquityAdjustment: fact,
+    returnPreparerIsPrimaryPreparer: fact,
+    returnPreparerAccountingDesignation: fact,
+    returnPreparerInputs: z
+      .array(z.enum(['310', '311', '312', '313', '314']))
+      .max(5),
+    returnPreparerOther: text.nullable(),
+  }),
+  taxWithholding: z.strictObject({
+    amount: money,
+    payments: money,
+    sourceReferenceId: text.nullable(),
+  }),
+  taxInstalmentsPaid: money,
+});
+export type CanadaCorporate2025Intake = z.infer<
+  typeof CanadaCorporate2025IntakeSchema
+>;

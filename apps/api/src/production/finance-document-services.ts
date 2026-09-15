@@ -2319,6 +2319,9 @@ export const createProductionFinanceDocumentGateway = (
             bytesUsed: quota.byteCount,
             bytesLimit: quota.maxBytes,
           },
+          ...(snapshot.ledgerAuthority
+            ? { ledgerAuthority: snapshot.ledgerAuthority }
+            : {}),
           reviewedCadTotals: snapshot.reviewedCadTotals,
           recentActivity: snapshot.recentActivity ?? [],
           budgets: snapshot.budgets,

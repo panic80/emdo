@@ -196,7 +196,10 @@ type CsvParseResult =
   | { readonly status: 'parsed'; readonly rows: readonly CsvRow[] }
   | { readonly status: 'rejected' };
 
-const parseCsv = (source: string): CsvParseResult => {
+const parseCsv = (
+  source: string,
+  preserveCellWhitespace = false,
+): CsvParseResult => {
   const rows: CsvRow[] = [];
   let cells: string[] = [];
   let cell = '';
@@ -209,7 +212,7 @@ const parseCsv = (source: string): CsvParseResult => {
     if (cell.length > MAX_CELL_CHARACTERS || cells.length >= MAX_CSV_COLUMNS) {
       return false;
     }
-    cells.push(cell.trim());
+    cells.push(preserveCellWhitespace ? cell : cell.trim());
     cell = '';
     afterQuote = false;
     return true;
@@ -1490,3 +1493,6 @@ export class InMemoryFinanceImportPlanningService {
     return this.#repository.listTransactions();
   }
 }
+
+/** Shared bounded RFC-style CSV tokenizer; callers own money/date policy. */
+export const parseFinanceCsvTable = parseCsv;

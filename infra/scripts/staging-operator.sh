@@ -259,13 +259,16 @@ install_release() {
 }
 
 deploy_release() {
-  [[ "$#" == 3 || "$#" == 4 || "$#" == 5 ]] ||
-    die 'deploy requires run ID, initial-deployment flag, TTL, optional Finance synthetic-staging flag, and optional live-chat flag'
+  [[ "$#" -ge 3 && "$#" -le 8 ]] ||
+    die 'deploy requires run ID, initial-deployment flag, TTL, optional Finance synthetic-staging flag, optional live-chat and normalized flags, and explicit normalized run/day budgets'
   local run_id="$1"
   local initial_deployment="$2"
   local ttl_minutes="$3"
   local finance_synthetic_staging="${4:-false}"
   local finance_live_chat="${5:-false}"
+  local finance_normalized="${6:-false}"
+  local normalized_run_budget="${7:-}"
+  local normalized_day_budget="${8:-}"
   local -a finance_key_lines=()
   assert_safe_run_id "$run_id"
   [[ "$initial_deployment" == true || "$initial_deployment" == false ]] ||
@@ -277,6 +280,20 @@ deploy_release() {
     die 'Finance live-chat flag is invalid'
   [[ "$finance_synthetic_staging" == true || "$finance_live_chat" == false ]] ||
     die 'Finance live chat requires Finance synthetic staging'
+  [[ "$finance_normalized" == true || "$finance_normalized" == false ]] ||
+    die 'Finance normalized flag is invalid'
+  [[ "$finance_synthetic_staging" == true || "$finance_normalized" == false ]] ||
+    die 'Finance normalized staging requires Finance synthetic staging'
+  if [[ "$finance_normalized" == true ]]; then
+    [[ "$normalized_run_budget" =~ ^[1-9][0-9]{0,2}$ &&
+      "$normalized_day_budget" =~ ^[1-9][0-9]{0,2}$ ]] ||
+      die 'Finance normalized staging requires explicit positive integer run/day budgets'
+    ((normalized_run_budget <= 100 && normalized_day_budget >= normalized_run_budget && normalized_day_budget <= 500)) ||
+      die 'Finance normalized staging budgets are out of bounds'
+  else
+    [[ -z "$normalized_run_budget" && -z "$normalized_day_budget" ]] ||
+      die 'Finance normalized budgets require the normalized staging flag'
+  fi
   if [[ "$finance_synthetic_staging" == true ]]; then
     # Receive Finance provider material through this root action's stdin before
     # the one-use release record is consumed. It never becomes an argument,
@@ -288,16 +305,16 @@ deploy_release() {
       ${#finance_key_lines[0]} -le 512 &&
       "${finance_key_lines[0]}" =~ ^[A-Za-z0-9_-]+$ ]] ||
       die 'Finance staging extraction key has an invalid protected stdin format'
-    if [[ "$finance_live_chat" == true ]]; then
+    if [[ "$finance_live_chat" == true || "$finance_normalized" == true ]]; then
       [[ "${#finance_key_lines[@]}" == 5 &&
         ${#finance_key_lines[1]} -ge 20 && ${#finance_key_lines[1]} -le 512 &&
         "${finance_key_lines[1]}" =~ ^sk-[A-Za-z0-9_-]+$ &&
         ${#finance_key_lines[2]} -ge 1 && ${#finance_key_lines[2]} -le 128 &&
         "${finance_key_lines[2]}" =~ ^[A-Za-z0-9._:-]+$ ]] ||
-        die 'Finance live chat protected stdin packet is invalid'
+        die 'Finance agent protected stdin packet is invalid'
       for value in "${finance_key_lines[@]:3}"; do
         [[ "$value" =~ ^[1-9][0-9]{0,15}$ ]] ||
-          die 'Finance live chat protected stdin packet has an invalid token rate'
+          die 'Finance agent protected stdin packet has an invalid token rate'
       done
     else
       [[ "${#finance_key_lines[@]}" == 1 ]] ||
@@ -317,13 +334,13 @@ deploy_release() {
         EMDO_FINANCE_SYNTHETIC_STAGING=true \
         EMDO_FINANCE_SYNTHETIC_STAGING_LIVE_CHAT="$finance_live_chat" \
         "$RECORD_RELEASE/infra/scripts/deploy-staging.sh" \
-          "$run_id" "$RECORD_RELEASE/images.env" "$ttl_minutes" true "$finance_live_chat"
+          "$run_id" "$RECORD_RELEASE/images.env" "$ttl_minutes" true "$finance_live_chat" "$finance_normalized" "$normalized_run_budget" "$normalized_day_budget"
     finance_key_lines=()
   else
     INITIAL_STAGING_BOOTSTRAP="$initial_deployment" \
         EMDO_FINANCE_SYNTHETIC_STAGING=false \
         "$RECORD_RELEASE/infra/scripts/deploy-staging.sh" \
-          "$run_id" "$RECORD_RELEASE/images.env" "$ttl_minutes" false false
+          "$run_id" "$RECORD_RELEASE/images.env" "$ttl_minutes" false false false "" ""
   fi
 }
 
@@ -338,7 +355,10 @@ accept_release() {
   # shellcheck source=/dev/null
   source "$RECORD_RELEASE/infra/scripts/_common.sh"
   "$RECORD_RELEASE/infra/scripts/run-staging-acceptance.sh" "$run_id"
-  if finance_staging_marker_is_valid "/var/lib/emdo/staging/$run_id"; then
+  load_finance_synthetic_staging_state "/var/lib/emdo/staging/$run_id"
+  if [[ "${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:-false}" == true ]]; then
+    cat -- "/var/lib/emdo/staging/$run_id/finance-normalized-synthetic-staging-probe.json"
+  elif finance_staging_marker_is_valid "/var/lib/emdo/staging/$run_id"; then
     cat -- "/var/lib/emdo/staging/$run_id/finance-synthetic-staging-probe.json"
   else
     cat -- "/var/lib/emdo/staging/$run_id/http-api-subset.json"

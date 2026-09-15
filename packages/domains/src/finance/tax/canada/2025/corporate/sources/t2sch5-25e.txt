@@ -1,0 +1,525 @@
+                                                                                                                                                          Schedule 5
+                                                                                                                                                            Code 2501
+                                                                                                                                                         Protected B
+                                                                                                                                                        when completed
+                                              Tax Calculation Supplementary – Corporations
+                                                        (2025 and later tax years)
+ • Use this schedule if any of the following apply to your corporation during the tax year:
+   – it had a permanent establishment in more than one jurisdiction
+      (corporations that have no taxable income should only fill out columns A, B, and D in Part 1)
+   – it is claiming provincial or territorial tax credits or rebates (see Part 2)
+   – it has to pay taxes, other than income tax, for Newfoundland and Labrador or Ontario (see Part 2)
+ • All legislative references are to the Income Tax Regulations (the Regulations).
+ • For more information, see the T2 Corporation – Income Tax Guide.
+ • For the regulation number to be entered in field 100 of Part 1 on page 2, see the chart below.
+
+
+     Regulation                   Type of corporation                     Type of entry in column B                         Type of entry in column D
+
+         402             Corporations not specified below                      Salaries and wages                                    Gross revenue
+
+         403                     Insurance corporations                         No entry required                                    Net premiums
+
+         404                             Banks                                 Salaries and wages                         Amount of loans and deposits
+
+        404.1                     Federal credit unions                        Salaries and wages                         Amount of loans and deposits
+
+         405                   Trust and loan corporations                      No entry required                                    Gross revenue
+
+   406(1) (Note 1)                Railway corporations                  Equated track miles/kilometres                      Gross ton miles/kilometres
+
+   406(2) (Note 1)            Railway corporations (Note 2)              The method of allocation depends on the business line – refer to the Regulations.
+
+         407                       Airline corporations              Capital cost of fixed assets (Note 3)           Revenue plane miles/kilometres (Note 4)
+
+         408                    Grain elevator operators                       Salaries and wages                            Bushels of grain received
+
+         409                    Bus and truck operators                        Salaries and wages                             Miles/kilometres driven
+
+    410 (Note 5)                     Ship operators                       Salaries and wages (Note 6)                               Port-call-tonnage
+
+         411                       Pipeline operators                          Salaries and wages                           Miles/kilometres of pipeline
+
+         412                       Divided businesses                    The method of allocation depends on the business line – refer to the Regulations.
+
+         413                   Non-resident corporations                 The method of allocation depends on the business line – refer to the Regulations.
+
+
+  Note 1: Include the subsection (with brackets) when entering this regulation on line 100 in Part 1 of this Schedule.
+  Note 2: Operating an airline service, ships, hotels, or receiving substantial revenues from petroleum or natural gas royalties.
+  Note 3: Exclude aircraft.
+  Note 4: Exclude miles/kilometres flown over the territorial waters of Canada.
+  Note 5: In Part 1, instead of taxable income, use the excess of taxable income over allocable income for the calculation in
+          column C and the allocable income for the calculation in column E.
+  Note 6: Only where taxable income exceeds allocable income.
+
+
+
+
+T2 SCH 5 E (25)                                                 (Ce formulaire est disponible en français.)              Page 1 of 8
+                                                                                                                                                          Schedule 5
+                                                                                                                                                              Code 2501
+                                            Tax Calculation Supplementary – Corporations                                                                 Protected B
+                                                                                                                                                       when completed
+                                                      (2025 and later tax years)
+Corporation's name                                                                                    Business number                            Tax year-end
+                                                                                                                                          Year         Month      Day
+
+
+     Part 1 – Allocation of taxable income
+
+                  100                           Enter the regulation that applies (402 to 413) from page 1.
+
+                  A                            B                           C                           D                       E                         F
+             Jurisdiction              Total salaries and       B multiplied by taxable         Gross revenue           D multiplied by     Allocation of taxable income
+ (tick yes if your corporation had      wages paid in            income, divided by G           attributable to         taxable income,         (C plus E, multiplied
+                                          jurisdiction                                           jurisdiction             divided by H             by 1/2) Note 2
+  a permanent establishment in
+   the jurisdiction during the tax
+            year) Note 1                                                                                                                   ( where either G or H is nil,
+                                                                                                                                              do not multiply by 1/2 )
+
+ Newfoundland
+ and Labrador     003 Yes            103                                                  143
+
+ Newfoundland
+ and Labrador     004 Yes            104                                                  144
+ Offshore
+ Prince Edward
+ Island        005 Yes               105                                                  145
+
+ Nova Scotia      007 Yes            107                                                  147
+
+ Nova Scotia
+ Offshore         008 Yes            108                                                  148
+
+ New Brunswick 009 Yes               109                                                  149
+
+ Quebec           011 Yes            111                                                  151
+
+ Ontario          013 Yes            113                                                  153
+
+ Manitoba         015 Yes            115                                                  155
+
+ Saskatchewan 017 Yes                117                                                  157
+
+ Alberta          019 Yes            119                                                  159
+
+ British
+ Columbia         021 Yes            121                                                  161
+
+ Yukon            023 Yes            123                                                  163
+
+ Northwest
+ Territories      025 Yes            125                                                  165
+
+ Nunavut          026 Yes            126                                                  166
+
+ Outside
+ Canada           027 Yes            127                                                  167
+
+                                                            G                                                     H
+                          Total      129                                                  169
+
+   Note 1: Permanent establishment is defined in subsection 400(2).
+   Note 2: For corporations other than those described under section 402, use the appropriate calculation described in the Regulations to allocate
+           taxable income.
+
+Notes:
+1. After determining the allocation of taxable income, you have to calculate the corporation's provincial or territorial tax payable. For more information on
+   how to calculate the tax for each province or territory, see the instructions for Schedule 5 in the T2 Corporation – Income Tax Guide.
+2. If your corporation has provincial or territorial tax payable, fill out Part 2 on the following pages.
+3. If your corporation is a member of a partnership and the partnership had a permanent establishment in a jurisdiction, select the jurisdiction in Column A
+   and include your proportionate share of the partnership's salaries and wages and gross revenue in columns B and D, respectively.
+
+
+T2 SCH 5 E (25)                                                                                                                                              Page 2 of 8
+                                                                                                                                                             Protected B when completed
+
+      Part 2 – Provincial and territorial tax payable, tax credits, and rebates
+
+                                                                                      Newfoundland and Labrador
+
+   Newfoundland and Labrador tax before credits (from Schedule 307) . . . . . . . . . . . . . . . . . . . . . . 200
+
+   Newfoundland and Labrador offshore tax (from Schedule 307) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 205
+
+                                                              Gross Newfoundland and Labrador tax (line 200 plus line 205)                                     Ź                     1A
+
+
+   Newfoundland and Labrador political contribution tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 500
+        Contribution . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 891
+   Newfoundland and Labrador foreign tax credit (from Schedule 21) . . . . . . . . . . . . . . . . . . . . . . . . . . 501
+   Newfoundland and Labrador venture capital tax credit (from Schedule 308) . . . . . . . . . . . . . . . . . . . 504
+   Newfoundland and Labrador direct equity tax credit (from Schedule 303) Note 3 . . . . . . . . . . . . . . . 505
+   Newfoundland and Labrador resort property investment tax credit (from Schedule 304) Note 3 . . . . 507
+   Newfoundland and Labrador non-refundable green technology tax credit (from Schedule 311) . . . . . 506
+   Newfoundland and Labrador non-refundable manufacturing and processing investment
+   tax credit (from Schedule 310) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 508
+                        Newfoundland and Labrador non-refundable tax credits (total of lines 500, 501, 504, 505, 507, 506, and 508)                            Ź                     1B
+
+                                                                                                  Subtotal (amount 1A minus amount 1B) (if negative, enter "0")                      1C
+
+Newfoundland and Labrador capital tax on financial institutions (from Schedule 305) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 518
+
+Total Newfoundland and Labrador tax payable before refundable tax credits (amount 1C plus line 518) . . . . . . . . . . . . . . . . . . . . . . .                                    1D
+
+   Newfoundland and Labrador refundable manufacturing and processing investment
+   tax credit (from Schedule 310) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 523
+
+   Newfoundland and Labrador refundable green technology tax credit (from Schedule 311) . . . . . . . . 526
+
+   Newfoundland and Labrador research and development tax credit (from Schedule 301) . . . . . . . . . 520
+
+   Newfoundland and Labrador film and video industry tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 521
+
+        Certificate number Note 3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 821
+
+   Newfoundland and Labrador interactive digital media tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . 522
+
+        Certificate number Note 3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 840
+
+   Newfoundland and Labrador all-spend film and video production tax credit . . . . . . . . . . . . . . . . . . . 524
+
+        Certificate number Note 3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 842
+
+           Newfoundland and Labrador refundable tax credits (total of lines 523, 526, 520, 521, 522, and 524)                                                  Ź                     1E
+
+Net Newfoundland and Labrador tax payable or refundable tax credit (amount 1D minus amount 1E) . . . . . . . . . . . . . . . . . 209
+(if a credit, enter amount in brackets). Include this amount on line 255 on page 8.
+
+   Note 3: To claim the credit, file the certificate with your T2 Corporation – Income Tax Return.
+
+
+
+                                                                                            Prince Edward Island
+
+Prince Edward Island tax before credits (from Schedule 322) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 210
+
+  Prince Edward Island foreign tax credit (from Schedule 21) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 528
+
+  Prince Edward Island corporate investment tax credit (from Schedule 321) . . . . . . . . . . . . . . . . . . . . 530
+
+                                                Prince Edward Island non-refundable tax credits (line 528 plus line 530)                                       Ź                     2A
+
+Net Prince Edward Island tax payable (line 210 minus amount 2A) (if negative, enter "0") . . . . . . . . . . . . . . . . . . . . . . . . . . . . 214
+Include this amount on line 255 on page 8.
+
+
+
+
+T2 SCH 5 E (25)                                                                                                                                                              Page 3 of 8
+                                                                                                                                                                  Protected B when completed
+
+     Part 2 – Provincial and territorial tax payable, tax credits, and rebates (continued)
+
+                                                                                                Nova Scotia
+   Nova Scotia tax before credits (from Schedule 346) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 215
+   Nova Scotia offshore tax (from Schedule 346) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 220
+   Recapture of Nova Scotia research and development tax credit (from Schedule 340) . . . . . . . . . . . . 221
+                                                                               Gross Nova Scotia tax (total of lines 215 to 221)                                    Ź                     3A
+
+   Nova Scotia foreign tax credit (from Schedule 21) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 554
+   Nova Scotia innovation equity tax credit (from Schedule 349) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 562
+   Nova Scotia venture capital tax credit (from Schedule 350) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 563
+   Nova Scotia food bank tax credit for farmers (from Schedule 2) . . . . . . . . . . . . . . . . . . . . . . . . . . . . 570
+   Nova Scotia corporate tax reduction for new small businesses (from Schedule 341) Note 4 . . . . . . . 556
+        Certificate number Note 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 834
+                                 Nova Scotia non-refundable tax credits (total of lines 554, 562, 563, 570, and 556)                                                Ź                     3B
+
+                                                                                             Subtotal (amount 3A minus amount 3B) (if negative, enter "0")                                3C
+
+Nova Scotia financial institutions capital tax (from Schedule 352) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 222
+Total Nova Scotia tax payable before refundable tax credits (amount 3C plus line 222) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                             3D
+
+   Nova Scotia research and development tax credit (from Schedule 340) . . . . . . . . . . . . . . . . . . . . . . 566
+   Nova Scotia digital media tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 567
+        Certificate number Note 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 838
+   Nova Scotia capital investment tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 568
+        Certificate number Note 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 841
+   Nova Scotia digital animation tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 569
+        Certificate number Note 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 839
+                                                               Nova Scotia refundable tax credits (total of lines 566 to 569)                                       Ź                     3E
+
+Net Nova Scotia tax payable or refundable tax credit (amount 3D minus 3E) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 224
+(if a credit, enter amount in brackets). Include this amount on line 255 on page 8.
+
+   Note 4: The amount of Nova Scotia corporate tax reduction for new small businesses cannot be more than the gross Nova Scotia tax minus all other
+           Nova Scotia tax credits (including the refundable credits).
+   Note 5: To claim the credit, file the certificate with your T2 return.
+
+
+                                                                                             New Brunswick
+
+   New Brunswick tax before credits (from Schedule 366) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 225
+   Recapture of New Brunswick research and development tax credit (from Schedule 360) . . . . . . . . . 573
+                                                                             Gross New Brunswick tax (line 225 plus line 573)                                       Ź                     4A
+
+   New Brunswick foreign tax credit (from Schedule 21) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 576
+   New Brunswick small business investor tax credit (from Schedule 367) . . . . . . . . . . . . . . . . . . . . . . 578
+                                                       New Brunswick non-refundable tax credits (line 576 plus line 578)                                            Ź                     4B
+
+Total New Brunswick tax payable before refundable tax credits (amount 4A minus amount 4B) (if negative, enter "0") . . . . . . . . . . . .                                                4C
+
+   New Brunswick research and development tax credit (from Schedule 360) . . . . . . . . . . . . . . . . . . . . 597
+                                                                               New Brunswick refundable tax credits (line 597)                                      Ź                     4D
+
+Net New Brunswick tax payable or refundable tax credit (amount 4C minus amount 4D) . . . . . . . . . . . . . . . . . . . . . . . . . . . . 229
+(if a credit, enter amount in brackets). Include this amount on line 255 on page 8.
+
+
+
+
+T2 SCH 5 E (25)                                                                                                                                                                   Page 4 of 8
+                                                                                                                                                                           Protected B when completed
+
+     Part 2 – Provincial and territorial tax payable, tax credits, and rebates (continued)
+
+                                                                                                   Ontario
+
+   Ontario basic income tax (from Schedule 500) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 270
+
+   Ontario small business deduction (from Schedule 500) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 402
+
+                                                                                                 Subtotal (line 270 minus line 402)                                         Ź                      5A
+
+
+   Ontario transitional tax debits and credits (from Schedule 506) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 276
+
+   Recapture of Ontario research and development tax credit (from Schedule 508) . . . . . . . . . . . . . . . 277
+
+   Repayment of Ontario made manufacturing investment tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . 281
+
+                                                                                  Subtotal (line 276 plus line 277 plus line 281)                                           Ź                      5B
+
+Gross Ontario tax (amount 5A plus amount 5B) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                   5C
+
+
+   Ontario tax credit for manufacturing and processing (from Schedule 502) . . . . . . . . . . . . . . . . . . . . . 406
+   Ontario foreign tax credit (from Schedule 21) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 408
+   Ontario credit union tax reduction (from Schedule 500) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 410
+   Ontario political contributions tax credit (from Schedule 525) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 415
+
+                                                               Ontario non-refundable tax credits (total of lines 406 to 415)                                               Ź                      5D
+
+                                                                                             Subtotal (amount 5C minus amount 5D) (if negative, enter "0")                                         5E
+
+Ontario research and development tax credit (from Schedule 508) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 416
+
+Ontario corporate income tax payable before Ontario corporate minimum tax credit and Ontario community food program
+donation tax credit for farmers (amount 5E minus line 416) (if negative, enter "0") . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                                5F
+
+Ontario corporate minimum tax credit (from Schedule 510) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 418
+
+Ontario community food program donation tax credit for farmers (from Schedule 2) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 420
+
+Ontario corporate income tax payable (amount 5F minus the total of lines 418 and 420) (if negative, enter "0") . . . . . . . . . . . . . . . . .                                                   5G
+
+   Ontario corporate minimum tax (from Schedule 510) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 278
+
+   Ontario special additional tax on life insurance corporations (from Schedule 512) . . . . . . . . . . . . . . . 280
+
+                                                                                                    Subtotal (line 278 plus line 280)                                       Ź                      5H
+
+Total Ontario tax payable before refundable tax credits (amount 5G plus amount 5H) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .                                       5I
+
+   Ontario qualifying environmental trust tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 450
+   Ontario co-operative education tax credit (from Schedule 550) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 452
+   Ontario computer animation and special effects tax credit (from Schedule 554) . . . . . . . . . . . . . . . . 456
+   Ontario film and television tax credit (from Schedule 556) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 458
+   Ontario production services tax credit (from Schedule 558) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 460
+   Ontario interactive digital media tax credit (from Schedule 560) . . . . . . . . . . . . . . . . . . . . . . . . . . . . 462
+   Ontario book publishing tax credit (from Schedule 564) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 466
+   Ontario innovation tax credit (from Schedule 566) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 468
+   Ontario business-research institute tax credit (from Schedule 568) . . . . . . . . . . . . . . . . . . . . . . . . . . 470
+   Ontario regional opportunities investment tax credit (from Schedule 570) . . . . . . . . . . . . . . . . . . . . . 472
+   Ontario made manufacturing investment tax credit (from Schedule 572) . . . . . . . . . . . . . . . . . . . . . . 474
+
+                                                                     Ontario refundable tax credits (total of lines 450 to 474)                                             Ź                      5J
+
+Net Ontario tax payable or refundable tax credit (amount 5I minus amount 5J) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 290
+(if a credit, enter amount in brackets). Include this amount on line 255 on page 8.
+
+
+
+
+T2 SCH 5 E (25)                                                                                                                                                                            Page 5 of 8
+                                                                                                                                                                     Protected B when completed
+
+     Part 2 – Provincial and territorial tax payable, tax credits, and rebates (continued)
+                                                                                                       Manitoba
+
+Manitoba tax before credits (from Schedule 383) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 230
+   Manitoba foreign tax credit (from Schedule 21) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 601
+   Manitoba rental housing construction tax credit (from Schedule 394) . . . . . . . . . . . . . . . . . . . . . . . . 602
+   Manitoba non-refundable manufacturing investment tax credit (from Schedule 381) . . . . . . . . . . . . . 605
+   Manitoba non-refundable research and development tax credit (from Schedule 380) . . . . . . . . . . . . 606
+   Manitoba non-refundable odour-control tax credit (from Schedule 385) . . . . . . . . . . . . . . . . . . . . . . . 607
+   Manitoba small business venture capital tax credit (from Schedule 387) . . . . . . . . . . . . . . . . . . . . . . 608
+   Manitoba non-refundable cooperative development tax credit (from Schedule 390) . . . . . . . . . . . . . 609
+
+                                                                Manitoba non-refundable tax credits (total of lines 601 to 609)                                        Ź                     6A
+
+Total Manitoba tax payable before refundable tax credits (line 230 minus amount 6A) (if negative, enter "0") . . . . . . . . . . . . . . . . . . .                                           6B
+
+   Manitoba cultural industries printing tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 611
+   Manitoba refundable research and development tax credit (from Schedule 380) . . . . . . . . . . . . . . . . 613
+   Manitoba interactive digital media tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 614
+   Manitoba book publishing tax credit (from Schedule 389) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 615
+   Manitoba green energy equipment tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 619
+   Manitoba film and video production tax credit (from Schedule 388) . . . . . . . . . . . . . . . . . . . . . . . . . . 620
+   Manitoba refundable manufacturing investment tax credit (from Schedule 381) . . . . . . . . . . . . . . . . 621
+   Manitoba paid work experience tax credit (from Schedule 384) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 622
+   Manitoba community enterprise development tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 327
+   Manitoba child care centre development tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 328
+
+        Certificate number . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 889
+   Manitoba rental housing construction incentive tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 329
+
+        Certificate number . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 887
+
+                                       Manitoba refundable tax credits (total of lines 611 to 622 plus lines 327 to 329)                                               Ź                     6C
+
+Net Manitoba tax payable or refundable tax credit (amount 6B minus amount 6C) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 234
+(if a credit, enter amount in brackets). Include this amount on line 255 on page 8.
+
+
+
+
+                                                                                                  Saskatchewan
+
+Saskatchewan tax before credits (from Schedule 411) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 235
+
+   Saskatchewan political contribution tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 624
+        Contribution . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 890
+   Saskatchewan foreign tax credit (from Schedule 21) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 625
+   Saskatchewan manufacturing and processing profits tax reduction (from Schedule 404) . . . . . . . . . 626
+   Saskatchewan non-refundable research and development tax credit (from Schedule 403) . . . . . . . . 631
+                                                        Saskatchewan non-refundable tax credits (total of lines 624 to 631)                                            Ź                     7A
+
+Total Saskatchewan tax payable before refundable tax credits (line 235 minus amount 7A) (if negative, enter "0") . . . . . . . . . . . . . . .                                               7B
+
+   Saskatchewan qualifying environmental trust tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 641
+   Saskatchewan refundable manufacturing and processing investment tax credit
+   (from Schedule 402) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 644
+   Saskatchewan refundable research and development tax credit (from Schedule 403) . . . . . . . . . . . 645
+                                                              Saskatchewan refundable tax credits (total of lines 641 to 645)                                          Ź                     7C
+
+Net Saskatchewan tax payable or refundable tax credit (amount 7B minus amount 7C) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 239
+(if a credit, enter amount in brackets). Include this amount on line 255 on page 8.
+
+
+
+T2 SCH 5 E (25)                                                                                                                                                                      Page 6 of 8
+                                                                                                                                                                      Protected B when completed
+     Part 2 – Provincial and territorial tax payable, tax credits, and rebates (continued)
+                                                                                                British Columbia
+
+   British Columbia tax before credits (from Schedule 427) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 240
+   Recapture of British Columbia scientific research and experimental
+   development (SR&ED) tax credit (from Form T666) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 241
+                                                                               Gross British Columbia tax (line 240 plus line 241)                                      Ź                     8A
+
+   British Columbia foreign tax credit (from Schedule 21) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 650
+   British Columbia logging tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 651
+   British Columbia farmers' food donation tax credit (from Schedule 2) . . . . . . . . . . . . . . . . . . . . . . . . 683
+   British Columbia small business venture capital tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 656
+        Credit at the end of previous tax year . . . . . . . . . . . . . . . . . . . . . . . . 880
+        Credit transferred on an amalgamation . . . . . . . . . . . . . . . . . . . . . . . 883
+        Current-year credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 881
+        Certificate number (from Form SBVC 10) . . . . . . . . . . . . . . . . . . . . . 882
+   British Columbia SR&ED non-refundable tax credit (from Form T666) . . . . . . . . . . . . . . . . . . . . . . . . 659
+                            British Columbia non-refundable tax credits (total of lines 650, 651, 683, 656, and 659)                                                    Ź                     8B
+
+Total British Columbia tax payable before refundable tax credits (amount 8A minus amount 8B) (if negative, enter "0") . . . . . . . . . . .                                                   8C
+
+   British Columbia qualifying environmental trust tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 670
+   British Columbia film and television tax credit (from Form T1196) . . . . . . . . . . . . . . . . . . . . . . . . . . . 671
+   British Columbia production services tax credit (from Form T1197) . . . . . . . . . . . . . . . . . . . . . . . . . . 672
+   British Columbia mining exploration tax credit (from Schedule 421) . . . . . . . . . . . . . . . . . . . . . . . . . . 673
+   British Columbia SR&ED refundable tax credit (from Form T666) . . . . . . . . . . . . . . . . . . . . . . . . . . . 674
+   British Columbia book publishing tax credit (amount on line 886 multiplied by 90%) . . . . . . . . . . . . . 665
+        Base amount of Publishing Support contributions received in the
+        tax year (excluding other supplementary amounts such as the export
+        and recovery supplement) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 886
+   British Columbia training tax credit (from Schedule 428) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 679
+   British Columbia interactive digital media tax credit (from Schedule 429) . . . . . . . . . . . . . . . . . . . . . 680
+   British Columbia shipbuilding and ship repair industry tax credit (from Schedule 430) . . . . . . . . . . . . 681
+   British Columbia clean buildings tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 685
+        Certificate number . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 884
+                      British Columbia refundable tax credits (total of lines 670 to 674, 665, 679 to 681, and 685)                                                     Ź                     8D
+
+Net British Columbia tax payable or refundable tax credit (amount 8C minus amount 8D) . . . . . . . . . . . . . . . . . . . . . . . . . . . 244
+(if a credit, enter amount in brackets). Include this amount on line 255 on page 8.
+
+
+                                                                                                         Yukon
+Yukon tax before credits (from Schedule 443) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 245
+   Yukon political contribution tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 675
+        Contribution . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 897
+   Yukon foreign tax credit (from Schedule 21) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 676
+   Yukon manufacturing and processing profits tax credit (from Schedule 440) . . . . . . . . . . . . . . . . . . . 677
+                                                                   Yukon non-refundable tax credits (total of lines 675 to 677)                                         Ź                     9A
+
+Total Yukon tax payable before refundable tax credits (line 245 minus amount 9A) (if negative, enter "0") . . . . . . . . . . . . . . . . . . . . .                                           9B
+
+   Yukon research and development tax credit (from Schedule 442) . . . . . . . . . . . . . . . . . . . . . . . . . . . 698
+   Yukon general business carbon price rebate (from Schedule 444) . . . . . . . . . . . . . . . . . . . . . . . . . . 699
+   Yukon mining business carbon price rebate (from Schedule 444) . . . . . . . . . . . . . . . . . . . . . . . . . . . 696
+                                                               Yukon refundable tax credits (total of lines 698, 699, and 696)                                          Ź                     9C
+
+Net Yukon tax payable or refundable tax credit (amount 9B minus amount 9C) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 249
+(if a credit, enter amount in brackets). Include this amount on line 255 on page 8.
+
+T2 SCH 5 E (25)                                                                                                                                                                       Page 7 of 8
+                                                                                                                                                                      Protected B when completed
+
+     Part 2 – Provincial and territorial tax payable, tax credits, and rebates (continued)
+
+                                                                                            Northwest Territories
+
+Northwest Territories tax before credits (from Schedule 461) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 250
+
+   Northwest Territories political contribution tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 700
+
+        Contribution . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 898
+
+   Northwest Territories foreign tax credit (from Schedule 21) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 701
+
+                                                 Northwest Territories non-refundable tax credits (line 700 plus line 701)                                              Ź                    10A
+
+
+Net Northwest Territories tax payable (line 250 minus amount 10A) (if negative, enter "0") . . . . . . . . . . . . . . . . . . . . . . . . . . . 254
+Include this amount on line 255.
+
+
+                                                                                                       Nunavut
+
+Nunavut tax before credits (from Schedule 481) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 260
+
+   Nunavut political contribution tax credit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 725
+
+        Contribution . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 899
+
+   Nunavut foreign tax credit (from Schedule 21) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 730
+
+                                                                   Nunavut non-refundable tax credits (line 725 plus line 730)                                          Ź                    11A
+
+
+Net Nunavut tax payable (line 260 minus amount 11A) (if negative, enter "0") . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 264
+Include this amount on line 255.
+
+
+                                                                                                      Summary
+Enter the total net tax payable or refundable tax credits for all provinces and territories on line 255.
+
+Net provincial and territorial tax payable or refundable tax credits . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 255
+
+If the amount on line 255 is positive, enter the net provincial and territorial tax payable on line 760 of the T2 return.
+If the amount on line 255 is negative, enter the net provincial and territorial refundable tax credits on line 812 of the T2 return.
+
+
+
+
+T2 SCH 5 E (25)                                                                                                                                                                       Page 8 of 8
+

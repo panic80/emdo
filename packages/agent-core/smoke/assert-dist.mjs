@@ -7,7 +7,10 @@ const dist = join(packageRoot, 'dist');
 const modules = [
   'approval-state',
   'budget',
+  'durable-finance-proposal-provider',
+  'durable-finance-standardization',
   'factory',
+  'finance-image-prompt-projection',
   'index',
   'memory',
   'model-router',

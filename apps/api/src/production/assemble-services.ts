@@ -12,6 +12,16 @@ const CURRENT_DURABLE_SERVICE_NAMES = Object.freeze([
   'activityRead',
   'audioRequests',
   'financeRead',
+  'financeV2',
+  'financeFec',
+  'financeLegacyMigration',
+  'financeOpenings',
+  'financePlanning',
+  'financeStandardization',
+  'financeTax',
+  'financeAutomations',
+  'financeSchedules',
+  'financeGeneratedReports',
   'financeImports',
   'financeDocuments',
   'google',
@@ -43,6 +53,16 @@ const selectCurrentDurableBindings = (
         if (
           !hasTrustedAuthentication &&
           (name === 'managerTurns' ||
+            name === 'financeV2' ||
+            name === 'financeFec' ||
+            name === 'financeLegacyMigration' ||
+            name === 'financeOpenings' ||
+            name === 'financePlanning' ||
+            name === 'financeStandardization' ||
+            name === 'financeTax' ||
+            name === 'financeAutomations' ||
+            name === 'financeSchedules' ||
+            name === 'financeGeneratedReports' ||
             name === 'financeDocuments' ||
             name === 'proposalQueries' ||
             name === 'proposals' ||

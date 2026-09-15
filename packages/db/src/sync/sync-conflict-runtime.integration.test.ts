@@ -434,6 +434,97 @@ describeDatabase(
       });
     });
 
+    it('recovers a synthetic retirement constraint and durably terminalizes only the Finance edit', async () => {
+      // Isolated PostgreSQL transaction-recovery proof. Real activation and
+      // its source lock are covered by finance-legacy-migration acceptance.
+      await admin.query(`create function emdo.test_sync_retired_finance() returns trigger language plpgsql as $$
+        begin
+          if NEW.entity_type='finance.budget' and NEW.entity_id='retired-budget' then
+            raise exception 'legacy-finance-writer-retired' using errcode='23514';
+          end if;
+          return NEW;
+        end $$;
+        create trigger test_sync_retired_finance before insert on emdo.sync_entities
+        for each row execute function emdo.test_sync_retired_finance()`);
+      try {
+        const financeOperation = {
+          schemaVersion: 1 as const,
+          clientId: ids.client,
+          operationId: '89000000-0000-4000-8000-000000000030',
+          entity: { type: 'finance.budget', id: 'retired-budget' },
+          mutation: {
+            kind: 'create' as const,
+            payload: {
+              spaceId: ids.space,
+              value: {
+                id: 'retired-budget',
+                currency: 'CAD',
+                allocationsCadMinor: { groceries: 50000 },
+              },
+            },
+          },
+          baseRevision: 0,
+          dependencies: [],
+          actorIntent: 'Save the previously queued budget',
+          createdAt: '2026-08-10T14:00:00.000Z',
+        };
+        const shoppingOperation = {
+          ...financeOperation,
+          operationId: '89000000-0000-4000-8000-000000000031',
+          entity: { type: 'shopping.item', id: 'after-retirement' },
+          mutation: {
+            kind: 'create' as const,
+            payload: {
+              spaceId: ids.space,
+              value: { name: 'Apples', unit: 'bag', quantityMinorUnits: 1000 },
+            },
+          },
+        };
+        const result = await runtime.gateway.applyOperations({
+          clientId: ids.client,
+          operations: [financeOperation, shoppingOperation],
+          principal,
+          requestId: '89000000-0000-4000-8000-000000000032',
+          idempotencyKey: 'sync-upload:retirement-recovery',
+        });
+        expect(result).toMatchObject({
+          results: [
+            {
+              operationId: financeOperation.operationId,
+              status: 'conflict',
+              code: 'repository-rejected',
+              disposition: 'terminal',
+              conflicts: [
+                { field: 'legacy-finance-writer-retired', material: true },
+              ],
+            },
+            { operationId: shoppingOperation.operationId, status: 'applied' },
+          ],
+        });
+        await expect(
+          runtime.gateway.applyOperations({
+            clientId: ids.client,
+            operations: [financeOperation],
+            principal,
+            requestId: '89000000-0000-4000-8000-000000000033',
+            idempotencyKey: 'sync-upload:retirement-replay',
+          }),
+        ).resolves.toMatchObject({
+          results: [
+            { status: 'conflict', code: 'repository-rejected', replayed: true },
+          ],
+        });
+        const rows = await admin.query(
+          `select entity_id from emdo.sync_entities where entity_id in ('retired-budget','after-retirement')`,
+        );
+        expect(rows.rows).toEqual([{ entity_id: 'after-retirement' }]);
+      } finally {
+        await admin.query(
+          'drop trigger test_sync_retired_finance on emdo.sync_entities; drop function emdo.test_sync_retired_finance()',
+        );
+      }
+    });
+
     it('keeps retryable requests pending and denies raw revision or receipt mutation', async () => {
       const request = {
         clientId: ids.client,

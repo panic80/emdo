@@ -1,0 +1,102 @@
+                                                                                                                                           Schedule 100
+                                                                                                                                                  Code 0803
+                                                         Balance Sheet Information                                                           Protected B
+                                                         (1998 and later tax years)                                                       when completed
+
+
+Corporation's name                                                                                       Business number                    Tax Year End
+                                                                                                                                        Year    Month Day
+
+
+• Use this schedule to report the corporation's balance sheet information.
+• For more information, see Guide RC4088, General Index of Financial Information (GIFI) and T4012, T2 Corporation – Income Tax Guide.
+• If you need more space, attach additional schedules.
+
+                    Assets                                              Liabilities                                          Shareholder equity
+
+ Field code             Amount                         Field code                  Amount                         Field code             Amount
+
+
+
+
+                                                                                                                    * 3620
+                                                                                                                      3640
+
+
+
+
+                                                                                                                             Retained earnings
+
+                                                                                                                  Field code             Amount
+
+
+
+
+  * 2599                                                 * 3499                                                     * 3849
+
+
+
+* This field code must be reported.
+
+
+
+
+T2 SCH 100 E (20)                                          (Ce formulaire est disponible en français.)                Page 1 of 2
+   Commonly used fields codes
+The following list contains some commonly used GIFI balance sheet field codes. You are not limited to using just these codes. For a complete listing of the GIFI
+codes, please refer to Appendix A of Guide RC4088. You must complete the bolded field codes.
+
+                            Current assets                                                                       Current liabilities
+
+Account description                                            Field code            Account description                                           Field code
+
+Cash and deposits                                                 1000               Bank overdraft                                                   2600
+Cash                                                              1001               Trade payables                                                   2621
+Accounts receivable                                               1060               Wages payable                                                    2624
+Trade accounts receivable                                         1062               Bonuses payable                                                  2626
+Taxes receivable                                                  1066               Taxes payable                                                    2680
+Inventories                                                       1120               Due to shareholder(s)/director(s)                                2780
+Short-term investments                                            1180               Current portion of long term liability                           2920
+Canadian term deposits                                            1181               Total current liabilities                                        3139
+Prepaid expenses                                                  1484
+Total current assets                                              1599                                         Long-term liabilities
+
+                             Capital assets                                          Account description                                           Field code
+
+
+Account description                                            Field code            Long-term debt                                                   3140
+                                                                                     Future (deferred) income taxes                                   3240
+Land                                                              1600               Due to shareholder(s)/director(s)                                3260
+Buildings                                                         1680               Due to related parties                                           3300
+Accumulated amortization of buildings                             1681               Total long-term liabilities                                      3450
+Motor vehicles                                                    1742               Total liabilities                                                3499
+Accumulated amortization of motor vehicles                        1743
+Computer equipment/software                                       1774                                          Shareholder equity
+Accumulated amortization of computer equipment/software           1775
+Furniture and fixtures                                            1787               Account description                                           Field code
+Accumulated amortization of furniture and fixtures                1788
+Leasehold improvements                                            1918               Common shares                                                    3500
+Accumulated amortization of leasehold improvements                1919               Preferred shares                                                 3520
+Total tangible capital assets                                     2008               Contributed surplus                                              3541
+Total accumulated amortization of tangible capital assets         2009               Retained earnings/deficit                                        3600
+Goodwill                                                          2012               Total shareholder equity                                         3620
+Accumulated amortization of goodwill                              2013               Total liabilities and shareholder equity                         3640
+Incorporation costs                                               2018
+Accumulated amortization of incorporation costs                   2019                                           Retained earnings
+
+                                                                                     Account description                                           Field code
+                           Long-term assets
+                                                                                     Retained earnings/deficit – start                                3660
+Account description                                            Field code
+                                                                                     Net income/loss                                                  3680
+Due from/investment in related parties                            2240               Dividends declared                                               3700
+Long-term investments                                             2300               Retained earnings/deficit – end                                  3849
+Long-term loans                                                   2360
+Total long-term assets                                            2589
+Total assets                                                      2599
+
+
+
+
+                                                                                                                                                     Page 2 of 2
+

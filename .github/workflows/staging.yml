@@ -37,6 +37,21 @@ on:
         required: true
         default: false
         type: boolean
+      finance_normalized_staging:
+        description: Enable private synthetic normalized Finance proof (never release eligible)
+        required: true
+        default: false
+        type: boolean
+      finance_normalized_run_budget:
+        description: Explicit normalized run budget in CAD minor units (1-100)
+        required: false
+        default: ''
+        type: string
+      finance_normalized_day_budget:
+        description: Explicit normalized day budget in CAD minor units (run budget through 500)
+        required: false
+        default: ''
+        type: string
       live_test_window:
         description: Keep a successful staging deployment available until its server-enforced TTL expires
         required: true
@@ -59,6 +74,24 @@ jobs:
     env:
       EMDO_SYNTHETIC_DATA_ONLY: true
     steps:
+      - name: Validate Finance capability and budget inputs
+        env:
+          FINANCE_SYNTHETIC_STAGING: ${{ inputs.finance_synthetic_staging }}
+          FINANCE_LIVE_CHAT: ${{ inputs.finance_live_chat }}
+          FINANCE_NORMALIZED_STAGING: ${{ inputs.finance_normalized_staging }}
+          NORMALIZED_RUN_BUDGET: ${{ inputs.finance_normalized_run_budget }}
+          NORMALIZED_DAY_BUDGET: ${{ inputs.finance_normalized_day_budget }}
+        run: |
+          for flag in "$FINANCE_SYNTHETIC_STAGING" "$FINANCE_LIVE_CHAT" "$FINANCE_NORMALIZED_STAGING"; do
+            [[ "$flag" == true || "$flag" == false ]] || exit 1
+          done
+          [[ "$FINANCE_SYNTHETIC_STAGING" == true || ( "$FINANCE_LIVE_CHAT" == false && "$FINANCE_NORMALIZED_STAGING" == false ) ]] || exit 1
+          if [[ "$FINANCE_NORMALIZED_STAGING" == true ]]; then
+            [[ "$NORMALIZED_RUN_BUDGET" =~ ^[1-9][0-9]{0,2}$ && "$NORMALIZED_DAY_BUDGET" =~ ^[1-9][0-9]{0,2}$ ]] || exit 1
+            ((NORMALIZED_RUN_BUDGET <= 100 && NORMALIZED_DAY_BUDGET >= NORMALIZED_RUN_BUDGET && NORMALIZED_DAY_BUDGET <= 500)) || exit 1
+          else
+            [[ -z "$NORMALIZED_RUN_BUDGET" && -z "$NORMALIZED_DAY_BUDGET" ]] || exit 1
+          fi
       - name: Verify the source publish run
         id: source
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
@@ -188,6 +221,9 @@ jobs:
           INITIAL_STAGING_BOOTSTRAP: ${{ inputs.initial_deployment }}
           EMDO_OPENAI_FINANCE_API_KEY: ${{ secrets.EMDO_OPENAI_FINANCE_API_KEY }}
           FINANCE_LIVE_CHAT: ${{ inputs.finance_live_chat }}
+          FINANCE_NORMALIZED_STAGING: ${{ inputs.finance_normalized_staging }}
+          NORMALIZED_RUN_BUDGET: ${{ inputs.finance_normalized_run_budget }}
+          NORMALIZED_DAY_BUDGET: ${{ inputs.finance_normalized_day_budget }}
           EMDO_OPENAI_AGENT_API_KEY: ${{ secrets.EMDO_OPENAI_AGENT_API_KEY }}
           EMDO_OPENAI_AGENT_PRICING_VERSION: ${{ vars.EMDO_OPENAI_AGENT_PRICING_VERSION }}
           EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS: ${{ vars.EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS }}
@@ -196,7 +232,7 @@ jobs:
           [[ "$INITIAL_STAGING_BOOTSTRAP" == true || "$INITIAL_STAGING_BOOTSTRAP" == false ]]
           [[ "$FINANCE_LIVE_CHAT" == true || "$FINANCE_LIVE_CHAT" == false ]]
           [[ ${#EMDO_OPENAI_FINANCE_API_KEY} -ge 16 && ${#EMDO_OPENAI_FINANCE_API_KEY} -le 512 ]]
-          if [[ "$FINANCE_LIVE_CHAT" == true ]]; then
+          if [[ "$FINANCE_LIVE_CHAT" == true || "$FINANCE_NORMALIZED_STAGING" == true ]]; then
             [[ ${#EMDO_OPENAI_AGENT_API_KEY} -ge 20 && ${#EMDO_OPENAI_AGENT_API_KEY} -le 512 && "$EMDO_OPENAI_AGENT_API_KEY" =~ ^sk-[A-Za-z0-9_-]+$ ]]
             [[ ${#EMDO_OPENAI_AGENT_PRICING_VERSION} -ge 1 && ${#EMDO_OPENAI_AGENT_PRICING_VERSION} -le 128 && "$EMDO_OPENAI_AGENT_PRICING_VERSION" =~ ^[A-Za-z0-9._:-]+$ ]]
             for rate in \
@@ -211,7 +247,7 @@ jobs:
               "$EMDO_OPENAI_AGENT_GPT_6_ASTRA_INPUT_CAD_MINOR_PER_MILLION_TOKENS" \
               "$EMDO_OPENAI_AGENT_GPT_6_ASTRA_OUTPUT_CAD_MINOR_PER_MILLION_TOKENS" | \
               ssh -T "$VPS_USER@$VPS_HOST" \
-                "sudo /usr/local/sbin/emdo-staging-operator deploy '${{ github.run_id }}' '$INITIAL_STAGING_BOOTSTRAP' '${{ inputs.ttl_minutes }}' true true"
+                "sudo /usr/local/sbin/emdo-staging-operator deploy '${{ github.run_id }}' '$INITIAL_STAGING_BOOTSTRAP' '${{ inputs.ttl_minutes }}' true '$FINANCE_LIVE_CHAT' '$FINANCE_NORMALIZED_STAGING' '$NORMALIZED_RUN_BUDGET' '$NORMALIZED_DAY_BUDGET'"
           else
             printf '%s\n' "$EMDO_OPENAI_FINANCE_API_KEY" | ssh -T "$VPS_USER@$VPS_HOST" \
               "sudo /usr/local/sbin/emdo-staging-operator deploy '${{ github.run_id }}' '$INITIAL_STAGING_BOOTSTRAP' '${{ inputs.ttl_minutes }}' true false"
@@ -223,12 +259,35 @@ jobs:
           VPS_USER: ${{ secrets.STAGING_SSH_USER }}
           STAGING_HTTP_PORT: ${{ vars.STAGING_HTTP_PORT }}
           FINANCE_SYNTHETIC_STAGING: ${{ inputs.finance_synthetic_staging }}
+          FINANCE_NORMALIZED_STAGING: ${{ inputs.finance_normalized_staging }}
           SOURCE_SHA: ${{ steps.source.outputs.result }}
           STAGING_RUN_ID: ${{ github.run_id }}
         run: |
           [[ "$STAGING_HTTP_PORT" =~ ^[0-9]{2,5}$ ]]
           [[ "$FINANCE_SYNTHETIC_STAGING" == true || "$FINANCE_SYNTHETIC_STAGING" == false ]]
-          if [[ "$FINANCE_SYNTHETIC_STAGING" == true ]]; then
+          if [[ "$FINANCE_NORMALIZED_STAGING" == true ]]; then
+            ssh "$VPS_USER@$VPS_HOST" \
+              "sudo /usr/local/sbin/emdo-staging-operator accept '${{ github.run_id }}'" \
+              | /usr/bin/tail -n 1 \
+              > release/finance-normalized-synthetic-staging-probe.json
+            chmod 0600 release/finance-normalized-synthetic-staging-probe.json
+            node --input-type=module --eval '
+              import { readFile } from "node:fs/promises";
+              const value = JSON.parse(await readFile(process.argv[1], "utf8"));
+              const proofs = ["originalReadback", "liveProposal", "authoredSourceReview",
+                "explicitMappingApproval", "normalizedImport", "explicitRowReview",
+                "exactPostingReadback", "emdoReadback", "idempotentCommit"];
+              if (value.schemaVersion !== 1 || value.sourceSha !== process.env.SOURCE_SHA ||
+                  value.workflowRunId !== process.env.STAGING_RUN_ID ||
+                  value.stagingRunId !== process.env.STAGING_RUN_ID ||
+                  value.environment !== "staging" ||
+                  value.evidenceClass !== "finance-normalized-synthetic-staging-probe" ||
+                  value.releaseEligible !== false || value.outcome !== "passed" ||
+                  !proofs.every(key => value.proof?.[key] === "passed") ||
+                  JSON.stringify(value).includes("owner_cookie") ||
+                  JSON.stringify(value).includes("member_cookie")) process.exit(1);
+            ' release/finance-normalized-synthetic-staging-probe.json
+          elif [[ "$FINANCE_SYNTHETIC_STAGING" == true ]]; then
             ssh "$VPS_USER@$VPS_HOST" \
               "sudo /usr/local/sbin/emdo-staging-operator accept '${{ github.run_id }}'" \
               | /usr/bin/tail -n 1 \
@@ -257,7 +316,7 @@ jobs:
               --receipts-root release/acceptance-evidence
           fi
       - name: Fetch Finance backup/restore receipt
-        if: ${{ inputs.finance_synthetic_staging }}
+        if: ${{ inputs.finance_synthetic_staging && !inputs.finance_normalized_staging }}
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.STAGING_SSH_USER }}
@@ -290,7 +349,7 @@ jobs:
                 JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(expectedKeys)) process.exit(1);
           ' release/finance-staging-restore-receipt.json
       - name: Require complete Finance synthetic staging proof
-        if: ${{ inputs.finance_synthetic_staging }}
+        if: ${{ inputs.finance_synthetic_staging && !inputs.finance_normalized_staging }}
         run: |
           node --input-type=module --eval '
             import { readFile } from "node:fs/promises";
@@ -298,12 +357,19 @@ jobs:
             if (value.outcome !== "passed" || value.proof?.backupRestore !== "passed") process.exit(1);
           ' release/finance-synthetic-staging-probe.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: ${{ always() && inputs.finance_synthetic_staging }}
+        if: ${{ always() && inputs.finance_synthetic_staging && !inputs.finance_normalized_staging }}
         with:
           name: finance-synthetic-staging-probe
           path: |
             release/finance-synthetic-staging-probe.json
             release/finance-staging-restore-receipt.json
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ always() && inputs.finance_normalized_staging }}
+        with:
+          name: finance-normalized-synthetic-staging-probe
+          path: release/finance-normalized-synthetic-staging-probe.json
           if-no-files-found: error
           retention-days: 14
       - name: Assemble, sign, and verify the complete release evidence

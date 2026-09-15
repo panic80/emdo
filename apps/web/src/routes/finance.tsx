@@ -1,3 +1,4 @@
+import { FinanceBooks } from '../features/finance-v1/finance-books.js';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -6,7 +7,7 @@ import { z } from 'zod';
 import type { FinancePage } from '@emdo/contracts/browser';
 
 import { Button } from '../components/button.js';
-import { Page, PageHeader } from '../components/page.js';
+import { Page } from '../components/page.js';
 import {
   ConversationPanel,
   useConversation,
@@ -28,7 +29,6 @@ import {
   financeCopy,
   type FinanceCopy,
 } from '../features/finance-v1/finance-locales.js';
-import { FinanceViews } from '../features/finance-v1/finance-views.js';
 
 function manualTransactionSchema(copy: FinanceCopy) {
   return z.object({
@@ -207,6 +207,32 @@ export function formatCadMinor(value: number, locale = 'en-CA'): string {
   }).format(value / 100);
 }
 
+export function financeVisibleRecords<T extends { readonly id: string }>(
+  server: readonly T[],
+  local: readonly T[],
+  normalizedLedger: boolean,
+): T[] {
+  return [
+    ...new Map(
+      [...(normalizedLedger ? [] : local), ...server].map((record) => [
+        record.id,
+        record,
+      ]),
+    ).values(),
+  ];
+}
+
+export function financePageAuthorityChanged(
+  previous: FinancePage | undefined,
+  next: FinancePage,
+): boolean {
+  return (
+    previous !== undefined &&
+    (previous.ledgerAuthority ?? 'legacy') !==
+      (next.ledgerAuthority ?? 'legacy')
+  );
+}
+
 export function FinanceRoute() {
   const api = useExperienceApi();
   const auth = useAuth();
@@ -278,6 +304,11 @@ export function FinanceRoute() {
       .then(
         (page) => {
           if (controller.signal.aborted) return;
+          if (cursor && financePageAuthorityChanged(financePage, page)) {
+            setFinancePage(undefined);
+            loadFinance();
+            return;
+          }
           setFinancePage((current) =>
             cursor && current
               ? { ...page, items: [...current.items, ...page.items] }
@@ -286,7 +317,10 @@ export function FinanceRoute() {
           setFinanceState('ready');
         },
         () => {
-          if (!controller.signal.aborted) setFinanceState('unavailable');
+          if (!controller.signal.aborted) {
+            setFinancePage(undefined);
+            setFinanceState('unavailable');
+          }
         },
       );
   };
@@ -304,7 +338,9 @@ export function FinanceRoute() {
       (experience) => {
         if (!controller.signal.aborted) setFinanceExperience(experience);
       },
-      () => undefined,
+      () => {
+        if (!controller.signal.aborted) setFinanceExperience(undefined);
+      },
     );
     return () => controller.abort();
   }, [locale]);
@@ -345,8 +381,7 @@ export function FinanceRoute() {
       } as const,
     ];
   });
-  const recordsReady =
-    domain.state === 'ready' || domain.state === 'offline-ready';
+  const recordsReady = financeState === 'ready' && financePage !== undefined;
   const serverTransactions = (financePage?.items ?? []).flatMap((item) =>
     item.recordType === 'transaction'
       ? [
@@ -380,103 +415,110 @@ export function FinanceRoute() {
       } as const,
     ];
   });
-  const storedTransactions = [
-    ...new Map(
-      [...serverTransactions, ...localTransactions].map((item) => [
-        item.id,
-        item,
-      ]),
-    ).values(),
-  ];
-  const storedBudgets = [
-    ...new Map(
-      [...serverBudgets, ...localBudgets].map((item) => [item.id, item]),
-    ).values(),
-  ];
-  const manualTransactionForm = transactionOpen ? (
-    <form
-      className="transaction-form"
-      noValidate
-      onSubmit={handleSubmit(async (values) => {
-        setSaveError(undefined);
-        try {
-          const amountCadMinor = cadInputToMinorUnits(values.amount);
-          await domain.applyMutation({
-            domain: 'finance',
-            entityType: 'finance.transaction',
-            entityId: `manual-${crypto.randomUUID()}`,
-            kind: 'create',
-            data: {
-              recordType: 'transaction',
-              description: values.description,
-              category: values.category,
-              amountCadMinor,
-              currency: 'CAD',
-              postedOn: values.postedOn,
-              source: 'manual',
-            },
-            actorIntent: 'Add a manual CAD transaction',
-          });
-          reset();
-          setTransactionOpen(false);
-        } catch {
-          setSaveError(copy.transactionSaveError);
-        }
-      })}
-    >
-      <h2>{copy.manualTransaction}</h2>
-      <label htmlFor="transaction-description">{copy.descriptionLabel}</label>
-      <input id="transaction-description" {...register('description')} />
-      {errors.description ? (
-        <p className="field-error" role="alert">
-          {errors.description.message}
-        </p>
-      ) : null}
-      <label htmlFor="transaction-category">{copy.categoryLabel}</label>
-      <input id="transaction-category" {...register('category')} />
-      {errors.category ? (
-        <p className="field-error" role="alert">
-          {errors.category.message}
-        </p>
-      ) : null}
-      <label htmlFor="transaction-amount">{copy.amountLabel}</label>
-      <input
-        id="transaction-amount"
-        inputMode="decimal"
-        placeholder={copy.amountPlaceholder}
-        {...register('amount')}
-      />
-      {errors.amount ? (
-        <p className="field-error" role="alert">
-          {errors.amount.message}
-        </p>
-      ) : null}
-      <label htmlFor="transaction-date">{copy.dateLabel}</label>
-      <input id="transaction-date" type="date" {...register('postedOn')} />
-      {errors.postedOn ? (
-        <p className="field-error" role="alert">
-          {errors.postedOn.message}
-        </p>
-      ) : null}
-      <div>
-        <Button busy={isSubmitting} type="submit">
-          {copy.saveTransaction}
-        </Button>
-        <Button
-          variant="quiet"
-          type="button"
-          onClick={() => setTransactionOpen(false)}
-        >
-          {copy.cancel}
-        </Button>
-      </div>
-    </form>
-  ) : null;
+  const normalizedLedger =
+    financePage?.ledgerAuthority === 'normalized' ||
+    financeExperience?.ledgerAuthority === 'normalized';
+  const legacyFinanceReady =
+    financeState === 'ready' && financePage !== undefined && !normalizedLedger;
+  const storedTransactions = financeVisibleRecords(
+    serverTransactions,
+    legacyFinanceReady ? localTransactions : [],
+    normalizedLedger,
+  );
+  const storedBudgets = financeVisibleRecords(
+    serverBudgets,
+    legacyFinanceReady ? localBudgets : [],
+    normalizedLedger,
+  );
+  const manualTransactionForm =
+    transactionOpen && legacyFinanceReady ? (
+      <form
+        className="transaction-form"
+        noValidate
+        onSubmit={handleSubmit(async (values) => {
+          setSaveError(undefined);
+          try {
+            const amountCadMinor = cadInputToMinorUnits(values.amount);
+            await domain.applyMutation({
+              domain: 'finance',
+              entityType: 'finance.transaction',
+              entityId: `manual-${crypto.randomUUID()}`,
+              kind: 'create',
+              data: {
+                recordType: 'transaction',
+                description: values.description,
+                category: values.category,
+                amountCadMinor,
+                currency: 'CAD',
+                postedOn: values.postedOn,
+                source: 'manual',
+              },
+              actorIntent: 'Add a manual CAD transaction',
+            });
+            reset();
+            setTransactionOpen(false);
+          } catch {
+            setSaveError(copy.transactionSaveError);
+          }
+        })}
+      >
+        <h2>{copy.manualTransaction}</h2>
+        <label htmlFor="transaction-description">{copy.descriptionLabel}</label>
+        <input id="transaction-description" {...register('description')} />
+        {errors.description ? (
+          <p className="field-error" role="alert">
+            {errors.description.message}
+          </p>
+        ) : null}
+        <label htmlFor="transaction-category">{copy.categoryLabel}</label>
+        <input id="transaction-category" {...register('category')} />
+        {errors.category ? (
+          <p className="field-error" role="alert">
+            {errors.category.message}
+          </p>
+        ) : null}
+        <label htmlFor="transaction-amount">{copy.amountLabel}</label>
+        <input
+          id="transaction-amount"
+          inputMode="decimal"
+          placeholder={copy.amountPlaceholder}
+          {...register('amount')}
+        />
+        {errors.amount ? (
+          <p className="field-error" role="alert">
+            {errors.amount.message}
+          </p>
+        ) : null}
+        <label htmlFor="transaction-date">{copy.dateLabel}</label>
+        <input id="transaction-date" type="date" {...register('postedOn')} />
+        {errors.postedOn ? (
+          <p className="field-error" role="alert">
+            {errors.postedOn.message}
+          </p>
+        ) : null}
+        <div>
+          <Button busy={isSubmitting} type="submit">
+            {copy.saveTransaction}
+          </Button>
+          <Button
+            variant="quiet"
+            type="button"
+            onClick={() => setTransactionOpen(false)}
+          >
+            {copy.cancel}
+          </Button>
+        </div>
+      </form>
+    ) : null;
   const transactionList = (
     <section className="open-section" aria-labelledby="transactions-heading">
       <div className="section-title-row">
         <h2 id="transactions-heading">{copy.recentTransactions}</h2>
-        <Button variant="quiet" onClick={() => setTransactionOpen(true)}>
+        <Button
+          variant="quiet"
+          disabled={!legacyFinanceReady}
+          onClick={() => setTransactionOpen(true)}
+        >
           {copy.addTransaction}
         </Button>
       </div>
@@ -491,16 +533,30 @@ export function FinanceRoute() {
             <strong role="cell">{transaction.description}</strong>
             <span role="cell">{transaction.category}</span>
             <span role="cell">{transaction.amount}</span>
+            <span role="cell">
+              <Button
+                variant="quiet"
+                disabled={!legacyFinanceReady}
+                onClick={() => {
+                  setActivityEdit({
+                    transactionId: transaction.id,
+                    categoryId: '',
+                    annotation: '',
+                  });
+                  setActivityEditState('idle');
+                }}
+              >
+                {copy.editTransaction}
+              </Button>
+            </span>
           </div>
         ))}
       </div>
       {recordsReady && storedTransactions.length === 0 ? (
         <p>{copy.noTransactions}</p>
       ) : null}
-      {domain.state === 'initializing' ? (
-        <p>{copy.transactionsLoading}</p>
-      ) : null}
-      {!recordsReady && domain.state !== 'initializing' ? (
+      {financeState === 'loading' ? <p>{copy.transactionsLoading}</p> : null}
+      {financeState === 'unavailable' ? (
         <p>{copy.transactionsUnavailable}</p>
       ) : null}
       {financePage?.nextCursor ? (
@@ -531,13 +587,11 @@ export function FinanceRoute() {
       {recordsReady && storedBudgets.length === 0 ? (
         <p>{copy.noBudgets}</p>
       ) : null}
-      {domain.state === 'initializing' ? <p>{copy.budgetsLoading}</p> : null}
-      {!recordsReady && domain.state !== 'initializing' ? (
-        <p>{copy.budgetsUnavailable}</p>
-      ) : null}
+      {financeState === 'loading' ? <p>{copy.budgetsLoading}</p> : null}
+      {financeState === 'unavailable' ? <p>{copy.budgetsUnavailable}</p> : null}
     </section>
   );
-  const budgetForm = (
+  const budgetForm = !legacyFinanceReady ? null : (
     <form
       className="transaction-form"
       noValidate
@@ -625,12 +679,13 @@ export function FinanceRoute() {
     ),
   );
   const activityTransactionEditor =
-    activityEdit === undefined ? null : (
+    activityEdit === undefined || !legacyFinanceReady ? null : (
       <form
         className="transaction-form"
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
+          if (!legacyFinanceReady) return;
           setActivityEditState('sending');
           void conversation
             .submit(
@@ -692,14 +747,46 @@ export function FinanceRoute() {
     );
 
   return (
-    <Page>
-      <PageHeader title={copy.title} description={copy.description} />
-      <FinanceViews
+    <Page className="finance-page">
+      <FinanceBooks
+        key={auth.sessionBinding ?? 'anonymous'}
+        onAnalyzeReport={(bookId, evidenceId, intent) =>
+          conversation
+            .submit(
+              intent === 'inspect-pdf'
+                ? `Have Finance inspect embedded text and page references in this authorized PDF original with finance.reports.inspect. Report extraction limits and whether pages need OCR; OCR is not implemented. This request is inspection only: do not propose a mapping, invent table rows or financial values, or post financial records. These IDs are literal references: ${JSON.stringify({ bookId, evidenceId })}`
+                : intent === 'propose-pdf-mapping'
+                  ? `Have Finance inspect this authorized PDF original with finance.reports.inspect, then propose a mapping only if complete source spans support an unambiguous table. Use finance.reports.propose-mapping with definition.pdfSelection bound to the exact source digest, complete page inventory, whole spans and their original geometry. Do not split spans, guess columns, invent rows or financial values, or claim OCR. Always leave an unresolved human source-review question and direct me to review the exact PDF selection in Report standardization. This requests a candidate proposal only: do not approve the mapping, import a report, or post financial records. These IDs are literal references: ${JSON.stringify({ bookId, evidenceId })}`
+                  : `Have Finance inspect this authorized original report with finance.reports.inspect and propose a reusable mapping with finance.reports.propose-mapping if the source supports it. Ask about ambiguities; do not invent values, approve mappings, or post transactions. These IDs are literal references: ${JSON.stringify({ bookId, evidenceId })}`,
+              'finance',
+              locale,
+            )
+            .then(Boolean)
+        }
+        title={copy.title}
+        description={copy.description}
+        onExplainTaxCase={(caseId) =>
+          conversation
+            .submit(
+              `Use finance.tax.read to read and assess this authorized private tax case. Explain its current saved inputs, unreviewed declarations, missing inputs and source availability. Distinguish current questionnaire-bound inputs from retained declaration source history. Country return calculations and filing are unavailable; do not claim a completed return or calculation-ready facts. This is a read-only explanation: do not change inputs, grant access, authorize sources, reset the case or file anything. This case ID is a literal reference: ${JSON.stringify({ caseId })}`,
+              'finance',
+              locale,
+            )
+            .then(Boolean)
+        }
+        onAskBook={(bookId) =>
+          conversation
+            .submit(
+              `Review this authorized accounting book using its saved records. Explain any missing data and cite source references. This book ID is a literal reference: ${JSON.stringify({ bookId })}`,
+              'finance',
+              locale,
+            )
+            .then(Boolean)
+        }
         locale={locale}
         ask={<ConversationPanel specialist="finance" />}
-        overview={
+        statementImports={
           <>
-            <DomainSyncStatus />
             <FinanceImportPanel
               api={financeImportApi}
               copy={copy.importPanel}
@@ -715,6 +802,11 @@ export function FinanceRoute() {
                   .then(Boolean)
               }
             />
+          </>
+        }
+        activity={
+          <>
+            <DomainSyncStatus />
             {financeState === 'unavailable' && !recordsReady ? (
               <p className="inline-error" role="status">
                 {copy.financeUnavailable}
@@ -727,51 +819,27 @@ export function FinanceRoute() {
               </p>
             ) : null}
             {transactionList}
-            {budgetList}
-            <p>{copy.reviewedOnly}</p>
-            <p>{copy.nonCad}</p>
-            <p>{copy.dataControls}</p>
+            <section aria-labelledby="activity-heading">
+              <h2 id="activity-heading">{copy.recentActivity}</h2>
+              {recentActivity.length > 0 ? (
+                <ul>{recentActivity}</ul>
+              ) : (
+                <p>{copy.noRecentActivity}</p>
+              )}
+              {activityTransactionEditor}
+              {activityEditState === 'requested' ? (
+                <p role="status">{copy.transactionEditRequested}</p>
+              ) : null}
+              {activityEditState === 'error' ? (
+                <p className="inline-error" role="alert">
+                  {copy.transactionEditError}
+                </p>
+              ) : null}
+              <p className="finance-caption">{copy.reviewedOnly}</p>
+              <p className="finance-caption">{copy.nonCad}</p>
+              <p className="finance-caption">{copy.dataControls}</p>
+            </section>
           </>
-        }
-        activity={
-          <section aria-labelledby="activity-heading">
-            <h2 id="activity-heading">{copy.recentActivity}</h2>
-            {recentActivity.length > 0 ? (
-              <ul>{recentActivity}</ul>
-            ) : (
-              <p>{copy.noRecentActivity}</p>
-            )}
-            <ul>
-              {storedTransactions.map((transaction) => (
-                <li key={transaction.id}>
-                  {transaction.description} · {transaction.category}{' '}
-                  <Button
-                    variant="quiet"
-                    onClick={() => {
-                      setActivityEdit({
-                        transactionId: transaction.id,
-                        categoryId: '',
-                        annotation: '',
-                      });
-                      setActivityEditState('idle');
-                    }}
-                  >
-                    {copy.editTransaction}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-            {activityTransactionEditor}
-            {activityEditState === 'requested' ? (
-              <p role="status">{copy.transactionEditRequested}</p>
-            ) : null}
-            {activityEditState === 'error' ? (
-              <p className="inline-error" role="alert">
-                {copy.transactionEditError}
-              </p>
-            ) : null}
-            <p>{copy.reviewedOnly}</p>
-          </section>
         }
         documents={
           <FinanceDocuments

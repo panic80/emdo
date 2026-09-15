@@ -1,0 +1,178 @@
+.finance-outcome {
+  margin: 25px 0 10px;
+  padding: 22px;
+  border: 1px solid #dedfce;
+  border-radius: 11px;
+  background: #fffef9;
+  min-width: 0;
+}
+.finance-outcome-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+}
+.finance-outcome-heading > div {
+  flex: 1;
+  min-width: 0;
+}
+.finance-outcome-heading .button {
+  flex-shrink: 0;
+}
+.finance-outcome-summary {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid #e5e4d7;
+  font-size: 12px;
+  font-weight: 600;
+  color: #5f5b39;
+}
+.finance-outcome .finance-outcome-notice {
+  padding: 14px 16px;
+  border: 1px solid #e7dfc7;
+  border-radius: 8px;
+  background: #fffcf3;
+  color: #6b5a37;
+}
+.finance-workspace .finance-outcome-attempts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  border: 0;
+  padding: 0;
+  margin: 18px 0;
+  gap: 10px;
+}
+.finance-outcome-attempts legend {
+  padding: 0 0 10px;
+}
+.finance-outcome .finance-outcome-attempts label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #e1e6d7;
+  border-radius: 8px;
+  background: #fff;
+}
+.finance-outcome-attempts label[data-selected='true'] {
+  border-color: #8aa785;
+  background: #f5f9f1;
+}
+.finance-outcome-attempts label > span {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.finance-outcome-attempts strong {
+  font-size: 12px;
+}
+.finance-outcome-attempts span span {
+  font-size: 11px;
+  color: #566d59;
+}
+.finance-workspace
+  .finance-outcome
+  :is(input[type='radio'], input[type='checkbox']) {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  margin: 0;
+  accent-color: #386845;
+}
+.finance-outcome-evidence {
+  padding: 18px 0;
+  border-top: 1px solid #e1e5d7;
+}
+.finance-outcome-receipt {
+  padding: 16px;
+  margin: 14px 0;
+  border: 1px solid #dae3d4;
+  border-radius: 9px;
+  background: #fff;
+}
+.finance-outcome-receipt > strong {
+  color: #36533e;
+  font-size: 12px;
+}
+.finance-outcome .finance-outcome-receipt label,
+.finance-outcome .finance-outcome-confirm label {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: row;
+  gap: 11px;
+  font-weight: 400;
+  line-height: 1.7;
+  font-size: 12px;
+}
+.finance-outcome dl {
+  display: grid;
+  gap: 12px;
+  margin: 15px 0;
+}
+.finance-outcome dl > div {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 15px;
+}
+.finance-outcome dt {
+  color: #61715b;
+  font-size: 11px;
+}
+.finance-outcome dd {
+  margin: 0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.finance-outcome code {
+  font-size: 10px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.finance-outcome-confirm {
+  padding: 18px;
+  border: 1px solid #cbdcc6;
+  border-radius: 10px;
+  background: #f6faf2;
+  margin: 18px 0;
+}
+.finance-outcome-confirm > strong {
+  font-size: 13px;
+  color: #355638;
+}
+.finance-outcome-confirm .button {
+  margin: 10px 8px 0 0;
+}
+.finance-outcome-audit {
+  margin-top: 20px;
+  border-top: 1px solid #e1e5d7;
+  padding-top: 10px;
+}
+.finance-workspace .finance-outcome-audit li {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.finance-outcome-audit li strong {
+  font-size: 12px;
+}
+@media (max-width: 640px) {
+  .finance-outcome {
+    padding: 16px;
+  }
+  .finance-outcome-heading {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .finance-outcome dl > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+  .finance-outcome-heading .button {
+    flex-shrink: 1;
+  }
+}

@@ -34,7 +34,7 @@ afterEach(async () => {
 });
 
 describe('staging release operator', () => {
-  it('forwards Finance provider material only through protected stdin and requires an explicit live-chat flag for the agent packet', async () => {
+  it('forwards Finance provider material only through protected stdin and requires an explicit live-chat or normalized flag for the agent packet', async () => {
     const root = await mkdtemp(
       join(tmpdir(), 'emdo-staging-operator-finance-'),
     );
@@ -50,7 +50,7 @@ describe('staging release operator', () => {
         '#!/usr/bin/env bash',
         'set -Eeuo pipefail',
         '[[ -z "${EMDO_OPENAI_FINANCE_API_KEY:-}" ]]',
-        `printf '%s\\n' "$#" "$1" "$2" "$3" "$4" "$5" > '${receivedArguments}'`,
+        `printf '%s\\n' "$#" "$@" > '${receivedArguments}'`,
         `cat > '${receivedInput}'`,
         '',
       ].join('\n'),
@@ -103,7 +103,7 @@ deploy_release "$@"`,
     expect(result.status, result.stderr).toBe(0);
     expect(await readFile(receivedInput, 'utf8')).toBe(`${financeKey}\n`);
     expect(await readFile(receivedArguments, 'utf8')).toBe(
-      '5\n123456789\n/release/images.env\n60\ntrue\nfalse\n'.replace(
+      '8\n123456789\n/release/images.env\n60\ntrue\nfalse\nfalse\n\n\n'.replace(
         '/release',
         release,
       ),
@@ -134,13 +134,74 @@ deploy_release "$@"`,
     expect(live.status, live.stderr).toBe(0);
     expect(await readFile(receivedInput, 'utf8')).toBe(`${livePacket}\n`);
     expect(await readFile(receivedArguments, 'utf8')).toBe(
-      '5\n123456790\n/release/images.env\n60\ntrue\ntrue\n'.replace(
+      '8\n123456790\n/release/images.env\n60\ntrue\ntrue\nfalse\n\n\n'.replace(
         '/release',
         release,
       ),
     );
     expect(live.stderr).not.toContain(financeKey);
     expect(live.stderr).not.toContain(agentKey);
+
+    const normalized = spawnSync(
+      'bash',
+      [
+        scriptPath,
+        '123456792',
+        'false',
+        '60',
+        'true',
+        'false',
+        'true',
+        '25',
+        '100',
+      ],
+      { encoding: 'utf8', input: `${livePacket}\n` },
+    );
+    expect(normalized.status, normalized.stderr).toBe(0);
+    expect(await readFile(receivedInput, 'utf8')).toBe(`${livePacket}\n`);
+    expect(await readFile(receivedArguments, 'utf8')).toBe(
+      `8\n123456792\n${release}/images.env\n60\ntrue\nfalse\ntrue\n25\n100\n`,
+    );
+    expect(normalized.stderr).not.toContain(agentKey);
+
+    for (const flags of [
+      ['false', 'false', 'true', '25', '100'],
+      ['false', 'true', 'false'],
+      ['true', 'false', 'invalid'],
+      ['true', 'false', 'true'],
+      ['true', 'false', 'true', '0', '100'],
+      ['true', 'false', 'true', '101', '100'],
+      ['true', 'false', 'true', '25', '24'],
+      ['true', 'false', 'true', '25', '501'],
+      ['true', 'false', 'true', '01', '100'],
+      ['true', 'false', 'true', '1; touch bad', '100'],
+      ['true', 'false', 'false', '25', '100'],
+    ]) {
+      const rejected = spawnSync(
+        'bash',
+        [scriptPath, '123456793', 'false', '60', ...flags],
+        { encoding: 'utf8', input: `${livePacket}\n` },
+      );
+      expect(rejected.status, flags.join(',')).not.toBe(0);
+      expect(rejected.stderr).not.toContain(agentKey);
+      expect(await readFile(receivedArguments, 'utf8')).toContain('123456792');
+    }
+    const missingAgent = spawnSync(
+      'bash',
+      [
+        scriptPath,
+        '123456794',
+        'false',
+        '60',
+        'true',
+        'false',
+        'true',
+        '25',
+        '100',
+      ],
+      { encoding: 'utf8', input: `${financeKey}\n` },
+    );
+    expect(missingAgent.status).not.toBe(0);
 
     const legacyPacket = `${livePacket}\n278\n1667\n`;
     const legacy = spawnSync(

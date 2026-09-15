@@ -1,4 +1,14 @@
 import type {
+  PostgresFinanceV2Repository,
+  PostgresFinanceLegacyMigrationRepository,
+  PostgresFinanceStandardizationRepository,
+  PostgresFinanceScheduleRepository,
+  PostgresFinanceTaxRepository,
+  PostgresFinanceAutomationRepository,
+} from '@emdo/db/api';
+import type {
+  FinanceGeneratedReport,
+  FinanceGeneratedReportSummary,
   ActionDecision,
   ActionDecisionRequest,
   ActivityPage,
@@ -1002,6 +1012,181 @@ export interface MetricsGateway {
 }
 
 export interface ApiServices {
+  readonly financeGeneratedReports?: {
+    checkReady(): Promise<boolean>;
+    listClassifications?(
+      context: import('@emdo/contracts').WorkspaceContext,
+      bookId: string,
+    ): Promise<import('@emdo/contracts').FinanceLedgerAccountClassification[]>;
+    setClassification?(
+      context: import('@emdo/contracts').WorkspaceContext,
+      bookId: string,
+      accountId: string,
+      input: unknown,
+    ): Promise<import('@emdo/contracts').FinanceLedgerAccountClassification>;
+    list(
+      context: import('@emdo/contracts').WorkspaceContext,
+      bookId: string,
+      offset?: number,
+      limit?: number,
+    ): Promise<{
+      reports: FinanceGeneratedReportSummary[];
+      nextOffset: number | null;
+    }>;
+    get(
+      context: import('@emdo/contracts').WorkspaceContext,
+      bookId: string,
+      reportId: string,
+    ): Promise<FinanceGeneratedReport | null>;
+  };
+  readonly financeSchedules?: Pick<
+    PostgresFinanceScheduleRepository,
+    | 'checkReady'
+    | 'createSchedule'
+    | 'setScheduleState'
+    | 'listSchedules'
+    | 'getSchedule'
+  >;
+  readonly financeAutomations?: Pick<
+    PostgresFinanceAutomationRepository,
+    | 'checkReady'
+    | 'createGrant'
+    | 'revokeGrant'
+    | 'listGrants'
+    | 'enqueueRun'
+    | 'prepareExtraction'
+    | 'readExtractionResult'
+    | 'listRuns'
+    | 'getRun'
+  >;
+  readonly financeTax?: Pick<
+    PostgresFinanceTaxRepository,
+    | 'getWageEvidencePreparation'
+    | 'getWageOriginal'
+    | 'reviewWageEvidence'
+    | 'getWorkingPaperPreparation'
+    | 'reviewWorkingPaperInputs'
+    | 'createCalculationRun'
+    | 'listCalculationRuns'
+    | 'getCalculationRun'
+    | 'reviewCalculationRun'
+    | 'exportCalculationRun'
+    | 'checkReady'
+    | 'resetInputsAfterSourceRevocation'
+    | 'bindLegalEntity'
+    | 'createCase'
+    | 'listCases'
+    | 'getCase'
+    | 'assessCase'
+    | 'listCaseGrants'
+    | 'grantCaseAccess'
+    | 'revokeCaseAccess'
+    | 'recordDeclaration'
+    | 'listDeclarations'
+    | 'authorizeBookSource'
+    | 'revokeBookSource'
+    | 'saveAnswer'
+    | 'reviewAnswer'
+    | 'withdrawAnswer'
+  >;
+  readonly financeStandardization?: Pick<
+    PostgresFinanceStandardizationRepository,
+    | 'checkReady'
+    | 'available'
+    | 'list'
+    | 'get'
+    | 'start'
+    | 'change'
+    | 'linkMapping'
+    | 'reconciliation'
+    | 'requestReceiptLookup'
+    | 'resolveOutcome'
+  >;
+  readonly financeLegacyMigration?: Pick<
+    PostgresFinanceLegacyMigrationRepository,
+    | 'checkReady'
+    | 'inspect'
+    | 'get'
+    | 'list'
+    | 'listSources'
+    | 'review'
+    | 'backfill'
+    | 'compare'
+    | 'approveCutover'
+  >;
+  readonly financeOpenings?: import('../routes/finance-openings.js').FinanceOpeningRouteService;
+  readonly financeFec?: import('../routes/finance-fec.js').FinanceFecRouteService;
+  readonly financeJournalDrafts?: import('../routes/finance-journal-drafts.js').FinanceJournalDraftRouteService;
+  readonly financeInvestmentReconciliation?: import('../routes/finance-investment-reconciliation.js').FinanceInvestmentReconciliationRouteService;
+  readonly financePlanning?: import('../routes/finance-planning.js').FinancePlanningRouteService;
+  readonly financeV2?: Pick<
+    PostgresFinanceV2Repository,
+    | 'checkReady'
+    | 'workspace'
+    | 'listBooks'
+    | 'createBook'
+    | 'createAccount'
+    | 'createPeriod'
+    | 'postJournal'
+    | 'reverseJournal'
+    | 'closePeriod'
+    | 'overview'
+    | 'createParty'
+    | 'issueCommercialDocument'
+    | 'recordPayment'
+    | 'voidPayment'
+    | 'voidCommercialDocument'
+    | 'commercialOverview'
+    | 'createFinancialAccount'
+    | 'listFinancialAccounts'
+    | 'listFinancialAccountSources'
+    | 'listBookEvidence'
+    | 'uploadBookEvidence'
+    | 'inspectStructuredInvoice'
+    | 'getStructuredInvoiceReviewDraft'
+    | 'saveStructuredInvoiceReviewDraft'
+    | 'postReviewedStructuredInvoice'
+    | 'saveReportMapping'
+    | 'saveSourceReportMapping'
+    | 'reviewReportMapping'
+    | 'listReportMappings'
+    | 'getReportMapping'
+    | 'applyReportMapping'
+    | 'importMappedReport'
+    | 'createInstrument'
+    | 'recordInvestmentLot'
+    | 'recordInvestmentMovement'
+    | 'getInvestmentLot'
+    | 'recordLotDisposal'
+    | 'recordInvestmentPrice'
+    | 'recordInvestmentFx'
+    | 'recordInvestmentOpening'
+    | 'recordObservedPosition'
+    | 'investmentOverview'
+    | 'previewInvestmentValuation'
+    | 'saveInvestmentValuation'
+    | 'getInvestmentValuation'
+    | 'listInvestmentValuations'
+    | 'listInvestmentLots'
+    | 'getInvestmentLotRevision'
+    | 'readInvestmentStockSplitSource'
+    | 'commitInvestmentStockSplit'
+    | 'commitInvestmentStockSplitSettlement'
+    | 'checkStockSplitSettlementReady'
+    | 'getInvestmentStockSplitSettlement'
+    | 'readInvestmentCashDividendSource'
+    | 'commitInvestmentCashDividend'
+    | 'listInvestmentCashDividends'
+    | 'getInvestmentCashDividend'
+    | 'uploadNormalizedStatement'
+    | 'listNormalizedImports'
+    | 'getNormalizedImport'
+    | 'reviewNormalizedImportRow'
+    | 'commitNormalizedImport'
+    | 'downloadBookEvidence'
+    | 'readImageInspection'
+    | 'readPdfOcrInspection'
+  >;
   readonly auth: AuthenticationBoundary;
   readonly activityRead: ActivityReadGateway;
   readonly financeRead: FinanceReadGateway;

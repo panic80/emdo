@@ -6,7 +6,7 @@ export function AskRoute() {
     <Page className="conversation-page">
       <PageHeader
         title="Ask EMDO"
-        description="One conversation for schedule, finance, shopping, and household plans."
+        description="One conversation for schedule, finance, shopping, and workspace plans."
       />
       <ConversationPanel />
     </Page>

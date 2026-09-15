@@ -1,0 +1,398 @@
+[
+  {
+    "file": "albany.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/albany.htm",
+    "documentHash": "8e236e6fe3ee5120a78c55ee54b07e2c6b99d94fe8e716d7e1ef4a93a65c5428",
+    "retrievedAt": "2026-09-14T05:54:06.310522Z"
+  },
+  {
+    "file": "allegany.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/allegany.htm",
+    "documentHash": "423b00f7d68746c9740b972b08d629d245e18ccad70cfc8869c9de868687e511",
+    "retrievedAt": "2026-09-14T05:54:06.268022Z"
+  },
+  {
+    "file": "bronx.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/bronx.htm",
+    "documentHash": "a7f3fa8b0a2dccbe1ce691c71841f27719950ff3a019ce3aed200c1c2967944c",
+    "retrievedAt": "2026-09-14T05:54:06.281110Z"
+  },
+  {
+    "file": "brooklyn.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/brooklyn.htm",
+    "documentHash": "3e79ccc3d33bcd945c23fb753efbc850ee21531e2636f977fa0d705d3263c2cc",
+    "retrievedAt": "2026-09-14T05:54:06.281266Z"
+  },
+  {
+    "file": "broome.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/broome.htm",
+    "documentHash": "24346ed453ff331b4d3691d89ad31bd2708154ed809a3ed3511d6942f451f5be",
+    "retrievedAt": "2026-09-14T05:54:06.310385Z"
+  },
+  {
+    "file": "cattaraugus.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/cattaraugus.htm",
+    "documentHash": "35836c610ac621181eccb72c15cab6fc559a7f9dbd7e033b2a55fb7981703081",
+    "retrievedAt": "2026-09-14T05:54:06.281179Z"
+  },
+  {
+    "file": "cayuga.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/cayuga.htm",
+    "documentHash": "35bf6abb4674f0cfde0a1629ff7b8a1f2d93f530ca8d50bb77699271e605b443",
+    "retrievedAt": "2026-09-14T05:54:06.268181Z"
+  },
+  {
+    "file": "chautauqua.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/chautauqua.htm",
+    "documentHash": "384964e274aa0587e09579a5092fd0e74e55260e9ef5578e0759b37ea3f47d1c",
+    "retrievedAt": "2026-09-14T05:54:06.280977Z"
+  },
+  {
+    "file": "chemung.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/chemung.htm",
+    "documentHash": "24e71b5f32d4659e7dc98de6fd2fa2653a4eea9df81788d1a645a2798c7c8319",
+    "retrievedAt": "2026-09-14T05:54:06.452758Z"
+  },
+  {
+    "file": "chenango.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/chenango.htm",
+    "documentHash": "9ad00e5863c718a92fbe3d83f04964ce62ba52c10fb471e306109a88703794cf",
+    "retrievedAt": "2026-09-14T05:54:06.510020Z"
+  },
+  {
+    "file": "clinton.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/clinton.htm",
+    "documentHash": "20ee7e5c4adabc4cd4a5641ed1b19750ad0526c2d687bf4fb46cc81943a39b7b",
+    "retrievedAt": "2026-09-14T05:54:06.517631Z"
+  },
+  {
+    "file": "columbia.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/columbia.htm",
+    "documentHash": "a8279907619840ba09d67c7f61661751587e442a3ebd4069e00d444fbd403251",
+    "retrievedAt": "2026-09-14T05:54:06.517529Z"
+  },
+  {
+    "file": "cortland.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/cortland.htm",
+    "documentHash": "2cd034293c9bbca6689025165738f165a43fd9f8cf4335e46af109436e610c22",
+    "retrievedAt": "2026-09-14T05:54:06.476968Z"
+  },
+  {
+    "file": "delaware.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/delaware.htm",
+    "documentHash": "d8ff2ac28ca444b70de8dbf5ddd06d11513735c6135099aebda3ef91633e355f",
+    "retrievedAt": "2026-09-14T05:54:06.517358Z"
+  },
+  {
+    "file": "dutchess.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/dutchess.htm",
+    "documentHash": "cd566c55e6b4330411939b094e234e19c5645b159ec63ca0d3ab40097cb31729",
+    "retrievedAt": "2026-09-14T05:54:06.503370Z"
+  },
+  {
+    "file": "erie.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/erie.htm",
+    "documentHash": "cfcc6b7a3d9d76a4d50418d696b7d2b091a987e695b94f2aa664d6d8de424320",
+    "retrievedAt": "2026-09-14T05:54:06.503512Z"
+  },
+  {
+    "file": "essex.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/essex.htm",
+    "documentHash": "780f9fc0ef570315fffb05031051d3eece92c1d0174d35b400d867fabcfabc23",
+    "retrievedAt": "2026-09-14T05:54:06.662044Z"
+  },
+  {
+    "file": "franklin.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/franklin.htm",
+    "documentHash": "03908f0dcddeaec4f882730524c598f63dbf4db4b0dc48e55e49bb06feddd4b5",
+    "retrievedAt": "2026-09-14T05:54:06.726053Z"
+  },
+  {
+    "file": "fulton.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/fulton.htm",
+    "documentHash": "1b9e78be6ca7f4f127f8d74019ad083265a526fd4219a3ce3aab663f5da4b537",
+    "retrievedAt": "2026-09-14T05:54:06.739305Z"
+  },
+  {
+    "file": "genesee.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/genesee.htm",
+    "documentHash": "c0523f5b122102f427204053a27fdcd75ca1f41d9c72e1dfbe8890359018d2bf",
+    "retrievedAt": "2026-09-14T05:54:06.740508Z"
+  },
+  {
+    "file": "greene.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/greene.htm",
+    "documentHash": "414ad97ff553dfb50d2a72d1c2c0fdb8b89182794102f0d1a21fe2e29e046162",
+    "retrievedAt": "2026-09-14T05:54:06.739167Z"
+  },
+  {
+    "file": "hamilton.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/hamilton.htm",
+    "documentHash": "be12d3f48a93d842c387cda849b9ff69a0b65a274ec49bfed47b6641662345e7",
+    "retrievedAt": "2026-09-14T05:54:06.718229Z"
+  },
+  {
+    "file": "herkimer.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/herkimer.htm",
+    "documentHash": "1b0c55b4d15cb426a1554641bae590f3470f5122876858b8fa3a4a04363449cb",
+    "retrievedAt": "2026-09-14T05:54:06.731061Z"
+  },
+  {
+    "file": "jefferson.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/jefferson.htm",
+    "documentHash": "19559dc67002c2bbf55dff7d5e25aa7d5086b8755a46abfb415914bf303b39aa",
+    "retrievedAt": "2026-09-14T05:54:06.718384Z"
+  },
+  {
+    "file": "kings.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/kings.htm",
+    "documentHash": "d78c1d452d7580f0acaed2dafa76f20ef791abb7e333aefaed3062a022526df1",
+    "retrievedAt": "2026-09-14T05:54:06.845986Z"
+  },
+  {
+    "file": "lewis.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/lewis.htm",
+    "documentHash": "a0d93fe03d15938f20ebeb050fa569dcf90c5c9029b952922f9133dcb68222ac",
+    "retrievedAt": "2026-09-14T05:54:06.907843Z"
+  },
+  {
+    "file": "livingston.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/livingston.htm",
+    "documentHash": "6b3c3a21e6459accdf22b94008be603dafd5baf58b395125bb2b0b17620b9c0f",
+    "retrievedAt": "2026-09-14T05:54:06.907985Z"
+  },
+  {
+    "file": "madison.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/madison.htm",
+    "documentHash": "713f5b602df92f24079a7f918b4a36a2aac265fae8bbb255120af3ef6799d01d",
+    "retrievedAt": "2026-09-14T05:54:06.921050Z"
+  },
+  {
+    "file": "manhattan.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/manhattan.htm",
+    "documentHash": "62cf0723e685e240dc5f0321ffc3ce79b0a98ed0a23fb1c8b19b68ffa20fe152",
+    "retrievedAt": "2026-09-14T05:54:06.920543Z"
+  },
+  {
+    "file": "monroe.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/monroe.htm",
+    "documentHash": "2d6cfbb0195a1c3c023e3f4a9ded33a8ad8376fd335d6f8b4edb2b53eeec2842",
+    "retrievedAt": "2026-09-14T05:54:06.935138Z"
+  },
+  {
+    "file": "montgomery.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/montgomery.htm",
+    "documentHash": "c8ce0be4ca91a0501cf3a5fbdce00615553e175d650e4c76ab319512533ab416",
+    "retrievedAt": "2026-09-14T05:54:06.935263Z"
+  },
+  {
+    "file": "nassau.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/nassau.htm",
+    "documentHash": "246862b2a0a063ebfcc988a101784cac73523ce4775eec6509f6b71252fd7734",
+    "retrievedAt": "2026-09-14T05:54:06.934935Z"
+  },
+  {
+    "file": "new_york.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/new_york.htm",
+    "documentHash": "07089edd7e560c81678ca836d819f4d7fe17f3288379f79e6bee8cbf17f10caa",
+    "retrievedAt": "2026-09-14T05:54:07.025378Z"
+  },
+  {
+    "file": "niagara.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/niagara.htm",
+    "documentHash": "e310f06ef073b37411a2c9fadd1b26a33008c7ebd282879b5a97fe68617d2001",
+    "retrievedAt": "2026-09-14T05:54:07.096847Z"
+  },
+  {
+    "file": "nyc.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/nyc.htm",
+    "documentHash": "3e5582425dc8a65b82ad7f61b1203ac6c59fbb6cc20c5ac8fb56f45c3da71a8c",
+    "retrievedAt": "2026-09-14T05:54:07.097018Z"
+  },
+  {
+    "file": "oneida.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/oneida.htm",
+    "documentHash": "564edd468a647a9882bd7362b8275a074d12d2ebb473aac39baa494f5adea867",
+    "retrievedAt": "2026-09-14T05:54:07.097112Z"
+  },
+  {
+    "file": "onondaga.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/onondaga.htm",
+    "documentHash": "bacb83877f8072cb9e69a653a575c73c665430b870a5274ea9155e8de3be0047",
+    "retrievedAt": "2026-09-14T05:54:07.110552Z"
+  },
+  {
+    "file": "ontario.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/ontario.htm",
+    "documentHash": "ac50888ccbd555fc3c59c59e26af1beece61a1b01c1ecdc38cc8d74bfcd2320b",
+    "retrievedAt": "2026-09-14T05:54:07.123815Z"
+  },
+  {
+    "file": "orange.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/orange.htm",
+    "documentHash": "67dcb8f4bfdb626260c842626f516b038ca4ceda4a79957f005d9243875e24a0",
+    "retrievedAt": "2026-09-14T05:54:07.117027Z"
+  },
+  {
+    "file": "orleans.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/orleans.htm",
+    "documentHash": "4cab686ee33b4505dba42ed4e3bfd17337f8be58ab71687d8e7d3248cce58d07",
+    "retrievedAt": "2026-09-14T05:54:07.116931Z"
+  },
+  {
+    "file": "oswego.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/oswego.htm",
+    "documentHash": "e9617350bfe3775818ba5555f2a5c7955dfea38f7d74125a10303bd86e2e02e3",
+    "retrievedAt": "2026-09-14T05:54:07.207670Z"
+  },
+  {
+    "file": "otsego.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/otsego.htm",
+    "documentHash": "91b731555dfedfea9b5c1bc7e314a82bb977cae8d8a8770c16bc44bfae40761c",
+    "retrievedAt": "2026-09-14T05:54:07.286607Z"
+  },
+  {
+    "file": "putnam.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/putnam.htm",
+    "documentHash": "ff2375271ba1dee767fab8b39c97bfa1fe78ec7c3ebf4e5c2149b6b187b754ae",
+    "retrievedAt": "2026-09-14T05:54:07.284434Z"
+  },
+  {
+    "file": "queens.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/queens.htm",
+    "documentHash": "1c1f769309263e4cfb5a2539cab458917683c62b85e0ed159aa29d5c2285d172",
+    "retrievedAt": "2026-09-14T05:54:07.286478Z"
+  },
+  {
+    "file": "rensselaer.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/rensselaer.htm",
+    "documentHash": "ee79eb8b5f1d25f0bd717328fd2b9bfd97dc30e2edb00155ac2f84d736f070b6",
+    "retrievedAt": "2026-09-14T05:54:07.291007Z"
+  },
+  {
+    "file": "richmond.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/richmond.htm",
+    "documentHash": "3ed0b43441cabc0e7621e0879be5a24978b4c0b2e2f5fee784a3c3692c6480fc",
+    "retrievedAt": "2026-09-14T05:54:07.298848Z"
+  },
+  {
+    "file": "rockland.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/rockland.htm",
+    "documentHash": "f046884ef7c2f2eeddcdf74c7a48a5ac0d6b27271c3445297325d91eea3a3165",
+    "retrievedAt": "2026-09-14T05:54:07.301698Z"
+  },
+  {
+    "file": "saratoga.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/saratoga.htm",
+    "documentHash": "84b33c5a74f55b00324ccd78e3537c46cb4c212f02d6d318f8fe303b149ad66e",
+    "retrievedAt": "2026-09-14T05:54:07.302681Z"
+  },
+  {
+    "file": "schenectady.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/schenectady.htm",
+    "documentHash": "c0427ca4372b1f5256bc13238e6c638bd776f4bf9b74fe5ddfb806d32f9432cd",
+    "retrievedAt": "2026-09-14T05:54:07.399798Z"
+  },
+  {
+    "file": "schoharie.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/schoharie.htm",
+    "documentHash": "e58736ba8d00b6351e8ba564fdd85cb789ae61e01aefee5e20562c8e1805954b",
+    "retrievedAt": "2026-09-14T05:54:07.473815Z"
+  },
+  {
+    "file": "schuyler.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/schuyler.htm",
+    "documentHash": "83b94345f02b1b8043c5d4455fc971ebdc92e58bd8116996b718255d1eb5d962",
+    "retrievedAt": "2026-09-14T05:54:07.512086Z"
+  },
+  {
+    "file": "seneca.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/seneca.htm",
+    "documentHash": "3fc8f0605ef840561dcfbad1bad165ee2215a8f3173a077034dfc4fe794f5073",
+    "retrievedAt": "2026-09-14T05:54:07.511788Z"
+  },
+  {
+    "file": "staten_island.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/staten_island.htm",
+    "documentHash": "b5f54ba7932472ffc30e933f600e4be671e4d0a9b80c81b3e8de0026f675c894",
+    "retrievedAt": "2026-09-14T05:54:07.514585Z"
+  },
+  {
+    "file": "steuben.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/steuben.htm",
+    "documentHash": "9974f542f194f4c96e18a67fa5090c31a5f6b6515ea2e0533bf6c83b5326f8fd",
+    "retrievedAt": "2026-09-14T05:54:07.539688Z"
+  },
+  {
+    "file": "stlawrence.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/stlawrence.htm",
+    "documentHash": "9ca336b1c67b567b87369598a2ad176508aa37073c937e697887abe666e321a9",
+    "retrievedAt": "2026-09-14T05:54:07.511979Z"
+  },
+  {
+    "file": "suffolk.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/suffolk.htm",
+    "documentHash": "46aedccd9c960dac0c5e4a7e68a417aa35796ed976bca017387abcf473d3df7e",
+    "retrievedAt": "2026-09-14T05:54:07.546143Z"
+  },
+  {
+    "file": "sullivan.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/sullivan.htm",
+    "documentHash": "4ebe618f6f25502c80663b1e67fd967e89dfabe64c8786d29de68d130f572ed2",
+    "retrievedAt": "2026-09-14T05:54:07.579473Z"
+  },
+  {
+    "file": "tioga.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/tioga.htm",
+    "documentHash": "8c31c5dc044c7d792cc5a10770bda648b116931378aee698a8551dd772352903",
+    "retrievedAt": "2026-09-14T05:54:07.668985Z"
+  },
+  {
+    "file": "tompkins.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/tompkins.htm",
+    "documentHash": "9e30246a7b2a80a3f4766123aa2763a975f934608ae987dd0bf3ddd32cc5bed5",
+    "retrievedAt": "2026-09-14T05:54:07.752465Z"
+  },
+  {
+    "file": "ulster.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/ulster.htm",
+    "documentHash": "f3cf4c0bee6f275f346be724e502db484535905bc792371eafa8136ca2e90a58",
+    "retrievedAt": "2026-09-14T05:54:07.752527Z"
+  },
+  {
+    "file": "warren.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/warren.htm",
+    "documentHash": "1f7996bf35f72b3d3277a5a5c23bfb2452ee5b919db01051cc91aa2b06712902",
+    "retrievedAt": "2026-09-14T05:54:07.748350Z"
+  },
+  {
+    "file": "washington.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/washington.htm",
+    "documentHash": "5e2394ac9be6261a6f5626a2a883af9db2be95b16e09bae24c107024dd878db9",
+    "retrievedAt": "2026-09-14T05:54:07.748385Z"
+  },
+  {
+    "file": "wayne.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/wayne.htm",
+    "documentHash": "d3ca5b17a76b2637fd67caf4713d8afcc27013c5f0b969cc6a2f4106367b6d4a",
+    "retrievedAt": "2026-09-14T05:54:07.741247Z"
+  },
+  {
+    "file": "westchester.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/westchester.htm",
+    "documentHash": "ae8135cce52b21fbb99756ac43a7d7f700ef4c065083bc9a2384b9c2fb1e957c",
+    "retrievedAt": "2026-09-14T05:54:07.741292Z"
+  },
+  {
+    "file": "wyoming.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/wyoming.htm",
+    "documentHash": "5be935b019a0d5b7515a06d23eb954685e0ffef8eaf8de8beead4a73a11d7bf3",
+    "retrievedAt": "2026-09-14T05:54:07.782423Z"
+  },
+  {
+    "file": "yates.htm",
+    "url": "https://www.tax.ny.gov/pit/file/school_district/yates.htm",
+    "documentHash": "dff0c3b65b60376e379dbddddea0849e1c910aee3b30fbfbe2318377730e6ab1",
+    "retrievedAt": "2026-09-14T05:54:07.858012Z"
+  }
+]

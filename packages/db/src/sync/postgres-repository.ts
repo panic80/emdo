@@ -551,13 +551,47 @@ export class PostgresSyncRepository
             ...(entity === undefined ? {} : { current: entity }),
             ...(base === undefined ? {} : { base }),
           });
-          const outcome = await this.#persistResolution(
-            client,
-            operation,
-            context,
-            entity,
-            resolved,
-          );
+          // The activation trigger takes the source-scope lock, serializing
+          // this write with cutover. Isolate its exact retirement rejection so
+          // a stale queued edit can receive a durable terminal receipt without
+          // aborting the upload or masking unrelated database constraints.
+          const legacyFinance = operation.entity.type.startsWith('finance.');
+          if (legacyFinance)
+            await client.query('savepoint legacy_finance_write');
+          let outcome: StoredSyncOperationOutcome;
+          try {
+            outcome = await this.#persistResolution(
+              client,
+              operation,
+              context,
+              entity,
+              resolved,
+            );
+          } catch (error) {
+            if (
+              !legacyFinance ||
+              !(error instanceof Error) ||
+              !('code' in error) ||
+              error.code !== '23514' ||
+              error.message !== 'legacy-finance-writer-retired'
+            ) {
+              throw error;
+            }
+            await client.query('rollback to savepoint legacy_finance_write');
+            outcome = {
+              status: 'conflict',
+              code: 'repository-rejected',
+              disposition: 'terminal',
+              conflicts: [
+                { field: 'legacy-finance-writer-retired', material: true },
+              ],
+              ...(entity === undefined
+                ? {}
+                : { currentRevision: entity.revision }),
+            };
+          }
+          if (legacyFinance)
+            await client.query('release savepoint legacy_finance_write');
           await this.#storeReceipt(
             client,
             operation,

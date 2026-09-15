@@ -272,7 +272,7 @@ describe('production capability bindings', () => {
     );
   });
 
-  it('binds the exact seven Finance v1 specialist capabilities', () => {
+  it('binds the exact eleven Finance v1 specialist capabilities', () => {
     const services = createServices();
     const bindings = createFinanceV1ProductionCapabilityBindings({
       schedulerDelegation: services.delegations['agent.scheduler.delegate'],
@@ -284,7 +284,7 @@ describe('production capability bindings', () => {
     const financeCapabilityIds = FINANCE_V1_CAPABILITY_IDS.filter((id) =>
       id.startsWith('finance.'),
     );
-    expect(financeCapabilityIds).toHaveLength(7);
+    expect(financeCapabilityIds).toHaveLength(11);
     expect(Object.keys(bindings).sort()).toEqual(
       [...FINANCE_V1_CAPABILITY_IDS].sort(),
     );

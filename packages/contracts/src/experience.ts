@@ -204,6 +204,7 @@ export const FinanceItemSchema = z.discriminatedUnion('recordType', [
 
 const FinancePageBaseSchema = z.strictObject({
   schemaVersion: z.literal(1),
+  ledgerAuthority: z.enum(['legacy', 'normalized']).optional(),
   items: z.array(FinanceItemSchema).max(50),
   nextCursor: OpaqueReferenceSchema.optional(),
 });

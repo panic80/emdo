@@ -1,3 +1,9 @@
+import { createProductionFinanceExtraction } from './finance-extraction-production.js';
+import { createProductionFinanceStandardization } from './finance-standardization-production.js';
+import {
+  PostgresFinanceDeliveryRepository,
+  PostgresFinanceScheduleDueRepository,
+} from '@emdo/db/worker';
 import {
   PostgresCalendarMaintenanceService,
   PostgresDeterministicJobExecutionStore,
@@ -13,6 +19,7 @@ import { createProviderWriteReconciliationService } from '@emdo/domains/server/p
 import { z } from 'zod';
 
 import { createWorkerComposition } from './composition.js';
+import { createProductionFinanceAutomationDispatcher } from './finance-automation-production.js';
 import {
   checkWorkerProviderReadiness,
   createUnavailableWorkerProviderRuntime,
@@ -112,6 +119,22 @@ const ProductionWorkerConfigSchema = z
       .refine((value) =>
         hasExpectedDatabaseIdentity(value, 'emdo_worker_dispatcher_login'),
       ),
+    financeSchedulerDatabaseUrl: z
+      .string()
+      .min(1)
+      .refine((value) =>
+        hasExpectedDatabaseIdentity(value, 'emdo_finance_scheduler_login'),
+      )
+      .optional(),
+    financeStandardizationEnabled: z
+      .enum(['true', 'false'])
+      .transform((value) => value === 'true'),
+    financeSchedulesEnabled: z
+      .enum(['true', 'false'])
+      .transform((value) => value === 'true'),
+    financeV2Enabled: z
+      .enum(['true', 'false'])
+      .transform((value) => value === 'true'),
     outbox: z.strictObject({
       dispatcherId: z
         .string()
@@ -129,6 +152,18 @@ const ProductionWorkerConfigSchema = z
     }),
   })
   .refine(
+    (value) =>
+      !value.financeSchedulesEnabled ||
+      (value.financeV2Enabled &&
+        !!value.financeSchedulerDatabaseUrl &&
+        databaseTarget(value.financeSchedulerDatabaseUrl) ===
+          databaseTarget(value.queueDatabaseUrl)),
+    {
+      message:
+        'Finance schedules require scoped scheduler database and Finance v2',
+    },
+  )
+  .refine(
     ({ queueDatabaseUrl, executorDatabaseUrl, dispatcherDatabaseUrl }) =>
       new Set(
         [queueDatabaseUrl, executorDatabaseUrl, dispatcherDatabaseUrl].map(
@@ -143,6 +178,10 @@ export interface ProductionWorkerConfig {
   readonly queueDatabaseUrl: string;
   readonly executorDatabaseUrl: string;
   readonly dispatcherDatabaseUrl: string;
+  readonly financeV2Enabled: boolean;
+  readonly financeSchedulesEnabled: boolean;
+  readonly financeStandardizationEnabled: boolean;
+  readonly financeSchedulerDatabaseUrl?: string;
   readonly outbox: Readonly<{
     dispatcherId: string;
     pollIntervalMs: number;
@@ -169,6 +208,13 @@ export const loadProductionWorkerConfig = (
     queueDatabaseUrl: databaseUrl,
     executorDatabaseUrl: environment.EMDO_WORKER_EXECUTOR_DATABASE_URL,
     dispatcherDatabaseUrl: environment.EMDO_WORKER_DISPATCHER_DATABASE_URL,
+    financeV2Enabled: environment.EMDO_FINANCE_V2_ENABLED ?? 'false',
+    financeStandardizationEnabled:
+      environment.EMDO_FINANCE_STANDARDIZATION_ENABLED ?? 'false',
+    financeSchedulesEnabled:
+      environment.EMDO_FINANCE_SCHEDULES_ENABLED ?? 'false',
+    financeSchedulerDatabaseUrl:
+      environment.EMDO_FINANCE_SCHEDULER_DATABASE_URL,
     outbox: {
       dispatcherId: environment.EMDO_WORKER_DISPATCHER_ID,
       pollIntervalMs: optionalInteger(
@@ -197,6 +243,12 @@ export const loadProductionWorkerConfig = (
     queueDatabaseUrl: parsed.data.queueDatabaseUrl,
     executorDatabaseUrl: parsed.data.executorDatabaseUrl,
     dispatcherDatabaseUrl: parsed.data.dispatcherDatabaseUrl,
+    financeV2Enabled: parsed.data.financeV2Enabled,
+    financeSchedulesEnabled: parsed.data.financeSchedulesEnabled,
+    financeStandardizationEnabled: parsed.data.financeStandardizationEnabled,
+    ...(parsed.data.financeSchedulerDatabaseUrl
+      ? { financeSchedulerDatabaseUrl: parsed.data.financeSchedulerDatabaseUrl }
+      : {}),
     outbox: Object.freeze(parsed.data.outbox),
     providers: Object.freeze(parsed.data.providers),
   });
@@ -224,7 +276,10 @@ type DatabaseFactory = (input: {
   readonly idleTimeoutMillis?: number;
   readonly connectionTimeoutMillis?: number;
   readonly applicationName?: string;
-  readonly fixedRole: 'emdo_worker_executor' | 'emdo_worker_dispatch_executor';
+  readonly fixedRole:
+    | 'emdo_worker_executor'
+    | 'emdo_worker_dispatch_executor'
+    | 'emdo_finance_scheduler';
 }) => EmdoWorkerDatabaseClient;
 
 type ResourceCloser = () => Promise<void>;
@@ -377,11 +432,65 @@ export const createProductionWorkerComposition = async (input: {
     await dispatcherDatabase.checkReady({
       signal: AbortSignal.timeout(config.providers.readinessTimeoutMs),
     });
+    let financeSchedules: PostgresFinanceScheduleDueRepository | undefined;
+    if (config.financeSchedulesEnabled) {
+      const schedulerDatabase = (input.createDatabase ?? createDatabaseClient)({
+        connectionString: config.financeSchedulerDatabaseUrl!,
+        max: 2,
+        applicationName: 'emdo-finance-scheduler',
+        fixedRole: 'emdo_finance_scheduler',
+      });
+      closers.push(captureCloser(schedulerDatabase));
+      await schedulerDatabase.checkReady({
+        signal: AbortSignal.timeout(config.providers.readinessTimeoutMs),
+      });
+      financeSchedules = new PostgresFinanceScheduleDueRepository(
+        schedulerDatabase.scopedPool,
+      );
+      if (!(await financeSchedules.checkReady()))
+        throw new Error('Finance schedule persistence is unavailable');
+    }
+    const standardization =
+      config.financeV2Enabled && config.financeStandardizationEnabled
+        ? await createProductionFinanceStandardization({
+            environment: input.environment,
+            executor: executorDatabase,
+            dispatcher: dispatcherDatabase,
+          })
+        : undefined;
+    if (standardization) closers.push(captureCloser(standardization));
     const executorPool = executorDatabase.scopedPool;
     const dispatcherPool = dispatcherDatabase.scopedPool;
+    const extractionAutomation = config.financeV2Enabled
+      ? await createProductionFinanceExtraction({
+          environment: input.environment,
+          executor: executorDatabase,
+        })
+      : undefined;
+    if (extractionAutomation) closers.push(captureCloser(extractionAutomation));
+    const financeAutomationDispatch = config.financeV2Enabled
+      ? await createProductionFinanceAutomationDispatcher(
+          executorDatabase,
+          extractionAutomation?.leaf,
+        )
+      : undefined;
+    const financeDeliveries = config.financeV2Enabled
+      ? new PostgresFinanceDeliveryRepository(dispatcherPool)
+      : undefined;
+    await financeDeliveries?.checkReady();
     return createWorkerComposition({
+      ...(standardization
+        ? {
+            standardizationDispatch: standardization.dispatch,
+            standardizationDeliveries: standardization.deliveries,
+            standardizationReconcileReceipts: standardization.reconcileReceipts,
+          }
+        : {}),
+      ...(financeDeliveries ? { financeDeliveries } : {}),
+      ...(financeSchedules ? { financeSchedules } : {}),
       applicationOrigin: config.applicationOrigin,
       providerStatus,
+      ...(financeAutomationDispatch ? { financeAutomationDispatch } : {}),
       repositories: {
         executions: new PostgresDeterministicJobExecutionStore(executorPool),
         reminders: new PostgresReminderDeliveryService(executorPool),

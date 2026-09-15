@@ -32,6 +32,47 @@ describe('production API service assembly', () => {
     mocks.createDurable.mockResolvedValue({ bindings: {} });
   });
 
+  it.each([false, true])(
+    'selects private tax binding only with trusted authentication=%s',
+    async (trusted) => {
+      const financeTax = { listCases: vi.fn() };
+      mocks.createDurable.mockResolvedValue({
+        bindings: {
+          financeTax: { service: financeTax, check: vi.fn(async () => true) },
+        },
+      });
+      if (trusted)
+        mocks.createAuthentication.mockResolvedValue({
+          binding: { service: authBoundary(), check: vi.fn(async () => true) },
+        });
+      const services = await assembleProductionApiServices({});
+      expect(services.financeTax).toBe(trusted ? financeTax : undefined);
+    },
+  );
+
+  it.each([false, true])(
+    'selects planning only with trusted authentication=%s',
+    async (trusted) => {
+      const financePlanning = { listBudgets: vi.fn() };
+      mocks.createDurable.mockResolvedValue({
+        bindings: {
+          financePlanning: {
+            service: financePlanning,
+            check: vi.fn(async () => true),
+          },
+        },
+      });
+      if (trusted)
+        mocks.createAuthentication.mockResolvedValue({
+          binding: { service: authBoundary(), check: vi.fn(async () => true) },
+        });
+      const services = await assembleProductionApiServices({});
+      expect(services.financePlanning).toBe(
+        trusted ? financePlanning : undefined,
+      );
+    },
+  );
+
   it('selects the built-in complete authentication boundary and probe', async () => {
     const auth = authBoundary();
     const check = vi.fn(async () => true);

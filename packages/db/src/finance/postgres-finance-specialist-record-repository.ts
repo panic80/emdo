@@ -1,4 +1,14 @@
 import {
+  resolveLegacyFinanceRoute,
+  readLegacyFinanceCompatibility,
+  readLegacyFinanceCompatibilityPage,
+  type LegacyFinanceSourceScope,
+} from '../finance-legacy-activation-projection.js';
+import {
+  legacyTransactionReadRecord,
+  legacyAccountReadRecord,
+} from '../finance-legacy-record-compatibility.js';
+import {
   IdempotencyKeySchema,
   OpaqueReferenceSchema,
   Sha256Schema,
@@ -555,6 +565,7 @@ const assertTransactionPatch = (input: {
   assertOwned(current, scope);
   assertOwned(record, scope);
   if (
+    current.source.kind === 'normalized-ledger' ||
     current.revision === undefined ||
     record.revision === undefined ||
     current.revision !== expectedRevision ||
@@ -594,6 +605,7 @@ const assertTransactionLedgerMutation = (input: {
   assertOwned(current, scope);
   assertOwned(record, scope);
   if (
+    current.source.kind === 'normalized-ledger' ||
     current.revision === undefined ||
     current.revision !== expectedRevision ||
     record.revision !== current.revision + 1 ||
@@ -930,6 +942,14 @@ export class PostgresFinanceSpecialistRecordRepository {
   > {
     const parsed = parseInput(ListInputSchema, input);
     return this.withScopedTransaction(parsed.scope, async (client) => {
+      const normalized = await this.normalizedPage(client, parsed.scope, {
+        limit: parsed.limit,
+        ...(parsed.cursor ? { cursor: parsed.cursor } : {}),
+        entityTypes: (
+          parsed.recordTypes ?? [...FinanceRecordTypeSchema.options]
+        ).map((type) => entityTypeByRecordType[type]),
+      });
+      if (normalized) return normalized;
       const entityTypes = [
         ...new Set(
           (parsed.recordTypes ?? [...FinanceRecordTypeSchema.options]).map(
@@ -971,6 +991,46 @@ export class PostgresFinanceSpecialistRecordRepository {
   async getOwnedRecord(input: unknown): Promise<FinanceRecord | undefined> {
     const parsed = parseInput(GetRecordInputSchema, input);
     return this.withScopedTransaction(parsed.scope, async (client) => {
+      const source = this.sourceScope(parsed.scope);
+      const route = await resolveLegacyFinanceRoute(client, source);
+      if (route.kind === 'normalized') {
+        const page = await readLegacyFinanceCompatibility(
+          client,
+          route,
+          source,
+          {
+            order: 'entity-id',
+            entityId: parsed.recordId,
+            recordEntityIds: [parsed.recordId],
+            limit: 1,
+          },
+        );
+        if (page.kind !== 'ready')
+          throw new FinanceSpecialistRecordRepositoryError(
+            'invalid-result',
+            `Normalized compatibility unavailable: ${page.kind}`,
+          );
+        const transaction = page.transactions.find(
+          (row) => row.id === parsed.recordId,
+        );
+        if (transaction)
+          return legacyTransactionReadRecord(transaction, source, route.bookId);
+        const account = page.accounts.find((row) => row.id === parsed.recordId);
+        if (account)
+          return legacyAccountReadRecord(account, source, route.bookId);
+        // Configuration remains in its original private scoped record collection.
+        const current = await this.findCurrentEntity(
+          client,
+          parsed.scope,
+          parsed.recordId,
+        );
+        return !current ||
+          ['finance.account', 'finance.transaction'].includes(
+            current.entityType,
+          )
+          ? undefined
+          : financeRecordFromEntity(current, parsed.scope);
+      }
       const row = await this.findCurrentEntity(
         client,
         parsed.scope,
@@ -1030,6 +1090,52 @@ export class PostgresFinanceSpecialistRecordRepository {
   ): Promise<readonly FinanceTransactionRecord[]> {
     const parsed = parseInput(ListBudgetTransactionsInputSchema, input);
     return this.withScopedTransaction(parsed.scope, async (client) => {
+      let normalized = await this.normalizedPage(client, parsed.scope, {
+        limit: 500,
+        entityTypes: ['finance.transaction'],
+        month: parsed.month,
+      });
+      if (normalized) {
+        const records: FinanceTransactionRecord[] = [];
+        let previous: string | undefined;
+        while (normalized) {
+          for (const record of normalized.records) {
+            if (
+              record.recordType !== 'transaction' ||
+              monthOf(record) !== parsed.month
+            )
+              throw new FinanceSpecialistRecordRepositoryError(
+                'invalid-result',
+                'Normalized budget transaction page mismatch',
+              );
+            records.push(record);
+          }
+          if (records.length > 100000)
+            throw new FinanceSpecialistRecordRepositoryError(
+              'invalid-result',
+              'The Finance transaction scope exceeded its bounded record limit',
+            );
+          if (!normalized.nextCursor) break;
+          if (previous && normalized.nextCursor <= previous)
+            throw new FinanceSpecialistRecordRepositoryError(
+              'invalid-result',
+              'Normalized cursor did not advance',
+            );
+          previous = normalized.nextCursor;
+          normalized = await this.normalizedPage(client, parsed.scope, {
+            limit: 500,
+            entityTypes: ['finance.transaction'],
+            month: parsed.month,
+            cursor: previous,
+          });
+          if (!normalized)
+            throw new FinanceSpecialistRecordRepositoryError(
+              'invalid-result',
+              'Normalized Finance route changed',
+            );
+        }
+        return deepFreeze(records);
+      }
       const rows = (
         await client.query(
           `select entity.entity_id as "entityId", entity.entity_type as "entityType",
@@ -1072,6 +1178,7 @@ export class PostgresFinanceSpecialistRecordRepository {
     assertManualCreate(record, parsed.scope);
 
     return this.withScopedTransaction(parsed.scope, async (client) => {
+      await this.assertLegacyMutationRoute(client, parsed.scope);
       const replay = await this.replayIfExact({
         client,
         command: parsed,
@@ -1106,6 +1213,7 @@ export class PostgresFinanceSpecialistRecordRepository {
     });
 
     return this.withScopedTransaction(parsed.scope, async (client) => {
+      await this.assertLegacyMutationRoute(client, parsed.scope);
       const replay = await this.replayIfExact({
         client,
         command: parsed,
@@ -1164,6 +1272,7 @@ export class PostgresFinanceSpecialistRecordRepository {
     });
 
     return this.withScopedTransaction(parsed.scope, async (client) => {
+      await this.assertLegacyMutationRoute(client, parsed.scope);
       const replay = await this.replayIfExact({
         client,
         command: parsed,
@@ -1221,6 +1330,7 @@ export class PostgresFinanceSpecialistRecordRepository {
     });
 
     return this.withScopedTransaction(parsed.scope, async (client) => {
+      await this.assertLegacyMutationRoute(client, parsed.scope);
       const replay = await this.replayIfExact({
         client,
         command: parsed,
@@ -1267,6 +1377,7 @@ export class PostgresFinanceSpecialistRecordRepository {
     assertBudgetCreate(record, parsed.scope);
 
     return this.withScopedTransaction(parsed.scope, async (client) => {
+      await this.assertLegacyMutationRoute(client, parsed.scope);
       const replay = await this.replayIfExact({
         client,
         command: parsed,
@@ -1313,6 +1424,7 @@ export class PostgresFinanceSpecialistRecordRepository {
     });
 
     return this.withScopedTransaction(parsed.scope, async (client) => {
+      await this.assertLegacyMutationRoute(client, parsed.scope);
       const replay = await this.replayIfExact({
         client,
         command: parsed,
@@ -1459,6 +1571,92 @@ export class PostgresFinanceSpecialistRecordRepository {
         'The Finance specialist private space is unavailable',
       );
     }
+  }
+
+  private async normalizedPage(
+    client: DatabaseClient,
+    scope: FinanceScope,
+    page: {
+      limit: number;
+      cursor?: string;
+      entityTypes: string[];
+      month?: string;
+    },
+  ): Promise<
+    { records: readonly FinanceRecord[]; nextCursor: string | null } | undefined
+  > {
+    const source = this.sourceScope(scope);
+    const route = await resolveLegacyFinanceRoute(client, source);
+    if (route.kind === 'legacy') return undefined;
+    const result = await readLegacyFinanceCompatibilityPage(
+      client,
+      route,
+      source,
+      page,
+    );
+    if (result.kind !== 'ready')
+      throw new FinanceSpecialistRecordRepositoryError(
+        'invalid-result',
+        `Normalized compatibility unavailable: ${result.kind}`,
+      );
+    const records = result.entries.map((entry) => {
+      if (entry.entityType === 'finance.transaction') {
+        const row = result.projection.transactions.find(
+          (row) => row.id === entry.entityId,
+        );
+        if (row) return legacyTransactionReadRecord(row, source, route.bookId);
+      } else if (entry.entityType === 'finance.account') {
+        const row = result.projection.accounts.find(
+          (row) => row.id === entry.entityId,
+        );
+        if (row) return legacyAccountReadRecord(row, source, route.bookId);
+      } else {
+        const row = result.projection.archives.find(
+          (row) =>
+            row.entityId === entry.entityId &&
+            row.entityType === entry.entityType &&
+            !row.tombstoned,
+        );
+        if (row)
+          return financeRecordFromEntity(
+            {
+              entityId: entry.entityId,
+              entityType: FinanceEntityTypeSchema.parse(entry.entityType),
+              payload: row.payload,
+              revision: 1,
+            },
+            scope,
+          );
+      }
+      throw new FinanceSpecialistRecordRepositoryError(
+        'invalid-result',
+        'Normalized projection record missing',
+      );
+    });
+    return deepFreeze({ records, nextCursor: result.nextCursor });
+  }
+
+  private sourceScope(scope: FinanceScope): LegacyFinanceSourceScope {
+    // assertCurrentPrivateScope has already proven the original private owner.
+    return {
+      workspaceId: scope.householdId,
+      sourceSpaceId: scope.privateSpaceId,
+      sourceOwnerUserId: scope.userId,
+    };
+  }
+
+  private async assertLegacyMutationRoute(
+    client: DatabaseClient,
+    scope: FinanceScope,
+  ): Promise<void> {
+    if (
+      (await resolveLegacyFinanceRoute(client, this.sourceScope(scope)))
+        .kind === 'normalized'
+    )
+      throw new FinanceSpecialistRecordRepositoryError(
+        'conflict',
+        'Normalized Finance records require explicit book operations',
+      );
   }
 
   private async findCurrentEntity(

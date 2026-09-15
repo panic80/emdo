@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# 1.75 GiB and 10 GiB expressed in the KiB units emitted by /proc and df -Pk.
-readonly MIN_AVAILABLE_MEMORY_KIB=1835008
+# Preserve baseline headroom for normalized staging: steady state adds 256 MiB
+# extraction plus 256 MiB worker uplift, and acceptance remains 192 MiB.
+# 1.75/2.25 GiB and 10 GiB use the KiB units emitted by /proc and df -Pk.
+case "${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:-false}" in
+  false) MIN_AVAILABLE_MEMORY_KIB=1835008; MIN_AVAILABLE_MEMORY_LABEL='1.75 GiB' ;;
+  true) MIN_AVAILABLE_MEMORY_KIB=2359296; MIN_AVAILABLE_MEMORY_LABEL='2.25 GiB' ;;
+  *) printf '%s\n' 'Normalized staging flag must be true or false' >&2; exit 1 ;;
+esac
+readonly MIN_AVAILABLE_MEMORY_KIB MIN_AVAILABLE_MEMORY_LABEL
 readonly MIN_FREE_DISK_KIB=10485760
 
 # shellcheck source=infra/scripts/_common.sh
@@ -31,7 +38,7 @@ esac
 available_memory_kib="$(awk '/^MemAvailable:/ { print $2; exit }' /proc/meminfo)"
 [[ "$available_memory_kib" =~ ^[0-9]+$ ]] || die 'could not read available memory'
 ((available_memory_kib >= MIN_AVAILABLE_MEMORY_KIB)) ||
-  die "staging requires at least 1.75 GiB available memory"
+  die "staging requires at least $MIN_AVAILABLE_MEMORY_LABEL available memory"
 
 disk_probe_path="/var/lib/emdo"
 if [[ ! -d "$disk_probe_path" ]]; then

@@ -1,0 +1,89 @@
+{
+  "captureManifestVersion": "france-2025-income-2026-return.1",
+  "incomeYear": 2025,
+  "filingYear": 2026,
+  "retrievedAt": "2026-09-14T16:00:00Z",
+  "authority": "Direction générale des Finances publiques",
+  "captures": [
+    {
+      "id": "dgfip-fr-brochure-ir-2026",
+      "url": "https://www.impots.gouv.fr/www2/fichiers/documentation/brochure/ir_2026/pdf_integral/Brochure-IR-2026.pdf",
+      "contentType": "application/pdf",
+      "sha256": "89b85e9f529b0ccc56f9b52b584eb41ea0f21d9b8506df06ead7a0d1f73deada",
+      "published": "2026",
+      "locator": "pp. 52, 81, 107, 371-373 and professional-income tables"
+    },
+    {
+      "id": "dgfip-fr-form-2042-2026",
+      "url": "https://www.impots.gouv.fr/sites/default/files/formulaires/2042/2026/2042_5535.pdf",
+      "contentType": "application/pdf",
+      "sha256": "ddf48d388d9b4c69650d3985499aaabb1af757a9b43211979ea663701c46ef2d",
+      "published": "2026",
+      "locator": "2042 Cerfa 10330*30 identity/family pages and lines 1AJ-1DJ, 1AK-1DK, 8HV-8IV"
+    },
+    {
+      "id": "dgfip-fr-form-2042-c-pro-2026",
+      "url": "https://www.impots.gouv.fr/sites/default/files/formulaires/2042/2026/2042_5474.pdf",
+      "contentType": "application/pdf",
+      "sha256": "293de292c87cf77251e659ac5611dac416104d6019e7a458078f7421707c993b",
+      "published": "2026",
+      "locator": "2042-C-PRO Cerfa 11222*28 identity/SIRET and professional micro-BIC/BNC lines"
+    },
+    {
+      "id": "dgfip-fr-form-2065-2026",
+      "url": "https://www.impots.gouv.fr/sites/default/files/formulaires/2065-sd/2026/2065-sd_5381.pdf",
+      "contentType": "application/pdf",
+      "sha256": "c4f8d73574b6aa5667dba91ad8a918aaca3c71587f4d863938d0223f207d06de",
+      "published": "2026",
+      "locator": "2065-SD Cerfa 11084*28 identity/exercise and cadre C normal/15% result fields; 2065 bis annex"
+    },
+    {
+      "id": "dgfip-fr-is-rates-2026",
+      "url": "https://www.impots.gouv.fr/international-professionnel/impot-sur-les-societes",
+      "contentType": "text/html",
+      "sha256": "9983537e892953610f9a3c3380232ac59b71c4780a7c1959049307bf7ba3aca6",
+      "published": "2026",
+      "locator": "IS 25% normal and 15% first €42,500 qualifying PME rate"
+    },
+    {
+      "id": "dgfip-fr-declaration-2026",
+      "url": "https://www.impots.gouv.fr/les-modalites-de-la-declaration-de-revenus-en-2026",
+      "contentType": "text/html",
+      "sha256": "cd267ceec94cc7862c8a67e25b175634a1964ad242df47c758d0b89403f6cd3d",
+      "published": "2026",
+      "locator": "sections 44-62"
+    },
+    {
+      "id": "bofip-fr-ir-liq-20-10-20260407",
+      "url": "https://bofip.impots.gouv.fr/bofip/2491-PGP.html/identifiant=BOI-IR-LIQ-20-10-20260407",
+      "contentType": "text/html",
+      "sha256": "52405ad849c6ab28755ec1ce8b7df00017c9710d78db7b20295be59f5829ed96",
+      "published": "2026-04-07",
+      "locator": "sections 10 and 40"
+    },
+    {
+      "id": "bofip-fr-ir-liq-20-20-20-20260407",
+      "url": "https://bofip.impots.gouv.fr/bofip/2494-PGP.html/identifiant=BOI-IR-LIQ-20-20-20-20260407",
+      "contentType": "text/html",
+      "sha256": "85ebe9a711b3716b0abc1756e9bf42c510e3874018b0e502eafa788bfa9c1dab",
+      "published": "2026-04-07",
+      "locator": "sections 20, 40 and 60-70"
+    },
+    {
+      "id": "bofip-fr-ir-liq-20-20-30-20260407",
+      "url": "https://bofip.impots.gouv.fr/bofip/2495-PGP.html/identifiant=BOI-IR-LIQ-20-20-30-20260407",
+      "contentType": "text/html",
+      "sha256": "9d59f688c2c986fbdf28d61f65ac3319f7eecae3aa681560b1cd13b8151ae72e",
+      "published": "2026-04-07",
+      "locator": "sections 10 and 40"
+    },
+    {
+      "id": "bofip-fr-ir-pas-20-20-10-20260407",
+      "url": "https://bofip.impots.gouv.fr/bofip/11247-PGP.html/identifiant=BOI-IR-PAS-20-20-10-20260407",
+      "contentType": "text/html",
+      "sha256": "863eec7601d536edd7493b2248133ca624c880777bcb7eac9c636f16f3de7f60",
+      "published": "2026-04-07",
+      "locator": "2025-income PAS rules"
+    }
+  ]
+}

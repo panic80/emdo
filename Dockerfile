@@ -81,12 +81,45 @@ LABEL org.opencontainers.image.source="https://github.com/panic80/emdo" \
       org.opencontainers.image.created="$BUILD_CREATED"
 ENV NODE_ENV=production
 WORKDIR /app
+COPY infra/finance-ocr /opt/emdo/finance-ocr
+RUN /opt/emdo/finance-ocr/install-runtime.sh /opt/emdo/finance-ocr \
+    && rm -rf /opt/emdo/finance-ocr
 COPY --from=build --chown=10002:10002 /opt/emdo/worker/package.json ./package.json
 COPY --from=build --chown=10002:10002 /opt/emdo/worker/dist ./dist
 COPY --from=build --chown=10002:10002 /opt/emdo/worker/node_modules ./node_modules
+ENV EMDO_FINANCE_IMAGE_OCR_MANIFEST=/usr/local/share/emdo/finance-ocr-runtime.json \
+    EMDO_FINANCE_IMAGE_OCR_MAGICK=/usr/local/bin/magick \
+    EMDO_FINANCE_IMAGE_OCR_TESSERACT=/usr/bin/tesseract \
+    MAGICK_CONFIGURE_PATH=/etc/ImageMagick-6 \
+    TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
+RUN /usr/local/bin/emdo-finance-ocr-runtime-healthcheck
 USER 10002:10002
 EXPOSE 3001
 CMD ["node", "dist/index.js"]
+
+# A native-only image is available for the adapter's isolated helper path.
+# It has no EMDO application closure, database credentials, or provider
+# client. The runtime policy denies delegates and the compose overlay gives it
+# no network namespace with bounded memory, PIDs, and scratch storage.
+FROM node:24.13.0-bookworm-slim@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f AS finance-ocr-node
+
+FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS finance-ocr
+COPY --from=finance-ocr-node /usr/local/bin/node /usr/local/bin/node
+COPY infra/finance-ocr/socket-server.mjs /usr/local/lib/emdo-ocr-socket-server.mjs
+COPY infra/finance-ocr /opt/emdo/finance-ocr
+RUN /opt/emdo/finance-ocr/install-runtime.sh /opt/emdo/finance-ocr \
+    && rm -rf /opt/emdo/finance-ocr
+ENV EMDO_FINANCE_IMAGE_OCR_MANIFEST=/usr/local/share/emdo/finance-ocr-runtime.json \
+    EMDO_FINANCE_IMAGE_OCR_MAGICK=/usr/local/bin/magick \
+    EMDO_FINANCE_IMAGE_OCR_TESSERACT=/usr/bin/tesseract \
+    MAGICK_CONFIGURE_PATH=/etc/ImageMagick-6 \
+    TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
+LABEL org.emdo.finance.ocr.manifest="/usr/local/share/emdo/finance-ocr-runtime.json" \
+      org.emdo.finance.ocr.policy="/etc/ImageMagick-6/policy.xml" \
+      org.emdo.finance.ocr.protocol="native-stdin-v1"
+RUN mkdir -p /run/emdo/finance-ocr && chown 10003:10004 /run/emdo/finance-ocr && chmod 0770 /run/emdo/finance-ocr
+USER 10003:10004
+ENTRYPOINT ["/usr/local/bin/node", "/usr/local/lib/emdo-ocr-socket-server.mjs"]
 
 FROM nginxinc/nginx-unprivileged:1.29.1-alpine@sha256:27985295bdb22a1ef8f712863210bd5877c0f3006494a593e86b3fe0fa55467e AS web
 ARG SOURCE_SHA

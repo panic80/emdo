@@ -25,6 +25,7 @@ import {
   REQUIRED_CAPABILITY_BINDING_KINDS,
   capabilitySchemaRegistrations,
   createProductionCapabilityRuntime,
+  specialistCapabilitySchemas,
   parseSpecialistCapabilityOutput,
   parseProductionProviderWriteCapabilityId,
   type ProductionCapabilityBindings,
@@ -299,6 +300,120 @@ const specialistSchemaSamples = {
       },
     },
   },
+  'finance.reports.inspect': {
+    input: {
+      schemaVersion: 1,
+      bookId: '00000000-0000-4000-8000-000000000001',
+      evidenceId: '00000000-0000-4000-8000-000000000002',
+      offset: 0,
+    },
+    output: {
+      schemaVersion: 1,
+      evidenceId: '00000000-0000-4000-8000-000000000002',
+      filename: 'report.csv',
+      format: 'csv',
+      pdf: null,
+      tableId: 'csv-table-1',
+      sheet: 'CSV',
+      dateSystem: null,
+      tableCandidates: [],
+      totalCandidates: 1,
+      nextCandidateOffset: null,
+      extractionIssues: [],
+      cellProvenance: [],
+      nextProvenanceOffset: null,
+      headers: ['Date', 'Description', 'Amount', 'Currency'],
+      rows: [],
+      nextOffset: null,
+      totalRows: 0,
+      sourceReference: 'evidence:1',
+    },
+  },
+  'finance.reports.propose-mapping': {
+    input: {
+      schemaVersion: 1,
+      bookId: '00000000-0000-4000-8000-000000000001',
+      evidenceId: '00000000-0000-4000-8000-000000000002',
+      proposal: {
+        definition: {
+          providerKey: 'example',
+          reportName: 'Transactions',
+          reportType: 'bank-transactions',
+          layoutVersion: '1',
+          headers: ['Date', 'Description', 'Amount', 'Currency'],
+          bindings: [
+            { field: 'transactionDate', column: 'Date', context: null },
+            { field: 'description', column: 'Description', context: null },
+            { field: 'amount', column: 'Amount', context: null },
+            { field: 'currency', column: 'Currency', context: null },
+          ],
+          dateFormat: 'yyyy-mm-dd',
+          decimalSeparator: '.',
+          groupingSeparator: '',
+          quantityUnit: null,
+          valuationMultiplier: null,
+          identifierScheme: null,
+          identifierNamespace: null,
+        },
+        rationale: 'Explicit source headings',
+        unresolvedQuestions: [],
+      },
+    },
+    output: {
+      schemaVersion: 1,
+      id: '00000000-0000-4000-8000-000000000003',
+      version: 1,
+      revision: 1,
+      status: 'candidate',
+      validationStatus: 'normalized',
+      unresolvedQuestions: [],
+      sourceReference: 'mapping:1',
+    },
+  },
+  'finance.tax.read': {
+    input: {
+      schemaVersion: 1,
+      view: 'list',
+      caseId: null,
+      offset: 0,
+      limit: 50,
+    },
+    output: {
+      schemaVersion: 1,
+      view: 'list',
+      caseId: null,
+      status: 'incomplete',
+      complete: false,
+      records: [],
+      nextOffset: null,
+      sourceReferences: [],
+      coverage: 'private-tax-case-snapshot',
+      truncated: false,
+      snapshotRevision: null,
+      snapshotHash: null,
+    },
+  },
+  'finance.books.read': {
+    input: {
+      schemaVersion: 1,
+      view: 'books',
+      bookId: null,
+      importId: null,
+      valuationId: null,
+      offset: 0,
+      limit: 50,
+    },
+    output: {
+      schemaVersion: 1,
+      view: 'books',
+      bookId: null,
+      currency: null,
+      records: [],
+      nextOffset: null,
+      sourceReferences: [],
+      amountEncoding: 'decimal-string',
+    },
+  },
   'finance.records.read': {
     input: { schemaVersion: 1, recordTypes: ['transaction'], limit: 25 },
     output: { schemaVersion: 1, records: [], nextCursor: null },
@@ -564,6 +679,74 @@ const approvalStore = (): ProviderWriteApprovalStore => ({
 });
 
 describe('production capability runtime conformance', () => {
+  it('keeps XLSX selection and provenance schemas strict and source-only', () => {
+    const inspect = specialistCapabilitySchemas['finance.reports.inspect'];
+    const input = {
+      ...specialistSchemaSamples['finance.reports.inspect'].input,
+      tableId: 'xlsx-sheet-1-region-1',
+      candidateOffset: 20,
+      provenanceOffset: 40,
+    };
+    expect(inspect.input.parse(input)).toMatchObject({
+      tableId: 'xlsx-sheet-1-region-1',
+      candidateOffset: 20,
+      provenanceOffset: 40,
+    });
+    expect(
+      inspect.input.safeParse({ ...input, executeFormulas: true }).success,
+    ).toBe(false);
+    expect(
+      inspect.input.safeParse({ ...input, candidateOffset: 2001 }).success,
+    ).toBe(false);
+    const output = {
+      ...specialistSchemaSamples['finance.reports.inspect'].output,
+      format: 'xlsx',
+      tableId: 'xlsx-sheet-1-region-1',
+      sheet: 'Source',
+      dateSystem: '1900',
+      extractionIssues: ['header-row-unconfirmed'],
+      cellProvenance: [
+        {
+          address: 'A2',
+          sourceRow: 2,
+          column: 1,
+          type: 'n',
+          raw: null,
+          value: null,
+          numberFormat: 'General',
+          numberFormatId: 0,
+          formula: 'SUM(A1)',
+          formulaAttributes: [],
+          valueOrigin: 'unavailable',
+          truncated: false,
+        },
+      ],
+    };
+    expect(inspect.output.safeParse(output).success).toBe(true);
+    expect(
+      inspect.output.safeParse({
+        ...output,
+        cellProvenance: [
+          { ...output.cellProvenance[0], valueOrigin: 'calculated' },
+        ],
+      }).success,
+    ).toBe(false);
+    const propose =
+      specialistCapabilitySchemas['finance.reports.propose-mapping'];
+    expect(
+      propose.input.safeParse({
+        ...specialistSchemaSamples['finance.reports.propose-mapping'].input,
+        tableId: 'xlsx-sheet-1-region-1',
+      }).success,
+    ).toBe(true);
+    expect(
+      propose.input.safeParse({
+        ...specialistSchemaSamples['finance.reports.propose-mapping'].input,
+        confirmedHeaders: true,
+      }).success,
+    ).toBe(false);
+  });
+
   it('mints provider-write capability IDs only through a known validated production descriptor', () => {
     expect(
       parseProductionProviderWriteCapabilityId('google-calendar.event.create'),
@@ -583,8 +766,8 @@ describe('production capability runtime conformance', () => {
       ...authorityResolvers(),
     });
 
-    expect(runtime.registry.size).toBe(22);
-    expect(runtime.schemas.size).toBe(46);
+    expect(runtime.registry.size).toBe(26);
+    expect(runtime.schemas.size).toBe(54);
     expect(
       runtime.registry.resolveForAgent({
         manifest: runtime.manifests.scheduler,
@@ -596,7 +779,7 @@ describe('production capability runtime conformance', () => {
         manifest: runtime.manifests.finance,
         requestedCapabilityIds: runtime.manifests.finance.capabilityAllowlist,
       }),
-    ).toHaveLength(7);
+    ).toHaveLength(11);
     expect(
       runtime.registry.resolveForAgent({
         manifest: runtime.manifests.shopping,
@@ -929,16 +1112,16 @@ describe('production capability runtime conformance', () => {
         ...ALL_MANAGER_DELEGATION_CAPABILITY_IDS,
       ].sort(),
     );
-    expect(new Set(ALL_SPECIALIST_CAPABILITY_IDS).size).toBe(19);
+    expect(new Set(ALL_SPECIALIST_CAPABILITY_IDS).size).toBe(23);
     expect(new Set(ALL_MANAGER_DELEGATION_CAPABILITY_IDS).size).toBe(3);
   });
 
   it('uses distinct strict schemas for every specialist capability', () => {
-    expect(capabilitySchemaRegistrations).toHaveLength(38);
+    expect(capabilitySchemaRegistrations).toHaveLength(46);
     const references = capabilitySchemaRegistrations.map(
       ({ reference }) => `${reference.id}@${reference.version}`,
     );
-    expect(new Set(references).size).toBe(38);
+    expect(new Set(references).size).toBe(46);
     expect(
       capabilitySchemaRegistrations.every(
         ({ schema, reference }) =>

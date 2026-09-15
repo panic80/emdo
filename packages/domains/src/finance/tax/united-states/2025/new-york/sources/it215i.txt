@@ -1,0 +1,186 @@
+                                                                                                                                      IT-215-I
+                                           Department of Taxation and Finance
+
+                                           Instructions for Form IT-215
+                                           Claim for Earned Income Credit
+                                           New York State • New York City
+
+
+General information                                                             Caution: Carefully review the Social Security information for
+                                                                                yourself and your children. To be eligible to claim the New York State
+Who qualifies                                                                   and New York City EIC, you must provide valid SSNs by the due
+Generally, if you claimed the federal earned income tax credit, you             date of the return (including extensions).
+qualify for the New York State earned income credit (EIC).                      If you are claiming a person with a disability, you may be required to
+If you were a full-year or part-year resident of New York City, you             provide supporting documentation stating that the qualifying person
+also qualify for the New York City EIC. You may qualify for the New             was permanently disabled during the tax year.
+York City EIC even if you do not qualify for the New York State EIC.            Line 6: Complete Worksheet A to determine the amount to enter on
+                                                                                line 6.
+Noncustodial parents
+You may qualify for the noncustodial parent New York State earned                                           Worksheet A
+income credit instead of the New York State EIC if you:                                                Wages, salaries, tips, etc.
+• are a full-year New York State resident,                                       1. Enter the amount from federal Form 1040, line 1z;
+• are a noncustodial parent, and                                                               or
+• pay child support through a New York State Support Collection                     if you are a member of the clergy
+   Unit.                                                                            or a church employee who checked
+For further information on this credit, see Form IT-209, Claim for                  the Yes box in step 5, line 1, of the
+Noncustodial Parent New York State Earned Income Credit.                            federal Form 1040 instructions for
+                                                                                    line 27a, enter the amount from
+                                                                                    step 5, line 1, of the federal Form 1040
+How to claim the credit                                                             instructions ............................................ 1.
+To claim the New York State or New York City EIC, you must:                      2. Enter the amount of your nontaxable
+• complete Form IT-215 using the information from your federal:                     combat pay, if any, from federal
+  return, worksheets, and income tax credit line instructions, and                  Form 1040, line 1i ...................................... 2.
+• file it with your New York State income tax return.                            3. Add lines 1 and 2. Enter here and
+                                                                                    on Form IT-215, line 6 ............................. 3.
+To claim the New York City EIC, you must also complete
+Worksheet C, New York City earned income credit.
+                                                                                Line 7: Enter on line 7 any amount you received as a Medicaid
+Line instructions                                                               waiver payment that you excluded on your federal return and want
+                                                                                to exclude from your earned income.
+All filers must complete lines 1 through 17 as applicable.
+                                                                                Line 8: Complete only if you filed federal Form 1040, Schedule 1,
+Part-year New York State resident filers must also complete                     Additional Income and Adjustments to Income. Enter the amount of
+lines 18 through 26.                                                            business income or loss (the total of lines 1e, 2c, and 3) from your
+New York City residents and part-year residents must also                       federal Form 1040 instructions, Earned Income Credit Worksheet B.
+complete lines 27 and 28.                                                       Use a minus sign to show a loss or a negative amount.
+
+Line 1: You must have claimed the federal earned income tax credit              Be sure to enter the employer identification number (EIN) for your
+to claim the New York State and New York City EIC.                              business. If you have income or loss from more than one business,
+                                                                                enter the EIN representing your primary business activity. If your
+Line 2: If your investment income is more than $11,950, you cannot              primary business activity does not have an EIN, enter your SSN.
+claim the New York State and New York City EIC. For most people,
+investment income is the total amount of:                                       Line 12: This amount represents your New York State EIC before
+                                                                                subtracting the amount of household credit allowed.
+• taxable interest (from line 2b of federal Form 1040);
+• tax-exempt interest (from line 2a of federal Form 1040);                      If the amount on line 12 is more than zero and you are a full-year or
+                                                                                part-year New York City resident, also calculate your New York City
+• ordinary dividends income (from line 3b of federal Form 1040);
+                                                                                EIC.
+   and
+• capital gain net income (from line 7a of federal Form 1040) if more           Line 16: Allowable New York State earned income credit.
+   than zero.                                                                   • Residents: Enter the amount on Form IT-201, Resident Income
+                                                                                  Tax Return, line 65.
+For additional information on what qualifies as investment income,
+see federal Publication 596, Earned Income Credit.                              • Nonresidents: Enter the amount on Form IT-203, Nonresident
+                                                                                  and Part-Year Resident Income Tax Return, line 43.
+Line 4: If you claimed qualifying children on your federal Schedule
+                                                                                • Part-year residents: Enter the amount on Form IT-203, line 43,
+EIC, list each child’s name including suffix (for example, Jr., Sr., III)
+                                                                                  and continue on line 18.
+in the spaces provided on line 4. If you claimed more than three
+qualifying children on your federal Schedule EIC:                               Caution: If you are a married couple filing a joint federal return but
+1. Enter the required information for the first three qualifying                you are filing separate New York State returns, the line 16 amount is
+    children in the spaces provided on the form.                                the total combined New York State EIC for both spouses. You must
+                                                                                complete line 17 and indicate the amount of line 16 that you are
+2. Provide the required information on each additional child on a
+                                                                                claiming on your return.
+    separate statement and include your name and Social Security
+    number (SSN).                                                               Line 17: Complete this line only if you filed a joint federal return
+3. Submit the statement with Form IT-215.                                       but are required to file separate New York State returns. See the
+Page 2 of 3 IT-215-I (2025)
+
+instructions for Forms IT-201 or IT-203 to determine your filing                                 NYC EIC rate worksheet
+status.
+                                                                        1. Enter the amount from Form IT-201,
+You and your spouse may agree to split the total amount on line 16
+                                                                           line 33 or Form IT-203, line 32, New
+however you choose, but the combined amount of both spouses’
+                                                                           York adjusted gross income ..................          1.
+New York State credits cannot exceed the amount on line 16. Enter
+on line 17, the portion of the credit you are claiming and follow the   2. Enter the appropriate dollar amount
+line 16 instructions applicable to your resident status for where to       from the NYC EIC rate table below for
+enter the credit on your return.                                           your NYAGI (if applicable) ......................      2.
+                                                                        3. Subtract line 2 from line 1 . ....................     3.
+Part-year New York State residents only                                 4. Multiply line 3 by .00002 (round the
+Lines 18 through 26: For the amounts to enter on these lines, see          result to four decimal places) ................        4.
+Form IT-203 or Form IT-203-ATT, Other Tax Credits and Taxes, or         5. Enter the decimal from the NYC EIC
+their instructions (Form IT-203-I).                                        rate table (if applicable)..........................   5.
+Line 23: If this amount is less than zero, stop; you have no New        6. Subtract line 4 from line 5 or enter the
+York State EIC available to be refunded.                                   decimal from the NYC EIC rate table.
+                                                                           Also enter on Worksheet C, line 2 .........            6.
+Line 25: Divide line 23 by line 24 and round the result to the fourth
+decimal place (do not enter more than 100% (1.0000) even if your        Note: Lines 2-5 may be blank for certain income ranges.
+actual result is more than 100%). If the amount on line 24 is less
+than zero, but the amount on line 23 is more than zero, enter 100%.
+If the result is zero percent (0%), you have no New York State EIC
+available to be refunded. Do not complete line 26.                                                                                     (continued)
+
+Line 26: If line 25 is greater than 0%, multiply line 22 by line 25.
+Enter this amount on Form IT-203-ATT, line 10, and submit
+Form IT-215 with your Form IT-203.
+
+Instructions for completing Worksheet B
+Line 2: Enter the amount from Form IT-112-R, New York State
+Resident Credit, line 30, or Form IT-112-C, New York State Resident
+Credit for Taxes Paid to a Province of Canada, line 46.
+Line 3: Enter the amount of your available accumulation distribution
+credit. This amount may be greater than your accumulation
+distribution credit claimed on Form IT-201-ATT, Other Tax Credits
+and Taxes, line 1, or Form IT-203-ATT, line 2.
+
+New York City earned income credit
+To determine the amount of your New York City earned income
+credit, use the worksheets below.
+
+Online users only
+The worksheets below are interactive calculators. To use the
+calculators:
+1. In the yellow highlighted fields, enter the amounts requested in
+   the instructions for each line.
+2. Once you have correctly entered your information, select
+   Calculate.
+3. If you need to start over, select Reset.
+4. When finished, continue to Worksheet C, New York City earned
+   income credit.
+                                                                                                                                                                    IT-215-I (2025)   Page 3 of 3
+
+
+                                                                                    Worksheet C
+                                                                          New York City earned income credit
+
+  1 Enter the amount from Form IT-215, line 10 . ................................................................................................ 1
+
+  2 Enter the decimal from line 6 of the NYC EIC rate Worksheet ...................................................................... 2
+
+  3 Allowable NYC EIC (multiply line 1 by line 2) . ................................................................................................... 3
+		 Enter the line 3 amount on Form IT-215, line 27; and on Form IT-201, line 70.
+   • If your New York City filing status is Married filing separate return, also complete line 4.
+		 • Part-year New York City residents must also complete lines 5 through 9.
+
+ 4 If your New York City filing status is Married filing separate return, the NYC EIC credit on
+		  line 3 above can be divided between spouses in any manner you wish.
+		  Enter on line 4 the amount of credit you are claiming. ........................................................................ 4
+		 • Part-year New York City residents must also complete lines 5 through 9.
+		 • All others enter the line 4 amount on Form IT-215, line 27, and on Form IT-201, line 70.
+
+  Part-year New York City residents only: If your filing status is Married filing joint return and you and your
+  spouse had different New York City periods of residency, and you each filed a separate Form IT-360.1,
+  Change of City Resident Status, enter both of your combined amounts on line 6 and line 7.
+
+ 5 NYC EIC (from line 3 or line 4) .......................................................................................................................... 5
+ 6 Enter the amount from Form IT-360.1, line 20, Column B; also
+		  enter this amount on Form IT-215, line 28B . ........................................ 6
+ 7 Enter the amount from Form IT-360.1, line 20, Column A; also
+		  enter this amount on Form IT-215, line 28A .......................................... 7
+
+ 8 Divide line 6 by line 7 (round the result to four decimal places; cannot exceed 1.000). ............................................ 8
+ 9 Part-year NYC resident EIC (multiply line 5 by line 8). Enter this amount on
+		  Form IT-215, line 27; and on Form IT-201, line 70, or on Form IT-203-ATT, line 11. .. ........................... 9
+		  Also complete line 28 on Form IT-215.
+
+
+
+                                                                                       NYC EIC rate table
+                                            If your NYAGI is
+                              (IT-201 filers line 33/IT-203 filers line 32)                      Line 2 amount              Line 5 amount              Line 6 amount
+                            Equal to or over                  But under
+                                                              $5,000                                            Skip lines 2-5                                    .30
+                            $5,000                            $7,500                                   $4,999                       .30
+                            $7,500                            $15,000                                           Skip lines 2-5                                    .25
+                            $15,000                           $17,500                                 $14,999                       .25
+                            $17,500                           $20,000                                           Skip lines 2-5                                    .20
+                            $20,000                           $22,500                                 $19,999                       .20
+                            $22,500                           $40,000                                           Skip lines 2-5                                    .15
+                            $40,000                           $42,500                                 $39,999                       .15
+                            $42,500                                                                             Skip lines 2-5                                    .10
+

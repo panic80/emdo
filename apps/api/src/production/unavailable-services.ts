@@ -15,7 +15,20 @@ import type { SyntheticFinanceInvitationHandoff } from './synthetic-finance-invi
 
 type ConfigurableApiServiceName = Exclude<
   keyof ApiServices,
-  'metrics' | 'readiness'
+  | 'metrics'
+  | 'readiness'
+  | 'financeTax'
+  | 'financeV2'
+  | 'financeFec'
+  | 'financeLegacyMigration'
+  | 'financeOpenings'
+  | 'financePlanning'
+  | 'financeJournalDrafts'
+  | 'financeInvestmentReconciliation'
+  | 'financeStandardization'
+  | 'financeAutomations'
+  | 'financeSchedules'
+  | 'financeGeneratedReports'
 >;
 
 export interface ProductionApiServiceBinding<Service> {
@@ -26,6 +39,43 @@ export interface ProductionApiServiceBinding<Service> {
 }
 
 export type ProductionApiServiceBindings = {
+  financeOpenings?: ProductionApiServiceBinding<
+    NonNullable<ApiServices['financeOpenings']>
+  >;
+  financeLegacyMigration?: ProductionApiServiceBinding<
+    NonNullable<ApiServices['financeLegacyMigration']>
+  >;
+  financeFec?: ProductionApiServiceBinding<
+    NonNullable<ApiServices['financeFec']>
+  >;
+  financeJournalDrafts?: ProductionApiServiceBinding<
+    NonNullable<ApiServices['financeJournalDrafts']>
+  >;
+  financeInvestmentReconciliation?: ProductionApiServiceBinding<
+    NonNullable<ApiServices['financeInvestmentReconciliation']>
+  >;
+  financePlanning?: ProductionApiServiceBinding<
+    NonNullable<ApiServices['financePlanning']>
+  >;
+  financeStandardization?: ProductionApiServiceBinding<
+    NonNullable<ApiServices['financeStandardization']>
+  >;
+  financeGeneratedReports?: ProductionApiServiceBinding<
+    NonNullable<ApiServices['financeGeneratedReports']>
+  >;
+  financeSchedules?: ProductionApiServiceBinding<
+    NonNullable<ApiServices['financeSchedules']>
+  >;
+  financeAutomations?: ProductionApiServiceBinding<
+    NonNullable<ApiServices['financeAutomations']>
+  >;
+  financeTax?: ProductionApiServiceBinding<
+    NonNullable<ApiServices['financeTax']>
+  >;
+  financeV2?: ProductionApiServiceBinding<
+    NonNullable<ApiServices['financeV2']>
+  >;
+} & {
   -readonly [Name in ConfigurableApiServiceName]?: ProductionApiServiceBinding<
     ApiServices[Name]
   >;
@@ -568,6 +618,52 @@ export const createFailClosedApiServices = (input: {
     readonly syntheticFinanceAccountProvisioner?: SyntheticFinanceAccountProvisioner;
     readonly syntheticFinanceInvitationHandoff?: SyntheticFinanceInvitationHandoff;
   } = {
+    ...(input.bindings?.financeGeneratedReports
+      ? {
+          financeGeneratedReports:
+            input.bindings.financeGeneratedReports.service,
+        }
+      : {}),
+    ...(input.bindings?.financeTax
+      ? { financeTax: input.bindings.financeTax.service }
+      : {}),
+    ...(input.bindings?.financeStandardization
+      ? {
+          financeStandardization: input.bindings.financeStandardization.service,
+        }
+      : {}),
+    ...(input.bindings?.financeOpenings
+      ? { financeOpenings: input.bindings.financeOpenings.service }
+      : {}),
+    ...(input.bindings?.financeLegacyMigration
+      ? {
+          financeLegacyMigration: input.bindings.financeLegacyMigration.service,
+        }
+      : {}),
+    ...(input.bindings?.financeFec
+      ? { financeFec: input.bindings.financeFec.service }
+      : {}),
+    ...(input.bindings?.financeJournalDrafts
+      ? { financeJournalDrafts: input.bindings.financeJournalDrafts.service }
+      : {}),
+    ...(input.bindings?.financeInvestmentReconciliation
+      ? {
+          financeInvestmentReconciliation:
+            input.bindings.financeInvestmentReconciliation.service,
+        }
+      : {}),
+    ...(input.bindings?.financePlanning
+      ? { financePlanning: input.bindings.financePlanning.service }
+      : {}),
+    ...(input.bindings?.financeV2
+      ? { financeV2: input.bindings.financeV2.service }
+      : {}),
+    ...(input.bindings?.financeSchedules
+      ? { financeSchedules: input.bindings.financeSchedules.service }
+      : {}),
+    ...(input.bindings?.financeAutomations
+      ? { financeAutomations: input.bindings.financeAutomations.service }
+      : {}),
     auth: selectedService('auth', input.auth),
     activityRead: selectedService(
       'activityRead',

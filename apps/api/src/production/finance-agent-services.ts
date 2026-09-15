@@ -1,5 +1,40 @@
+import { FinanceFecMappingResponseSchema } from '../routes/finance-fec.js';
+import { inspectFinanceOfxSource } from './finance-ofx-inspection.js';
+import {
+  planningReadViews,
+  readFinancePlanning,
+  type FinancePlanningReadPort,
+} from './finance-planning-read.js';
+import {
+  FinanceAutomationJournalDraftResultSchema,
+  InvestmentReconciliationCaseSchema,
+  InvestmentReconciliationListSchema,
+  FinanceTaxReadInputSchema,
+  FinanceTaxReadOutputSchema,
+  FinanceTaxQuestionnaireSchema,
+  FinanceTaxDeclaredInputSchema,
+  FinanceTaxDeclarationBindingStatusSchema,
+  FinanceTaxCalculationRunSummarySchema,
+  FinanceTaxCalculationRunDetailSchema,
+  FinanceStandardizationRunSchema,
+  FinanceStandardizationListSchema,
+  FinanceStandardizationReconciliationSchema,
+  FinanceCashDividendSavedActionSchema,
+  FinanceCashDividendListSchema,
+  SavedFinanceStockSplitSettlementSchema,
+  FinanceImageInspectionSchema,
+  FinancePdfOcrInspectionSchema,
+} from '@emdo/contracts';
+import { createHash } from 'node:crypto';
 import {
   AgentInvocationContextSchema,
+  FinanceGeneratedReportSchema,
+  FinanceNormalizedImportPostingSchema,
+  FinanceNormalizedAmountComponentViewSchema,
+  FinanceAutomationRunRecordSchema,
+  FinanceAutomationScheduleSchema,
+  FinanceAutomationScheduleCursorSchema,
+  FinanceGeneratedReportSummarySchema,
   GuardedActionPermitSchema,
   IsoDateTimeSchema,
   OpaqueReferenceSchema,
@@ -11,6 +46,7 @@ import {
 } from '@emdo/contracts';
 import { financeCapabilityReferences } from '@emdo/agent-finance';
 import {
+  extractFinanceCsvTable,
   applyTransactionLedgerOperation,
   validateFinanceRecord,
   type FinanceBudgetRecord,
@@ -18,6 +54,10 @@ import {
   type FinanceTransactionRecord,
 } from '@emdo/domains/finance';
 import { hashCanonicalJson } from '@emdo/toolbox';
+import {
+  extractFinanceXlsxTables,
+  extractFinancePdfReport,
+} from '@emdo/integrations/finance-documents';
 import { z } from 'zod';
 
 import {
@@ -390,6 +430,89 @@ export interface FinanceSpecialistDocumentPort {
 }
 
 export interface RequestScopedFinanceSpecialistServiceDependencies {
+  readonly fec?: Pick<
+    NonNullable<import('../services/contracts.js').ApiServices['financeFec']>,
+    'getLatest' | 'checkReady'
+  >;
+  readonly planning?: FinancePlanningReadPort;
+  readonly pdfOcrInspection?: Pick<
+    import('@emdo/db/api').PostgresFinanceV2Repository,
+    'readPdfOcrInspection'
+  >;
+  readonly imageInspection?: Pick<
+    import('@emdo/db/api').PostgresFinanceV2Repository,
+    'readImageInspection'
+  >;
+  readonly cashDividends?: Pick<
+    import('@emdo/db/api').PostgresFinanceV2Repository,
+    'listInvestmentCashDividends' | 'getInvestmentCashDividend'
+  >;
+  readonly standardizationRuns?: Pick<
+    NonNullable<
+      import('../services/contracts.js').ApiServices['financeStandardization']
+    >,
+    'list' | 'get'
+  > &
+    Partial<
+      Pick<
+        NonNullable<
+          import('../services/contracts.js').ApiServices['financeStandardization']
+        >,
+        'reconciliation'
+      >
+    >;
+  readonly taxCalculationRuns?: Pick<
+    import('@emdo/db/api').PostgresFinanceTaxRepository,
+    'listCalculationRuns' | 'getCalculationRun'
+  >;
+  readonly taxCases?: Pick<
+    import('@emdo/db/api').PostgresFinanceTaxRepository,
+    'listCases' | 'getCase' | 'assessCase'
+  >;
+  readonly automationSchedules?: Pick<
+    NonNullable<
+      import('../services/contracts.js').ApiServices['financeSchedules']
+    >,
+    'listSchedules'
+  >;
+  readonly journalDrafts?: Pick<
+    NonNullable<
+      import('../services/contracts.js').ApiServices['financeJournalDrafts']
+    >,
+    'listJournalDraftResults' | 'readJournalDraftResult'
+  >;
+  readonly investmentReconciliation?: Pick<
+    NonNullable<
+      import('../services/contracts.js').ApiServices['financeInvestmentReconciliation']
+    >,
+    'list' | 'get'
+  >;
+  readonly automationRuns?: Pick<
+    NonNullable<
+      import('../services/contracts.js').ApiServices['financeAutomations']
+    >,
+    'listRuns' | 'getRun'
+  >;
+  readonly generatedReports?: NonNullable<
+    import('../services/contracts.js').ApiServices['financeGeneratedReports']
+  >;
+  readonly normalizedBooks?: Pick<
+    import('@emdo/db/api').PostgresFinanceV2Repository,
+    | 'downloadBookEvidence'
+    | 'saveReportMapping'
+    | 'saveSourceReportMapping'
+    | 'listFinancialAccounts'
+    | 'listBooks'
+    | 'overview'
+    | 'commercialOverview'
+    | 'listNormalizedImports'
+    | 'getNormalizedImport'
+    | 'listInvestmentValuations'
+    | 'listInvestmentLots'
+    | 'getInvestmentValuation'
+    | 'checkStockSplitSettlementReady'
+    | 'getInvestmentStockSplitSettlement'
+  >;
   readonly records: FinanceSpecialistRecordPort;
   readonly documents: FinanceSpecialistDocumentPort;
   /**
@@ -1220,7 +1343,7 @@ const asBudget = (
 };
 
 /**
- * Composes Finance's seven non-provider capabilities for one authenticated
+ * Composes Finance's registered non-provider capabilities for one authenticated
  * private-space principal. All durable access is injected as a narrow port;
  * this service never receives document bytes, SQL, paths, provider handles,
  * or credentials.
@@ -2071,7 +2194,2417 @@ export const createRequestScopedFinanceSpecialistServices = (
       }
     };
 
+  const inspectFinanceReport: NonNullable<
+    TrustedFinanceSpecialistServices['inspectFinanceReport']
+  > = async (input, context) => {
+    const scope = checkedScope(fixedPrincipal, context),
+      repository = dependencies.normalizedBooks;
+    if (!repository)
+      throw new Error('api-finance-report-inspection-unavailable');
+    const original = await repository.downloadBookEvidence(
+      {
+        workspaceId: scope.householdId,
+        userId: scope.userId,
+        sessionId: scope.sessionId,
+        requestId: scope.requestId,
+      },
+      input.bookId,
+      input.evidenceId,
+    );
+    if (
+      original.format === 'pdf' &&
+      (input.standardizationRunId != null || input.extractionRevision != null)
+    ) {
+      if (!input.standardizationRunId || input.extractionRevision == null)
+        throw new Error('api-finance-pdf-ocr-extraction-required');
+      if (input.tableId)
+        throw new Error('api-finance-report-table-not-supported');
+      const reader = dependencies.pdfOcrInspection;
+      if (!reader)
+        throw new Error('api-finance-pdf-ocr-inspection-unavailable');
+      const originalPdf = z
+        .object({ sourceBase64: z.string() })
+        .parse(original);
+      const bytes = Buffer.from(originalPdf.sourceBase64, 'base64');
+      if (
+        !bytes.length ||
+        bytes.length > 2097152 ||
+        bytes.toString('base64') !== originalPdf.sourceBase64
+      )
+        throw new Error('api-finance-report-source-integrity-invalid');
+      const sourceDigest = createHash('sha256').update(bytes).digest('hex');
+      const inspected = FinancePdfOcrInspectionSchema.parse(
+        await reader.readPdfOcrInspection(
+          {
+            workspaceId: scope.householdId,
+            userId: scope.userId,
+            sessionId: scope.sessionId,
+            requestId: scope.requestId,
+          },
+          input.bookId,
+          input.evidenceId,
+          {
+            standardizationRunId: input.standardizationRunId,
+            extractionRevision: input.extractionRevision,
+          },
+        ),
+      );
+      if (
+        inspected.evidenceId !== input.evidenceId ||
+        inspected.standardizationRunId !== input.standardizationRunId ||
+        inspected.extractionRevision !== input.extractionRevision ||
+        inspected.sourceDigest !== sourceDigest
+      )
+        throw new Error('api-finance-pdf-ocr-extraction-binding-invalid');
+      if (scope.abortSignal.aborted)
+        throw new Error('api-finance-specialist-request-binding-invalid');
+      const selected = inspected.inventory.pages.find(
+        (page) => page.pageNumber === input.pdfPage,
+      );
+      if (!selected) throw new Error('api-finance-pdf-ocr-page-unavailable');
+      const pdfOcr = {
+        standardizationRunId: inspected.standardizationRunId,
+        extractionRevision: inspected.extractionRevision,
+        extractionDigest: inspected.extractionDigest,
+        sourceDigest,
+        pageCount: inspected.inventory.pageCount,
+        pages: inspected.inventory.pages.map((page) => ({
+          pageNumber: page.pageNumber,
+          kind: page.kind,
+          reason: page.kind === 'unresolved' ? page.reason : null,
+        })),
+        selectedPage: selected.pageNumber,
+        render: selected.kind === 'ocr' ? selected.result.render : null,
+        complete: false as const,
+        requiresVisualReview: true as const,
+      };
+      if (selected.kind !== 'ocr')
+        return {
+          evidenceId: input.evidenceId,
+          filename: String(original.filename),
+          format: 'pdf',
+          pdf: null,
+          image: null,
+          pdfOcr,
+          tableId: null,
+          sheet: null,
+          dateSystem: null,
+          tableCandidates: [],
+          nextCandidateOffset: null,
+          totalCandidates: 0,
+          extractionIssues: [
+            selected.kind === 'unresolved'
+              ? 'Selected original page remains unresolved.'
+              : 'Selected page has embedded text; inspect the original PDF without saved OCR identity for positioned native text.',
+          ],
+          cellProvenance: [],
+          nextProvenanceOffset: null,
+          headers: [],
+          rows: [],
+          nextOffset: null,
+          totalRows: 0,
+          sourceReference: `/api/v2/finance/books/${input.bookId}/evidence/${input.evidenceId}`,
+        };
+      const saved = {
+        ...inspected,
+        extractionDigest: createHash('sha256')
+          .update(JSON.stringify(selected.result.ocr))
+          .digest('hex'),
+        facts: selected.result.ocr,
+        wordInventoryDigest: createHash('sha256')
+          .update(JSON.stringify(selected.result.ocr.words))
+          .digest('hex'),
+      };
+      const facts = saved.facts,
+        textOffset = input.imageTextOffset ?? 0,
+        wordOffset = input.provenanceOffset ?? 0;
+      const text = facts.text.slice(textOffset, textOffset + 4000);
+      const words = facts.words
+        .slice(wordOffset, wordOffset + 20)
+        .map((word) => ({
+          ...word,
+          text: word.text.slice(0, 200),
+          textLength: word.text.length,
+          truncated: word.text.length > 200,
+        }));
+      return {
+        evidenceId: input.evidenceId,
+        filename: String(original.filename),
+        format: 'pdf',
+        pdfOcr,
+        pdf: null,
+        image: {
+          standardizationRunId: saved.standardizationRunId,
+          extractionRevision: saved.extractionRevision,
+          extractionDigest: saved.extractionDigest,
+          sourceDigest: selected.result.render.renderedImageDigest,
+          wordInventoryDigest: saved.wordInventoryDigest,
+          status: facts.status,
+          qualityStatus: facts.qualityStatus,
+          width: facts.width,
+          height: facts.height,
+          coordinateSpace: facts.coordinateSpace,
+          engine: facts.engine,
+          textBasis: facts.textBasis,
+          text,
+          textLength: facts.text.length,
+          textOffset,
+          nextTextOffset:
+            textOffset + text.length < facts.text.length
+              ? textOffset + text.length
+              : null,
+          words,
+          totalWords: facts.words.length,
+          wordOffset,
+          nextWordOffset:
+            wordOffset + words.length < facts.words.length
+              ? wordOffset + words.length
+              : null,
+          complete: false,
+          requiresVisualReview: true,
+        },
+        tableId: null,
+        sheet: null,
+        dateSystem: null,
+        tableCandidates: [],
+        nextCandidateOffset: null,
+        totalCandidates: 0,
+        extractionIssues: [
+          ...facts.issues,
+          'OCR coordinates and word page 1 refer to the derived raster; pdfOcr.selectedPage identifies the original PDF page. Review original regions; no table, mapping or whole-document coverage is approved.',
+        ],
+        cellProvenance: [],
+        nextProvenanceOffset: null,
+        headers: [],
+        rows: [],
+        nextOffset: null,
+        totalRows: 0,
+        sourceReference: `/api/v2/finance/books/${input.bookId}/evidence/${input.evidenceId}`,
+      };
+    }
+    if (['png', 'jpeg', 'webp'].includes(original.format)) {
+      if (input.tableId)
+        throw new Error('api-finance-report-table-not-supported');
+      if (!input.standardizationRunId || input.extractionRevision == null)
+        throw new Error('api-finance-image-extraction-required');
+      const reader = dependencies.imageInspection;
+      if (!reader) throw new Error('api-finance-image-inspection-unavailable');
+      const imageOriginal = z
+        .object({
+          format: z.enum(['png', 'jpeg', 'webp']),
+          sourceBase64: z.string(),
+        })
+        .parse(original);
+      const bytes = Buffer.from(imageOriginal.sourceBase64, 'base64');
+      if (
+        bytes.length === 0 ||
+        bytes.length > 2097152 ||
+        bytes.toString('base64') !== imageOriginal.sourceBase64
+      )
+        throw new Error('api-finance-report-source-integrity-invalid');
+      const sourceDigest = createHash('sha256').update(bytes).digest('hex');
+      const saved = FinanceImageInspectionSchema.parse(
+        await reader.readImageInspection(
+          {
+            workspaceId: scope.householdId,
+            userId: scope.userId,
+            sessionId: scope.sessionId,
+            requestId: scope.requestId,
+          },
+          input.bookId,
+          input.evidenceId,
+          {
+            standardizationRunId: input.standardizationRunId,
+            extractionRevision: input.extractionRevision,
+          },
+        ),
+      );
+      if (
+        saved.evidenceId !== input.evidenceId ||
+        saved.standardizationRunId !== input.standardizationRunId ||
+        saved.extractionRevision !== input.extractionRevision ||
+        saved.sourceDigest !== sourceDigest ||
+        saved.facts.format !== imageOriginal.format ||
+        createHash('sha256')
+          .update(JSON.stringify(saved.facts.words))
+          .digest('hex') !== saved.wordInventoryDigest
+      )
+        throw new Error('api-finance-image-extraction-binding-invalid');
+      if (scope.abortSignal.aborted)
+        throw new Error('api-finance-specialist-request-binding-invalid');
+      const facts = saved.facts,
+        textOffset = input.imageTextOffset ?? 0,
+        wordOffset = input.provenanceOffset ?? 0;
+      const text = facts.text.slice(textOffset, textOffset + 4000);
+      const words = facts.words
+        .slice(wordOffset, wordOffset + 20)
+        .map((word) => ({
+          ...word,
+          text: word.text.slice(0, 200),
+          textLength: word.text.length,
+          truncated: word.text.length > 200,
+        }));
+      return {
+        evidenceId: input.evidenceId,
+        filename: String(original.filename),
+        format: imageOriginal.format,
+        pdf: null,
+        image: {
+          standardizationRunId: saved.standardizationRunId,
+          extractionRevision: saved.extractionRevision,
+          extractionDigest: saved.extractionDigest,
+          sourceDigest,
+          wordInventoryDigest: saved.wordInventoryDigest,
+          status: facts.status,
+          qualityStatus: facts.qualityStatus,
+          width: facts.width,
+          height: facts.height,
+          coordinateSpace: facts.coordinateSpace,
+          engine: facts.engine,
+          textBasis: facts.textBasis,
+          text,
+          textLength: facts.text.length,
+          textOffset,
+          nextTextOffset:
+            textOffset + text.length < facts.text.length
+              ? textOffset + text.length
+              : null,
+          words,
+          totalWords: facts.words.length,
+          wordOffset,
+          nextWordOffset:
+            wordOffset + words.length < facts.words.length
+              ? wordOffset + words.length
+              : null,
+          complete: false,
+          requiresVisualReview: true,
+        },
+        tableId: null,
+        sheet: null,
+        dateSystem: null,
+        tableCandidates: [],
+        nextCandidateOffset: null,
+        totalCandidates: 0,
+        extractionIssues: [
+          ...facts.issues,
+          'OCR text requires review against the original image; no table or mapping is approved.',
+        ],
+        cellProvenance: [],
+        nextProvenanceOffset: null,
+        headers: [],
+        rows: [],
+        nextOffset: null,
+        totalRows: 0,
+        sourceReference: `/api/v2/finance/books/${input.bookId}/evidence/${input.evidenceId}`,
+      };
+    }
+    if (
+      input.standardizationRunId != null ||
+      input.extractionRevision != null ||
+      (input.imageTextOffset ?? 0) !== 0
+    )
+      throw new Error('api-finance-image-extraction-input-invalid');
+    if (original.format === 'ofx' || original.format === 'qfx') {
+      if (input.tableId)
+        throw new Error('api-finance-report-table-not-supported');
+      const source = z
+        .object({ sourceText: z.string().min(1).max(2097152) })
+        .parse(original);
+      const ofx = inspectFinanceOfxSource(
+        source.sourceText,
+        original.format,
+        input.offset,
+        input.provenanceOffset,
+      );
+      if (scope.abortSignal.aborted)
+        throw new Error('api-finance-specialist-request-binding-invalid');
+      return {
+        evidenceId: input.evidenceId,
+        filename: original.filename,
+        format: original.format,
+        ofx,
+        image: null,
+        pdf: null,
+        tableId: null,
+        sheet: null,
+        dateSystem: null,
+        tableCandidates: [],
+        nextCandidateOffset: null,
+        totalCandidates: 0,
+        extractionIssues: ofx.issues,
+        cellProvenance: [],
+        nextProvenanceOffset: null,
+        headers: [],
+        rows: [],
+        nextOffset: null,
+        totalRows: 0,
+        sourceReference: `/api/v2/finance/books/${input.bookId}/evidence/${input.evidenceId}`,
+      };
+    }
+    if (original.format === 'pdf') {
+      if (input.tableId)
+        throw new Error('api-finance-report-table-not-supported');
+      const sourceBytes = Buffer.from(original.sourceBase64, 'base64');
+      if (
+        sourceBytes.toString('base64') !== original.sourceBase64 ||
+        sourceBytes.length > 2097152
+      )
+        throw new Error('api-finance-report-source-integrity-invalid');
+      const sourceDigest = createHash('sha256')
+        .update(sourceBytes)
+        .digest('hex');
+      const extraction = await extractFinancePdfReport(sourceBytes, {
+        signal: scope.abortSignal,
+        limits: { maxBytes: 2097152 },
+      });
+      if (scope.abortSignal.aborted)
+        throw new Error('api-finance-specialist-request-binding-invalid');
+      const parsed = extraction.status === 'unavailable' ? null : extraction;
+      const page = parsed?.pages.find((page) => page.page === input.pdfPage);
+      if (parsed && !page) throw new Error('api-finance-report-page-not-found');
+      const text =
+        page?.text.slice(input.pdfTextOffset, input.pdfTextOffset + 4000) ?? '';
+      const spans =
+        page?.spans
+          .slice(input.provenanceOffset, input.provenanceOffset + 20)
+          .map((span) => ({
+            ...span,
+            text: span.text.slice(0, 200),
+            textLength: span.text.length,
+            truncated: span.text.length > 200,
+          })) ?? [];
+      return {
+        evidenceId: input.evidenceId,
+        filename: String(original.filename),
+        format: 'pdf',
+        pdf: {
+          sourceDigest,
+          status: extraction.status,
+          reason:
+            extraction.status === 'unavailable' ? extraction.reason : null,
+          totalPages: parsed?.totalPages ?? null,
+          pages:
+            parsed?.pages.map(
+              ({ page, width, height, rotation, textStatus, text, spans }) => ({
+                page,
+                width,
+                height,
+                rotation,
+                textStatus,
+                textLength: text.length,
+                spanCount: spans.length,
+              }),
+            ) ?? [],
+          selectedPage: page?.page ?? null,
+          text,
+          textOffset: input.pdfTextOffset,
+          nextTextOffset:
+            page && input.pdfTextOffset + text.length < page.text.length
+              ? input.pdfTextOffset + text.length
+              : null,
+          spans,
+          nextSpanOffset:
+            page && input.provenanceOffset + spans.length < page.spans.length
+              ? input.provenanceOffset + spans.length
+              : null,
+          totalSpans: page?.spans.length ?? null,
+        },
+        tableId: null,
+        sheet: null,
+        dateSystem: null,
+        tableCandidates: [],
+        nextCandidateOffset: null,
+        totalCandidates: 0,
+        extractionIssues: parsed?.issues ?? [
+          extraction.status === 'unavailable'
+            ? `pdf-extraction-${extraction.reason}`
+            : 'pdf-extraction-unavailable',
+        ],
+        cellProvenance: [],
+        nextProvenanceOffset: null,
+        headers: [],
+        rows: [],
+        nextOffset: null,
+        totalRows: 0,
+        sourceReference: `/api/v2/finance/books/${input.bookId}/evidence/${input.evidenceId}`,
+      };
+    }
+    if (original.format !== 'csv' && original.format !== 'xlsx')
+      throw new Error('api-finance-report-format-not-supported');
+    const workbook =
+      original.format === 'xlsx'
+        ? extractFinanceXlsxTables(Buffer.from(original.sourceBase64, 'base64'))
+        : null;
+    const candidates = workbook?.tables ?? [];
+    const selected = workbook
+      ? input.tableId
+        ? candidates.find((candidate) => candidate.tableId === input.tableId)
+        : candidates.length === 1
+          ? candidates[0]
+          : undefined
+      : undefined;
+    if (
+      input.tableId &&
+      (workbook ? !selected : input.tableId !== 'csv-table-1')
+    )
+      throw new Error('api-finance-report-table-not-found');
+    const table =
+      original.format === 'csv'
+        ? extractFinanceCsvTable(original.sourceText)
+        : (selected ?? { headers: [], rows: [] });
+    const candidateOffset = input.candidateOffset ?? 0;
+    const provenanceOffset = input.provenanceOffset ?? 0;
+    const cellProvenance = (selected?.cellProvenance ?? [])
+      .slice(provenanceOffset, provenanceOffset + 20)
+      .map((cell) => {
+        const clip = (value: string | null) => value?.slice(0, 120) ?? null;
+        const attributes = Object.entries(cell.formulaAttributes ?? {});
+        return {
+          ...cell,
+          raw: clip(cell.raw),
+          value: clip(cell.value),
+          numberFormat: clip(cell.numberFormat),
+          formula: clip(cell.formula),
+          formulaAttributes: attributes.slice(0, 8).map(([name, value]) => ({
+            name: name.slice(0, 80),
+            value: value.slice(0, 120),
+          })),
+          truncated:
+            [cell.raw, cell.value, cell.numberFormat, cell.formula].some(
+              (value) => (value?.length ?? 0) > 120,
+            ) ||
+            attributes.length > 8 ||
+            attributes.some(
+              ([name, value]) => name.length > 80 || value.length > 120,
+            ),
+        };
+      });
+    const cellLimit = Math.max(
+      16,
+      Math.min(120, Math.floor(8000 / (table.headers.length * 5))),
+    );
+    const rows = table.rows
+      .slice(input.offset, input.offset + 5)
+      .map((row) => ({
+        sourceRow: row.sourceRow,
+        cells: row.cells.map((cell) => cell.slice(0, cellLimit)),
+        truncated: row.cells.some((cell) => cell.length > cellLimit),
+      }));
+    if (scope.abortSignal.aborted)
+      throw new Error('api-finance-specialist-request-binding-invalid');
+    return {
+      evidenceId: input.evidenceId,
+      filename: String(original.filename),
+      format: original.format,
+      pdf: null,
+      tableId:
+        original.format === 'csv' ? 'csv-table-1' : (selected?.tableId ?? null),
+      sheet: original.format === 'csv' ? 'CSV' : (selected?.sheet ?? null),
+      dateSystem: workbook?.dateSystem ?? null,
+      tableCandidates: candidates
+        .slice(candidateOffset, candidateOffset + 20)
+        .map((candidate) => ({
+          tableId: candidate.tableId,
+          sheet: candidate.sheet,
+          range: candidate.range,
+          headerRow: candidate.headerRow,
+          totalRows: candidate.rows.length,
+          issues: candidate.issues,
+        })),
+      nextCandidateOffset:
+        candidateOffset + 20 < candidates.length ? candidateOffset + 20 : null,
+      totalCandidates: workbook ? candidates.length : 1,
+      extractionIssues: [
+        ...(workbook?.issues ?? []),
+        ...(selected?.issues ?? []),
+        ...(table.headers.some((header) => header.length > 200)
+          ? ['header-preview-truncated']
+          : []),
+        ...(workbook && !selected ? ['explicit-table-selection-required'] : []),
+      ],
+      cellProvenance,
+      nextProvenanceOffset:
+        provenanceOffset + cellProvenance.length <
+        (selected?.cellProvenance.length ?? 0)
+          ? provenanceOffset + cellProvenance.length
+          : null,
+      headers: table.headers.map((header) => header.slice(0, 200)),
+      rows,
+      nextOffset:
+        input.offset + rows.length < table.rows.length
+          ? input.offset + rows.length
+          : null,
+      totalRows: table.rows.length,
+      sourceReference: `/api/v2/finance/books/${input.bookId}/evidence/${input.evidenceId}`,
+    };
+  };
+  const proposeFinanceReportMapping: NonNullable<
+    TrustedFinanceSpecialistServices['proposeFinanceReportMapping']
+  > = async (input, context) => {
+    const scope = checkedScope(fixedPrincipal, context),
+      repository = dependencies.normalizedBooks;
+    if (!repository) throw new Error('api-finance-report-proposal-unavailable');
+    const workspace = {
+      workspaceId: scope.householdId,
+      userId: scope.userId,
+      sessionId: scope.sessionId,
+      requestId: scope.requestId,
+    };
+    const original = await repository.downloadBookEvidence(
+      workspace,
+      input.bookId,
+      input.evidenceId,
+    );
+    if (original.format === 'pdf') {
+      if (!input.proposal.definition.pdfSelection || input.tableId)
+        throw new Error('api-finance-pdf-source-selection-required');
+      const proposal = {
+        ...input.proposal,
+        unresolvedQuestions: [
+          ...new Set([
+            `PDF page ${input.proposal.definition.pdfSelection.page} whole-span selection, field meanings and omitted content require explicit source review. Selection confirmation fields do not grant approval.`,
+            ...input.proposal.unresolvedQuestions,
+          ]),
+        ],
+      };
+      if (proposal.unresolvedQuestions.length > 30)
+        throw new Error('api-finance-report-unresolved-question-limit');
+      if (scope.abortSignal.aborted)
+        throw new Error('api-finance-specialist-request-binding-invalid');
+      // A model can propose selection facts, never supply authoritative extracted
+      // table cells or approve their use. The repository reloads and re-extracts.
+      const result = await repository.saveReportMapping(
+        workspace,
+        input.bookId,
+        'mapping:' +
+          hashCanonicalJson({
+            idempotencyScope: scope.invocationIdempotencyScope,
+            evidenceId: input.evidenceId,
+            proposal,
+          }),
+        { evidenceId: input.evidenceId, proposal },
+        'gpt-6-astra',
+        {
+          runId: scope.runId,
+          agentInvocationId: scope.agentInvocationId,
+          phaseInvocationId: scope.phaseInvocationId,
+        },
+      );
+      return {
+        id: result.id,
+        version: result.version,
+        revision: result.revision,
+        status: result.status,
+        validationStatus: result.validationStatus,
+        unresolvedQuestions: proposal.unresolvedQuestions,
+        sourceReference: `/api/v2/finance/books/${input.bookId}/report-mappings/${String(result.id)}`,
+      };
+    }
+    if (original.format !== 'csv' && original.format !== 'xlsx')
+      throw new Error('api-finance-report-format-not-supported');
+    const workbook =
+      original.format === 'xlsx'
+        ? extractFinanceXlsxTables(Buffer.from(original.sourceBase64, 'base64'))
+        : null;
+    if (workbook && !input.tableId && workbook.tables.length !== 1)
+      throw new Error('api-finance-report-table-selection-required');
+    const selected = workbook?.tables.find((table) =>
+      input.tableId ? table.tableId === input.tableId : true,
+    );
+    if (
+      (workbook && !selected) ||
+      (!workbook && input.tableId && input.tableId !== 'csv-table-1')
+    )
+      throw new Error('api-finance-report-table-not-found');
+    const table =
+      original.format === 'csv'
+        ? extractFinanceCsvTable(original.sourceText)
+        : selected!;
+    if (selected?.issues.includes('ambiguous-headings') || !table.rows.length)
+      throw new Error('api-finance-report-table-headings-or-rows-unavailable');
+    const extractionQuestions = selected
+      ? [
+          `XLSX source region ${selected.sheet}!${selected.range} and header row ${selected.headerRow} are tentative and require source review.`,
+          `XLSX dates remain original serial or text values (workbook date system ${workbook!.dateSystem}); currency, units and number formats require explicit source interpretation.`,
+          ...(selected.cellProvenance.some((cell) => cell.formula !== null)
+            ? [
+                'XLSX formula caches are unverified source snapshots; missing caches are unavailable and no formulas were calculated.',
+              ]
+            : []),
+        ]
+      : [];
+    const proposal = {
+      ...input.proposal,
+      unresolvedQuestions: [
+        ...new Set([
+          ...extractionQuestions,
+          ...input.proposal.unresolvedQuestions,
+        ]),
+      ],
+    };
+    if (proposal.unresolvedQuestions.length > 30)
+      throw new Error('api-finance-report-unresolved-question-limit');
+    // No model-controlled example cells or default currency/date enter this payload.
+    const example = {
+      documentId: input.evidenceId,
+      extractionRevision: 1,
+      tableId: selected?.tableId ?? 'csv-table-1',
+      page: null,
+      sheet: selected?.sheet ?? 'CSV',
+      providerKey: input.proposal.definition.providerKey,
+      reportType: input.proposal.definition.reportType,
+      headers: table.headers,
+      context: { asOf: null, currency: null },
+      rows: table.rows,
+    };
+    if (scope.abortSignal.aborted)
+      throw new Error('api-finance-specialist-request-binding-invalid');
+    const lineage = {
+      runId: scope.runId,
+      agentInvocationId: scope.agentInvocationId,
+      phaseInvocationId: scope.phaseInvocationId,
+    };
+    const key =
+      'mapping:' +
+      hashCanonicalJson({
+        idempotencyScope: scope.invocationIdempotencyScope,
+        evidenceId: input.evidenceId,
+        tableId: example.tableId,
+        proposal,
+      });
+    const result =
+      original.format === 'csv'
+        ? await repository.saveSourceReportMapping(
+            workspace,
+            input.bookId,
+            key,
+            {
+              evidenceId: input.evidenceId,
+              expectedSourceDigest: createHash('sha256')
+                .update(original.sourceText)
+                .digest('hex'),
+              proposal,
+            },
+            'gpt-6-astra',
+            lineage,
+          )
+        : await repository.saveReportMapping(
+            workspace,
+            input.bookId,
+            key,
+            { proposal, example },
+            'gpt-6-astra',
+            lineage,
+          );
+    return {
+      id: result.id,
+      version: result.version,
+      revision: result.revision,
+      status: result.status,
+      validationStatus: result.validationStatus,
+      unresolvedQuestions: proposal.unresolvedQuestions,
+      sourceReference: `/api/v2/finance/books/${input.bookId}/report-mappings/${String(result.id)}`,
+    };
+  };
+
+  const readFinanceTax: NonNullable<
+    TrustedFinanceSpecialistServices['readFinanceTax']
+  > = async (raw, context) => {
+    const scope = checkedScope(fixedPrincipal, context),
+      input = FinanceTaxReadInputSchema.parse(raw),
+      repository = dependencies.taxCases;
+    if (!repository) throw new Error('api-finance-tax-unavailable');
+    const workspace = {
+      workspaceId: scope.householdId,
+      userId: scope.userId,
+      sessionId: scope.sessionId,
+      requestId: scope.requestId,
+    };
+    type Row = {
+      id: string;
+      kind: z.infer<
+        typeof FinanceTaxReadOutputSchema
+      >['records'][number]['kind'];
+      fields: { name: string; value: string | null }[];
+    };
+    // Private identities and wage-document payloads stay in human intake/export. Apply at
+    // serialization so nested reviewed/withdrawn answers cannot bypass this.
+    const modelSafeTaxValue = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(modelSafeTaxValue);
+      if (value === null || typeof value !== 'object') return value;
+      const record = value as Record<string, unknown>;
+      const key = record.factKey ?? record.key;
+      const privateFact =
+        typeof key === 'string' &&
+        (key.startsWith('identity.') ||
+          key.startsWith('businessIdentity.') ||
+          key.startsWith('wageEvidence.') ||
+          [
+            'business.separateName',
+            'business.ein',
+            'business.street',
+            'business.cityStateZip',
+            'refund.routing',
+            'refund.account',
+          ].includes(key));
+      return Object.fromEntries(
+        Object.entries(record).map(([name, item]) => [
+          name,
+          privateFact && name === 'value'
+            ? { redacted: true }
+            : modelSafeTaxValue(item),
+        ]),
+      );
+    };
+    const row = (id: string, kind: Row['kind'], data: object): Row => ({
+      id,
+      kind,
+      fields: Object.entries(modelSafeTaxValue(data) as object).map(
+        ([name, value]) => ({
+          name,
+          value:
+            value == null
+              ? null
+              : typeof value === 'string'
+                ? value
+                : JSON.stringify(value),
+        }),
+      ),
+    });
+    let records: Row[],
+      nextOffset: number | null = null,
+      status: 'incomplete' | 'ready-for-calculation' = 'incomplete',
+      truncated = false,
+      snapshotRevision: number | null = null,
+      snapshotHash: string | null = null;
+    if (input.view === 'runs' || input.view === 'run') {
+      const runs = dependencies.taxCalculationRuns;
+      if (!runs) throw new Error('api-finance-tax-runs-unavailable');
+      if (input.view === 'runs') {
+        const values = z
+          .array(FinanceTaxCalculationRunSummarySchema)
+          .max(input.limit)
+          .parse(
+            await runs.listCalculationRuns(
+              workspace,
+              input.caseId!,
+              input.offset,
+              input.limit,
+            ),
+          );
+        if (
+          values.some((v) => v.caseId !== input.caseId) ||
+          new Set(values.map((v) => v.runId)).size !== values.length ||
+          new Set(values.map((v) => v.taxSubjectId)).size > 1
+        )
+          throw new Error('api-finance-tax-run-binding-invalid');
+        records = values.map((v) => row(v.runId, 'run-summary', v));
+        nextOffset =
+          values.length === input.limit ? input.offset + input.limit : null;
+      } else {
+        const detail = FinanceTaxCalculationRunDetailSchema.parse(
+          await runs.getCalculationRun(workspace, input.caseId!, input.runId!),
+        );
+        const {
+          summary,
+          inputBinding,
+          output,
+          schedules,
+          reviews,
+          authorities,
+        } = detail;
+        if (
+          summary.caseId !== input.caseId ||
+          summary.runId !== input.runId ||
+          summary.snapshotRevision !== inputBinding.snapshotRevision ||
+          summary.snapshotHash !== inputBinding.snapshotHash ||
+          (summary.status === 'blocked-input') !==
+            (output.status === 'blocked') ||
+          new Set(schedules.map((s) => s.formId)).size !== schedules.length ||
+          reviews.some((r) => r.outputHash !== summary.outputHash) ||
+          schedules.some(
+            (s) =>
+              hashCanonicalJson(s.content) !== s.contentHash ||
+              s.content.some((c) => c.field.form !== s.formId),
+          )
+        )
+          throw new Error('api-finance-tax-run-binding-invalid');
+        const fields = schedules.flatMap((s) =>
+          s.content.map((c) => ({ ...c, contentHash: s.contentHash })),
+        );
+        if (
+          new Set(fields.map((c) => c.ordinal)).size !== fields.length ||
+          new Set(fields.map((c) => c.field.id)).size !== fields.length
+        )
+          throw new Error('api-finance-tax-run-fields-invalid');
+        snapshotRevision = summary.snapshotRevision;
+        snapshotHash = summary.snapshotHash;
+        const { issues, releaseBlockers, ...header } = output;
+        records = [
+          row(summary.runId, 'run-summary', summary),
+          row(`${summary.runId}:output`, 'run-output', header),
+          ...issues.map((v, i) =>
+            row(`${summary.runId}:issue:${i}`, 'run-issue', v),
+          ),
+          ...releaseBlockers.map((message, i) =>
+            row(`${summary.runId}:blocker:${i}`, 'run-blocker', { message }),
+          ),
+          ...fields
+            .sort((a, b) => a.ordinal - b.ordinal)
+            .map((v) =>
+              row(`${summary.runId}:field:${v.ordinal}`, 'run-field', {
+                ...v.field,
+                contentHash: v.contentHash,
+              }),
+            ),
+          ...reviews.map((v) =>
+            row(`${summary.runId}:review:${v.reviewId}`, 'run-review', v),
+          ),
+          ...authorities.map((v, i) =>
+            row(`${summary.runId}:authority:${i}`, 'run-authority', v),
+          ),
+          ...inputBinding.declarations.map((v, i) =>
+            row(`${summary.runId}:declaration:${i}`, 'run-input-binding', {
+              kind: 'declaration',
+              ...v,
+            }),
+          ),
+          ...inputBinding.inputReviews.map((v, i) =>
+            row(`${summary.runId}:input-review:${i}`, 'run-input-binding', {
+              kind: 'input-review',
+              ...v,
+            }),
+          ),
+          ...inputBinding.sourceBooks.map((v, i) =>
+            row(`${summary.runId}:book:${i}`, 'run-input-binding', {
+              kind: 'book-snapshot',
+              ...v,
+            }),
+          ),
+        ];
+        nextOffset =
+          input.offset + input.limit < records.length
+            ? input.offset + input.limit
+            : null;
+        records = records.slice(input.offset, input.offset + input.limit);
+        if (
+          records.some((r) =>
+            r.fields.some((f) => f.value !== null && f.value.length > 24000),
+          )
+        )
+          throw new Error('api-finance-tax-run-record-too-large');
+      }
+    } else if (input.view === 'list') {
+      // The repository filters private tax-case grants under RLS. Book access is
+      // never consulted or substituted for tax-case permission.
+      const cases = z
+        .array(
+          z.strictObject({
+            caseId: UuidSchema,
+            taxSubjectId: UuidSchema,
+            title: z.string(),
+            revision: z.number().int().positive(),
+            status: z.literal('incomplete'),
+            taxSubjectName: z.string(),
+            caseRole: z.enum(['owner', 'preparer', 'reviewer', 'viewer']),
+          }),
+        )
+        .max(input.limit)
+        .parse(
+          await repository.listCases(workspace, input.offset, input.limit),
+        );
+      records = cases.map((value) => row(value.caseId, 'case-summary', value));
+      // The current repository returns no total. A full page requires another
+      // read; never infer completeness from an unreturned estimated count.
+      nextOffset =
+        cases.length === input.limit ? input.offset + input.limit : null;
+    } else if (input.view === 'read') {
+      const saved =
+        input.revision === undefined
+          ? await repository.getCase(workspace, input.caseId!)
+          : await repository.getCase(workspace, input.caseId!, input.revision);
+      if (saved.caseId !== input.caseId)
+        throw new Error('api-finance-tax-case-binding-invalid');
+      const questionnaire = FinanceTaxQuestionnaireSchema.parse(
+        saved.questionnaire,
+      );
+      if (
+        questionnaire.intake.caseId !== input.caseId ||
+        questionnaire.intake.workspaceId !== scope.householdId ||
+        questionnaire.intake.taxSubjectId !== saved.taxSubjectId
+      )
+        throw new Error('api-finance-tax-case-binding-invalid');
+      snapshotHash = Sha256Schema.parse(saved.snapshotHash);
+      snapshotRevision = questionnaire.intake.revision;
+      if (input.revision !== undefined && snapshotRevision !== input.revision)
+        throw new Error('api-finance-tax-snapshot-binding-invalid');
+      const declaredInputs = z
+        .array(FinanceTaxDeclaredInputSchema)
+        .max(100000)
+        .parse(saved.declaredInputs);
+      const declarationBindingStatus =
+        FinanceTaxDeclarationBindingStatusSchema.parse(
+          saved.declarationBindingStatus,
+        );
+      const bindings = questionnaire.declarationSourceBindings;
+      if (
+        declarationBindingStatus !==
+          (bindings === undefined ? 'legacy-unbound' : 'bound') ||
+        declaredInputs.length !== (bindings?.length ?? 0) ||
+        new Set(declaredInputs.map((value) => value.sourceId)).size !==
+          declaredInputs.length ||
+        declaredInputs.some(
+          (value) =>
+            !bindings?.some(
+              (binding) =>
+                binding.sourceId === value.sourceId &&
+                binding.sourceRevision === value.sourceRevision &&
+                binding.contentHash === value.contentHash,
+            ),
+        )
+      ) {
+        throw new Error('api-finance-tax-declaration-binding-invalid');
+      }
+      records = [
+        row(saved.caseId, 'case', {
+          caseId: saved.caseId,
+          taxSubjectId: saved.taxSubjectId,
+          currentRevision: saved.currentRevision,
+          caseRole: saved.caseRole,
+          declarationBindingStatus,
+          snapshotHash: saved.snapshotHash,
+          status: 'incomplete',
+          binding: questionnaire.binding,
+          intake: { ...questionnaire.intake, facts: undefined },
+          sourceAuthorizationBindings:
+            questionnaire.sourceAuthorizationBindings,
+        }),
+        ...declaredInputs.map((value) =>
+          row(
+            `declaration:${value.sourceId}:${value.sourceRevision}`,
+            'declared-input',
+            { ...value, sourceReference: `declaration:${value.sourceId}` },
+          ),
+        ),
+        ...questionnaire.intake.facts.map((value, i) =>
+          row(`${saved.caseId}:intake-fact:${i}`, 'intake-fact', value),
+        ),
+        ...questionnaire.questions.map((value, i) =>
+          row(`${saved.caseId}:question:${i}`, 'question', value),
+        ),
+        ...questionnaire.answers.map((value, i) =>
+          row(`${saved.caseId}:answer:${i}`, 'answer', value),
+        ),
+        ...questionnaire.withdrawnAnswers.map((value, i) =>
+          row(`${saved.caseId}:withdrawn:${i}`, 'withdrawn-answer', value),
+        ),
+        ...questionnaire.relatedParties.map((value, i) =>
+          row(`${saved.caseId}:party:${i}`, 'related-party', value),
+        ),
+      ];
+      nextOffset =
+        input.offset + input.limit < records.length
+          ? input.offset + input.limit
+          : null;
+      records = records.slice(input.offset, input.offset + input.limit);
+    } else {
+      // assessCase reacquires explicit case/source permission and invokes the
+      // deterministic questionnaire registry; no model-supplied rules or facts.
+      const assessment = await repository.assessCase(workspace, input.caseId!);
+      if (
+        assessment.complete !== false ||
+        !['incomplete', 'ready-for-calculation'].includes(assessment.status)
+      )
+        throw new Error('api-finance-tax-assessment-invalid');
+      if (assessment.caseId !== input.caseId)
+        throw new Error('api-finance-tax-case-binding-invalid');
+      UuidSchema.parse(assessment.taxSubjectId);
+      snapshotRevision = z
+        .number()
+        .int()
+        .positive()
+        .parse(assessment.snapshotRevision);
+      snapshotHash = Sha256Schema.parse(assessment.snapshotHash);
+      status = assessment.status;
+      records = [
+        ...assessment.issues.map((value, i) =>
+          row(`${input.caseId}:issue:${i}`, 'assessment-issue', value),
+        ),
+        ...assessment.questions.map((value, i) =>
+          row(`${input.caseId}:question:${i}`, 'question', value),
+        ),
+      ];
+      nextOffset =
+        input.offset + input.limit < records.length
+          ? input.offset + input.limit
+          : null;
+      records = records.slice(input.offset, input.offset + input.limit);
+    }
+    if (nextOffset !== null && nextOffset > 100000) {
+      nextOffset = null;
+      truncated = true;
+    }
+    scope.abortSignal.throwIfAborted();
+    return deepFreeze(
+      FinanceTaxReadOutputSchema.omit({ schemaVersion: true }).parse({
+        view: input.view,
+        caseId: input.caseId,
+        status,
+        complete: false,
+        records,
+        nextOffset,
+        sourceReferences:
+          input.view === 'runs'
+            ? records.map(
+                (v) => `/api/v2/finance/tax/cases/${input.caseId}/runs/${v.id}`,
+              )
+            : input.view === 'run'
+              ? [
+                  `/api/v2/finance/tax/cases/${input.caseId}/runs/${input.runId}`,
+                ]
+              : input.caseId
+                ? [`/api/v2/finance/tax/cases/${input.caseId}`]
+                : records.map(
+                    (value) => `/api/v2/finance/tax/cases/${value.id}`,
+                  ),
+        truncated,
+        snapshotRevision,
+        snapshotHash,
+        coverage:
+          input.view === 'runs' || input.view === 'run'
+            ? 'private-tax-working-papers'
+            : 'private-tax-case-snapshot',
+      }),
+    );
+  };
+  const readFinanceBooks: NonNullable<
+    TrustedFinanceSpecialistServices['readFinanceBooks']
+  > = async (input, context) => {
+    const scope = checkedScope(fixedPrincipal, context),
+      repository = dependencies.normalizedBooks;
+    if (!repository) throw new Error('api-finance-books-unavailable');
+    // Identity always comes from the request-bound principal, never model arguments.
+    const workspace = {
+      workspaceId: scope.householdId,
+      userId: scope.userId,
+      sessionId: scope.sessionId,
+      requestId: scope.requestId,
+    };
+    if (input.view !== 'books' && !input.bookId)
+      throw new Error('api-finance-book-required');
+    if (
+      [
+        'investment-reconciliation',
+        'investment-reconciliation-history',
+      ].includes(input.view) !==
+      (input.reconciliationCaseId != null)
+    )
+      throw new Error('api-finance-reconciliation-input-invalid');
+    if (
+      [
+        'journal-draft',
+        'journal-draft-lines',
+        'journal-draft-history',
+      ].includes(input.view) !==
+      (input.journalDraftId != null)
+    )
+      throw new Error('api-finance-journal-draft-input-invalid');
+    if ((input.view === 'automation-run') !== (input.automationRunId != null))
+      throw new Error('api-finance-automation-run-input-invalid');
+    if ((input.view === 'planning-result') !== (input.planningResultId != null))
+      throw new Error('api-finance-planning-result-input-invalid');
+    if (
+      (input.view === 'standardization-run' ||
+        input.view === 'standardization-reconciliation') !==
+      (input.standardizationRunId != null)
+    )
+      throw new Error('api-finance-standardization-run-input-invalid');
+    if (
+      (input.view === 'budget' || input.view === 'budget-vs-actuals') !==
+        (input.budgetId != null) ||
+      (input.view === 'forecast') !== (input.forecastId != null) ||
+      (input.planningRevision != null &&
+        !['budget', 'budget-vs-actuals', 'forecast'].includes(input.view))
+    )
+      throw new Error('api-finance-planning-input-invalid');
+    if ((input.view === 'cash-dividend') !== (input.dividendId != null))
+      throw new Error('api-finance-dividend-input-invalid');
+    if (
+      (input.view === 'corporate-action-settlement') !==
+      (input.settlementId != null)
+    )
+      throw new Error('api-finance-settlement-input-invalid');
+    if ((input.view === 'generated-report') !== (input.reportId != null))
+      throw new Error('api-finance-report-input-invalid');
+    if (input.view === 'import-review' && !input.importId)
+      throw new Error('api-finance-import-required');
+    if ((input.view === 'valuation') !== (input.valuationId !== null))
+      throw new Error('api-finance-valuation-input-invalid');
+    if (input.view === 'books' && (input.bookId || input.importId))
+      throw new Error('api-finance-books-input-invalid');
+    if (input.view !== 'import-review' && input.importId)
+      throw new Error('api-finance-books-input-invalid');
+    let records: readonly Record<string, unknown>[],
+      currency: string | null = null;
+    let repositoryPage: { nextOffset: number | null } | undefined;
+    if (input.view === 'corporate-action-settlement') {
+      if (
+        typeof repository.checkStockSplitSettlementReady !== 'function' ||
+        typeof repository.getInvestmentStockSplitSettlement !== 'function' ||
+        !(await repository.checkStockSplitSettlementReady().catch(() => false))
+      )
+        throw new Error('api-finance-settlement-unavailable');
+      const raw = await repository.getInvestmentStockSplitSettlement(
+        workspace,
+        input.bookId!,
+        input.settlementId!,
+      );
+      if (raw === null) throw new Error('api-finance-settlement-not-found');
+      const saved = SavedFinanceStockSplitSettlementSchema.parse(raw);
+      const { settlement, result } = saved;
+      if (
+        result.workspaceId !== workspace.workspaceId ||
+        result.bookId !== input.bookId ||
+        result.settlementId !== input.settlementId ||
+        result.actionId !== settlement.actionId
+      )
+        throw new Error('api-finance-settlement-scope-invalid');
+      currency = settlement.functionalCurrency;
+      records = [
+        {
+          id: result.settlementId,
+          recordType: 'committed-corporate-action-settlement',
+          actionId: result.actionId,
+          financialAccountId: settlement.financialAccountId,
+          instrumentId: settlement.instrumentId,
+          effectiveOn: settlement.effectiveOn,
+          settledOn: settlement.settledOn,
+          createdAt: saved.createdAt,
+          status: result.status,
+          accountEntitlement: settlement.accountEntitlement,
+          deliveredQuantity: settlement.deliveredQuantity,
+          cashDisposedQuantity: settlement.cashDisposedQuantity,
+          nativeCurrency: settlement.nativeCurrency,
+          functionalCurrency: settlement.functionalCurrency,
+          retainedNativeCost: settlement.retainedNativeCost,
+          retainedFunctionalCost: settlement.retainedFunctionalCost,
+          disposedNativeCost: settlement.disposedNativeCost,
+          disposedFunctionalCost: settlement.disposedFunctionalCost,
+          nativeCashConsideration: settlement.cashConsideration.native.amount,
+          functionalCashConsideration:
+            settlement.cashConsideration.functional.amount,
+          nativeBookGainLoss: settlement.nativeBookGainLoss,
+          actionDateFunctionalConsideration:
+            saved.accounting.actionDateFunctionalConsideration,
+          settlementDateFunctionalConsideration:
+            saved.accounting.settlementDateFunctionalConsideration,
+          functionalBookGainLoss: saved.accounting.bookGainLoss,
+          functionalFxGainLoss: saved.accounting.fxGainLoss,
+          journalIds: result.journalIds,
+          economicTransactionId: result.economicTransactionId,
+          considerationEvidenceId: settlement.cashConsideration.evidenceId,
+          allocationEvidenceId: settlement.allocationReview.evidenceId,
+          allocationCount: settlement.allocations.length,
+          taxTreatment: settlement.taxTreatment,
+          coverage: 'saved-settlement-and-reviewed-book-allocations',
+        },
+        ...settlement.allocations.map((allocation) => ({
+          id: `${result.settlementId}:lot:${allocation.sourceLotId}`,
+          recordType: 'corporate-action-settlement-lot-allocation',
+          ...allocation,
+        })),
+      ];
+    } else if (input.view === 'fec-mapping') {
+      const fec = dependencies.fec;
+      if (!fec || !(await fec.checkReady().catch(() => false)))
+        throw new Error('api-finance-fec-unavailable');
+      // The scoped repository authorizes book access even when no revision exists.
+      const raw = await fec.getLatest(workspace, input.bookId!);
+      const mapping =
+        raw === null ? null : FinanceFecMappingResponseSchema.parse(raw);
+      if (
+        mapping &&
+        (mapping.workspaceId !== workspace.workspaceId ||
+          mapping.bookId !== input.bookId ||
+          mapping.revision !== mapping.mapping.expectedRevision)
+      )
+        throw new Error('api-finance-fec-scope-invalid');
+      records = [
+        {
+          id: `fec-mapping:${mapping?.revision ?? 'missing'}`,
+          recordType: 'reviewed-fec-mapping-summary',
+          serviceReady: true,
+          mappingStatus: mapping ? 'reviewed' : 'missing',
+          mappingRevision: mapping?.revision ?? null,
+          reviewedAt: mapping?.reviewedAt ?? null,
+          journalMappingCount: mapping?.mapping.journals.length ?? 0,
+          accountMappingCount: mapping?.mapping.accounts.length ?? 0,
+          openingBalancesStatus:
+            mapping?.mapping.openingBalances.status ?? null,
+          sirenSourceDigest: mapping?.mapping.sirenSource.sourceDigest ?? null,
+          openingBalancesSourceDigest:
+            mapping?.mapping.openingBalances.source.sourceDigest ?? null,
+          exportReadiness: 'not-checked',
+          coverage: 'latest-reviewed-mapping-summary-only',
+          workflow:
+            'User must explicitly request an export through the FEC API; a reviewed mapping does not prove export readiness or legal completeness.',
+          mappingApi: `/api/v2/finance/books/${input.bookId}/fec/mappings/latest`,
+          exportApi: `/api/v2/finance/books/${input.bookId}/fec/exports`,
+        },
+      ];
+    } else if (planningReadViews.has(input.view)) {
+      if (!dependencies.planning)
+        throw new Error('api-finance-planning-unavailable');
+      const result = await readFinancePlanning(
+        dependencies.planning,
+        workspace,
+        { ...input, bookId: input.bookId! },
+      );
+      records = result.records;
+      currency = result.currency;
+      repositoryPage = result.repositoryPage;
+    } else if (
+      input.view === 'cash-dividends' ||
+      input.view === 'cash-dividend'
+    ) {
+      const reader = dependencies.cashDividends;
+      if (!reader) throw new Error('api-finance-dividends-unavailable');
+      const result =
+        input.view === 'cash-dividends'
+          ? FinanceCashDividendListSchema.parse(
+              await reader.listInvestmentCashDividends(
+                workspace,
+                input.bookId!,
+                { offset: input.offset, limit: input.limit },
+              ),
+            )
+          : {
+              actions: [
+                FinanceCashDividendSavedActionSchema.parse(
+                  await reader.getInvestmentCashDividend(
+                    workspace,
+                    input.bookId!,
+                    input.dividendId!,
+                  ),
+                ),
+              ],
+              nextOffset: null,
+            };
+      for (const action of result.actions) {
+        const source = action.source;
+        if (
+          action.workspaceId !== workspace.workspaceId ||
+          action.bookId !== input.bookId ||
+          (input.view === 'cash-dividend' && action.id !== input.dividendId) ||
+          source.sourceRowId !== action.sourceRowId ||
+          source.evidenceId !== action.evidenceId ||
+          source.financialAccountId !== action.financialAccountId ||
+          source.financialAccountLedgerId !== action.cashLedgerAccountId ||
+          source.instrumentId !== action.instrumentId ||
+          source.sourceRevision !== action.sourceRevision ||
+          source.sourceSnapshotHash !== action.sourceSnapshotHash ||
+          action.nextSourceRevision !== action.sourceRevision + 1 ||
+          source.currentRevision < action.nextSourceRevision
+        )
+          throw new Error('api-finance-dividend-binding-invalid');
+        const amounts = [action.gross, action.withholding, action.net];
+        if (
+          new Set(amounts.map((a) => a.id)).size !== 3 ||
+          amounts.some(
+            (a) =>
+              a.journalId !== action.journalId ||
+              a.currency !== source.currency ||
+              a.provenance.sourceRow !== source.sourceRow ||
+              a.provenance.field !== a.kind,
+          ) ||
+          action.gross.kind !== 'gross' ||
+          action.withholding.kind !== 'withholding' ||
+          action.net.kind !== 'net' ||
+          action.gross.ledgerAccountId !==
+            action.dividendIncomeLedgerAccountId ||
+          action.gross.postingSide !== 'credit' ||
+          action.withholding.ledgerAccountId !==
+            action.withholdingLedgerAccountId ||
+          action.withholding.postingSide !== 'debit' ||
+          action.net.ledgerAccountId !== action.cashLedgerAccountId ||
+          action.net.postingSide !== 'debit'
+        )
+          throw new Error('api-finance-dividend-amount-binding-invalid');
+      }
+      records = result.actions.map((action) => ({
+        ...Object.fromEntries(
+          Object.entries(action).filter(
+            ([key]) =>
+              !['createdBy', 'idempotencyKey', 'commandHash'].includes(key),
+          ),
+        ),
+        recordType: 'saved-cash-dividend',
+        functionalCurrency: action.source.functionalCurrency,
+      }));
+      if (input.view === 'cash-dividends') repositoryPage = result;
+      const currencies = new Set(
+        result.actions.map((a) => a.source.functionalCurrency),
+      );
+      currency = currencies.size === 1 ? [...currencies][0]! : null;
+    } else if (input.view === 'standardization-reconciliation') {
+      const reader = dependencies.standardizationRuns;
+      if (!reader?.reconciliation)
+        throw new Error(
+          'api-finance-standardization-reconciliation-unavailable',
+        );
+      const saved = FinanceStandardizationReconciliationSchema.parse(
+        await reader.reconciliation(
+          workspace,
+          input.bookId!,
+          input.standardizationRunId!,
+        ),
+      );
+      const reservations = new Map(
+        saved.spend.map((spend) => [spend.id, spend]),
+      );
+      const receipts = new Map(
+        saved.receipts.map((receipt) => [receipt.id, receipt]),
+      );
+      if (
+        saved.workspaceId !== workspace.workspaceId ||
+        saved.bookId !== input.bookId ||
+        saved.runId !== input.standardizationRunId ||
+        reservations.size !== saved.spend.length ||
+        receipts.size !== saved.receipts.length ||
+        new Set(saved.resolutions.map((r) => r.id)).size !==
+          saved.resolutions.length ||
+        saved.receipts.some(
+          (receipt) =>
+            !reservations.has(receipt.reservationId) ||
+            receipt.providerResponseId !==
+              reservations.get(receipt.reservationId)?.providerResponseId,
+        ) ||
+        saved.resolutions.some(
+          (resolution) =>
+            (resolution.reservationId !== null &&
+              !reservations.has(resolution.reservationId)) ||
+            (resolution.receiptId !== null &&
+              receipts.get(resolution.receiptId)?.reservationId !==
+                resolution.reservationId),
+        )
+      )
+        throw new Error(
+          'api-finance-standardization-reconciliation-binding-invalid',
+        );
+      const decimalCost = (minor: number | null) =>
+        minor === null
+          ? null
+          : `${BigInt(minor) / 100n}.${(BigInt(minor) % 100n).toString().padStart(2, '0')}`;
+      currency = 'CAD';
+      records = [
+        {
+          id: saved.runId,
+          recordType: 'standardization-reconciliation',
+          runId: saved.runId,
+          revision: saved.revision,
+          sourceDigest: saved.sourceDigest,
+          status: saved.status,
+        },
+        ...saved.spend.map((spend) => ({
+          id: spend.id,
+          recordType: 'standardization-spend',
+          runId: saved.runId,
+          revision: saved.revision,
+          attempt: spend.attempt,
+          status: spend.status,
+          dispatchPhase: spend.dispatchPhase,
+          pricingVersion: spend.pricingVersion,
+          reservedCost: decimalCost(spend.reservedCadMinor),
+          actualCost: decimalCost(spend.actualCadMinor),
+          currency: 'CAD',
+          providerResponseId: spend.providerResponseId,
+        })),
+        ...saved.receipts.map(({ actualCadMinor, ...receipt }) => ({
+          ...receipt,
+          recordType: 'standardization-receipt',
+          actualCost: decimalCost(actualCadMinor),
+          currency: 'CAD',
+        })),
+        ...saved.resolutions.map((resolution) => ({
+          id: resolution.id,
+          reservationId: resolution.reservationId,
+          decision: resolution.decision,
+          reviewedAt: resolution.reviewedAt,
+          receiptId: resolution.receiptId,
+          recordType: 'standardization-resolution',
+        })),
+      ];
+    } else if (
+      input.view === 'standardization-runs' ||
+      input.view === 'standardization-run'
+    ) {
+      const reader = dependencies.standardizationRuns;
+      if (!reader) throw new Error('api-finance-standardization-unavailable');
+      const result =
+        input.view === 'standardization-runs'
+          ? FinanceStandardizationListSchema.parse(
+              await reader.list(workspace, input.bookId!, input.offset),
+            )
+          : {
+              runs: [
+                FinanceStandardizationRunSchema.parse(
+                  await reader.get(
+                    workspace,
+                    input.bookId!,
+                    input.standardizationRunId!,
+                  ),
+                ),
+              ],
+              nextOffset: null,
+            };
+      if (
+        result.runs.some(
+          (run) =>
+            run.workspaceId !== workspace.workspaceId ||
+            run.bookId !== input.bookId ||
+            (run.extraction !== null &&
+              run.extraction.sourceDigest !== run.sourceDigest) ||
+            (input.view === 'standardization-run' &&
+              run.id !== input.standardizationRunId),
+        ) ||
+        new Set(result.runs.map((run) => run.id)).size !== result.runs.length ||
+        (result.nextOffset !== null &&
+          result.nextOffset !== input.offset + result.runs.length)
+      )
+        throw new Error('api-finance-standardization-scope-invalid');
+      records = result.runs
+        .slice(
+          input.view === 'standardization-run' ? input.offset : 0,
+          input.view === 'standardization-run'
+            ? input.offset + input.limit
+            : input.limit,
+        )
+        .map((run) => ({
+          id: run.id,
+          evidenceId: run.evidenceId,
+          filename: run.filename,
+          sourceDigest: run.sourceDigest,
+          revision: run.revision,
+          status: run.status,
+          executionMode: run.executionMode,
+          extraction: run.extraction,
+          proposal: run.proposal,
+          reviewedMapping: run.reviewedMapping,
+          modelProvenance: run.modelProvenance,
+          blockers: run.blockers,
+          approval: run.approval,
+          posting: run.posting,
+        }));
+      repositoryPage = {
+        nextOffset:
+          input.view === 'standardization-run'
+            ? null
+            : records.length < result.runs.length
+              ? input.offset + records.length
+              : result.nextOffset,
+      };
+    } else if (input.view === 'automation-schedules') {
+      const reader = dependencies.automationSchedules;
+      if (!reader) throw new Error('api-finance-schedules-unavailable');
+      const rows = z
+        .array(
+          z.strictObject({
+            schedule: FinanceAutomationScheduleSchema,
+            cursor: FinanceAutomationScheduleCursorSchema,
+            nextDueAt: IsoDateTimeSchema.nullable(),
+            blockedReason: z.string().max(500).nullable(),
+            createdAt: IsoDateTimeSchema,
+            updatedAt: IsoDateTimeSchema,
+          }),
+        )
+        .max(input.limit)
+        .parse(
+          await reader.listSchedules(
+            workspace,
+            input.bookId!,
+            input.offset,
+            input.limit,
+          ),
+        );
+      if (
+        new Set(rows.map((row) => row.schedule.id)).size !== rows.length ||
+        rows.some(
+          ({ schedule, cursor }) =>
+            schedule.definition.workspaceId !== workspace.workspaceId ||
+            schedule.definition.bookId !== input.bookId ||
+            cursor.scheduleId !== schedule.id ||
+            cursor.definitionRevision !== schedule.definitionRevision,
+        )
+      )
+        throw new Error('api-finance-schedules-scope-invalid');
+      // Expose reviewable configuration, never execution cursor/lease authority.
+      records = rows.map(
+        ({ schedule, nextDueAt, blockedReason, createdAt, updatedAt }) => ({
+          id: schedule.id,
+          status: schedule.status,
+          definitionRevision: schedule.definitionRevision,
+          stateRevision: schedule.stateRevision,
+          capability: schedule.definition.capability,
+          targetCount: schedule.definition.targets.length,
+          extractionSource: schedule.definition.extraction ?? null,
+          journalSource: schedule.definition.journal ?? null,
+          planningSource: schedule.definition.planning
+            ? {
+                budgetId: schedule.definition.planning.budgetId,
+                budgetRevision: schedule.definition.planning.budgetRevision,
+                asOf: schedule.definition.planning.asOf,
+                currency: schedule.definition.planning.currency,
+                itemCount: schedule.definition.planning.itemCount,
+              }
+            : null,
+          configuredMoney: schedule.definition.money,
+          startAt: schedule.definition.startAt,
+          endAt: schedule.definition.endAt,
+          cadence: schedule.definition.cadence,
+          misfire: schedule.definition.misfire,
+          concurrency: schedule.definition.concurrency,
+          nextDueAt,
+          blockedReason,
+          createdAt,
+          updatedAt,
+        }),
+      );
+      repositoryPage = {
+        nextOffset:
+          rows.length === input.limit ? input.offset + rows.length : null,
+      };
+    } else if (
+      input.view === 'automation-runs' ||
+      input.view === 'automation-run'
+    ) {
+      const reader = dependencies.automationRuns;
+      if (!reader)
+        throw new Error('api-finance-automation-history-unavailable');
+      let rows: z.infer<typeof FinanceAutomationRunRecordSchema>[];
+      if (input.view === 'automation-runs') {
+        const result = z
+          .strictObject({
+            runs: z.array(FinanceAutomationRunRecordSchema).max(input.limit),
+            nextOffset: z.number().int().nonnegative().nullable(),
+          })
+          .parse(
+            await reader.listRuns(
+              workspace,
+              input.bookId!,
+              input.offset,
+              input.limit,
+            ),
+          );
+        if (
+          new Set(result.runs.map((row) => row.run.request.operationId))
+            .size !== result.runs.length ||
+          (result.nextOffset !== null &&
+            (result.runs.length !== input.limit ||
+              result.nextOffset !== input.offset + input.limit))
+        )
+          throw new Error('api-finance-automation-history-page-invalid');
+        rows = result.runs;
+        repositoryPage = result;
+      } else {
+        const raw = await reader.getRun(
+          workspace,
+          input.bookId!,
+          input.automationRunId!,
+        );
+        if (!raw) throw new Error('api-finance-automation-run-unavailable');
+        const row = FinanceAutomationRunRecordSchema.parse(raw);
+        if (row.run.request.operationId !== input.automationRunId)
+          throw new Error('api-finance-automation-history-scope-invalid');
+        rows = [row];
+      }
+      if (
+        rows.some(
+          (row) =>
+            row.run.request.workspaceId !== workspace.workspaceId ||
+            row.run.request.bookId !== input.bookId,
+        )
+      )
+        throw new Error('api-finance-automation-history-scope-invalid');
+      records = rows.map((row) => ({
+        id: row.run.request.operationId,
+        ...row.run.request,
+        revision: row.run.revision,
+        attempts: row.run.attempts,
+        status: row.run.status,
+        outcomeReference: row.run.outcomeReference,
+        createdAt: row.createdAt,
+        blockedReason: row.blockedReason,
+      }));
+    } else if (
+      [
+        'journal-drafts',
+        'journal-draft',
+        'journal-draft-lines',
+        'journal-draft-history',
+      ].includes(input.view)
+    ) {
+      const reader = dependencies.journalDrafts;
+      if (!reader) throw new Error('api-finance-journal-drafts-unavailable');
+      let drafts;
+      if (input.view === 'journal-drafts') {
+        const result = z
+          .strictObject({
+            items: z.array(FinanceAutomationJournalDraftResultSchema).max(100),
+            offset: z.number().int().nonnegative(),
+            limit: z.number().int().min(1).max(100),
+            total: z.number().int().nonnegative(),
+          })
+          .parse(
+            await reader.listJournalDraftResults(
+              workspace,
+              input.bookId!,
+              input.offset,
+              Math.min(input.limit, 33),
+            ),
+          );
+        if (
+          result.offset !== input.offset ||
+          result.limit !== Math.min(input.limit, 33) ||
+          result.items.length > input.limit ||
+          new Set(result.items.map((r) => r.id)).size !== result.items.length
+        )
+          throw new Error('api-finance-journal-draft-page-invalid');
+        drafts = result.items;
+        repositoryPage = {
+          nextOffset:
+            result.offset + result.items.length < result.total
+              ? result.offset + result.items.length
+              : null,
+        };
+      } else {
+        const result = FinanceAutomationJournalDraftResultSchema.parse(
+          await reader.readJournalDraftResult(
+            workspace,
+            input.bookId!,
+            input.journalDraftId!,
+          ),
+        );
+        if (result.id !== input.journalDraftId)
+          throw new Error('api-finance-journal-draft-scope-invalid');
+        drafts = [result];
+      }
+      if (
+        drafts.some(
+          (r) =>
+            r.workspaceId !== workspace.workspaceId ||
+            r.bookId !== input.bookId,
+        )
+      )
+        throw new Error('api-finance-journal-draft-scope-invalid');
+      for (const draft of drafts) {
+        if (
+          draft.events.length !== draft.revision ||
+          draft.events.some((event, index) => event.revision !== index + 1)
+        )
+          throw new Error('api-finance-journal-draft-history-invalid');
+        const posted = draft.events.filter((event) => event.kind === 'posted');
+        if (
+          draft.posting === 'performed' &&
+          (posted.length !== 1 ||
+            JSON.stringify(posted[0]!.journalIds) !==
+              JSON.stringify(draft.postedJournalIds))
+        )
+          throw new Error('api-finance-journal-draft-history-invalid');
+      }
+      currency = drafts[0]?.currency ?? null;
+      records = drafts.flatMap<Record<string, unknown>>((draft) => {
+        const shared = {
+          journalDraftId: draft.id,
+          currentDraftRevision: draft.revision,
+          status: draft.status,
+          posting: draft.posting,
+          evidenceId: draft.source.evidenceId,
+          sourceDigest: draft.source.sourceDigest,
+          sourceSnapshotHash: draft.source.snapshotHash,
+        };
+        if (input.view === 'journal-draft-lines')
+          return draft.proposal.journals.flatMap((journal, j) =>
+            journal.lines.map((line, l) => ({
+              id: `${draft.id}:journal:${j}:line:${l}`,
+              recordType: 'journal-draft-line',
+              ...shared,
+              journalIndex: j,
+              lineIndex: l,
+              effectiveOn: journal.effectiveOn,
+              journalDescription: journal.description,
+              sourceReference: journal.sourceReference,
+              ...line,
+            })),
+          );
+        if (input.view === 'journal-draft-history')
+          return draft.events.flatMap((event) => {
+            const record = {
+              id: `${draft.id}:revision:${event.revision}`,
+              recordType: 'journal-draft-event',
+              ...shared,
+              eventRevision: event.revision,
+              kind: event.kind,
+              actorId: event.actorId,
+              at: event.at,
+              decision: event.kind === 'reviewed' ? event.decision : null,
+              reason: event.kind !== 'posted' ? event.reason : null,
+            };
+            return event.kind === 'posted'
+              ? [
+                  record,
+                  ...event.journalIds.map((journalId, index) => ({
+                    ...record,
+                    id: `${draft.id}:revision:${event.revision}:journal:${index}`,
+                    recordType: 'journal-draft-posted-journal',
+                    journalId,
+                  })),
+                ]
+              : [record];
+          });
+        return [
+          {
+            id: draft.id,
+            recordType: 'journal-draft',
+            ...shared,
+            operationId: draft.operationId,
+            currency: draft.currency,
+            amount: draft.amount,
+            itemCount: draft.itemCount,
+            batchId: draft.source.batchId,
+            batchRevision: draft.source.batchRevision,
+            mappingHash: draft.source.mappingHash,
+            sourceRowCount: draft.source.rows.length,
+            journalCount: draft.proposal.journals.length,
+            postedJournalCount: draft.postedJournalIds.length,
+            reviewDecision: draft.review?.decision ?? null,
+            reviewReason: draft.review?.reason ?? null,
+            reviewActorId: draft.review?.actorId ?? null,
+            reviewedAt: draft.review?.at ?? null,
+          },
+        ];
+      });
+    } else if (
+      input.view === 'investment-reconciliations' ||
+      input.view === 'investment-reconciliation' ||
+      input.view === 'investment-reconciliation-history'
+    ) {
+      const reader = dependencies.investmentReconciliation;
+      if (!reader) throw new Error('api-finance-reconciliation-unavailable');
+      let cases;
+      if (
+        input.view === 'investment-reconciliation' ||
+        input.view === 'investment-reconciliation-history'
+      ) {
+        const raw = await reader.get(
+          workspace,
+          input.bookId!,
+          input.reconciliationCaseId!,
+        );
+        if (!raw) throw new Error('api-finance-reconciliation-not-found');
+        const result = InvestmentReconciliationCaseSchema.parse(raw);
+        if (result.id !== input.reconciliationCaseId)
+          throw new Error('api-finance-reconciliation-scope-invalid');
+        cases = [result];
+      } else {
+        const page = InvestmentReconciliationListSchema.parse(
+          await reader.list(
+            workspace,
+            input.bookId!,
+            input.offset,
+            input.limit,
+          ),
+        );
+        if (
+          page.offset !== input.offset ||
+          page.limit !== input.limit ||
+          page.items.length > input.limit ||
+          new Set(page.items.map((row) => row.id)).size !== page.items.length
+        )
+          throw new Error('api-finance-reconciliation-page-invalid');
+        cases = page.items;
+        repositoryPage = {
+          nextOffset:
+            page.offset + page.items.length < page.total
+              ? page.offset + page.items.length
+              : null,
+        };
+      }
+      if (
+        cases.some(
+          (row) =>
+            row.workspaceId !== workspace.workspaceId ||
+            row.bookId !== input.bookId,
+        )
+      )
+        throw new Error('api-finance-reconciliation-scope-invalid');
+      if (input.view === 'investment-reconciliation-history') {
+        const row = cases[0]!;
+        if (
+          row.history.length !== row.revision ||
+          row.history.some((event, index) => event.revision !== index + 1)
+        )
+          throw new Error('api-finance-reconciliation-history-invalid');
+        records = row.history.flatMap((event) => {
+          const shared = {
+            caseId: row.id,
+            eventRevision: event.revision,
+            currentCaseRevision: row.revision,
+            currentEffectiveStatus: row.effectiveStatus,
+            currentSourcesCurrent: row.sourcesCurrent,
+            accountingEffect: row.accountingEffect,
+          };
+          const evidenceIds = event.resolution?.evidenceIds ?? [],
+            corrections = event.resolution?.correctiveRecords ?? [];
+          if (
+            event.evidenceSnapshots.length !== evidenceIds.length ||
+            event.correctiveRecordSnapshots.length !== corrections.length
+          )
+            throw new Error(
+              'api-finance-reconciliation-history-provenance-invalid',
+            );
+          const eventRecord = {
+            id: `${row.id}:${event.revision}:event`,
+            recordType: 'reconciliation-event',
+            ...shared,
+            kind: event.kind,
+            createdAt: event.createdAt,
+            createdBy: event.createdBy,
+            reason: event.reason,
+            valuationRunId: event.comparison.valuationRunId,
+            observedPositionId: event.comparison.observedPositionId,
+            comparisonHash: event.comparison.comparisonHash,
+            valuationInputHash: event.comparison.valuationInputHash,
+            financialAccountId: event.comparison.financialAccountId,
+            instrumentId: event.comparison.instrumentId,
+            asOf: event.comparison.asOf,
+            evidenceId: event.comparison.evidenceId,
+            sourceRow: event.comparison.sourceRow,
+            observedQuantity: event.comparison.observedQuantity,
+            calculatedQuantity: event.comparison.calculatedQuantity,
+            difference: event.comparison.difference,
+            comparisonStatus: event.comparison.status,
+            resolutionKind: event.resolution?.kind ?? null,
+            explanation: event.resolution?.explanation ?? null,
+            evidenceSnapshotCount: event.evidenceSnapshots.length,
+            correctiveRecordSnapshotCount:
+              event.correctiveRecordSnapshots.length,
+          };
+          const evidenceRecords = event.evidenceSnapshots.map(
+            (snapshot, index) => {
+              const proof = z
+                .object({
+                  id: UuidSchema,
+                  sourceDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+                })
+                .parse(snapshot);
+              if (
+                !evidenceIds.includes(proof.id) ||
+                event.evidenceSnapshots.filter((item) => item.id === proof.id)
+                  .length !== 1
+              )
+                throw new Error(
+                  'api-finance-reconciliation-history-provenance-invalid',
+                );
+              return {
+                id: `${row.id}:${event.revision}:evidence:${index}`,
+                recordType: 'reconciliation-evidence',
+                ...shared,
+                evidenceId: proof.id,
+                sourceDigest: proof.sourceDigest,
+              };
+            },
+          );
+          const correctionRecords = event.correctiveRecordSnapshots.map(
+            (snapshot, index) => {
+              const ref = corrections.find(
+                (item) =>
+                  item.id === snapshot.id && item.kind === snapshot.kind,
+              );
+              if (
+                !ref ||
+                event.correctiveRecordSnapshots.filter(
+                  (item) => item.id === ref.id && item.kind === ref.kind,
+                ).length !== 1 ||
+                !snapshot.snapshot ||
+                typeof snapshot.snapshot !== 'object' ||
+                Array.isArray(snapshot.snapshot)
+              )
+                throw new Error(
+                  'api-finance-reconciliation-history-provenance-invalid',
+                );
+              const source = snapshot.snapshot as Record<string, unknown>;
+              const fields: Record<string, string | number | boolean | null> =
+                {};
+              let truncated = false;
+              for (const key of [
+                'as_of',
+                'effective_on',
+                'settlement_date',
+                'quantity',
+                'quantity_delta',
+                'amount',
+                'cash_amount',
+                'gross_amount',
+                'net_amount',
+                'currency',
+                'source_reference',
+                'evidence_id',
+                'financial_account_id',
+                'instrument_id',
+                'action_id',
+                'journal_id',
+                'status',
+              ]) {
+                const value = source[key];
+                if (
+                  [
+                    'quantity',
+                    'quantity_delta',
+                    'amount',
+                    'cash_amount',
+                    'gross_amount',
+                    'net_amount',
+                  ].includes(key) &&
+                  value !== undefined &&
+                  value !== null &&
+                  (typeof value !== 'string' ||
+                    !/^-?\d+(?:\.\d+)?$/u.test(value))
+                )
+                  throw new Error(
+                    'api-finance-reconciliation-exact-snapshot-required',
+                  );
+                if (
+                  value === null ||
+                  typeof value === 'number' ||
+                  typeof value === 'boolean'
+                )
+                  fields[key] = value;
+                else if (typeof value === 'string') {
+                  fields[key] = value.slice(0, 4096);
+                  if (value.length > 4096) truncated = true;
+                }
+              }
+              return {
+                id: `${row.id}:${event.revision}:correction:${index}`,
+                recordType: 'reconciliation-corrective-record',
+                ...shared,
+                correctiveKind: ref.kind,
+                correctiveRecordId: ref.id,
+                ...fields,
+                snapshotProjection: 'selected-scalar-fields',
+                snapshotTextTruncated: truncated,
+              };
+            },
+          );
+          return [eventRecord, ...evidenceRecords, ...correctionRecords];
+        });
+      } else
+        records = cases.map((row) => ({
+          id: row.id,
+          revision: row.revision,
+          ...row.comparison,
+          comparisonStatus: row.comparison.status,
+          status: row.status,
+          effectiveStatus: row.effectiveStatus,
+          sourcesCurrent: row.sourcesCurrent,
+          sourceSnapshot: undefined,
+          historyCount: row.history.length,
+          accountingEffect: row.accountingEffect,
+        }));
+    } else if (input.view === 'planning-result') {
+      if (!dependencies.planning)
+        throw new Error('api-finance-planning-unavailable');
+      const result = await readFinancePlanning(
+        dependencies.planning,
+        workspace,
+        {
+          ...input,
+          bookId: input.bookId!,
+          planningResultId: input.planningResultId!,
+        },
+      );
+      records = result.records;
+      currency = result.currency;
+      repositoryPage = result.repositoryPage;
+    } else if (
+      input.view === 'generated-reports' ||
+      input.view === 'generated-report'
+    ) {
+      const reports = dependencies.generatedReports;
+      if (!reports)
+        throw new Error('api-finance-generated-reports-unavailable');
+      if (input.view === 'generated-reports') {
+        const rawResult = await reports.list(
+          workspace,
+          input.bookId!,
+          input.offset,
+          input.limit,
+        );
+        const result = z
+          .strictObject({
+            reports: z
+              .array(FinanceGeneratedReportSummarySchema)
+              .max(input.limit),
+            nextOffset: z.number().int().nonnegative().nullable(),
+          })
+          .parse(rawResult);
+        if (
+          result.reports.some(
+            (report) =>
+              report.workspaceId !== workspace.workspaceId ||
+              report.bookId !== input.bookId,
+          ) ||
+          (result.nextOffset !== null &&
+            (result.nextOffset <= input.offset ||
+              result.nextOffset !== input.offset + result.reports.length))
+        )
+          throw new Error('api-finance-generated-report-scope-invalid');
+        records = result.reports;
+        repositoryPage = result;
+      } else {
+        const raw = await reports.get(
+          workspace,
+          input.bookId!,
+          input.reportId!,
+        );
+        if (!raw) throw new Error('api-finance-generated-report-unavailable');
+        const { rows, sourceJournals, ...summary } =
+          FinanceGeneratedReportSchema.parse(raw);
+        if (
+          summary.id !== input.reportId ||
+          summary.workspaceId !== workspace.workspaceId ||
+          summary.bookId !== input.bookId
+        )
+          throw new Error('api-finance-generated-report-scope-invalid');
+        currency = summary.currency;
+        records = [
+          {
+            ...summary,
+            recordType:
+              summary.kind === 'posted-ledger-trial-balance'
+                ? 'saved-trial-balance-summary'
+                : `saved-${summary.kind}-summary`,
+            columnBasis:
+              summary.kind === 'income-statement'
+                ? 'period-posted-movements'
+                : summary.kind === 'balance-sheet'
+                  ? 'posted-movements-through-as-of'
+                  : 'cumulative-posted-movements',
+            accountCount: rows.length,
+            journalCount: sourceJournals.length,
+          },
+          ...rows.map((row) => ({
+            id: `${summary.id}:account:${row.accountId}`,
+            recordType: 'account-movements',
+            ...row,
+            balanceBasis:
+              summary.kind === 'balance-sheet' &&
+              (row.kind === 'liability' || row.kind === 'equity')
+                ? 'credit-minus-debit'
+                : 'debit-minus-credit',
+          })),
+          ...sourceJournals.map((journal) => ({
+            id: `${summary.id}:journal:${journal.journalId}`,
+            recordType: 'source-journal',
+            ...journal,
+          })),
+        ];
+      }
+    } else if (input.view === 'books')
+      records = await repository.listBooks(workspace);
+    else if (input.view === 'trial-balance') {
+      const result = await repository.overview(workspace, input.bookId!);
+      records = result.trialBalance;
+      const books = await repository.listBooks(workspace);
+      currency =
+        String(
+          books.find((b) => b.id === input.bookId)?.functionalCurrency ?? '',
+        ) || null;
+    } else if (input.view === 'commercial') {
+      const result = await repository.commercialOverview(
+        workspace,
+        input.bookId!,
+      );
+      currency = String(result.currency);
+      records = [
+        ...result.documents.map((r) => ({
+          ...r,
+          recordType: 'commercial-document',
+        })),
+        ...result.payments.map((r) => ({ ...r, recordType: 'payment' })),
+      ];
+    } else if (input.view === 'investment-lots') {
+      const result = await repository.listInvestmentLots(
+        workspace,
+        input.bookId!,
+        input.offset,
+        input.limit,
+      );
+      records = result.lots;
+      repositoryPage = result;
+    } else if (input.view === 'valuation-runs') {
+      const result = await repository.listInvestmentValuations(
+        workspace,
+        input.bookId!,
+        input.offset,
+        input.limit,
+      );
+      records = result.runs;
+      repositoryPage = result;
+    } else if (input.view === 'valuation') {
+      const run = await repository.getInvestmentValuation(
+        workspace,
+        input.bookId!,
+        input.valuationId!,
+      );
+      if (run.id !== input.valuationId)
+        throw new Error('api-finance-valuation-scope-invalid');
+      const result = z.record(z.string(), z.unknown()).parse(run.result);
+      currency = typeof result.currency === 'string' ? result.currency : null;
+      const rows = (key: string) =>
+        z.array(z.record(z.string(), z.unknown())).parse(result[key] ?? []);
+      records = [
+        {
+          id: String(run.id),
+          recordType: 'valuation-summary',
+          asOf: run.asOf,
+          calculationVersion: run.calculationVersion,
+          mode: result.mode,
+          valuationScope: result.valuationScope,
+          status: result.status,
+          currency: result.currency,
+          total: result.total,
+          availableSubtotal: result.availableSubtotal,
+          unavailableCount: result.unavailableCount,
+          createdAt: run.createdAt,
+        },
+        ...['positions', 'calculations', 'reconciliations'].flatMap((key) =>
+          rows(key).map((row, index) => ({
+            id: `${String(run.id)}:${key}:${index}`,
+            recordType: key,
+            ...row,
+          })),
+        ),
+      ];
+    } else if (input.view === 'imports')
+      records = await repository.listNormalizedImports(
+        workspace,
+        input.bookId!,
+      );
+    else {
+      const result = await repository.getNormalizedImport(
+        workspace,
+        input.bookId!,
+        input.importId!,
+      );
+      if (result.batch.id !== input.importId)
+        throw new Error('api-finance-import-scope-invalid');
+      const accounts = await repository.listFinancialAccounts(
+        workspace,
+        input.bookId!,
+      );
+      const account = accounts.find(
+        (a) => a.id === result.batch.financial_account_id,
+      );
+      if (!account) throw new Error('api-finance-book-account-unavailable');
+      currency = String(account.currency);
+      records = result.rows.flatMap((r) => {
+        const posting = FinanceNormalizedImportPostingSchema.nullable().parse(
+          r.posting ?? null,
+        );
+        if (
+          posting &&
+          (posting.economicTransactionId !== r.economic_transaction_id ||
+            new Set(posting.lines.map((line) => line.lineNumber)).size !==
+              posting.lines.length)
+        )
+          throw new Error('api-finance-import-posting-binding-invalid');
+        const components = z
+          .array(FinanceNormalizedAmountComponentViewSchema)
+          .max(5)
+          .parse(r.amountComponents ?? []);
+        if (
+          new Set(components.map((component) => component.kind)).size !==
+            components.length ||
+          new Set(components.map((component) => component.id)).size !==
+            components.length ||
+          components.some(
+            (component) =>
+              component.rowId !== r.id ||
+              component.provenance.sourceRow !== r.source_row ||
+              component.provenance.field !== component.kind,
+          )
+        )
+          throw new Error('api-finance-import-component-source-invalid');
+        const componentRecords = components.map((component) => {
+          const decisions = [
+            component.reviewedNativeAmount,
+            component.reviewedCurrency,
+            component.inclusion,
+            component.postingSide,
+            component.ledgerAccountId,
+            component.fxRate,
+            component.fxSource,
+          ];
+          if (
+            decisions.some((value) => value === null) &&
+            decisions.some((value) => value !== null)
+          )
+            throw new Error('api-finance-import-component-review-invalid');
+          return {
+            ...component,
+            recordType: 'import-amount-component',
+            reviewState: decisions.every((value) => value === null)
+              ? 'unreviewed'
+              : 'reviewed',
+            batchId: result.batch.id,
+            batchRevision: result.batch.revision,
+            sourceRowRevision: r.revision,
+            evidenceId: result.batch.evidence_id,
+          };
+        });
+        return [
+          {
+            id: r.id,
+            recordType: 'import-row',
+            sourceRow: r.source_row,
+            date: r.date,
+            amount: r.amount,
+            description: r.description,
+            status: r.status,
+            reviewDecision:
+              z
+                .object({ action: z.enum(['post', 'match', 'ignore']) })
+                .nullable()
+                .parse(r.decision ?? null)?.action ?? null,
+            counterAccountId: UuidSchema.nullable().parse(
+              r.counter_account_id ?? null,
+            ),
+            matchJournalId: UuidSchema.nullable().parse(
+              r.match_journal_id ?? null,
+            ),
+            economicTransactionId: UuidSchema.nullable().parse(
+              r.economic_transaction_id ?? null,
+            ),
+            revision: r.revision,
+            issues: r.issues,
+            fxRate: r.fxRate,
+            fxSource: r.fx_source,
+            batchId: result.batch.id,
+            batchRevision: result.batch.revision,
+            batchStatus: result.batch.status,
+            evidenceId: result.batch.evidence_id,
+          },
+          ...componentRecords,
+          ...(posting
+            ? [
+                {
+                  id: `${r.id}:journal:${posting.journalId}`,
+                  recordType: 'import-posted-journal',
+                  sourceRowId: r.id,
+                  batchId: result.batch.id,
+                  evidenceId: result.batch.evidence_id,
+                  ...posting,
+                  lines: undefined,
+                },
+                ...posting.lines.map((line) => ({
+                  id: `${r.id}:journal:${posting.journalId}:line:${line.lineNumber}`,
+                  recordType: 'import-posted-line',
+                  sourceRowId: r.id,
+                  economicTransactionId: posting.economicTransactionId,
+                  functionalCurrency: posting.functionalCurrency,
+                  journalId: posting.journalId,
+                  batchId: result.batch.id,
+                  evidenceId: result.batch.evidence_id,
+                  ...line,
+                })),
+              ]
+            : []),
+        ];
+      });
+    }
+    if (scope.abortSignal.aborted)
+      throw new Error('api-finance-specialist-request-binding-invalid');
+    if (
+      repositoryPage &&
+      (records.length > input.limit ||
+        records.some((record) => typeof record.id !== 'string' || !record.id) ||
+        new Set(records.map((record) => record.id)).size !== records.length ||
+        (repositoryPage.nextOffset !== null &&
+          (!Number.isSafeInteger(repositoryPage.nextOffset) ||
+            repositoryPage.nextOffset <= input.offset ||
+            repositoryPage.nextOffset !== input.offset + records.length)))
+    )
+      throw new Error('api-finance-book-page-invalid');
+    const page = repositoryPage
+      ? records
+      : records.slice(
+          input.offset,
+          input.offset +
+            ([
+              'journal-drafts',
+              'journal-draft',
+              'journal-draft-lines',
+              'journal-draft-history',
+            ].includes(input.view)
+              ? Math.min(input.limit, 33)
+              : input.limit),
+        );
+    return {
+      view: input.view,
+      bookId: input.bookId,
+      currency,
+      amountEncoding: 'decimal-string',
+      records: page.map((r) => ({
+        id: String(r.id),
+        fields: Object.entries(r)
+          .filter(([name]) => name !== 'id')
+          .map(([name, value]) => ({
+            name,
+            value:
+              value === null || value === undefined
+                ? null
+                : typeof value === 'object'
+                  ? JSON.stringify(value)
+                  : String(value),
+          })),
+      })),
+      nextOffset: repositoryPage
+        ? repositoryPage.nextOffset
+        : input.offset + page.length < records.length
+          ? input.offset + page.length
+          : null,
+      sourceReferences: [
+        'journal-drafts',
+        'journal-draft',
+        'journal-draft-lines',
+        'journal-draft-history',
+      ].includes(input.view)
+        ? [
+            ...new Set(
+              page.flatMap((r) => [
+                `/api/v2/finance/books/${input.bookId}/automations/journal-drafts/${String(r.journalDraftId)}#${String(r.id)}`,
+                `/api/v2/finance/books/${input.bookId}/evidence/${String(r.evidenceId)}`,
+                ...(r.journalId
+                  ? [
+                      `/api/v2/finance/books/${input.bookId}/automations/journal-drafts/${String(r.journalDraftId)}#posted-journal-${String(r.journalId)}`,
+                    ]
+                  : []),
+              ]),
+            ),
+          ]
+        : page.map(
+            (r) =>
+              `/api/v2/finance/books${input.bookId ? '/' + input.bookId : ''}${['journal-drafts', 'journal-draft', 'journal-draft-lines', 'journal-draft-history'].includes(input.view) ? '/automations/journal-drafts/' + String(r.journalDraftId) : input.view === 'corporate-action-settlement' ? '/investments/corporate-actions/settlements/' + input.settlementId : input.view === 'investment-reconciliation-history' ? '/investments/reconciliations/' + input.reconciliationCaseId : input.view === 'investment-reconciliations' || input.view === 'investment-reconciliation' ? '/investments/reconciliations/' + String(r.id) : input.view === 'fec-mapping' ? '/fec/mappings/latest' : planningReadViews.has(input.view) ? (input.view === 'planning-result' ? '/planning/results/' + String(input.planningResultId) : '/planning/' + (input.view === 'forecast' || input.view === 'forecasts' ? 'forecasts/' + String(r.forecastId) : 'budgets/' + String(r.budgetId) + (input.view === 'budget-vs-actuals' ? '/vs-actuals' : '')) + '?revision=' + String(r.revision ?? r.budgetRevision)) : input.view === 'cash-dividends' || input.view === 'cash-dividend' ? '/investments/cash-dividends/' + String(r.id) : input.view === 'standardization-reconciliation' ? '/standardizations/' + input.standardizationRunId + '/reconciliation' : input.view === 'standardization-runs' || input.view === 'standardization-run' ? '/standardizations/' + String(r.id) : input.view === 'automation-schedules' ? '/automations/schedules/' + String(r.id) : input.view === 'automation-runs' || input.view === 'automation-run' ? '/automations/runs/' + String(r.id) : input.view === 'imports' ? '/imports' : input.view === 'import-review' ? '/imports/' + input.importId : input.view === 'valuation' ? '/investments/valuation-runs/' + input.valuationId : input.view === 'valuation-runs' ? '/investments/valuation-runs/' + String(r.id) : input.view === 'investment-lots' ? '/investments/lots/' + String(r.id) : input.view === 'generated-reports' ? '/reports/' + String(r.id) : input.view === 'generated-report' ? '/reports/' + input.reportId : ''}#${input.view === 'investment-reconciliation-history' ? 'revision-' + String(r.eventRevision) : String(r.id)}`,
+          ),
+    };
+  };
+
   const services = {
+    inspectFinanceReport,
+    proposeFinanceReportMapping,
+    readFinanceTax,
+    readFinanceBooks,
     readFinanceRecords,
     writeFinanceRecord,
     executeStatementImport,
@@ -2081,7 +4614,7 @@ export const createRequestScopedFinanceSpecialistServices = (
     readFinanceMatches,
   } satisfies Omit<TrustedFinanceSpecialistServices, 'guardedDocumentActions'>;
   if (dependencies.guardedDocumentActions !== undefined) {
-    // This is composition metadata, not an eighth Finance capability.
+    // This is composition metadata, never a model-facing capability.
     Object.defineProperty(services, 'guardedDocumentActions', {
       configurable: false,
       enumerable: false,

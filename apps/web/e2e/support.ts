@@ -272,6 +272,25 @@ export async function mockAuthenticatedSession(page: Page): Promise<void> {
 export async function expectNoSeriousAccessibilityViolations(
   page: Page,
 ): Promise<void> {
+  // Read contrast after finite entrance motion reaches its rendered state.
+  // Infinite activity indicators must not prevent an accessibility audit.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            document.getAnimations().filter((animation) => {
+              const endTime = animation.effect?.getComputedTiming().endTime;
+              return (
+                (animation.playState === 'running' || animation.pending) &&
+                typeof endTime === 'number' &&
+                Number.isFinite(endTime)
+              );
+            }).length,
+        ),
+      { timeout: 5_000, message: 'Finite entrance animations should settle' },
+    )
+    .toBe(0);
   const result = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
     .analyze();

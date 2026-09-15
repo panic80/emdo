@@ -62,18 +62,18 @@ export function SettingsRoute() {
     <Page>
       <PageHeader
         title="Settings"
-        description="Household access, connections, offline data, and notifications."
+        description="Workspace access, connections, offline data, and notifications."
       />
       <div className="settings-layout">
         <section
           className="settings-section"
-          aria-labelledby="household-settings-heading"
+          aria-labelledby="workspace-settings-heading"
         >
-          <h2 id="household-settings-heading">Household</h2>
+          <h2 id="workspace-settings-heading">Workspace</h2>
           {settings ? (
             <dl>
               <div>
-                <dt>Household</dt>
+                <dt>Workspace</dt>
                 <dd>{settings.household.name}</dd>
               </div>
               <div>
@@ -90,9 +90,9 @@ export function SettingsRoute() {
               </div>
             </dl>
           ) : settingsUnavailable ? (
-            <p role="status">Household settings are unavailable.</p>
+            <p role="status">Workspace settings are unavailable.</p>
           ) : (
-            <p role="status">Loading household settings…</p>
+            <p role="status">Loading workspace settings…</p>
           )}
         </section>
         <section

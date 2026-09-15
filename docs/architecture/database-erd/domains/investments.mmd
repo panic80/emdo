@@ -1,0 +1,337 @@
+%% EMDO Investments domain view; implementation revision 0077
+%% External context nodes contain only FK endpoint columns; consult the full ERD for every column.
+erDiagram
+  %% external context stub: emdo.auth_users
+  EMDO_AUTH_USERS {
+    uuid id PK
+  }
+  %% external context stub: emdo.finance_book_evidence
+  EMDO_FINANCE_BOOK_EVIDENCE {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid uploaded_by FK
+  }
+  %% external context stub: emdo.finance_books
+  EMDO_FINANCE_BOOKS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid entity_id FK
+    uuid created_by FK
+  }
+  %% external context stub: emdo.finance_financial_accounts
+  EMDO_FINANCE_FINANCIAL_ACCOUNTS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid ledger_account_id FK
+  }
+  EMDO_FINANCE_FX_OBSERVATIONS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    date as_of
+    text from_currency
+    text to_currency
+    numeric_38__12 rate
+    text source_reference
+  }
+  EMDO_FINANCE_INSTRUMENT_IDENTIFIERS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    uuid instrument_id FK
+    text scheme
+    text value
+    text namespace
+  }
+  EMDO_FINANCE_INSTRUMENTS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    text name
+    text kind
+    text quantity_unit
+    numeric_38__12 valuation_multiplier
+  }
+  %% external context stub: emdo.finance_investment_cash_dividends
+  EMDO_FINANCE_INVESTMENT_CASH_DIVIDENDS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid financial_account_id FK
+    uuid instrument_id FK
+    uuid evidence_id FK
+    uuid source_row_id FK
+    uuid cash_ledger_account_id FK
+    uuid dividend_income_ledger_account_id FK
+    uuid withholding_ledger_account_id FK
+    uuid economic_transaction_id FK
+    uuid journal_id FK
+    uuid created_by FK
+  }
+  EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_EFFECTS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    uuid action_id FK
+    uuid source_lot_id FK
+    uuid successor_lot_id FK
+    uuid financial_account_id
+    uuid instrument_id
+    numeric_38__12 source_original_quantity
+    numeric_38__12 source_disposed_quantity
+    numeric_38__12 source_remaining_quantity
+    numeric_38__12 source_native_cost_basis
+    numeric_38__12 source_functional_cost_basis
+    numeric_38__12 successor_quantity
+    numeric_38__12 successor_native_cost_basis
+    numeric_38__12 successor_functional_cost_basis
+  }
+  EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_LOTS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    uuid action_id FK
+    uuid source_lot_id FK
+    text successor_lot_key
+    uuid financial_account_id FK
+    uuid instrument_id FK
+    date acquired_on
+    integer acquisition_sequence
+    numeric_38__12 quantity
+    numeric_38__12 native_cost
+    numeric_38__12 functional_cost
+    text native_currency
+    text functional_currency
+    text source_reference
+  }
+  %% external context stub: emdo.finance_investment_corporate_action_settlement_allocations
+  EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_SETTLEMENT_ALLOCATIONS {
+    uuid workspace_id PK FK
+    uuid book_id PK FK
+    uuid settlement_id PK FK
+    uuid action_id FK
+    uuid source_lot_id PK FK
+  }
+  %% external context stub: emdo.finance_investment_corporate_action_settlements
+  EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_SETTLEMENTS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid action_id FK
+    uuid source_row_id FK
+    uuid economic_transaction_id FK
+    uuid action_journal_id FK
+    uuid receipt_journal_id FK
+    uuid created_by FK
+  }
+  EMDO_FINANCE_INVESTMENT_CORPORATE_ACTIONS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    text action_type
+    uuid financial_account_id FK
+    uuid instrument_id FK
+    date effective_on
+    numeric_38__12 numerator
+    numeric_38__12 denominator
+    text fractional_treatment
+    uuid evidence_id FK
+    text source_reference
+    jsonb cash_in_lieu
+    date source_as_of
+    text source_boundary
+    integer source_revision
+    text source_snapshot_hash
+    text idempotency_key
+    text command_hash
+    text status
+    uuid created_by FK
+  }
+  EMDO_FINANCE_INVESTMENT_LOT_REVISIONS {
+    uuid workspace_id PK FK
+    uuid book_id PK FK
+    integer revision
+    timestamptz updated_at
+  }
+  EMDO_FINANCE_INVESTMENT_LOTS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    uuid movement_id FK
+    integer acquisition_sequence
+    text native_currency
+    numeric_38__12 native_cost
+    numeric_38__12 functional_cost
+    text source_reference
+  }
+  EMDO_FINANCE_INVESTMENT_MOVEMENTS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    uuid financial_account_id FK
+    uuid instrument_id FK
+    date effective_on
+    numeric_38__12 quantity
+    uuid journal_id FK
+    text source_reference
+  }
+  EMDO_FINANCE_INVESTMENT_OPENINGS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    uuid financial_account_id FK
+    uuid instrument_id FK
+    date as_of
+    numeric_38__12 quantity
+    uuid evidence_id FK
+    text source_reference
+  }
+  EMDO_FINANCE_INVESTMENT_PRICES {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    uuid instrument_id FK
+    date as_of
+    numeric_38__12 price
+    text currency
+    text source_reference
+  }
+  %% external context stub: emdo.finance_journals
+  EMDO_FINANCE_JOURNALS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid period_id FK
+    uuid created_by FK
+  }
+  EMDO_FINANCE_LOT_ALLOCATIONS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    uuid lot_id FK
+    uuid disposal_id FK
+    numeric_38__12 quantity
+    numeric_38__12 native_cost
+    numeric_38__12 functional_cost
+  }
+  EMDO_FINANCE_LOT_DISPOSALS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    uuid movement_id FK
+    text method
+    text native_currency
+    jsonb input_snapshot
+    jsonb result
+  }
+  EMDO_FINANCE_OBSERVED_POSITIONS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    uuid financial_account_id FK
+    uuid instrument_id FK
+    date as_of
+    numeric_38__12 quantity
+    numeric_38__12 reported_market_value
+    numeric_38__12 reported_book_cost
+    numeric_38__12 reported_price
+    numeric_38__12 reported_accrued_interest
+    uuid mapping_id FK
+    jsonb source_facts
+    text currency
+    uuid evidence_id FK
+    integer source_row
+  }
+  %% external context stub: emdo.finance_report_mapping_versions
+  EMDO_FINANCE_REPORT_MAPPING_VERSIONS {
+    uuid id PK
+    uuid workspace_id FK
+    uuid book_id FK
+    uuid evidence_id FK
+    uuid created_by FK
+  }
+  EMDO_FINANCE_VALUATION_RUNS {
+    uuid id PK
+    uuid workspace_id FK
+    timestamptz created_at
+    uuid book_id FK
+    date as_of
+    text calculation_version
+    jsonb input_snapshot
+    jsonb result
+    uuid created_by FK
+  }
+  %% external context stub: emdo.workspaces
+  EMDO_WORKSPACES {
+    uuid id PK FK
+  }
+  EMDO_FINANCE_BOOKS ||--o{ EMDO_FINANCE_FX_OBSERVATIONS : "workspace_id, book_id -> workspace_id, id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_FX_OBSERVATIONS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOKS ||--o{ EMDO_FINANCE_INSTRUMENT_IDENTIFIERS : "workspace_id, book_id -> workspace_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INSTRUMENTS ||--o{ EMDO_FINANCE_INSTRUMENT_IDENTIFIERS : "workspace_id, book_id, instrument_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_INSTRUMENT_IDENTIFIERS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOKS ||--o{ EMDO_FINANCE_INSTRUMENTS : "workspace_id, book_id -> workspace_id, id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_INSTRUMENTS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INSTRUMENTS ||--o{ EMDO_FINANCE_INVESTMENT_CASH_DIVIDENDS : "workspace_id, book_id, instrument_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INVESTMENT_CORPORATE_ACTIONS ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_EFFECTS : "workspace_id, book_id, action_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INVESTMENT_LOTS ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_EFFECTS : "workspace_id, book_id, source_lot_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_LOTS o|--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_EFFECTS : "workspace_id, book_id, successor_lot_id -> workspace_id, book_id, id; nullable; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_EFFECTS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_FINANCIAL_ACCOUNTS ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_LOTS : "workspace_id, book_id, financial_account_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INVESTMENT_CORPORATE_ACTIONS ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_LOTS : "workspace_id, book_id, action_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INSTRUMENTS ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_LOTS : "workspace_id, book_id, instrument_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INVESTMENT_LOTS ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_LOTS : "workspace_id, book_id, source_lot_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_LOTS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_EFFECTS ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_SETTLEMENT_ALLOCATIONS : "workspace_id, book_id, action_id, source_lot_id -> workspace_id, book_id, action_id, source_lot_id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INVESTMENT_CORPORATE_ACTIONS ||--o| EMDO_FINANCE_INVESTMENT_CORPORATE_ACTION_SETTLEMENTS : "workspace_id, book_id, action_id -> workspace_id, book_id, id; required; 1:1; delete no action; update no action"
+  EMDO_FINANCE_FINANCIAL_ACCOUNTS ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTIONS : "workspace_id, book_id, financial_account_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOKS ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTIONS : "workspace_id, book_id -> workspace_id, id; required; 1:N; delete no action; update no action"
+  EMDO_AUTH_USERS ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTIONS : "created_by -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOK_EVIDENCE ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTIONS : "workspace_id, book_id, evidence_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INSTRUMENTS ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTIONS : "workspace_id, book_id, instrument_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_INVESTMENT_CORPORATE_ACTIONS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOKS ||--o| EMDO_FINANCE_INVESTMENT_LOT_REVISIONS : "workspace_id, book_id -> workspace_id, id; required; 1:1; delete no action; update no action"
+  EMDO_FINANCE_INVESTMENT_MOVEMENTS ||--o| EMDO_FINANCE_INVESTMENT_LOTS : "workspace_id, book_id, movement_id -> workspace_id, book_id, id; required; 1:1; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_INVESTMENT_LOTS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOKS ||--o{ EMDO_FINANCE_INVESTMENT_MOVEMENTS : "workspace_id, book_id -> workspace_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_FINANCIAL_ACCOUNTS ||--o{ EMDO_FINANCE_INVESTMENT_MOVEMENTS : "workspace_id, book_id, financial_account_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INSTRUMENTS ||--o{ EMDO_FINANCE_INVESTMENT_MOVEMENTS : "workspace_id, book_id, instrument_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_JOURNALS ||--o{ EMDO_FINANCE_INVESTMENT_MOVEMENTS : "workspace_id, book_id, journal_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_INVESTMENT_MOVEMENTS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOKS ||--o{ EMDO_FINANCE_INVESTMENT_OPENINGS : "workspace_id, book_id -> workspace_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOK_EVIDENCE ||--o{ EMDO_FINANCE_INVESTMENT_OPENINGS : "workspace_id, book_id, evidence_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_FINANCIAL_ACCOUNTS ||--o{ EMDO_FINANCE_INVESTMENT_OPENINGS : "workspace_id, book_id, financial_account_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INSTRUMENTS ||--o{ EMDO_FINANCE_INVESTMENT_OPENINGS : "workspace_id, book_id, instrument_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_INVESTMENT_OPENINGS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOKS ||--o{ EMDO_FINANCE_INVESTMENT_PRICES : "workspace_id, book_id -> workspace_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INSTRUMENTS ||--o{ EMDO_FINANCE_INVESTMENT_PRICES : "workspace_id, book_id, instrument_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_INVESTMENT_PRICES : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_LOT_DISPOSALS ||--o{ EMDO_FINANCE_LOT_ALLOCATIONS : "workspace_id, book_id, disposal_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INVESTMENT_LOTS ||--o{ EMDO_FINANCE_LOT_ALLOCATIONS : "workspace_id, book_id, lot_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_LOT_ALLOCATIONS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INVESTMENT_MOVEMENTS ||--o| EMDO_FINANCE_LOT_DISPOSALS : "workspace_id, book_id, movement_id -> workspace_id, book_id, id; required; 1:1; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_LOT_DISPOSALS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOKS ||--o{ EMDO_FINANCE_OBSERVED_POSITIONS : "workspace_id, book_id -> workspace_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOK_EVIDENCE ||--o{ EMDO_FINANCE_OBSERVED_POSITIONS : "workspace_id, book_id, evidence_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_FINANCIAL_ACCOUNTS ||--o{ EMDO_FINANCE_OBSERVED_POSITIONS : "workspace_id, book_id, financial_account_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_INSTRUMENTS ||--o{ EMDO_FINANCE_OBSERVED_POSITIONS : "workspace_id, book_id, instrument_id -> workspace_id, book_id, id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_REPORT_MAPPING_VERSIONS o|--o{ EMDO_FINANCE_OBSERVED_POSITIONS : "workspace_id, book_id, mapping_id -> workspace_id, book_id, id; nullable; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_OBSERVED_POSITIONS : "workspace_id -> id; required; 1:N; delete no action; update no action"
+  EMDO_FINANCE_BOOKS ||--o{ EMDO_FINANCE_VALUATION_RUNS : "workspace_id, book_id -> workspace_id, id; required; 1:N; delete no action; update no action"
+  EMDO_AUTH_USERS ||--o{ EMDO_FINANCE_VALUATION_RUNS : "created_by -> id; required; 1:N; delete no action; update no action"
+  EMDO_WORKSPACES ||--o{ EMDO_FINANCE_VALUATION_RUNS : "workspace_id -> id; required; 1:N; delete no action; update no action"

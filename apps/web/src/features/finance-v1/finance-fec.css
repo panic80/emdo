@@ -1,0 +1,87 @@
+.finance-fec {
+  display: grid;
+  gap: 1rem;
+  max-width: 1100px;
+  padding: 1.25rem;
+}
+.finance-fec header p,
+.finance-fec p {
+  line-height: 1.5;
+}
+.finance-workspace .finance-fec fieldset {
+  border: 1px solid var(--border, #d3d7df);
+  border-radius: 12px;
+  padding: 1rem;
+  min-width: 0;
+}
+.finance-fec legend {
+  font-weight: 650;
+  padding: 0 0.4rem;
+}
+.finance-fec__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 1rem;
+}
+.finance-fec label {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+.finance-fec input,
+.finance-fec select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.65rem;
+  border: 1px solid var(--border, #b5bdc9);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: inherit;
+  min-width: 0;
+}
+.finance-fec button {
+  padding: 0.65rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border, #b5bdc9);
+  cursor: pointer;
+  margin-top: 0.5rem;
+}
+.finance-fec button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.finance-fec details {
+  border-top: 1px solid var(--border, #d3d7df);
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+.finance-fec summary {
+  cursor: pointer;
+  padding: 0.4rem 0;
+  font-weight: 600;
+}
+.finance-fec .finance-fec__confirm {
+  display: flex;
+  align-items: center;
+}
+.finance-fec__confirm input {
+  width: auto;
+}
+.finance-fec [role='alert'] {
+  color: #a02525;
+  overflow-wrap: anywhere;
+}
+/* Keep inherited finance form grids from stretching mapping selectors. */
+.finance-workspace .finance-fec fieldset {
+  display: block;
+}
+.finance-fec label {
+  align-content: start;
+}
+.finance-fec__grid {
+  margin-block: 0.5rem;
+}
+.finance-fec__source {
+  display: grid;
+  gap: 0.6rem;
+}

@@ -398,10 +398,15 @@ describe('uniform agent package template', () => {
 
     expect(financeAgentDefinition.manifest.riskCeiling).toBe('local-write');
     expect(
-      financeCapabilityReferences.some(({ id }) =>
-        /bank|payment|transfer|invest|tax|credit/i.test(id),
+      financeCapabilityReferences
+        .filter(({ id }) => /bank|payment|transfer|invest|tax|credit/i.test(id))
+        .map(({ id, kind }) => ({ id, kind })),
+    ).toEqual([{ id: 'finance.tax.read', kind: 'read' }]);
+    expect(
+      financeCapabilityReferences.every(({ kind }) =>
+        ['read', 'local-write', 'import'].includes(kind),
       ),
-    ).toBe(false);
+    ).toBe(true);
 
     expect(shoppingAgentDefinition.manifest.riskCeiling).toBe('local-write');
     expect(

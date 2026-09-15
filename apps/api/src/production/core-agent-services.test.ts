@@ -1475,6 +1475,10 @@ describe('request-scoped core agent runtime factory', () => {
     expect(financeOnly?.runtime.agentIds).toEqual(['manager', 'finance']);
     expect(financeOnly?.runtime.capabilityIds).toEqual([
       'agent.finance.delegate',
+      'finance.reports.inspect',
+      'finance.reports.propose-mapping',
+      'finance.tax.read',
+      'finance.books.read',
       'finance.records.read',
       'finance.records.write',
       'finance.statement.import',
