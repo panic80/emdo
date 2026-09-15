@@ -11,9 +11,11 @@ Environment=PREVIEW_PUBLIC_ORIGIN=https://bot.32cbgg8.com
 Environment=PREVIEW_AUTH_ORIGIN=https://staging.emdo.invalid
 Environment=PREVIEW_PORT=18081
 ExecStart=/usr/bin/node /opt/emdo-preview/server.mjs
-Restart=on-failure
-RestartSec=5
+Restart=no
 RuntimeMaxSec=14400
+MemoryMax=128M
+CPUQuota=25%
+UMask=0077
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
