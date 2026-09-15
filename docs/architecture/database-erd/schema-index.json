@@ -1,12 +1,12 @@
 {
-  "implementationRevision": "0076",
+  "implementationRevision": "0077",
   "source": {
-    "implementationRevision": "0076",
-    "snapshotPath": "packages/db/drizzle/meta/0076_snapshot.json",
-    "snapshotSha256": "df59e476ac76650aa9ff09ed9ec6ec5818bbd868f762e7c277558eeb1f27628d",
+    "implementationRevision": "0077",
+    "snapshotPath": "packages/db/drizzle/meta/0077_snapshot.json",
+    "snapshotSha256": "a981ba5654ce0a845d54d8f16affc2ee3540a0a66502ed0f021b0d5b0426f4d8",
     "journalPath": "packages/db/drizzle/meta/_journal.json",
-    "journalSha256": "ed180a41611f6fb3088277461abc53e34fafb3f0679040aa2a3e8ef36a3cac64",
-    "migrationCount": 77,
+    "journalSha256": "129f0f78c371a4e3d17b004df3e749ba7af1cebf751edbdde63ee6138aa67fe3",
+    "migrationCount": 78,
     "sourceManifest": [
       {
         "idx": 0,
@@ -548,10 +548,17 @@
         "sha256": "93ea4286d73160038db841dfdfbb32be27ff79f6739ec656bad3b138d910a6d2"
       },
       {
+        "idx": 77,
+        "tag": "0077_finance_function_execute_privileges",
+        "path": "packages/db/drizzle/0077_finance_function_execute_privileges.sql",
+        "bytes": 904,
+        "sha256": "dfe53094f2d4ea8972870d94a7d1bd881c5a2412489b14bbc5848d933a4d52b3"
+      },
+      {
         "kind": "snapshot",
-        "path": "packages/db/drizzle/meta/0076_snapshot.json",
+        "path": "packages/db/drizzle/meta/0077_snapshot.json",
         "bytes": 1004566,
-        "sha256": "df59e476ac76650aa9ff09ed9ec6ec5818bbd868f762e7c277558eeb1f27628d"
+        "sha256": "a981ba5654ce0a845d54d8f16affc2ee3540a0a66502ed0f021b0d5b0426f4d8"
       }
     ],
     "generator": "infra/scripts/generate-database-erd.py",

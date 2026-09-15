@@ -89,7 +89,7 @@ describe('opt-in private staging PDF renderer', () => {
       'chown 10005:10005 /run/emdo/finance-pdf-render',
     );
     expect(dockerfile).toContain('chmod 0770 /run/emdo/finance-pdf-render');
-    expect(supervisor).toContain('chmod(path,0o660)');
+    expect(supervisor).toMatch(/chmod\(\s*path\s*,\s*0o660\s*\)/);
     expect(overlay).toContain('FINANCE_PDF_RENDER_IMAGE:?');
     expect(overlay).toContain('STAGING_RUN_ID:?');
     expect(overlay).not.toContain('docker.sock');

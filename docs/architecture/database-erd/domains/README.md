@@ -1,4 +1,4 @@
-# Domain diagrams — implementation revision 0076
+# Domain diagrams — implementation revision 0077
 
 - `WorkspaceAccess`: [workspaceaccess.svg](workspaceaccess.svg) · [workspaceaccess.mmd](workspaceaccess.mmd)
 - `Accounting`: [accounting.svg](accounting.svg) · [accounting.mmd](accounting.mmd)

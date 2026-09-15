@@ -1,4 +1,4 @@
-# Schema representation limits — implementation revision 0076
+# Schema representation limits — implementation revision 0077
 
 This file is intentionally separate from the ERD. The entries below describe
 application/runtime behavior or explicitly deferred delivery boundaries that

@@ -540,6 +540,13 @@
       "when": 1789449928268,
       "tag": "0076_finance_standardization_prompt_v4",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1789449928269,
+      "tag": "0077_finance_function_execute_privileges",
+      "breakpoints": true
     }
   ]
 }

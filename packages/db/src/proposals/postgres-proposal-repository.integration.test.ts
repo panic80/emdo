@@ -1181,7 +1181,7 @@ describeDatabase(
       );
 
       const proposalMigrations = await loadOrderedMigrations();
-      expect(proposalMigrations.at(-1)?.id).toBe('0023_astra_model_migration');
+      expect(proposalMigrations[23]?.id).toBe('0023_astra_model_migration');
       for (const migration of proposalMigrations) {
         try {
           await admin.query(migration.sql);
