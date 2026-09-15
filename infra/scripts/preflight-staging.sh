@@ -2,11 +2,11 @@
 set -Eeuo pipefail
 
 # Preserve baseline headroom for normalized staging: steady state adds 256 MiB
-# extraction plus 256 MiB worker uplift, and acceptance remains 192 MiB.
-# 1.75/2.25 GiB and 10 GiB use the KiB units emitted by /proc and df -Pk.
+# extraction plus 256 MiB worker and 320 MiB API uplifts, and acceptance remains 192 MiB.
+# 1.75/2.5625 GiB and 10 GiB use the KiB units emitted by /proc and df -Pk.
 case "${EMDO_FINANCE_NORMALIZED_SYNTHETIC_STAGING:-false}" in
   false) MIN_AVAILABLE_MEMORY_KIB=1835008; MIN_AVAILABLE_MEMORY_LABEL='1.75 GiB' ;;
-  true) MIN_AVAILABLE_MEMORY_KIB=2359296; MIN_AVAILABLE_MEMORY_LABEL='2.25 GiB' ;;
+  true) MIN_AVAILABLE_MEMORY_KIB=2686976; MIN_AVAILABLE_MEMORY_LABEL='2.5625 GiB' ;;
   *) printf '%s\n' 'Normalized staging flag must be true or false' >&2; exit 1 ;;
 esac
 readonly MIN_AVAILABLE_MEMORY_KIB MIN_AVAILABLE_MEMORY_LABEL

@@ -1,3 +1,5 @@
+import { financePdfFixture } from '../../../packages/integrations/src/finance-documents/test-fixtures/pdf.js';
+import { projectFinancePdfPrompt } from '../../../packages/agent-core/src/finance-pdf-prompt-projection.js';
 import { z } from 'zod';
 import { randomUUID, createHash } from 'node:crypto';
 import pg from 'pg';
@@ -569,6 +571,7 @@ describe.skipIf(!url)(
       'finance-standardization-proposal.v2',
       'finance-standardization-proposal.v3',
       'finance-standardization-proposal.v4',
+      'finance-standardization-proposal.v5',
     ] as const)(
       'reserves supported prompt lineage %s through the worker role',
       async (promptVersion) => {
@@ -588,6 +591,87 @@ describe.skipIf(!url)(
         ).toBe(promptVersion);
       },
     );
+    it('reserves v5 full PDF projection through the fixed worker login and rejects tampered receipts', async () => {
+      const bytes = financePdfFixture([
+        [`Synthetic PDF ${randomUUID()}`, 'Transaction 123.45 CAD'],
+        ['Complete second page'],
+      ]);
+      const sourceDigest = createHash('sha256').update(bytes).digest('hex');
+      const uploaded = await evidence.uploadBookEvidence(
+        context,
+        bookId,
+        randomUUID(),
+        {
+          filename: 'synthetic.pdf',
+          format: 'pdf',
+          sourceBase64: bytes.toString('base64'),
+        },
+      );
+      const run = await runs.start(context, bookId, randomUUID(), {
+        evidenceId: String(uploaded.id),
+        expectedSourceDigest: sourceDigest,
+      });
+      const outcome = await store.claim(run.id, 1);
+      const claim = FinanceStandardizationClaimSchema.parse(
+        (outcome as { claim: unknown }).claim,
+      );
+      const extracted = await extractFinanceStandardizationSource({
+        format: 'pdf',
+        bytes,
+        expectedSourceDigest: sourceDigest,
+        revision: 1,
+        signal: new AbortController().signal,
+      });
+      if (extracted.status !== 'extracted')
+        throw Error('expected PDF extraction');
+      await store.saveExtraction(claim, extracted.summary, extracted.envelope);
+      const projected = projectFinancePdfPrompt(
+        JSON.parse(extracted.envelope.factsJson),
+        extracted.envelope.extractionDigest,
+        sourceDigest,
+        262144,
+      );
+      if (!projected) throw Error('expected full PDF projection');
+      const input = {
+        ...reservation(),
+        inputTokenCeiling: 64000,
+        lineage: {
+          ...reservation().lineage,
+          promptVersion: 'finance-standardization-proposal.v5' as const,
+          promptProjection: projected.receipt,
+        },
+      };
+      await expect(
+        store.reserveModelSpend(claim, {
+          ...input,
+          lineage: {
+            ...input.lineage,
+            promptProjection: {
+              ...projected.receipt,
+              spanCount: projected.receipt.spanCount + 1,
+            },
+          },
+        }),
+      ).rejects.toThrow('standardization-pdf-projection-conflict');
+      await expect(
+        store.reserveModelSpend(claim, { ...input, inputTokenCeiling: 63999 }),
+      ).rejects.toThrow('standardization-pdf-projection-conflict');
+      const spend = await store.reserveModelSpend(claim, input);
+      expect(
+        (
+          await sql(
+            'select lineage,input_token_ceiling from emdo.finance_standardization_spend where id=$1',
+            [spend.reservationId],
+          )
+        ).rows[0],
+      ).toMatchObject({
+        lineage: {
+          promptVersion: 'finance-standardization-proposal.v5',
+          promptProjection: projected.receipt,
+        },
+        input_token_ceiling: 64000,
+      });
+    });
     it('records costs after cancellation without permitting finish or a free retry', async () => {
       const { run, claim } = await extractedRun();
       const spend = await store.reserveModelSpend(claim, reservation());

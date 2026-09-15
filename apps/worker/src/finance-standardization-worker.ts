@@ -9,7 +9,7 @@ import {
   ProposedFinanceReportMappingSchema,
   ExtractedFinanceReportTableSchema,
   type FinanceStandardizationClaim,
-  type FinanceImagePromptProjectionReceiptSchema,
+  type FinancePromptProjectionReceiptSchema,
   type FinanceStandardizationExtractionEnvelope,
 } from '@emdo/contracts';
 import {
@@ -64,14 +64,10 @@ export interface StandardizationStore {
         managerInvocationId: string;
         financeInvocationId: string;
         orchestrationMode: 'registered-workflow';
-        promptVersion:
-          | 'finance-standardization-proposal.v1'
-          | 'finance-standardization-proposal.v2'
-          | 'finance-standardization-proposal.v3'
-          | 'finance-standardization-proposal.v4';
-        promptProjection?: z.infer<
-          typeof FinanceImagePromptProjectionReceiptSchema
-        >;
+        promptVersion: z.infer<
+          typeof FinanceStandardizationModelProvenanceSchema
+        >['promptVersion'];
+        promptProjection?: z.infer<typeof FinancePromptProjectionReceiptSchema>;
       };
     },
   ): Promise<{ reservationId: string }>;
@@ -147,13 +143,11 @@ export function createFinanceStandardizationWorker(dependencies: {
           managerInvocationId: string;
           financeInvocationId: string;
           orchestrationMode: 'registered-workflow';
-          promptVersion:
-            | 'finance-standardization-proposal.v1'
-            | 'finance-standardization-proposal.v2'
-            | 'finance-standardization-proposal.v3'
-            | 'finance-standardization-proposal.v4';
+          promptVersion: z.infer<
+            typeof FinanceStandardizationModelProvenanceSchema
+          >['promptVersion'];
           promptProjection?: z.infer<
-            typeof FinanceImagePromptProjectionReceiptSchema
+            typeof FinancePromptProjectionReceiptSchema
           >;
         };
       }): Promise<{ reservationId: string }>;

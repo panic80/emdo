@@ -3,6 +3,23 @@ import { FinanceImagePromptProjectionReceiptSchema } from './finance-image.js';
 import { IsoDateTimeSchema, Sha256Schema, UuidSchema } from './primitives.js';
 import { FinanceReportMappingDefinitionSchema } from './finance-report-mappings.js';
 
+export const FinancePdfPromptProjectionReceiptSchema = z.strictObject({
+  kind: z.literal('pdf-text.v1'),
+  extractionDigest: Sha256Schema,
+  projectionDigest: Sha256Schema,
+  pageCount: z.number().int().positive().max(25),
+  spanCount: z.number().int().nonnegative().max(20000),
+  textCharacters: z.number().int().nonnegative().max(262144),
+  omittedPages: z.literal(0),
+});
+export const FinancePromptProjectionReceiptSchema = z.union([
+  FinanceImagePromptProjectionReceiptSchema,
+  FinancePdfPromptProjectionReceiptSchema,
+]);
+export type FinancePromptProjectionReceipt = z.infer<
+  typeof FinancePromptProjectionReceiptSchema
+>;
+
 const Revision = z.number().int().positive().max(2147483647);
 export const FinanceExtractionAdapterSchema = z.strictObject({
   id: z.string().min(1).max(100),
@@ -90,8 +107,9 @@ export const FinanceStandardizationModelProvenanceSchema = z.strictObject({
     'finance-standardization-proposal.v2',
     'finance-standardization-proposal.v3',
     'finance-standardization-proposal.v4',
+    'finance-standardization-proposal.v5',
   ]),
-  promptProjection: FinanceImagePromptProjectionReceiptSchema.optional(),
+  promptProjection: FinancePromptProjectionReceiptSchema.optional(),
   completedAt: IsoDateTimeSchema,
 });
 export const FinanceStandardizationRunSchema = z.strictObject({
@@ -169,24 +187,35 @@ export const FinanceStandardizationClaimSchema = z.strictObject({
     entitlement: Revision,
   }),
 });
-export const FinanceStandardizationExtractionEnvelopeSchema = z.strictObject({
-  revision: Revision,
-  adapterId: z.string().min(1).max(100),
-  adapterVersion: z.string().min(1).max(50),
-  sourceDigest: Sha256Schema,
-  extractionDigest: Sha256Schema,
-  kind: z.enum([
-    'csv-table',
-    'xlsx-regions',
-    'pdf-layout',
-    'image-ocr',
-    'pdf-ocr',
-  ]),
-  factsJson: z.string().min(2).max(262144),
-  issues: z.array(z.string().min(1).max(500)).max(100),
-  complete: z.boolean(),
-  documentInstructions: z.literal('untrusted-source-data'),
-});
+export const FinanceStandardizationExtractionEnvelopeSchema = z
+  .strictObject({
+    revision: Revision,
+    adapterId: z.string().min(1).max(100),
+    adapterVersion: z.string().min(1).max(50),
+    sourceDigest: Sha256Schema,
+    extractionDigest: Sha256Schema,
+    kind: z.enum([
+      'csv-table',
+      'xlsx-regions',
+      'pdf-layout',
+      'image-ocr',
+      'pdf-ocr',
+    ]),
+    factsJson: z.string().min(2).max(2097152),
+    issues: z.array(z.string().min(1).max(500)).max(100),
+    complete: z.boolean(),
+    documentInstructions: z.literal('untrusted-source-data'),
+  })
+  .superRefine((envelope, context) => {
+    const maxBytes = envelope.kind === 'pdf-layout' ? 2097152 : 262144;
+    if (new TextEncoder().encode(envelope.factsJson).byteLength > maxBytes) {
+      context.addIssue({
+        code: 'custom',
+        path: ['factsJson'],
+        message: `Extraction facts exceed ${maxBytes} UTF-8 bytes.`,
+      });
+    }
+  });
 export type FinanceStandardizationClaim = z.infer<
   typeof FinanceStandardizationClaimSchema
 >;

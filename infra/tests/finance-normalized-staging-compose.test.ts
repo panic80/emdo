@@ -96,7 +96,7 @@ it.skipIf(!available)(
             total + Number(service.deploy.resources.limits.memory),
           0,
         );
-      expect(steadyStateBytes / 1024 / 1024).toBe(1760);
+      expect(steadyStateBytes / 1024 / 1024).toBe(2080);
       expect(
         (steadyStateBytes +
           Number(
@@ -105,7 +105,7 @@ it.skipIf(!available)(
           )) /
           1024 /
           1024,
-      ).toBe(1952);
+      ).toBe(2272);
       expect(config.services.api.environment.SYNTHETIC_BASE_API).toBe(
         'present',
       );

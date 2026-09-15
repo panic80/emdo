@@ -36,3 +36,25 @@ it('reserves the bounded structured schema and SDK envelope without increasing t
     financeProposalInputWithinBudget('x'.repeat(available - 1) + 'é'),
   ).toBe(false);
 });
+
+it('raises only PDF text input capacity and counts multibyte text and instruction/schema overhead', () => {
+  const available =
+    64000 -
+    DURABLE_FINANCE_PROPOSAL_SCHEMA_BYTE_CEILING -
+    2048 -
+    Buffer.byteLength(durableFinanceProposalInstructions, 'utf8');
+  expect(
+    financeProposalInputWithinBudget('x'.repeat(available), 'pdf-layout'),
+  ).toBe(true);
+  expect(
+    financeProposalInputWithinBudget(
+      'x'.repeat(available - 1) + 'é',
+      'pdf-layout',
+    ),
+  ).toBe(false);
+  for (const kind of ['csv-table', 'xlsx-regions', 'image-ocr', 'pdf-ocr']) {
+    expect(financeProposalInputWithinBudget('x'.repeat(available), kind)).toBe(
+      false,
+    );
+  }
+});

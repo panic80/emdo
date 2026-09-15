@@ -547,6 +547,20 @@
       "when": 1789449928269,
       "tag": "0077_finance_function_execute_privileges",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1789449928270,
+      "tag": "0078_finance_pdf_extraction_capacity",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1789449928271,
+      "tag": "0079_finance_pdf_prompt_projection",
+      "breakpoints": true
     }
   ]
 }
