@@ -200,7 +200,7 @@ test('Finance workspace preserves book context and clear populated, empty, and u
   await page.keyboard.press('End');
   await page.getByRole('tab', { name: 'Automations', exact: true }).click();
   await expect(
-    page.getByText('Automated workflows are not available yet.'),
+    page.getByText('Creating a grant does not start a workflow.'),
   ).toBeVisible();
   await page.getByRole('tab', { name: 'Reports & tax', exact: true }).click();
   await page.getByRole('button', { name: 'Tax cases', exact: true }).click();
@@ -208,7 +208,7 @@ test('Finance workspace preserves book context and clear populated, empty, and u
   await expect(
     page
       .getByRole('tabpanel')
-      .getByText('Calculations unavailable', { exact: true }),
+      .getByText('Full-return calculations unavailable', { exact: true }),
   ).toHaveCount(7);
   await page.screenshot({
     path: '/tmp/emdo-finance-astra-readiness.png',

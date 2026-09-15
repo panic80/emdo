@@ -322,7 +322,7 @@ test('saved report library preserves snapshot provenance, readable downloads, an
   await expect(
     page
       .getByRole('tabpanel')
-      .getByText('Calculations unavailable', { exact: true }),
+      .getByText('Full-return calculations unavailable', { exact: true }),
   ).toHaveCount(7);
   expect(errors).toEqual([]);
 });

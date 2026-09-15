@@ -263,12 +263,41 @@ test('production preview boots the pinned encrypted PowerSync OPFS runtime', asy
     ]),
   );
 
-  await page.reload();
-  await expect
-    .poll(() =>
-      page.evaluate(() => Boolean(navigator.serviceWorker.controller)),
-    )
-    .toBe(true);
+  // Establish legacy authority online; never invent authority after offline recovery.
+  await page.route('**/api/v1/experience/finance?*', (route) =>
+    route.fulfill({
+      json: { schemaVersion: 1, ledgerAuthority: 'legacy', items: [] },
+    }),
+  );
+  await page
+    .getByRole('link', { name: 'Finance', exact: true })
+    .first()
+    .click();
+  await page.getByRole('tab', { name: 'Activity', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Add transaction' }),
+  ).toBeEnabled();
+  await page.unroute('**/api/v1/experience/finance?*');
+  await page.context().setOffline(true);
+  await page.getByRole('button', { name: 'Add transaction' }).click();
+  await page.getByLabel('Description').fill('Offline transit pass');
+  await page.getByLabel('Category').fill('Transport');
+  await page.getByLabel('Amount (CAD)').fill('24.50');
+  await page.getByLabel('Date').fill('2026-08-10');
+  await page.getByRole('button', { name: 'Save transaction' }).click();
+  await expect(
+    page
+      .getByRole('table', { name: 'Recent manual transactions' })
+      .getByRole('row')
+      .getByRole('cell'),
+  ).toHaveText([
+    '08-10',
+    'Offline transit pass',
+    'Transport',
+    '$24.50',
+    'Categorize or annotate',
+  ]);
+  await page.getByRole('link', { name: 'Today', exact: true }).first().click();
   await page.unroute('**/api/auth/get-session');
   await page.context().setOffline(true);
   expect(await page.evaluate(() => navigator.onLine)).toBe(false);
@@ -282,7 +311,7 @@ test('production preview boots the pinned encrypted PowerSync OPFS runtime', asy
     page.getByRole('heading', { name: 'Good morning' }),
   ).toBeVisible();
   await expect(
-    page.getByText('Offline · Local edits stay on this device', {
+    page.getByText('1 local change queued', {
       exact: true,
     }),
   ).toBeVisible({ timeout: 30_000 });
@@ -292,34 +321,14 @@ test('production preview boots the pinned encrypted PowerSync OPFS runtime', asy
     .first()
     .click();
   await expect(page.getByRole('heading', { name: 'Finance' })).toBeVisible();
-  await page.getByRole('button', { name: 'Add transaction' }).click();
-  await page.getByLabel('Description').fill('Offline transit pass');
-  await page.getByLabel('Category').fill('Transport');
-  await page.getByLabel('Amount (CAD)').fill('24.50');
-  await page.getByLabel('Date').fill('2026-08-10');
-  await page.getByRole('button', { name: 'Save transaction' }).click();
-
-  const transactionRow = page
-    .getByRole('table', { name: 'Recent manual transactions' })
-    .getByRole('row');
-  await expect(transactionRow.getByRole('cell')).toHaveText([
-    '08-10',
-    'Offline transit pass',
-    'Transport',
-    '$24.50',
-  ]);
+  await page.getByRole('tab', { name: 'Activity', exact: true }).click();
+  // Recovery retains the encrypted pending write but does not infer ledger authority.
   await expect(
-    page.getByText('1 local change queued · Connect to sync'),
-  ).toBeVisible();
-
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'Finance' })).toBeVisible();
-  await expect(transactionRow.getByRole('cell')).toHaveText([
-    '08-10',
-    'Offline transit pass',
-    'Transport',
-    '$24.50',
-  ]);
+    page.getByRole('button', { name: 'Add transaction' }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText('Offline transit pass', { exact: true }),
+  ).toHaveCount(0);
   await expect(
     page.getByText('1 local change queued · Connect to sync'),
   ).toBeVisible();

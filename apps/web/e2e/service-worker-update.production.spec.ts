@@ -178,6 +178,11 @@ async function readControllerMarker(page: Page): Promise<string> {
 }
 
 async function createOfflineFinanceEdit(page: Page): Promise<void> {
+  await page.getByRole('tab', { name: 'Activity', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Add transaction' }),
+  ).toBeEnabled();
+  await page.unroute('**/api/v1/experience/finance?*');
   await page.context().setOffline(true);
   await page.getByRole('button', { name: 'Add transaction' }).click();
   await page.getByLabel('Description').fill('Update-safe transit pass');
@@ -200,6 +205,11 @@ test.beforeEach(async ({ page }) => {
 test('defers a real service worker update while an offline edit is pending', async ({
   page,
 }) => {
+  await page.route('**/api/v1/experience/finance?*', (route) =>
+    route.fulfill({
+      json: { schemaVersion: 1, ledgerAuthority: 'legacy', items: [] },
+    }),
+  );
   await establishControlledClient(page, '/finance');
   await expect(page.getByRole('heading', { name: 'Finance' })).toBeVisible();
   await createOfflineFinanceEdit(page);
@@ -224,7 +234,13 @@ test('defers a real service worker update while an offline edit is pending', asy
       .getByRole('table', { name: 'Recent manual transactions' })
       .getByRole('row')
       .getByRole('cell'),
-  ).toHaveText(['08-10', 'Update-safe transit pass', 'Transport', '$24.50']);
+  ).toHaveText([
+    '08-10',
+    'Update-safe transit pass',
+    'Transport',
+    '$24.50',
+    'Categorize or annotate',
+  ]);
   await expect(
     page.getByText('1 local change waiting to sync', { exact: true }).first(),
   ).toBeVisible();

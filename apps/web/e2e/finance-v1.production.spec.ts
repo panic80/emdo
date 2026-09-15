@@ -81,18 +81,20 @@ test('renders four localized Finance v1 views and uses attachment-only document 
     'true',
   );
   await expect(page.getByRole('textbox', { name: 'Ask EMDO' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Activité' }).click();
   await expect(
     page.getByText(/OpenAI n’utilise pas vos données/u),
   ).toBeVisible();
   await expect(
     page.getByText(/Seules les informations CAD révisées/u),
   ).toBeVisible();
-
-  await page.getByRole('tab', { name: 'Activité' }).click();
   await expect(page.getByText('Reçu examiné')).toBeVisible();
   await page.getByRole('tab', { name: 'Planification' }).click();
   await expect(page.getByText('Dépenses révisées')).toBeVisible();
   await page.getByRole('tab', { name: 'Documents' }).click();
+  await page
+    .getByRole('button', { name: 'Workspace uploads', exact: true })
+    .click();
   await expect(page.getByRole('textbox', { name: 'Ask EMDO' })).toBeVisible();
   const original = await page.getByRole('link', {
     name: 'Télécharger l’original',

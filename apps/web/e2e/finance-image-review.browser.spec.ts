@@ -184,10 +184,13 @@ test('image original, visual corrections, durable candidate and separate approva
       .toBe(1100);
     if (name.includes('12.5O')) {
       await review
-        .getByLabel('Image zoom', { exact: true })
+        .getByRole('combobox', { name: /^Image zoom/u })
         .selectOption('200');
       await review
-        .getByLabel('Text visible in this region', { exact: true })
+        .getByRole('textbox', {
+          name: 'Text visible in this region',
+          exact: true,
+        })
         .fill('12.50');
       await expect(
         review.getByRole('checkbox', {
@@ -219,7 +222,7 @@ test('image original, visual corrections, durable candidate and separate approva
       await page.setViewportSize({ width: 390, height: 844 });
       await page.emulateMedia({ reducedMotion: 'reduce' });
       await review
-        .getByLabel('Image zoom', { exact: true })
+        .getByRole('combobox', { name: /^Image zoom/u })
         .selectOption('300');
       await nativePosition(
         page,
@@ -358,10 +361,10 @@ test('image original, visual corrections, durable candidate and separate approva
   ).toBe(false);
   await expectNoSeriousAccessibilityViolations(page);
   await mapping
-    .getByLabel('Mapping decision', { exact: true })
+    .getByRole('combobox', { name: 'Mapping decision', exact: true })
     .selectOption('approve');
   await mapping
-    .getByLabel('Review reason', { exact: true })
+    .getByRole('textbox', { name: 'Review reason', exact: true })
     .fill(
       'Verified source-derived validation, exact pixel regions and the recorded visual correction.',
     );
@@ -373,17 +376,20 @@ test('image original, visual corrections, durable candidate and separate approva
     .click();
   await expect(
     mapping
-      .getByLabel('Saved report to standardize', { exact: true })
+      .getByRole('combobox', {
+        name: 'Saved report to standardize',
+        exact: true,
+      })
       .getByRole('option'),
   ).toHaveCount(2);
   await mapping
-    .getByLabel('Saved report to standardize', { exact: true })
+    .getByRole('combobox', { name: 'Saved report to standardize', exact: true })
     .selectOption(imageReviewIds.evidence);
   await mapping
-    .getByLabel('Report financial account', { exact: true })
+    .getByRole('combobox', { name: 'Report financial account', exact: true })
     .selectOption(imageReviewIds.account);
   await mapping
-    .getByLabel('Report provider', { exact: true })
+    .getByRole('textbox', { name: 'Report provider', exact: true })
     .fill('Example Bank');
   await mapping
     .getByRole('button', { name: 'Standardize for import review', exact: true })
@@ -483,7 +489,7 @@ test('a blocked image run with no OCR words supports explicit pixel review and c
     .getByRole('button', { name: 'Use pixel region', exact: true })
     .click();
   await review
-    .getByLabel('Text visible in this region', { exact: true })
+    .getByRole('textbox', { name: 'Text visible in this region', exact: true })
     .fill('Date');
   await expect(
     review.getByRole('checkbox', { name: /I checked this region/u }),

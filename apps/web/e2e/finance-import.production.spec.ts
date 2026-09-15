@@ -167,6 +167,10 @@ test('requests EMDO approval for a reviewed CSV import against the production br
     page.getByRole('heading', { name: 'Finance', exact: true }),
   ).toBeVisible();
 
+  await page.getByRole('tab', { name: 'Documents', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Statement imports', exact: true })
+    .click();
   await page.getByRole('button', { name: 'Import statement' }).click();
   await expect(page.getByLabel('Import account')).toBeVisible();
   await page.getByLabel('Import account').selectOption(accountId);
@@ -264,6 +268,20 @@ test('requests EMDO approval for a reviewed CSV import against the production br
         const bounds = element.getBoundingClientRect();
         if (bounds.left >= -0.5 && bounds.right <= viewportWidth + 0.5) {
           return [];
+        }
+        // Offscreen tabs remain reachable within the narrow-screen nav scrollers.
+        const navigation = element.parentElement?.closest<HTMLElement>(
+          '.finance-workspace-tabs, .finance-subnav',
+        );
+        if (navigation) {
+          const navBounds = navigation.getBoundingClientRect();
+          const overflow = window.getComputedStyle(navigation).overflowX;
+          if (
+            ['auto', 'scroll'].includes(overflow) &&
+            navBounds.left >= -0.5 &&
+            navBounds.right <= viewportWidth + 0.5
+          )
+            return [];
         }
         const style = window.getComputedStyle(element);
         const ancestors: ReturnType<typeof describeLayout>[] = [];

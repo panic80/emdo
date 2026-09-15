@@ -535,7 +535,7 @@ test('a saved XLSX proposal without a mapping record opens fresh source review d
   ).toHaveCount(0);
   await detail.getByRole('button', { name: 'Review original source' }).click();
   const review = page.getByRole('region', {
-    name: 'Saved XLSX proposal source review',
+    name: 'Selected XLSX source review',
   });
   await expect(review).toBeFocused();
   await review

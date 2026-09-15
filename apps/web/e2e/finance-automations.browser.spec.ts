@@ -128,11 +128,13 @@ test('administrator reviews exact grant authority and revokes it across desktop 
   await expect(panel.getByText('99999999999999999999.99 CAD')).toBeVisible();
   await expect(panel.getByText(grant.validFrom)).toBeVisible();
   await expect(
-    panel.getByText('Execution disabled', { exact: true }),
+    panel.getByText('Checked at execution', { exact: true }),
   ).toBeVisible();
+  await expect(panel.getByRole('button', { name: /run now/i })).toHaveCount(0);
   await expect(
-    panel.getByRole('button', { name: /create|run now/i }),
-  ).toHaveCount(0);
+    panel.getByRole('button', { name: 'Create automation grant', exact: true }),
+  ).toBeVisible();
+  expect(mutations).toEqual([]);
   await page.screenshot({
     path: '/tmp/emdo-finance-automations-desktop.png',
     fullPage: true,
