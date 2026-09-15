@@ -177,10 +177,10 @@ export function createDurableFinanceStandardizationHook(dependencies: {
       });
     // JSON embeds facts directly. Subtract the full envelope with its four-byte
     // null placeholder removed to allocate exactly the remaining prompt bytes.
-    const inputCeiling =
+    const maximumInputCeiling =
       extraction.kind === 'pdf-layout' ? PDF_INPUT_CEILING : INPUT_CEILING;
     const projectionByteAllowance =
-      promptByteCeiling(inputCeiling) -
+      promptByteCeiling(maximumInputCeiling) -
       (Buffer.byteLength(buildPrompt(null), 'utf8') - 4);
     const projected =
       extraction.kind === 'image-ocr'
@@ -215,6 +215,15 @@ export function createDurableFinanceStandardizationHook(dependencies: {
             ? 'pdf-complete-text-exceeds-input-budget'
             : 'extraction-needs-bounded-selection',
       };
+    // Reserve the complete PDF request's conservative UTF-8 token bound,
+    // not unused capacity. Other extraction formats retain their fixed ceiling.
+    const inputCeiling =
+      extraction.kind === 'pdf-layout'
+        ? Buffer.byteLength(prompt, 'utf8') +
+          Buffer.byteLength(durableFinanceProposalInstructions, 'utf8') +
+          DURABLE_FINANCE_PROPOSAL_SCHEMA_BYTE_CEILING +
+          SDK_ENVELOPE_BYTE_CEILING
+        : INPUT_CEILING;
     const leaseLive = () =>
       !controls.signal.aborted && clock() < Date.parse(claim.leaseExpiresAt);
     const current = async () => {

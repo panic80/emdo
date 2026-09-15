@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 const url = process.env.FINANCE_AUTOMATION_TEST_DATABASE_URL;
 describe.skipIf(!url)('migrated PDF spend projection guard', () => {
-  it('validates complete facts, UTF-16 counts, receipt and exact ceilings using the deployed guard body', async () => {
+  it('validates complete facts, UTF-16 counts, receipt and bounded ceilings using the deployed guard body', async () => {
     const client = new pg.Client({ connectionString: url });
     await client.connect();
     try {
@@ -78,7 +78,8 @@ describe.skipIf(!url)('migrated PDF spend projection guard', () => {
       ]) {
         expect(await check({ ...receipt, ...patch })).toBe(false);
       }
-      expect(await check(receipt, 63999)).toBe(false);
+      expect(await check(receipt, 32000)).toBe(true);
+      expect(await check(receipt, 0)).toBe(false);
       expect(await check(receipt, 64001)).toBe(false);
       expect(await check(receipt, 64000, 3999)).toBe(false);
       const missingField: Partial<typeof receipt> = { ...receipt };

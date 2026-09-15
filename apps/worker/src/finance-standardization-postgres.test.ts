@@ -654,7 +654,7 @@ describe.skipIf(!url)(
         }),
       ).rejects.toThrow('standardization-pdf-projection-conflict');
       await expect(
-        store.reserveModelSpend(claim, { ...input, inputTokenCeiling: 63999 }),
+        store.reserveModelSpend(claim, { ...input, inputTokenCeiling: 64001 }),
       ).rejects.toThrow('standardization-pdf-projection-conflict');
       const spend = await store.reserveModelSpend(claim, input);
       expect(

@@ -9,7 +9,14 @@ import {
 const uuid = (n: number) =>
   `73000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const now = Date.parse('2026-09-14T00:00:00Z');
-function fixture(clock = () => now) {
+function fixture(
+  clock = () => now,
+  pricing = {
+    version: 'test-rates',
+    inputCadMinorPerMillionTokens: 10000,
+    outputCadMinorPerMillionTokens: 20000,
+  },
+) {
   const claim = {
     runId: uuid(1),
     workspaceId: uuid(2),
@@ -85,11 +92,7 @@ function fixture(clock = () => now) {
     registration,
     provider: { generate },
     clock,
-    pricing: {
-      version: 'test-rates',
-      inputCadMinorPerMillionTokens: 10000,
-      outputCadMinorPerMillionTokens: 20000,
-    },
+    pricing,
   });
   return { claim, extraction, proposal, generate, controls, hook };
 }
@@ -516,7 +519,11 @@ describe('EMDO durable Finance standardization delegation', () => {
 function pdfFixture(
   text = 'Date Description Amount CAD\n' + 'synthetic 001.2300\n'.repeat(110),
 ) {
-  const f = fixture();
+  const f = fixture(() => now, {
+    version: 'deployed-rates',
+    inputCadMinorPerMillionTokens: 1384,
+    outputCadMinorPerMillionTokens: 6920,
+  });
   const facts = {
     status: 'extracted',
     format: 'pdf',
@@ -570,16 +577,20 @@ it('sends all PDF page text with a bound receipt persisted before dispatch and a
     'projectionDigest',
     createHash('sha256').update(JSON.stringify(projection)).digest('hex'),
   );
-  expect(
+  const reservedInput =
     Buffer.byteLength(generated.prompt + generated.instructions, 'utf8') +
-      8192 +
-      2048,
-  ).toBeLessThanOrEqual(64000);
+    8192 +
+    2048;
+  expect(reservedInput).toBeLessThanOrEqual(64000);
+  const expectedCost = Math.ceil(
+    (reservedInput * 1384 + 4000 * 6920) / 1000000,
+  );
+  expect(expectedCost).toBeLessThanOrEqual(100);
   expect(f.controls.reserveModelSpend).toHaveBeenCalledWith(
     expect.objectContaining({
-      inputTokenCeiling: 64000,
+      inputTokenCeiling: reservedInput,
       outputTokenCeiling: 4000,
-      estimatedCadMinor: 720,
+      estimatedCadMinor: expectedCost,
       lineage: expect.objectContaining({
         promptVersion: 'finance-standardization-proposal.v5',
         promptProjection: receipt,
@@ -602,17 +613,36 @@ it('blocks a PDF whose complete text cannot fit without reserving spend or dispa
   expect(f.generate).not.toHaveBeenCalled();
 });
 
-it('enforces PDF usage against its reserved 64000 ceiling', async () => {
+it('enforces PDF usage against the exact reserved request ceiling', async () => {
   const f = pdfFixture();
-  f.generate.mockResolvedValueOnce({
+  f.generate.mockImplementationOnce(async (input) => ({
     proposal: f.proposal,
     providerResponseId: 'resp_pdf',
     model: 'gpt-6-astra',
-    inputTokens: 64001,
+    inputTokens:
+      Buffer.byteLength(input.prompt + input.instructions, 'utf8') +
+      8192 +
+      2048 +
+      1,
     outputTokens: 200,
-  });
+  }));
   expect(await f.hook(f, f.controls)).toEqual({
     status: 'blocked',
     reason: 'provider-budget-exceeded',
   });
+});
+
+it('accepts PDF usage at the exact complete-request reservation boundary', async () => {
+  const f = pdfFixture();
+  f.generate.mockImplementationOnce(async (input) => ({
+    proposal: f.proposal,
+    providerResponseId: 'resp_pdf_boundary',
+    model: 'gpt-6-astra',
+    inputTokens:
+      Buffer.byteLength(input.prompt + input.instructions, 'utf8') +
+      8192 +
+      2048,
+    outputTokens: 4000,
+  }));
+  expect((await f.hook(f, f.controls)).status).toBe('proposed');
 });

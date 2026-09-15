@@ -51,7 +51,7 @@ BEGIN
      OR (projection->>'spanCount')::integer>20000
      OR (projection->>'spanCount')::integer IS DISTINCT FROM (SELECT sum(jsonb_array_length(p->'spans')) FROM jsonb_array_elements((ex.envelope->>'factsJson')::jsonb->'pages') p)
      OR (projection->>'textCharacters')::integer IS DISTINCT FROM (SELECT coalesce(sum(CASE WHEN ascii(c)>65535 THEN 2 ELSE 1 END),0) FROM jsonb_array_elements((ex.envelope->>'factsJson')::jsonb->'pages') p CROSS JOIN LATERAL regexp_split_to_table(p->>'text','') c)
-     OR input_ceiling<>64000 OR output_ceiling<>4000
+     OR input_ceiling NOT BETWEEN 1 AND 64000 OR output_ceiling<>4000
      OR octet_length(projection::text)>1200
      THEN RAISE EXCEPTION 'standardization-pdf-projection-conflict' USING ERRCODE='23514'; END IF;
  ELSIF projection IS NOT NULL AND projection<>'null'::jsonb THEN
