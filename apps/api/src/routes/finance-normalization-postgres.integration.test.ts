@@ -502,7 +502,7 @@ describe.skipIf(
           [run.id],
         )
       ).rows[0].lineage;
-      expect(lineage.promptVersion).toBe('finance-standardization-proposal.v4');
+      expect(lineage.promptVersion).toBe('finance-standardization-proposal.v5');
       await expect(
         evidence.importMappedReport(context, bookId, mappingId, randomUUID(), {
           evidenceId,
