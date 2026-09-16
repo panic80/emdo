@@ -1004,11 +1004,19 @@ function ReportMappingsWorkspace({
                 review.
               </p>
               <p>
-                Date format: {detail.mapping.definition.dateFormat}. Decimal
-                separator: {detail.mapping.definition.decimalSeparator}.
+                Date format: {detail.mapping.definition.dateFormat}.
+                {detail.mapping.definition.dateYear != null &&
+                  ` Statement year: ${detail.mapping.definition.dateYear}.`}{' '}
+                Decimal separator: {detail.mapping.definition.decimalSeparator}.
                 Grouping separator:{' '}
                 {JSON.stringify(detail.mapping.definition.groupingSeparator)}.
               </p>
+              {detail.mapping.definition.currencyCode && (
+                <p>
+                  Reviewed account currency:{' '}
+                  {detail.mapping.definition.currencyCode}.
+                </p>
+              )}
               {detail.mapping.definition.quantityUnit && (
                 <p>
                   Quantity unit: {detail.mapping.definition.quantityUnit}. Quote

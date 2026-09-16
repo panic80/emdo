@@ -101,10 +101,12 @@ export function reconciliationFixture(run: FinanceStandardizationRun) {
         body.expectedRevision !== record.revision ||
         (body.decision === 'confirm-not-sent'
           ? !choice.canConfirmNotSent
-          : !choice.canAcceptActual)
+          : body.decision === 'retain-reserved-cost'
+            ? !choice.canRetainReservation
+            : !choice.canAcceptActual)
       )
         return { status: 409, json: {} };
-      if (choice.reservation) {
+      if (choice.reservation && body.decision !== 'retain-reserved-cost') {
         choice.reservation.status =
           body.decision === 'confirm-not-sent' ? 'not-sent' : 'completed';
         choice.reservation.actualCadMinor =

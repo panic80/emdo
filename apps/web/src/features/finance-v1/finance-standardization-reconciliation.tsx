@@ -22,7 +22,8 @@ import {
 } from './finance-standardization-reconciliation-api.js';
 import './finance-standardization-reconciliation.css';
 
-type Decision = 'confirm-not-sent' | 'accept-actual-cost';
+type Decision =
+  'confirm-not-sent' | 'accept-actual-cost' | 'retain-reserved-cost';
 const eligible = (status: string) =>
   ['indeterminate', 'cancelled', 'authority-revoked'].includes(status);
 const statusCopy: Record<string, string> = {
@@ -195,7 +196,9 @@ function ReconciliationWorkspace({
         !decision ||
         (decision === 'confirm-not-sent'
           ? !selected.canConfirmNotSent
-          : !selected.canAcceptActual))
+          : decision === 'retain-reserved-cost'
+            ? !selected.canRetainReservation
+            : !selected.canAcceptActual))
     )
       return;
     working.current = true;
@@ -490,9 +493,11 @@ function ReconciliationWorkspace({
               </details>
             </div>
           )}
-          {selected?.canConfirmNotSent || selected?.canAcceptActual ? (
+          {selected?.canConfirmNotSent ||
+          selected?.canAcceptActual ||
+          selected?.canRetainReservation ? (
             <div className="finance-outcome-resolution">
-              <h6>Review an evidence-supported resolution</h6>
+              <h6>Review the saved outcome and cost</h6>
               <div className="finance-standardization-actions">
                 {selected.canConfirmNotSent && (
                   <Button
@@ -505,6 +510,21 @@ function ReconciliationWorkspace({
                     }}
                   >
                     Review not-sent resolution
+                  </Button>
+                )}
+                {selected.canRetainReservation && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={locked}
+                    onClick={() => {
+                      setDecision('retain-reserved-cost');
+                      setConfirmed(false);
+                    }}
+                  >
+                    Retain{' '}
+                    {cadMinorText(selected.reservation!.reservedCadMinor)} for
+                    separate retry
                   </Button>
                 )}
                 {selected.canAcceptActual && (
@@ -529,14 +549,18 @@ function ReconciliationWorkspace({
                   <strong>
                     {decision === 'confirm-not-sent'
                       ? 'Confirm the saved request was not sent'
-                      : `Accept the evidenced actual cost: ${cadMinorText(selected.actualCost)}`}
+                      : decision === 'retain-reserved-cost'
+                        ? `Keep the full ${cadMinorText(selected.reservation!.reservedCadMinor)} reserved`
+                        : `Accept the evidenced actual cost: ${cadMinorText(selected.actualCost)}`}
                   </strong>
                   <p>
                     {decision === 'confirm-not-sent'
                       ? record.spend.length
                         ? 'The saved dispatch record states that this request was not sent. This is the evidence for releasing the unused reservation.'
                         : 'No provider cost reservation exists for this analysis.'
-                      : 'The actual cost comes from saved settlement or verified provider evidence. No amount can be entered or overridden here.'}
+                      : decision === 'retain-reserved-cost'
+                        ? 'The actual provider charge remains unknown. The full reservation stays counted against the existing budget. A separate retry uses the same saved original and may incur another charge, subject to current authorization and limits.'
+                        : 'The actual cost comes from saved settlement or verified provider evidence. No amount can be entered or overridden here.'}
                   </p>
                   <label>
                     <input
@@ -545,9 +569,9 @@ function ReconciliationWorkspace({
                       disabled={locked}
                       onChange={(event) => setConfirmed(event.target.checked)}
                     />
-                    I reviewed this exact saved evidence and understand that
-                    this resolves the analysis outcome only. It does not
-                    approve, import, or retry the report.
+                    {decision === 'retain-reserved-cost'
+                      ? 'I reviewed this exact attempt and acknowledge that the actual charge is uncertain and the full reserved cost remains held. This does not approve, import, post, or retry the report.'
+                      : 'I reviewed this exact saved evidence and understand that this resolves the analysis outcome only. It does not approve, import, or retry the report.'}
                   </label>
                   <Button
                     type="button"
@@ -592,7 +616,9 @@ function ReconciliationWorkspace({
                     <strong>
                       {resolution.decision === 'confirm-not-sent'
                         ? 'Confirmed not sent'
-                        : 'Accepted evidenced actual cost'}
+                        : resolution.decision === 'retain-reserved-cost'
+                          ? 'Retained full reserved cost; retry requires a separate action'
+                          : 'Accepted evidenced actual cost'}
                     </strong>
                     <span>
                       {resolution.reviewedAt} · reviewed by{' '}

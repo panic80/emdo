@@ -82,6 +82,62 @@ describe('standardization outcome reconciliation', () => {
     expect(fixture.writes).toEqual([]);
     expect(fixture.record.spend[0]!.actualCadMinor).toBeNull();
   });
+  it('requires explicit acknowledgment to retain the exact reserved cost and never retries automatically', async () => {
+    const fixture = setup();
+    fixture.record.spend[0]!.providerResponseId = null;
+    const before = structuredClone(fixture.record.spend);
+    render(<FinanceStandardizationReconciliation {...fixture.props} />);
+    await open();
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Retain CAD 0.50 for separate retry',
+      }),
+    );
+    expect(
+      screen.getByText('Keep the full CAD 0.50 reserved'),
+    ).toBeInTheDocument();
+    const save = screen.getByRole('button', {
+      name: 'Save outcome resolution',
+    });
+    expect(save).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: /actual charge is uncertain/u }),
+    );
+    fireEvent.click(save);
+    await waitFor(() => expect(fixture.props.onUpdated).toHaveBeenCalledOnce());
+    expect(fixture.writes).toHaveLength(1);
+    expect(fixture.writes[0]!.path).toMatch(/\/resolve$/u);
+    expect(fixture.writes[0]!.body).toEqual({
+      expectedRevision: 1,
+      reservationId,
+      decision: 'retain-reserved-cost',
+      receiptId: null,
+      acknowledgeNoApproval: true,
+    });
+    expect(fixture.record.spend).toEqual(before);
+    expect(fixture.record.status).toBe('blocked');
+    expect(
+      screen.getByText(
+        'Retained full reserved cost; retry requires a separate action',
+      ),
+    ).toBeInTheDocument();
+  });
+  it('only offers retained cost review for the latest indeterminate attempt below the attempt limit', () => {
+    const { record } = setup();
+    const choices = () => reconciliationChoices(record, reservationId, '');
+    expect(choices().canRetainReservation).toBe(true);
+    record.hasLiveLease = true;
+    expect(choices().canRetainReservation).toBe(false);
+    record.hasLiveLease = false;
+    record.spend[0]!.status = 'reserved';
+    expect(choices().canRetainReservation).toBe(false);
+    record.spend[0]!.status = 'indeterminate';
+    record.spend[0]!.attempt = 3;
+    expect(choices().canRetainReservation).toBe(false);
+    record.spend[0]!.attempt = 1;
+    record.canResolve = false;
+    expect(choices().canRetainReservation).toBe(false);
+  });
   it('requests a receipt and resumes an uncertain response from saved status without a second lookup', async () => {
     const fixture = setup();
     fixture.state.loseLookupResponse = true;

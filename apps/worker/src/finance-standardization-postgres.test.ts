@@ -571,7 +571,7 @@ describe.skipIf(!url)(
       'finance-standardization-proposal.v2',
       'finance-standardization-proposal.v3',
       'finance-standardization-proposal.v4',
-      'finance-standardization-proposal.v5',
+      'finance-standardization-proposal.v6',
     ] as const)(
       'reserves supported prompt lineage %s through the worker role',
       async (promptVersion) => {
@@ -637,7 +637,7 @@ describe.skipIf(!url)(
         inputTokenCeiling: 64000,
         lineage: {
           ...reservation().lineage,
-          promptVersion: 'finance-standardization-proposal.v5' as const,
+          promptVersion: 'finance-standardization-proposal.v6' as const,
           promptProjection: projected.receipt,
         },
       };
@@ -666,7 +666,7 @@ describe.skipIf(!url)(
         ).rows[0],
       ).toMatchObject({
         lineage: {
-          promptVersion: 'finance-standardization-proposal.v5',
+          promptVersion: 'finance-standardization-proposal.v6',
           promptProjection: projected.receipt,
         },
         input_token_ceiling: 64000,
@@ -802,6 +802,186 @@ describe.skipIf(!url)(
           })
         ).status,
       ).toBe('queued');
+    });
+    it('retains uncertain spend byte-for-byte through administrator review and bounded separate retries', async () => {
+      const { run, claim: initialClaim, extracted } = await extractedRun();
+      let claim = initialClaim;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const spend = await store.reserveModelSpend(claim, reservation());
+        await store.markModelDispatch(claim, spend);
+        await store.settleModelSpend(claim, {
+          reservationId: spend.reservationId,
+          outcome: 'indeterminate',
+        });
+        await store.block(
+          claim,
+          'indeterminate',
+          'Provider result is unavailable.',
+        );
+        const current = await runs.reconciliation(context, bookId, run.id);
+        const before = (
+          await sql(
+            'select to_jsonb(s) as value from emdo.finance_standardization_spend s where id=$1',
+            [spend.reservationId],
+          )
+        ).rows[0].value;
+        const command = {
+          expectedRevision: current.revision,
+          reservationId: spend.reservationId,
+          decision: 'retain-reserved-cost',
+          receiptId: null,
+          acknowledgeNoApproval: true,
+        };
+        await expect(
+          runs.change(context, bookId, run.id, 'retry', randomUUID(), {
+            expectedRevision: current.revision,
+          }),
+        ).rejects.toThrow();
+        if (attempt === 3) {
+          await expect(
+            runs.resolveOutcome(context, bookId, run.id, randomUUID(), command),
+          ).rejects.toThrow();
+          expect(current.resolutions).toHaveLength(2);
+          break;
+        }
+        await expect(
+          runs.resolveOutcome(context, bookId, run.id, randomUUID(), {
+            ...command,
+            expectedRevision: current.revision + 1,
+          }),
+        ).rejects.toThrow();
+        await expect(
+          runs.resolveOutcome(context, bookId, run.id, randomUUID(), {
+            ...command,
+            reservationId: randomUUID(),
+          }),
+        ).rejects.toThrow();
+        await expect(async () =>
+          runs.resolveOutcome(context, bookId, run.id, randomUUID(), {
+            ...command,
+            receiptId: randomUUID(),
+          }),
+        ).rejects.toThrow();
+        const key = randomUUID();
+        const resolved = await runs.resolveOutcome(
+          context,
+          bookId,
+          run.id,
+          key,
+          command,
+        );
+        expect(resolved.status).toBe('blocked');
+        expect(resolved.resolutions.at(-1)).toMatchObject({
+          reservationId: spend.reservationId,
+          decision: 'retain-reserved-cost',
+          reviewedBy: context.userId,
+          receiptId: null,
+        });
+        expect(
+          (
+            await sql(
+              'select to_jsonb(s) as value from emdo.finance_standardization_spend s where id=$1',
+              [spend.reservationId],
+            )
+          ).rows[0].value,
+        ).toEqual(before);
+        expect(
+          await runs.resolveOutcome(context, bookId, run.id, key, command),
+        ).toEqual(resolved);
+        const queued = await runs.change(
+          context,
+          bookId,
+          run.id,
+          'retry',
+          randomUUID(),
+          { expectedRevision: resolved.revision },
+        );
+        expect(queued).toMatchObject({
+          id: run.id,
+          evidenceId: run.evidenceId,
+          sourceDigest: run.sourceDigest,
+          status: 'queued',
+          approval: 'not-granted',
+          posting: 'not-performed',
+        });
+        const outcome = await store.claim(run.id, attempt + 1);
+        claim = FinanceStandardizationClaimSchema.parse(
+          (outcome as { claim: unknown }).claim,
+        );
+        expect((await runs.get(context, bookId, run.id)).attempt).toBe(
+          attempt + 1,
+        );
+        await store.saveExtraction(
+          claim,
+          { ...extracted.summary, revision: attempt + 1 },
+          { ...extracted.envelope, revision: attempt + 1 },
+        );
+        // Full prior reservations still consume the existing run budget.
+        await expect(
+          store.reserveModelSpend(claim, {
+            ...reservation(),
+            estimatedCadMinor: 1000,
+          }),
+        ).rejects.toThrow();
+      }
+      expect(
+        (
+          await sql(
+            "select count(*)::integer n from emdo.finance_standardization_spend where run_id=$1 and status='indeterminate' and actual_cad_minor is null",
+            [run.id],
+          )
+        ).rows[0].n,
+      ).toBe(3);
+    });
+    it('rejects retained-cost review for live leases, reserved spend, expired authority and non-administrators', async () => {
+      const { run, claim } = await extractedRun();
+      const spend = await store.reserveModelSpend(claim, reservation());
+      await store.markModelDispatch(claim, spend);
+      await store.block(claim, 'indeterminate', 'Outcome unknown.');
+      const current = await runs.reconciliation(context, bookId, run.id);
+      const command = {
+        expectedRevision: current.revision,
+        reservationId: spend.reservationId,
+        decision: 'retain-reserved-cost',
+        receiptId: null,
+        acknowledgeNoApproval: true,
+      };
+      const resolve = () =>
+        runs.resolveOutcome(context, bookId, run.id, randomUUID(), command);
+      await expect(resolve()).rejects.toThrow(); // Reserved is never bypassed.
+      await sql(
+        "update emdo.finance_standardization_spend set status='indeterminate' where id=$1",
+        [spend.reservationId],
+      );
+      await sql(
+        "update emdo.finance_standardization_runs set lease_expires_at=now()+interval '1 minute' where id=$1",
+        [run.id],
+      );
+      await expect(resolve()).rejects.toThrow();
+      await sql(
+        "update emdo.finance_standardization_runs set lease_expires_at=null,authorization_expires_at=now()-interval '1 minute' where id=$1",
+        [run.id],
+      );
+      await expect(resolve()).rejects.toThrow();
+      await sql(
+        "update emdo.finance_standardization_runs set authorization_expires_at=now()+interval '1 day' where id=$1",
+        [run.id],
+      );
+      await sql(
+        "update emdo.finance_book_grants set role='preparer' where book_id=$1 and user_id=$2",
+        [bookId, context.userId],
+      );
+      try {
+        await expect(resolve()).rejects.toThrow();
+      } finally {
+        await sql(
+          "update emdo.finance_book_grants set role='administrator' where book_id=$1 and user_id=$2",
+          [bookId, context.userId],
+        );
+      }
+      expect(
+        (await runs.reconciliation(context, bookId, run.id)).resolutions,
+      ).toEqual([]);
     });
     it('proves no reservation exists before releasing an interrupted pre-dispatch run', async () => {
       const { run, claim } = await extractedRun();

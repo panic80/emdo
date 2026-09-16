@@ -20,6 +20,24 @@ export const ReviewedFinancePdfCellSchema = z.strictObject({
   spans: z.array(ReviewedFinancePdfSpanSchema).min(1).max(20),
   joiner: z.enum(['', ' ']),
 });
+const ReviewedFinancePdfDataCellSchema = z
+  .strictObject({
+    spans: z.array(ReviewedFinancePdfSpanSchema).max(20),
+    joiner: z.enum(['', ' ']),
+    confirmedBlank: z.literal(true).optional(),
+  })
+  .superRefine((cell, ctx) => {
+    if (
+      cell.confirmedBlank
+        ? cell.spans.length !== 0 || cell.joiner !== ''
+        : cell.spans.length === 0
+    )
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'Blank data cells require explicit confirmation, no spans and an empty joiner',
+      });
+  });
 export const ReviewedFinancePdfPageInventorySchema = z.strictObject({
   page: z.number().int().min(1).max(25),
   width: z.number().finite().positive(),
@@ -45,7 +63,7 @@ export const ReviewedFinancePdfSelectionSchema = z
     rows: z
       .array(
         z.strictObject({
-          cells: z.array(ReviewedFinancePdfCellSchema).min(1).max(100),
+          cells: z.array(ReviewedFinancePdfDataCellSchema).min(1).max(100),
         }),
       )
       .min(1)
@@ -95,7 +113,7 @@ export type ReviewedFinancePdfSelection = z.infer<
   typeof ReviewedFinancePdfSelectionSchema
 >;
 export type ReviewedFinancePdfCell = z.infer<
-  typeof ReviewedFinancePdfCellSchema
+  typeof ReviewedFinancePdfDataCellSchema
 >;
 export type ReviewedFinancePdfSpan = z.infer<
   typeof ReviewedFinancePdfSpanSchema
@@ -105,18 +123,40 @@ export type ReviewedFinancePdfPageInventory = z.infer<
 >;
 
 /** Exact source facts retained with each normalized field; no financial interpretation. */
-export const FinancePdfCellProvenanceSchema = z.strictObject({
-  role: z.enum(['header', 'data', 'context-asOf', 'context-currency']),
-  logicalRow: z.number().int().min(0).max(2000).nullable(),
-  column: z.number().int().min(1).max(100).nullable(),
-  page: z.number().int().min(1).max(25),
-  sourceAnchor: z.string().min(1).max(300),
-  sourceSpans: z
-    .array(
-      ReviewedFinancePdfSpanSchema.omit({ textLength: true, truncated: true }),
+export const FinancePdfCellProvenanceSchema = z
+  .strictObject({
+    role: z.enum(['header', 'data', 'context-asOf', 'context-currency']),
+    logicalRow: z.number().int().min(0).max(2000).nullable(),
+    column: z.number().int().min(1).max(100).nullable(),
+    page: z.number().int().min(1).max(25),
+    sourceAnchor: z.string().min(1).max(300),
+    confirmedBlank: z.literal(true).optional(),
+    sourceSpans: z
+      .array(
+        ReviewedFinancePdfSpanSchema.omit({
+          textLength: true,
+          truncated: true,
+        }),
+      )
+      .max(20),
+    joiner: z.enum(['', ' ']),
+    value: z.string().max(10000),
+  })
+  .superRefine((cell, ctx) => {
+    if (
+      cell.confirmedBlank
+        ? cell.role !== 'data' ||
+          !cell.logicalRow ||
+          !cell.column ||
+          cell.value !== '' ||
+          cell.joiner !== '' ||
+          cell.sourceSpans.length !== 0 ||
+          cell.sourceAnchor !==
+            `pdf-page-${cell.page}:row-${cell.logicalRow}:column-${cell.column}:confirmed-blank`
+        : cell.sourceSpans.length === 0
     )
-    .min(1)
-    .max(20),
-  joiner: z.enum(['', ' ']),
-  value: z.string().max(10000),
-});
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Invalid reviewed PDF cell provenance',
+      });
+  });

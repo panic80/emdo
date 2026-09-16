@@ -436,6 +436,7 @@ test('a user can build a PDF candidate from exact spans without a model proposal
   await review.getByLabel('Layout version').fill('2026-09');
   await review.getByLabel('Transaction date · required').selectOption('0');
   await review.getByLabel('Description · required').selectOption('1');
+  await review.getByLabel('Amount representation').selectOption('signed');
   await review.getByLabel('Amount · required').selectOption('2');
   await review.getByLabel('Currency · required').selectOption('context');
   await review

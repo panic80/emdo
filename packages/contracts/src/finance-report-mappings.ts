@@ -4,7 +4,7 @@ import {
 } from './finance-pdf-ocr.js';
 import { z } from 'zod';
 import { Sha256Schema, UuidSchema } from './primitives.js';
-import { FinanceDecimalSchema } from './finance-v2.js';
+import { FinanceCurrencySchema, FinanceDecimalSchema } from './finance-v2.js';
 import {
   ReviewedFinancePdfSelectionSchema,
   FinancePdfCellProvenanceSchema,
@@ -19,6 +19,8 @@ export const CanonicalReportFieldSchema = z.enum([
   'transactionDate',
   'description',
   'amount',
+  'debit',
+  'credit',
   'currency',
   'externalId',
   'asOf',
@@ -58,7 +60,10 @@ export const FinanceReportMappingDefinitionSchema = z
       'dd/mm/yyyy',
       'dd.mm.yyyy',
       'yyyy/mm/dd',
+      'mmm dd',
     ]),
+    currencyCode: FinanceCurrencySchema.nullable().optional(),
+    dateYear: z.number().int().min(1900).max(9999).nullable().optional(),
     decimalSeparator: z.enum(['.', ',']),
     groupingSeparator: z.enum(['', ',', '.', ' ']),
     quantityUnit: z
@@ -110,7 +115,7 @@ export const FinanceReportMappingDefinitionSchema = z
     const position = value.reportType === 'investment-positions';
     const required = position
       ? ['asOf', 'instrumentIdentifier', 'quantity', 'currency']
-      : ['transactionDate', 'description', 'amount', 'currency'];
+      : ['transactionDate', 'description', 'currency'];
     const allowed = position
       ? [
           'asOf',
@@ -127,6 +132,8 @@ export const FinanceReportMappingDefinitionSchema = z
           'transactionDate',
           'description',
           'amount',
+          'debit',
+          'credit',
           'currency',
           'externalId',
           'fee',
@@ -135,6 +142,34 @@ export const FinanceReportMappingDefinitionSchema = z
           'principal',
           'interest',
         ];
+    if (!position) {
+      const signed = fields.includes('amount');
+      const debit = fields.includes('debit'),
+        credit = fields.includes('credit');
+      if (!((signed && !debit && !credit) || (!signed && debit && credit)))
+        issue(
+          'Bank transactions require amount alone or both debit and credit',
+        );
+    }
+    if (
+      value.currencyCode != null &&
+      (position ||
+        !value.bindings.some(
+          (binding) =>
+            binding.field === 'currency' &&
+            binding.context === 'currency' &&
+            binding.column === null,
+        ))
+    )
+      issue('Reviewed currencyCode requires a bank currency context binding');
+    if (value.dateFormat === 'mmm dd') {
+      if (position || value.dateYear == null)
+        issue(
+          'English bank month/day dates require an explicit reviewed dateYear',
+        );
+    } else if (value.dateYear != null) {
+      issue('dateYear applies only to mmm dd dates');
+    }
     if (required.some((f) => !fields.includes(f as (typeof fields)[number])))
       issue('Required canonical fields are missing');
     if (fields.some((f) => !allowed.includes(f)))

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createAvailableRegisteredAgentProfile } from '../agents/registered-agent-profile.js';
 import {
   createDurableFinanceStandardizationHook,
+  FinanceProposalProviderFailure,
   type DurableFinanceProposalProvider,
 } from '@emdo/agent-core';
 
@@ -175,7 +176,7 @@ describe('EMDO durable Finance standardization delegation', () => {
     expect(projection.selectedWordCount).toBeGreaterThan(0);
     expect(projection.selectedWordCount % 2).toBe(0);
     expect(result.provenance.promptVersion).toBe(
-      'finance-standardization-proposal.v5',
+      'finance-standardization-proposal.v6',
     );
     expect(f.controls.reserveModelSpend).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -240,7 +241,7 @@ describe('EMDO durable Finance standardization delegation', () => {
     expect(f.controls.reserveModelSpend).toHaveBeenCalledWith(
       expect.objectContaining({
         lineage: expect.objectContaining({
-          promptVersion: 'finance-standardization-proposal.v5',
+          promptVersion: 'finance-standardization-proposal.v6',
         }),
       }),
     );
@@ -279,7 +280,7 @@ describe('EMDO durable Finance standardization delegation', () => {
               ? result.provenance.financeInvocationId
               : 'missing',
           orchestrationMode: 'registered-workflow',
-          promptVersion: 'finance-standardization-proposal.v5',
+          promptVersion: 'finance-standardization-proposal.v6',
         }),
       }),
     );
@@ -368,7 +369,7 @@ describe('EMDO durable Finance standardization delegation', () => {
           managerInvocationId: expect.stringMatching(/^[a-f0-9-]{36}$/),
           financeInvocationId: expect.stringMatching(/^[a-f0-9-]{36}$/),
           orchestrationMode: 'registered-workflow',
-          promptVersion: 'finance-standardization-proposal.v5',
+          promptVersion: 'finance-standardization-proposal.v6',
         }),
       }),
     );
@@ -592,7 +593,7 @@ it('sends all PDF page text with a bound receipt persisted before dispatch and a
       outputTokenCeiling: 4000,
       estimatedCadMinor: expectedCost,
       lineage: expect.objectContaining({
-        promptVersion: 'finance-standardization-proposal.v5',
+        promptVersion: 'finance-standardization-proposal.v6',
         promptProjection: receipt,
       }),
     }),
@@ -645,4 +646,44 @@ it('accepts PDF usage at the exact complete-request reservation boundary', async
     outputTokens: 4000,
   }));
   expect((await f.hook(f, f.controls)).status).toBe('proposed');
+});
+
+it('settles verified usage from a rejected proposal without producing a candidate', async () => {
+  const f = fixture();
+  f.generate.mockRejectedValueOnce(
+    new FinanceProposalProviderFailure(
+      'provider-canonical-validation-required-fields-missing',
+      {
+        providerResponseId: 'resp_rejected',
+        inputTokens: 123,
+        outputTokens: 45,
+      },
+    ),
+  );
+  expect(await f.hook(f, f.controls)).toEqual({
+    status: 'blocked',
+    reason: 'provider-canonical-validation-required-fields-missing',
+  });
+  expect(f.controls.settleModelSpend).toHaveBeenCalledWith({
+    reservationId: uuid(7),
+    outcome: 'completed',
+    actualCadMinor: 3,
+    providerResponseId: 'resp_rejected',
+  });
+  expect(f.generate).toHaveBeenCalledTimes(1);
+});
+it('retains indeterminate spend when a sanitized failure lacks verified usage', async () => {
+  const f = fixture();
+  f.generate.mockRejectedValueOnce(
+    new FinanceProposalProviderFailure('provider-transport'),
+  );
+  expect(await f.hook(f, f.controls)).toEqual({
+    status: 'indeterminate',
+    reason: 'provider-transport',
+  });
+  expect(f.controls.settleModelSpend).toHaveBeenCalledWith({
+    reservationId: uuid(7),
+    outcome: 'indeterminate',
+  });
+  expect(f.generate).toHaveBeenCalledTimes(1);
 });

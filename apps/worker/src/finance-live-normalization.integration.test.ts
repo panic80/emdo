@@ -528,7 +528,7 @@ describe.skipIf(
           )
         ).rows[0].lineage;
         expect(lineage.promptVersion).toBe(
-          'finance-standardization-proposal.v5',
+          'finance-standardization-proposal.v6',
         );
         await expect(
           evidence.importMappedReport(

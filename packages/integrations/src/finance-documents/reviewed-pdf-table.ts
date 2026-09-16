@@ -27,6 +27,7 @@ export interface ReviewedPdfCellProvenance {
   sourceSpans: FinancePdfTextSpan[];
   joiner: '' | ' ';
   value: string;
+  confirmedBlank?: true;
 }
 type SourceMetadata = Pick<
   z.infer<typeof ExtractedFinanceReportTableSchema>,
@@ -109,6 +110,23 @@ export async function extractReviewedFinancePdfTable(
     logicalRow: number | null,
     column: number | null,
   ) => {
+    if (cell.confirmedBlank) {
+      if (role !== 'data' || !logicalRow || !column)
+        fail('blank-cell-role-invalid');
+      const sourceAnchor = `pdf-page-${page.page}:row-${logicalRow}:column-${column}:confirmed-blank`;
+      provenance.push({
+        role,
+        logicalRow,
+        column,
+        page: page.page,
+        sourceAnchor,
+        sourceSpans: [],
+        joiner: '',
+        value: '',
+        confirmedBlank: true,
+      });
+      return { value: '', sourceAnchor };
+    }
     const spans = cell.spans.map((expected) => {
       const actual = page.spans[expected.index];
       if (!actual || actual.index !== expected.index)

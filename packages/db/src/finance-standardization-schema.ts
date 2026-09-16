@@ -141,7 +141,7 @@ export const financeStandardizationSpend = schema.table(
     ),
     check(
       'standardization_spend_bounds',
-      sql`${t.attempt} between 1 and 3 and ${t.inputTokenCeiling} between 1 and (case when ${t.lineage}->>'promptVersion'='finance-standardization-proposal.v5' and ${t.lineage}->'promptProjection'->>'kind'='pdf-text.v1' then 64000 else 20000 end) and ${t.outputTokenCeiling} between 1 and 4000 and ${t.reservedCadMinor}>0 and (${t.actualCadMinor} is null or ${t.actualCadMinor}>=0) and ${t.status} in ('reserved','completed','not-sent','indeterminate') and length(${t.requestKey}) between 1 and 200 and length(${t.pricingVersion}) between 1 and 128`,
+      sql`${t.attempt} between 1 and 3 and ${t.inputTokenCeiling} between 1 and (case when ${t.lineage}->>'promptVersion' IN ('finance-standardization-proposal.v5','finance-standardization-proposal.v6') and ${t.lineage}->'promptProjection'->>'kind'='pdf-text.v1' then 64000 else 20000 end) and ${t.outputTokenCeiling} between 1 and 4000 and ${t.reservedCadMinor}>0 and (${t.actualCadMinor} is null or ${t.actualCadMinor}>=0) and ${t.status} in ('reserved','completed','not-sent','indeterminate') and length(${t.requestKey}) between 1 and 200 and length(${t.pricingVersion}) between 1 and 128`,
     ),
   ],
 );

@@ -5,10 +5,13 @@ import {
   FinanceCurrencySchema,
   FinanceMoneySchema,
 } from '@emdo/contracts';
+import { parseFinanceDecimal, formatFinanceDecimal } from './decimal.js';
 import { parseReportDecimal, parseReportDate } from './normalized-imports.js';
 
 const decimalFields = new Set([
   'amount',
+  'debit',
+  'credit',
   'quantity',
   'bookCost',
   'marketValue',
@@ -22,6 +25,8 @@ const decimalFields = new Set([
 ]);
 const moneyFields = new Set([
   'amount',
+  'debit',
+  'credit',
   'bookCost',
   'marketValue',
   'accruedInterest',
@@ -31,6 +36,33 @@ const moneyFields = new Set([
   'principal',
   'interest',
 ]);
+/** The reviewed year is explicit; never infer it from today's date or a statement end date. */
+function parseEnglishBankDate(raw: string, year: number | null | undefined) {
+  const match =
+    /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})$/i.exec(
+      raw.trim(),
+    );
+  if (!match || year == null) throw new Error('date-format');
+  const month =
+    [
+      'jan',
+      'feb',
+      'mar',
+      'apr',
+      'may',
+      'jun',
+      'jul',
+      'aug',
+      'sep',
+      'oct',
+      'nov',
+      'dec',
+    ].indexOf(match[1]!.toLowerCase()) + 1;
+  return parseReportDate(
+    `${year}-${String(month).padStart(2, '0')}-${match[2]!.padStart(2, '0')}`,
+    'yyyy-mm-dd',
+  );
+}
 /** Applies a selected mapping without asserting that it has been approved or may commit. */
 export function normalizeExtractedReport(
   mappingInput: unknown,
@@ -112,8 +144,32 @@ export function normalizeExtractedReport(
             f.logicalRow === cell.logicalRow &&
             f.column === cell.column,
         );
+        const selected =
+          cell.role === 'data' &&
+          cell.logicalRow !== null &&
+          cell.column !== null
+            ? mapping.pdfSelection!.rows[cell.logicalRow - 1]?.cells[
+                cell.column - 1
+              ]
+            : undefined;
+        const blank = matches[0]?.confirmedBlank === true;
+        const blankMismatch = blank
+          ? cell.role !== 'data' ||
+            cell.value !== '' ||
+            !cell.logicalRow ||
+            !cell.column ||
+            matches[0]!.sourceSpans.length !== 0 ||
+            matches[0]!.joiner !== '' ||
+            matches[0]!.sourceAnchor !==
+              `pdf-page-${table.page}:row-${cell.logicalRow}:column-${cell.column}:confirmed-blank` ||
+            selected?.confirmedBlank !== true ||
+            selected.spans.length !== 0 ||
+            selected.joiner !== ''
+          : selected?.confirmedBlank === true ||
+            matches[0]?.sourceSpans.length === 0;
         return (
           matches.length !== 1 ||
+          blankMismatch ||
           matches[0]!.value !== cell.value ||
           matches[0]!.page !== table.page ||
           matches[0]!.sourceSpans
@@ -301,6 +357,12 @@ export function normalizeExtractedReport(
         string,
         {
           raw: string;
+          dateYear?: number;
+          reviewedCurrencyCode?: string;
+          sourceContextAnchor?: string | null;
+          derivation?: 'credit-minus-debit';
+          inputFields?: string[];
+          sourceProvenance?: Record<string, unknown>;
           column: string | null;
           contextAnchor: string | null;
           pdfOcrSource?: NonNullable<typeof table.pdfOcrCellProvenance>[number];
@@ -319,8 +381,20 @@ export function normalizeExtractedReport(
           : (row.cells[table.headers.indexOf(binding.column)] ?? '');
       provenance[binding.field] = {
         raw,
+        ...(binding.field === 'transactionDate' &&
+        mapping.dateFormat === 'mmm dd' &&
+        mapping.dateYear != null
+          ? { dateYear: mapping.dateYear }
+          : {}),
         column: binding.column,
         contextAnchor: context?.sourceAnchor ?? null,
+        ...(binding.field === 'currency' && mapping.currencyCode != null
+          ? {
+              reviewedCurrencyCode: mapping.currencyCode,
+              sourceContextAnchor: context?.sourceAnchor ?? null,
+              contextAnchor: 'reviewed-mapping:currency',
+            }
+          : {}),
         ...(table.pdfOcrCellProvenance
           ? {
               pdfOcrSource: pdfOcrFact(
@@ -350,7 +424,29 @@ export function normalizeExtractedReport(
           : {}),
       };
       try {
+        if (binding.field === 'currency' && mapping.currencyCode != null) {
+          const sourceCurrency = FinanceCurrencySchema.safeParse(raw.trim());
+          if (
+            sourceCurrency.success &&
+            sourceCurrency.data !== mapping.currencyCode
+          )
+            throw new Error('reviewed-currency-source-conflict');
+          fields.currency = mapping.currencyCode;
+          continue;
+        }
+        if (
+          !raw.trim() &&
+          (binding.field === 'debit' || binding.field === 'credit')
+        ) {
+          fields[binding.field] = null;
+          continue;
+        }
         if (!raw.trim()) throw new Error('missing-value');
+        if (
+          (binding.field === 'debit' || binding.field === 'credit') &&
+          /^[-(]/.test(raw.trim())
+        )
+          throw new Error('negative-debit-credit');
         fields[binding.field] = decimalFields.has(binding.field)
           ? parseReportDecimal(
               raw,
@@ -360,16 +456,56 @@ export function normalizeExtractedReport(
           : binding.field === 'currency'
             ? FinanceCurrencySchema.parse(raw.trim())
             : binding.field === 'asOf' || binding.field === 'transactionDate'
-              ? parseReportDate(
-                  raw,
-                  binding.context === 'asOf'
-                    ? 'yyyy-mm-dd'
-                    : mapping.dateFormat,
-                )
+              ? mapping.dateFormat === 'mmm dd' && binding.context !== 'asOf'
+                ? parseEnglishBankDate(raw, mapping.dateYear)
+                : parseReportDate(
+                    raw,
+                    binding.context === 'asOf'
+                      ? 'yyyy-mm-dd'
+                      : mapping.dateFormat === 'mmm dd'
+                        ? 'yyyy-mm-dd'
+                        : mapping.dateFormat,
+                  )
               : raw.trim();
       } catch {
         fields[binding.field] = null;
         issues.push(`${binding.field}:invalid-or-missing`);
+      }
+    }
+    if (mapping.bindings.some((binding) => binding.field === 'debit')) {
+      provenance.amount = {
+        raw: '',
+        column: null,
+        contextAnchor: null,
+        derivation: 'credit-minus-debit',
+        inputFields: ['credit', 'debit'],
+        sourceProvenance: {
+          credit: provenance.credit,
+          debit: provenance.debit,
+        },
+      };
+      fields.amount = null;
+      try {
+        const debit =
+          fields.debit == null ? null : parseFinanceDecimal(fields.debit);
+        const credit =
+          fields.credit == null ? null : parseFinanceDecimal(fields.credit);
+        if (
+          issues.some(
+            (issue) =>
+              issue.startsWith('debit:') || issue.startsWith('credit:'),
+          ) ||
+          (debit === null && credit === null) ||
+          (debit !== null && debit < 0n) ||
+          (credit !== null && credit < 0n) ||
+          (debit !== null && debit > 0n && credit !== null && credit > 0n)
+        )
+          throw new Error('ambiguous-debit-credit');
+        const amount = (credit ?? 0n) - (debit ?? 0n);
+        if (amount === 0n) throw new Error('zero-amount');
+        fields.amount = formatFinanceDecimal(amount);
+      } catch {
+        issues.push('amount:invalid-debit-credit');
       }
     }
     for (const field of moneyFields)
