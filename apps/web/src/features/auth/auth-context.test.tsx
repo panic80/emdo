@@ -1,5 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { installBrowserStorage } from '../../test/browser-storage.js';
 
 import {
   AuthProvider,
@@ -11,7 +13,12 @@ import {
   type AuthSession,
   type EmdoAuthClient,
 } from './auth-client.js';
+import { createFinanceDocumentApi } from '../finance-v1/finance-document-api.js';
 import type { BrowserOfflineSessionHint } from '../../offline/logout-purge.js';
+
+beforeEach(installBrowserStorage);
+
+afterEach(() => vi.unstubAllGlobals());
 
 const activeSession: AuthSession = {
   session: { id: 'session-1', expiresAt: '2999-08-16T12:00:00.000Z' },
@@ -72,6 +79,213 @@ function OfflineProbe() {
 }
 
 describe('AuthProvider', () => {
+  it.each(['user-1', 'different-user'])(
+    'keeps verified online access but seals mismatched offline data for %s',
+    async (userId) => {
+      let auth!: AuthContextValue;
+      function Capture() {
+        auth = useAuth();
+        return null;
+      }
+      const current = {
+        ...activeSession,
+        user: { ...activeSession.user, id: userId },
+      };
+      const authClient = client(current);
+      const hint = Object.freeze({
+        version: 1 as const,
+        status: 'active' as const,
+        canEditOffline: true as const,
+        sessionBinding: 'b'.repeat(64),
+      });
+      render(
+        <AuthProvider
+          client={authClient}
+          inspectOfflineSession={async () => hint}
+        >
+          <Capture />
+        </AuthProvider>,
+      );
+      await waitFor(() => expect(auth.state).toBe('authenticated'));
+      expect(auth.session).toEqual(current);
+      expect(auth.csrfToken).toBe('csrf-token-01234567890123456789');
+      expect(auth.sessionBinding).toBeUndefined();
+      expect(auth.offlineStorageLocked).toBe(true);
+      expect(hint.sessionBinding).toBe('b'.repeat(64));
+      vi.mocked(authClient.getSession).mockRejectedValue(
+        new AuthClientError('session-network-unavailable', 'offline'),
+      );
+      await act(() => auth.refresh());
+      expect(auth.state).toBe('unavailable');
+      expect(auth.sessionBinding).toBeUndefined();
+      expect(auth.csrfToken).toBeUndefined();
+    },
+  );
+
+  it('can save a Finance review with current server credentials while offline storage stays locked', async () => {
+    let auth!: AuthContextValue;
+    function Capture() {
+      auth = useAuth();
+      return null;
+    }
+    render(
+      <AuthProvider
+        client={client(activeSession)}
+        inspectOfflineSession={async () => ({
+          version: 1,
+          status: 'active',
+          canEditOffline: true,
+          sessionBinding: 'b'.repeat(64),
+        })}
+      >
+        <Capture />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(auth.offlineStorageLocked).toBe(true));
+    const envelope = {
+      schemaVersion: 1 as const,
+      documentType: 'bank-statement',
+      sourceLocale: 'en-CA' as const,
+      currency: 'CAD',
+      total: null,
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            schemaVersion: 1,
+            documentId: 'document-1',
+            extractionRevision: 2,
+            envelope,
+            payloadHash: 'a'.repeat(64),
+            reviewToken: 'A'.repeat(43),
+            expiresAt: '2999-01-01T00:00:00.000Z',
+          }),
+          { headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    await createFinanceDocumentApi({
+      fetcher: fetcher as typeof fetch,
+    }).updateReview({
+      id: 'document-1',
+      expectedExtractionRevision: 1,
+      envelope,
+      csrfToken: auth.csrfToken!,
+      idempotencyKey: 'review-1',
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/v1/finance/documents/document-1/review',
+      expect.objectContaining({
+        method: 'PATCH',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: expect.objectContaining({ 'x-csrf-token': auth.csrfToken }),
+      }),
+    );
+    expect(auth.sessionBinding).toBeUndefined();
+  });
+
+  it('fails closed if a mismatch denial marker cannot be persisted', async () => {
+    const write = vi
+      .spyOn(window.localStorage, 'setItem')
+      .mockImplementation(() => {
+        throw new Error('Storage denied');
+      });
+    try {
+      render(
+        <AuthProvider
+          client={client(activeSession)}
+          inspectOfflineSession={async () => ({
+            version: 1,
+            status: 'active',
+            canEditOffline: true,
+            sessionBinding: 'b'.repeat(64),
+          })}
+        >
+          <OfflineProbe />
+        </AuthProvider>,
+      );
+      expect(
+        await screen.findByText('unavailable:locked:unknown:none'),
+      ).toBeVisible();
+    } finally {
+      write.mockRestore();
+    }
+  });
+
+  it('fails closed offline if the persisted denial marker cannot be read', async () => {
+    const read = vi
+      .spyOn(window.localStorage, 'getItem')
+      .mockImplementation(() => {
+        throw new Error('Storage denied');
+      });
+    try {
+      render(
+        <AuthProvider
+          client={client(
+            new AuthClientError('session-network-unavailable', 'offline'),
+          )}
+          inspectOfflineSession={async () => ({
+            version: 1,
+            status: 'active',
+            canEditOffline: true,
+            sessionBinding: 'b'.repeat(64),
+          })}
+          isOnline={() => false}
+        >
+          <OfflineProbe />
+        </AuthProvider>,
+      );
+      expect(
+        await screen.findByText('unavailable:locked:unknown:none'),
+      ).toBeVisible();
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it('keeps preserved local data sealed after a mismatched session reloads offline', async () => {
+    window.localStorage.setItem('emdo.offline.session-mismatch.v1', 'locked');
+    render(
+      <AuthProvider
+        client={client(
+          new AuthClientError('session-network-unavailable', 'offline'),
+        )}
+        inspectOfflineSession={async () => ({
+          version: 1,
+          status: 'active',
+          canEditOffline: true,
+          sessionBinding: 'b'.repeat(64),
+        })}
+        isOnline={() => false}
+      >
+        <OfflineProbe />
+      </AuthProvider>,
+    );
+    expect(
+      await screen.findByText('unavailable:locked:unknown:none'),
+    ).toBeVisible();
+  });
+
+  it('does not bypass a mismatched pending logout with online-only access', async () => {
+    render(
+      <AuthProvider
+        client={client(activeSession)}
+        inspectOfflineSession={async () => ({
+          version: 1,
+          status: 'logout-pending',
+          canEditOffline: false,
+          sessionBinding: 'b'.repeat(64),
+        })}
+      >
+        <OfflineProbe />
+      </AuthProvider>,
+    );
+    expect(
+      await screen.findByText('unavailable:locked:unknown:none'),
+    ).toBeVisible();
+  });
+
   describe.each(['complete', 'incomplete', 'peer'] as const)(
     '%s logout seal',
     (seal) => {
