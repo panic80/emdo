@@ -1755,6 +1755,17 @@ describeDatabase(
           },
         ]);
 
+        // Both boundaries must share one SQL statement clock. Independent
+        // volatile clock reads can exceed the enforced 90-day maximum.
+        const receiptRetention = await admin.query<{ exactRetention: boolean }>(
+          `select retain_until = recorded_at + interval '90 days' as "exactRetention"
+             from emdo.finance_specialist_record_receipts
+            where household_id = $1 and origin_run_id = $2
+              and operation = 'manual-transaction-create'`,
+          [ids.household, safeWriteAccepted.runId],
+        );
+        expect(receiptRetention.rows).toEqual([{ exactRetention: true }]);
+
         const experience = createPostgresExperienceReadGateways(
           databasePool(appPool),
           new ExperienceQueryCursorCodec({

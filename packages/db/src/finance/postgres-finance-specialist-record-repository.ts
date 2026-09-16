@@ -2305,8 +2305,8 @@ export class PostgresFinanceSpecialistRecordRepository {
                    $4::text, $5::text, $6::text, $7::text,
                    $8::uuid, $9::uuid, $10::uuid, $11::uuid,
                    $12::text, $13::text, $14::integer, $15::uuid,
-                   pg_catalog.clock_timestamp(),
-                   pg_catalog.clock_timestamp() + interval '90 days')
+                   pg_catalog.statement_timestamp(),
+                   pg_catalog.statement_timestamp() + interval '90 days')
            returning audit_event_id::text as "auditEventId"`,
           [
             ...scopeValues(command.scope),
