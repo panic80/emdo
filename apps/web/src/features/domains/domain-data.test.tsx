@@ -1,12 +1,18 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { installBrowserStorage } from '../../test/browser-storage.js';
+
 import { useState } from 'react';
 
 import type { SyncOperation } from '@emdo/contracts/browser';
 
 import type { EmdoAuthClient } from '../auth/auth-client.js';
-import { AuthProvider, useAuth } from '../auth/auth-context.js';
+import {
+  AuthProvider,
+  useAuth,
+  type AuthContextValue,
+} from '../auth/auth-context.js';
 import type { EncryptedSqliteConnection } from '../../offline/database.js';
 import {
   DomainDataProvider,
@@ -21,6 +27,8 @@ import {
 } from './domain-data.js';
 import { DomainSyncStatus } from './domain-status.js';
 import { createDomainRuntimeSnapshot } from '../../test/fake-domain-runtime.js';
+
+beforeEach(installBrowserStorage);
 
 const space = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -289,6 +297,86 @@ function sensitiveRuntime(
 }
 
 describe('DomainDataProvider', () => {
+  it('never opens or purges the offline runtime for an online session with a different key binding', async () => {
+    const factory = vi.fn(async () => sensitiveRuntime());
+    const recovery = vi.fn(async () => sensitiveRuntime());
+    render(
+      <AuthProvider
+        client={authClient('online')}
+        inspectOfflineSession={async () => ({
+          version: 1,
+          status: 'active',
+          canEditOffline: true,
+          sessionBinding: 'b'.repeat(64),
+        })}
+      >
+        <DomainDataProvider runtimeFactory={factory} recoveryFactory={recovery}>
+          <MemoryBoundaryProbe />
+        </DomainDataProvider>
+      </AuthProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('auth-memory')).toHaveTextContent(
+        'authenticated:csrf-token-01234567890123456789:locked:none',
+      ),
+    );
+    expect(screen.getByTestId('domain-memory')).toHaveTextContent(
+      'locked:empty',
+    );
+    expect(factory).not.toHaveBeenCalled();
+    expect(recovery).not.toHaveBeenCalled();
+  });
+
+  it('removes previously decrypted records before exposing a different online session', async () => {
+    let auth!: AuthContextValue;
+    const exposed: string[] = [];
+    function Capture() {
+      auth = useAuth();
+      const domain = useDomainData();
+      if (auth.offlineStorageLocked)
+        exposed.push(...domain.records.map((row) => row.id));
+      return <MemoryBoundaryProbe />;
+    }
+    const currentClient = authClient('online');
+    const runtime = sensitiveRuntime();
+    const factory = vi.fn(async () => runtime);
+    let mismatch = false;
+    render(
+      <AuthProvider
+        client={currentClient}
+        inspectOfflineSession={async () =>
+          mismatch
+            ? {
+                version: 1,
+                status: 'active',
+                canEditOffline: true,
+                sessionBinding: 'b'.repeat(64),
+              }
+            : null
+        }
+      >
+        <DomainDataProvider runtimeFactory={factory}>
+          <Capture />
+        </DomainDataProvider>
+      </AuthProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('domain-memory')).toHaveTextContent(
+        'ready:private-transaction',
+      ),
+    );
+    mismatch = true;
+    await act(() => auth.refresh());
+    expect(auth.offlineStorageLocked).toBe(true);
+    expect(screen.getByTestId('domain-memory')).toHaveTextContent(
+      'locked:empty',
+    );
+    expect(exposed).toEqual([]);
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(runtime.dispose).toHaveBeenCalledTimes(1);
+    expect(runtime.logout).not.toHaveBeenCalled();
+  });
+
   it('explains retired Finance edits as unsaved changes needing book review', async () => {
     const runtime: DomainDataRuntime = {
       ...sensitiveRuntime(),

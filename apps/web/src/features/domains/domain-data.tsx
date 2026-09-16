@@ -13,6 +13,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -580,7 +581,7 @@ export function DomainDataProvider({
     [auth.sealForPeerTeardown, clearDecryptedDomainMemory],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const recovery = auth.state === 'logout-pending';
     if (
       auth.memorySeal === 'peer-teardown' ||
@@ -703,7 +704,11 @@ export function DomainDataProvider({
 
   const applyMutation = useCallback(
     async (input: DomainMutationInput) => {
-      if (!runtime || (state !== 'ready' && state !== 'offline-ready')) {
+      if (
+        auth.offlineStorageLocked ||
+        !runtime ||
+        (state !== 'ready' && state !== 'offline-ready')
+      ) {
         throw new Error('Encrypted offline editing is not ready.');
       }
       const space = selectActiveSpace(snapshot.spaces);
@@ -729,27 +734,38 @@ export function DomainDataProvider({
       await refreshSnapshot(runtime);
       return operation;
     },
-    [refreshSnapshot, runtime, snapshot.records, snapshot.spaces, state],
+    [
+      auth.offlineStorageLocked,
+      refreshSnapshot,
+      runtime,
+      snapshot.records,
+      snapshot.spaces,
+      state,
+    ],
   );
 
   const syncNow = useCallback(async () => {
-    if (!runtime || state !== 'ready') {
+    if (auth.offlineStorageLocked || !runtime || state !== 'ready') {
       throw new Error('Connect to EMDO before syncing local changes.');
     }
     const result = await runtime.syncNow();
     void result;
     await refreshSnapshot(runtime);
-  }, [refreshSnapshot, runtime, state]);
+  }, [auth.offlineStorageLocked, refreshSnapshot, runtime, state]);
 
   const dismissConflict = useCallback(
     async (operationId: string) => {
-      if (!runtime || (state !== 'ready' && state !== 'offline-ready')) {
+      if (
+        auth.offlineStorageLocked ||
+        !runtime ||
+        (state !== 'ready' && state !== 'offline-ready')
+      ) {
         throw new Error('Encrypted conflict review is not ready.');
       }
       await runtime.dismissTerminalConflict(operationId);
       await refreshSnapshot(runtime);
     },
-    [refreshSnapshot, runtime, state],
+    [auth.offlineStorageLocked, refreshSnapshot, runtime, state],
   );
 
   const logoutBoundary = useMemo<LogoutPanelBoundary | undefined>(() => {
@@ -786,19 +802,24 @@ export function DomainDataProvider({
 
   const value = useMemo<DomainDataContextValue>(
     () => ({
-      state,
-      records: snapshot.records,
-      pendingCount: snapshot.pendingCount,
-      replication: snapshot.replication,
-      conflicts: snapshot.conflicts,
-      activeSpace: selectActiveSpace(snapshot.spaces),
-      error,
-      logoutBoundary,
+      state: auth.offlineStorageLocked ? 'locked' : state,
+      records: auth.offlineStorageLocked ? [] : snapshot.records,
+      pendingCount: auth.offlineStorageLocked ? 0 : snapshot.pendingCount,
+      replication: auth.offlineStorageLocked
+        ? DISABLED_REPLICATION
+        : snapshot.replication,
+      conflicts: auth.offlineStorageLocked ? [] : snapshot.conflicts,
+      activeSpace: auth.offlineStorageLocked
+        ? undefined
+        : selectActiveSpace(snapshot.spaces),
+      error: auth.offlineStorageLocked ? undefined : error,
+      logoutBoundary: auth.offlineStorageLocked ? undefined : logoutBoundary,
       applyMutation,
       syncNow,
       dismissConflict,
     }),
     [
+      auth.offlineStorageLocked,
       applyMutation,
       dismissConflict,
       error,

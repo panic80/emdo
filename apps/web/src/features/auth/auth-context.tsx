@@ -36,6 +36,8 @@ export interface AuthContextValue {
   readonly sessionBinding?: string;
   /** Short-lived mutation proof. It is never persisted. */
   readonly csrfToken?: string;
+  /** Online access is verified; pre-existing local data stays sealed. */
+  readonly offlineStorageLocked: boolean;
   /** True only after the server explicitly returned an anonymous session. */
   readonly serverSessionKnownRevoked: boolean;
   /** Keeps a peer-sealed tab locked while allowing explicit local cleanup recovery. */
@@ -51,6 +53,15 @@ const productionAuthClient = createEmdoAuthClient();
 
 type OfflineSessionInspector = () => Promise<BrowserOfflineSessionHint | null>;
 const browserIsOnline = () => navigator.onLine;
+// A denial-only marker survives reloads; it cannot authorize local key access.
+const OFFLINE_SESSION_LOCK = 'emdo.offline.session-mismatch.v1';
+function offlineSessionWasLocked(): boolean {
+  try {
+    return window.localStorage.getItem(OFFLINE_SESSION_LOCK) !== null;
+  } catch {
+    return true;
+  }
+}
 
 async function bindAuthenticatedSession(sessionId: string): Promise<string> {
   const bytes = new TextEncoder().encode(sessionId);
@@ -80,6 +91,7 @@ export function AuthProvider({
     useState<AuthContextValue['memorySeal']>('none');
   const refreshGeneration = useRef(0);
   const refreshSealed = useRef(false);
+  const mismatchedOfflineSession = useRef(false);
 
   const sealForPeerTeardown = useCallback(() => {
     refreshGeneration.current += 1;
@@ -159,19 +171,42 @@ export function AuthProvider({
       );
       if (!isCurrent()) return;
       let localHint: BrowserOfflineSessionHint | null = null;
+      let offlineInspectionSucceeded = false;
       try {
         localHint = await inspectOfflineSession();
+        offlineInspectionSucceeded = true;
       } catch {
         // Online session use can continue while offline storage is separately locked.
       }
       if (!isCurrent()) return;
       if (localHint && localHint.sessionBinding !== authenticatedBinding) {
+        // A valid server session authorizes API access, never another session
+        // key. Preserve ciphertext and do not create an offline runtime.
+        mismatchedOfflineSession.current = true;
+        window.localStorage.setItem(OFFLINE_SESSION_LOCK, 'locked');
+        if (localHint.status === 'active') {
+          setSession(result);
+          setSessionBinding(undefined);
+          setCsrfToken(mutationProof);
+          setServerSessionKnownRevoked(false);
+          setMemorySeal('none');
+          setState('authenticated');
+          return;
+        }
         setSession(undefined);
         setSessionBinding(undefined);
         setCsrfToken(undefined);
         setMemorySeal('none');
         setState('unavailable');
         return;
+      }
+      if (offlineInspectionSucceeded) {
+        try {
+          window.localStorage.removeItem(OFFLINE_SESSION_LOCK);
+          mismatchedOfflineSession.current = false;
+        } catch {
+          // A retained denial marker only disables future offline fallback.
+        }
       }
       setSession(result);
       setServerSessionKnownRevoked(false);
@@ -192,7 +227,11 @@ export function AuthProvider({
       const sessionTransportFailed =
         error instanceof AuthClientError &&
         error.code === 'session-network-unavailable';
-      if (sessionTransportFailed || !isOnline()) {
+      if (
+        !mismatchedOfflineSession.current &&
+        !offlineSessionWasLocked() &&
+        (sessionTransportFailed || !isOnline())
+      ) {
         try {
           const hint = await inspectOfflineSession();
           if (!isCurrent()) return;
@@ -258,6 +297,8 @@ export function AuthProvider({
       session,
       sessionBinding,
       csrfToken,
+      offlineStorageLocked:
+        state === 'authenticated' && sessionBinding === undefined,
       serverSessionKnownRevoked,
       memorySeal,
       client,

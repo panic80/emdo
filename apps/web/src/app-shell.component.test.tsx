@@ -1,6 +1,8 @@
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
 import { cleanup, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { installBrowserStorage } from './test/browser-storage.js';
 
 import type { EmdoAuthClient } from './features/auth/auth-client.js';
 import { AuthProvider } from './features/auth/auth-context.js';
@@ -11,11 +13,17 @@ import {
 import { createAppRouter } from './router.js';
 import { createReadyDomainRuntimeFactory } from './test/fake-domain-runtime.js';
 
-afterEach(cleanup);
+beforeEach(installBrowserStorage);
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 async function renderPath(
   path: string,
   runtimeFactory: DomainRuntimeFactory = createReadyDomainRuntimeFactory(),
+  mismatchedOfflineSession = false,
 ) {
   const router = createAppRouter(
     createMemoryHistory({ initialEntries: [path] }),
@@ -43,7 +51,19 @@ async function renderPath(
     signOut: async () => undefined,
   } satisfies EmdoAuthClient;
   render(
-    <AuthProvider client={client}>
+    <AuthProvider
+      client={client}
+      {...(mismatchedOfflineSession
+        ? {
+            inspectOfflineSession: async () => ({
+              version: 1 as const,
+              status: 'active' as const,
+              canEditOffline: true as const,
+              sessionBinding: 'b'.repeat(64),
+            }),
+          }
+        : {})}
+    >
       <DomainDataProvider runtimeFactory={runtimeFactory}>
         <RouterProvider router={router} />
       </DomainDataProvider>
@@ -54,6 +74,18 @@ async function renderPath(
 }
 
 describe('responsive EMDO app shell', () => {
+  it('explains preserved offline data while allowing the authenticated Finance route', async () => {
+    await renderPath('/finance', createReadyDomainRuntimeFactory(), true);
+    expect(
+      await screen.findByText(
+        /Online access is available. Saved offline data remains locked and preserved/,
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('heading', { name: 'Welcome back' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('renders all desktop routes in accepted order and five mobile destinations', async () => {
     await renderPath('/today');
     const desktop = await screen.findByTestId('desktop-navigation');

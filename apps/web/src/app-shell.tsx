@@ -351,6 +351,12 @@ export function AppShell() {
       />
       <section className="app-shell__workspace">
         <TopBar openMore={() => setMoreOpen(true)} />
+        {auth.offlineStorageLocked ? (
+          <p className="auth-alert" role="status">
+            Online access is available. Saved offline data remains locked and
+            preserved on this device.
+          </p>
+        ) : null}
         <div id="main-content" className="app-shell__content" tabIndex={-1}>
           <ConversationProvider>
             <Outlet />
